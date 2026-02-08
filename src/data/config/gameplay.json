@@ -1,0 +1,42 @@
+{
+  "gameplayConfig": {
+    "tileSize": 1.0,
+    "gravity": 0,
+    "damageImpactRadius": 0.5,
+    "statusEffects": {
+      "dotTickRate": 0.2,
+      "stunDuration": 2.0
+    }
+  },
+  "uiConfig": {
+    "showEnemyHealthBars": true,
+    "showDamageNumbers": true,
+    "showFPS": false,
+    "fontSizeHUD": 16,
+    "fontSizeDamage": 24,
+    "damageDuration": 1.0,
+    "logMaxLines": 10
+  },
+  "debugConfig": {
+    "enabled": false,
+    "godMode": false,
+    "infiniteUltimate": false,
+    "freezeEnemies": false,
+    "showGrid": false,
+    "showPathfinding": false,
+    "showColliders": false,
+    "drawRaycastDebug": false
+  },
+  "camera": {
+    "alpha": -0.7853981633974483,
+    "beta": 1.0471975511965976,
+    "radius": 20,
+    "target": [0, 0, 0]
+  },
+  "scaling": {
+    "enabled": true,
+    "hpPerRoom": 1.15,
+    "damagePerRoom": 1.10,
+    "speedPerRoom": 1.05
+  }
+}

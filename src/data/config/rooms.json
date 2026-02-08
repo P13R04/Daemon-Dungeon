@@ -1,0 +1,101 @@
+[
+  {
+    "id": "room_test_dummies",
+    "name": "Dummy Test",
+    "layout": [
+      "#############",
+      "#...........#",
+      "#...........#",
+      "#...........#",
+      "#...........#",
+      "#...........#",
+      "#...........#",
+      "#...........#",
+      "#...........#",
+      "#...........#",
+      "#############"
+    ],
+    "spawnPoints": [
+      { "x": 4, "y": 5, "enemyType": "dummy_tank" },
+      { "x": 6, "y": 5, "enemyType": "dummy_tank" },
+      { "x": 8, "y": 5, "enemyType": "dummy_tank" }
+    ],
+    "playerSpawnPoint": { "x": 6, "y": 8 },
+    "obstacles": [
+      { "x": 5, "y": 2, "width": 2, "height": 2, "type": "hazard", "damage": 25 }
+    ]
+  },
+  {
+    "id": "room_test_1",
+    "name": "Test Arena",
+    "layout": [
+      "#############",
+      "#...........#",
+      "#...........#",
+      "#...........#",
+      "#.....M.....#",
+      "#...........#",
+      "#...........#",
+      "#...........#",
+      "#...........#",
+      "#...........#",
+      "#############"
+    ],
+    "spawnPoints": [
+      { "x": 5, "y": 5, "enemyType": "zombie_basic" }
+    ],
+    "playerSpawnPoint": { "x": 6, "y": 5 },
+    "obstacles": []
+  },
+  {
+    "id": "room_01",
+    "name": "System Boot",
+    "layout": [
+      "#############",
+      "#...........#",
+      "#.M.........#",
+      "#...........#",
+      "#....O......#",
+      "#...........#",
+      "#.......M...#",
+      "#...........#",
+      "#...........#",
+      "#...........#",
+      "#############"
+    ],
+    "spawnPoints": [
+      { "x": 2, "y": 2, "enemyType": "zombie_basic" },
+      { "x": 8, "y": 6, "enemyType": "zombie_basic" }
+    ],
+    "playerSpawnPoint": { "x": 1, "y": 1 },
+    "obstacles": [
+      { "x": 5, "y": 4, "width": 1, "height": 1, "type": "pillar" }
+    ]
+  },
+  {
+    "id": "room_02",
+    "name": "Memory Corruption",
+    "layout": [
+      "#############",
+      "#...........#",
+      "#.M.....M...#",
+      "#...........#",
+      "#....O......#",
+      "#...........#",
+      "#.M.........#",
+      "#...........#",
+      "#...........#",
+      "#...........#",
+      "#############"
+    ],
+    "spawnPoints": [
+      { "x": 2, "y": 2, "enemyType": "zombie_basic" },
+      { "x": 8, "y": 2, "enemyType": "zombie_basic" },
+      { "x": 2, "y": 6, "enemyType": "zombie_basic" }
+    ],
+    "playerSpawnPoint": { "x": 1, "y": 1 },
+    "obstacles": [
+      { "x": 5, "y": 4, "width": 1, "height": 1, "type": "pillar" }
+    ]
+  }
+]

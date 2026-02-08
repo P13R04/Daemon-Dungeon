@@ -1,0 +1,38 @@
+{
+  "mage": {
+    "name": "Mage",
+    "description": "Spellcaster de distance",
+    "baseStats": {
+      "hp": 100,
+      "speed": 5.5,
+      "damage": 20,
+      "fireRate": 0.6
+    },
+    "attack": {
+      "type": "projectile",
+      "range": 30,
+      "projectileSpeed": 25,
+      "projectileSize": 0.5,
+      "pattern": "single"
+    },
+    "passive": {
+      "id": "focus_fire",
+      "description": "Vitesse d'attaque augmente de 5% par seconde immobile (max +100%)",
+      "fireRateBonus": 0.05,
+      "maxBonus": 2.0,
+      "resetOnMove": true
+    },
+    "ultimate": {
+      "id": "arcane_sanctuary",
+      "description": "Zone au sol qui fait 50 dégâts DOT et soigne 2 HP/s pendant 8s",
+      "cooldown": 0,
+      "chargeTime": 30,
+      "radius": 4,
+      "damage": 50,
+      "dotDuration": 8,
+      "dotTickRate": 0.5,
+      "healPerTick": 6,
+      "areaSize": 8
+    }
+  }
+}

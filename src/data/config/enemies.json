@@ -1,0 +1,38 @@
+{
+  "zombie_basic": {
+    "name": "Zombie",
+    "description": "Un processus corrompu. Lent mais persistant.",
+    "baseStats": {
+      "hp": 40,
+      "damage": 8,
+      "speed": 2.5,
+      "attackRange": 0.8,
+      "attackCooldown": 1.0
+    },
+    "behavior": "chase",
+    "lootTable": [
+      { "itemId": "health_potion_small", "dropChance": 0.3, "amount": 1 }
+    ],
+    "appearance": {
+      "size": 0.8,
+      "color": { "r": 0.5, "g": 1.0, "b": 0.5 }
+    }
+  },
+  "dummy_tank": {
+    "name": "Dummy",
+    "description": "Cible d'entraînement immobile.",
+    "baseStats": {
+      "hp": 300,
+      "damage": 0,
+      "speed": 0,
+      "attackRange": 0.0,
+      "attackCooldown": 999
+    },
+    "behavior": "dummy",
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 0.8, "g": 0.8, "b": 0.8 }
+    }
+  }
+}
