@@ -9,6 +9,7 @@
   - Fixed player spawn and visibility (Y=1.0).
   - Camera rotated and elevated for a clear oblique view.
   - Camera centered on room bounds.
+  - Mouse aim now uses a ground-plane raycast for accurate projectile targeting.
 
 - **Room System**
   - Rooms defined in JSON with 13x11 layouts.
@@ -40,6 +41,16 @@
   - Start screen → gameplay → room clear → next room.
   - Game over screen with restart.
 
+- **UI / HUD**
+  - Terminal-style HUD skeleton (top integrity bar, wave counter, command log, status panel).
+  - Daemon popup with typewriter text and animated placeholder avatar.
+  - Dev console shifted down to avoid top HUD overlap; section titles no longer clipped.
+
+- **Menus**
+  - Main menu with Play / Codex / Settings navigation screens.
+  - Play now routes to class selection (Mage ready; others coming soon).
+  - Back navigation between menu screens.
+
 ## Key Config Files
 - Player stats, passive and ultimate: `src/data/config/player.json`
 - Enemy types: `src/data/config/enemies.json`
@@ -51,6 +62,8 @@
 - Combat feedback FX (hit flashes, impact effects) not yet added.
 - Hazard zones are basic rectangles (no fancy VFX yet).
 - Advanced collision with walls for entities still simplified.
+- Codex and Settings screens are placeholders.
+- Class selection is placeholder (no carousel yet).
 
 ## Notes for Teammates
 - Test room is currently `room_test_dummies`.

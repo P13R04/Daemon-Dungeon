@@ -37,6 +37,15 @@ export class Health implements IComponent {
     this.currentHP = Math.min(this.maxHP, this.currentHP + amount);
   }
 
+  setMaxHP(newMax: number, healToFull: boolean = false): void {
+    this.maxHP = Math.max(1, newMax);
+    if (healToFull) {
+      this.currentHP = this.maxHP;
+    } else {
+      this.currentHP = Math.min(this.currentHP, this.maxHP);
+    }
+  }
+
   private die(): void {
     this.eventBus.emit(GameEvents.ENEMY_DIED, {
       entityId: this.entityId

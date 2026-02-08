@@ -12,6 +12,7 @@ export class EnemySpawner {
   private enemies: EnemyController[] = [];
   private eventBus: EventBus;
   private configLoader: ConfigLoader;
+  private difficultyLevel: number = 0;
 
   constructor(
     private scene: Scene,
@@ -31,23 +32,35 @@ export class EnemySpawner {
     }
 
     // Spawn enemy at each room spawn point (includes enemyType)
-    const spawnPoints = Array.isArray((room as any).spawnPoints)
-      ? (room as any).spawnPoints
-      : [];
+    const spawnPoints = this.roomManager.getSpawnPointsWithType();
     for (const spawnPoint of spawnPoints) {
       const enemyType = spawnPoint.enemyType || 'zombie_basic';
       const enemyTypeConfig = enemyConfig[enemyType];
       if (!enemyTypeConfig) continue;
 
-      const spawnPos = new Vector3(
-        spawnPoint.x * 1.0 + 0.5,
-        1.0,
-        spawnPoint.y * 1.0 + 0.5
-      );
+      const gameplayConfig = this.configLoader.getGameplay();
+      const scaling = gameplayConfig?.scaling;
+      const level = Math.max(0, this.difficultyLevel);
 
-      const enemy = new EnemyController(this.scene, enemyType, spawnPos, enemyTypeConfig);
+      const hpMultiplier = scaling?.enabled ? Math.pow(scaling.hpPerRoom ?? 1, level) : 1;
+      const dmgMultiplier = scaling?.enabled ? Math.pow(scaling.damagePerRoom ?? 1, level) : 1;
+
+      const scaledConfig = {
+        ...enemyTypeConfig,
+        baseStats: {
+          ...enemyTypeConfig.baseStats,
+          hp: Math.round((enemyTypeConfig.baseStats?.hp ?? 40) * hpMultiplier),
+          damage: Math.round((enemyTypeConfig.baseStats?.damage ?? 8) * dmgMultiplier),
+        },
+      };
+
+      const enemy = new EnemyController(this.scene, enemyType, spawnPoint.position, scaledConfig);
       this.enemies.push(enemy);
     }
+  }
+
+  setDifficultyLevel(level: number): void {
+    this.difficultyLevel = level;
   }
 
   getEnemies(): EnemyController[] {

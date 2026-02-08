@@ -35,6 +35,9 @@ export class PlayerController {
   private timeSinceMovement: number = 0;
   private focusFireBonus: number = 1.0;
   private maxFocusFire: number = 2.0;
+  private isFiring: boolean = false;
+  private poisonBonusPercent: number = 0;
+  private poisonDuration: number = 0;
   
   // Ultimate
   private ultCharge: number = 0;
@@ -85,23 +88,8 @@ export class PlayerController {
     // Update position (simple movement with room boundaries)
     const newPosition = this.position.add(this.velocity.scale(deltaTime));
     
-    // Room boundaries: room_test_1 layout is 9 lines of 15 chars
-    // Layout [y][x] maps to world (x, z)
-    // Tiles go from 0 to 14 in X (15 tiles), 0 to 8 in Z (9 tiles)
-    // Each tile is 2 units, walls are at tile 0 and last tile
-    const tileSize = 1.0;
-    const minX = 1 * tileSize;     // After left wall (tile 0)
-    const maxX = 11 * tileSize;    // Before right wall (tile 12)
-    const minZ = 1 * tileSize;     // After top wall (tile 0)
-    const maxZ = 9 * tileSize;     // Before bottom wall (tile 10)
-    
-    // Clamp position within walkable area
-    if (newPosition.x >= minX && newPosition.x <= maxX && 
-        newPosition.z >= minZ && newPosition.z <= maxZ) {
-      this.position = newPosition;
-      this.position.y = 1.0; // Keep at visible height
-    }
-    
+    this.position = newPosition;
+    this.position.y = 1.0; // Keep at visible height
     this.mesh.position = this.position;
 
     // Update attack direction based on mouse
@@ -144,25 +132,26 @@ export class PlayerController {
     const camera = this.scene.activeCamera;
     if (!camera || !this.mesh) return;
 
-    const engine = this.scene.getEngine();
-    const viewport = camera.viewport.toGlobal(engine.getRenderWidth(), engine.getRenderHeight());
-    const playerScreenPos = Vector3.Project(
-      this.mesh.position,
-      Matrix.Identity(),
-      this.scene.getTransformMatrix(),
-      viewport
-    );
-
     const mousePos = this.inputManager.getMousePosition();
-    const direction = mousePos.subtract(playerScreenPos);
+    const ray = this.scene.createPickingRay(mousePos.x, mousePos.y, Matrix.Identity(), camera, false);
 
-    if (direction.length() > 0) {
-      this.attackDirection = new Vector3(direction.x, 0, -direction.y).normalize();
+    if (Math.abs(ray.direction.y) > 0.0001) {
+      const t = -ray.origin.y / ray.direction.y;
+      if (t > 0) {
+        const hitPoint = ray.origin.add(ray.direction.scale(t));
+        const dir = hitPoint.subtract(this.mesh.position);
+        dir.y = 0;
+        if (dir.lengthSquared() > 0.0001) {
+          this.attackDirection = dir.normalize();
+          return;
+        }
+      }
     }
   }
 
   private updateFocusFire(deltaTime: number): void {
-    if (!this.isMoving && this.timeSinceMovement > 0) {
+    // Stack only while firing and stationary
+    if (this.isFiring && !this.isMoving && this.timeSinceMovement > 0) {
       const passiveConfig = this.config.mage.passive;
       const bonusPerSecond = passiveConfig.fireRateBonus;
       const maxBonus = passiveConfig.maxBonus;
@@ -171,6 +160,10 @@ export class PlayerController {
         maxBonus,
         1.0 + (this.timeSinceMovement * bonusPerSecond)
       );
+    } else if (!this.isFiring) {
+      // Reset when not firing
+      this.focusFireBonus = 1.0;
+      this.timeSinceMovement = 0;
     }
     
     this.fireRate = this.baseFireRate / this.focusFireBonus;
@@ -203,8 +196,9 @@ export class PlayerController {
   }
 
   private handleInput(deltaTime: number): void {
+    this.isFiring = this.inputManager.isMouseDown();
     // Attack (click = single shot, hold = continuous)
-    if (this.inputManager.isMouseDown()) {
+    if (this.isFiring) {
       if (this.timeSinceLastAttack >= this.fireRate) {
         this.fireProjectile();
         this.timeSinceLastAttack = 0;
@@ -271,6 +265,51 @@ export class PlayerController {
     return MathUtils.clamp((this.focusFireBonus - 1) / (this.maxFocusFire - 1), 0, 1);
   }
 
+  getMoveSpeed(): number {
+    return this.speed;
+  }
+
+  getCurrentFireRate(): number {
+    return this.fireRate;
+  }
+
+  getBaseFireRate(): number {
+    return this.baseFireRate;
+  }
+
+  getFocusFireBonusValue(): number {
+    return this.focusFireBonus;
+  }
+
+  getVelocity(): Vector3 {
+    return this.velocity.clone();
+  }
+
+  applyMaxHpMultiplier(multiplier: number): void {
+    const maxHP = Math.floor(this.health.getMaxHP() * multiplier);
+    this.health.setMaxHP(maxHP, true);
+    this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
+      health: {
+        current: this.health.getCurrentHP(),
+        max: this.health.getMaxHP(),
+      },
+      damage: 0,
+    });
+  }
+
+  applyMoveSpeedMultiplier(multiplier: number): void {
+    this.speed *= multiplier;
+  }
+
+  enablePoisonBonus(percent: number, duration: number): void {
+    this.poisonBonusPercent += percent;
+    this.poisonDuration = Math.max(this.poisonDuration, duration);
+  }
+
+  getPoisonBonus(): { percent: number; duration: number } {
+    return { percent: this.poisonBonusPercent, duration: this.poisonDuration };
+  }
+
   setEnemiesPresent(hasEnemies: boolean): void {
     this.hasEnemiesInRoom = hasEnemies;
   }
@@ -288,6 +327,11 @@ export class PlayerController {
 
   applyDamage(amount: number): void {
     if (!this.health) return;
+    const configLoader = ConfigLoader.getInstance();
+    const gameplayConfig = configLoader.getGameplay();
+    if (gameplayConfig?.debugConfig?.godMode) {
+      return;
+    }
     this.health.takeDamage(amount);
     this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
       health: {

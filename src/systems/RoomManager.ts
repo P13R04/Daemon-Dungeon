@@ -18,10 +18,16 @@ export interface RoomConfig {
 export class RoomManager {
   private scene: Scene;
   private currentRoom: RoomConfig | null = null;
-  private roomMeshes: Map<string, Mesh> = new Map();
+  private roomMeshes: Map<string, Mesh[]> = new Map();
   private tileSize: number = 1.0;
   private configLoader: ConfigLoader;
   private hazardZones: Array<{ minX: number; maxX: number; minZ: number; maxZ: number; damage: number }> = [];
+  private hazardZonesByRoom: Map<string, Array<{ minX: number; maxX: number; minZ: number; maxZ: number; damage: number }>> = new Map();
+  private roomOrigins: Map<string, Vector3> = new Map();
+  private roomDoors: Map<string, Mesh> = new Map();
+  private currentRoomKey: string | null = null;
+  private obstacleBounds: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> = [];
+  private obstacleBoundsByRoom: Map<string, Array<{ minX: number; maxX: number; minZ: number; maxZ: number }>> = new Map();
 
   constructor(scene: Scene, tileSize: number = 1.0) {
     this.scene = scene;
@@ -30,6 +36,16 @@ export class RoomManager {
   }
 
   loadRoom(roomId: string): RoomConfig | null {
+    this.clearAllRooms();
+    const instanceKey = `${roomId}::0`;
+    const roomConfig = this.loadRoomInstance(roomId, instanceKey, new Vector3(0, 0, 0));
+    if (roomConfig) {
+      this.setCurrentRoom(instanceKey);
+    }
+    return roomConfig;
+  }
+
+  loadRoomInstance(roomId: string, instanceKey: string, origin: Vector3): RoomConfig | null {
     const roomsData = this.configLoader.getRooms();
     if (!roomsData || !Array.isArray(roomsData)) {
       console.error('No rooms data loaded');
@@ -42,16 +58,32 @@ export class RoomManager {
       return null;
     }
 
-    this.currentRoom = roomConfig;
-    this.createRoomGeometry(roomConfig);
+    this.roomOrigins.set(instanceKey, origin.clone());
+    this.createRoomGeometry(roomConfig, instanceKey, origin.clone());
     return roomConfig;
   }
 
-  private createRoomGeometry(config: RoomConfig): void {
-    // Clear previous room meshes
-    this.roomMeshes.forEach(mesh => mesh.dispose());
-    this.roomMeshes.clear();
-    this.hazardZones = [];
+  setCurrentRoom(instanceKey: string): void {
+    this.currentRoomKey = instanceKey;
+    const roomId = instanceKey.split('::')[0];
+    const roomsData = this.configLoader.getRooms();
+    if (Array.isArray(roomsData)) {
+      this.currentRoom = roomsData.find((r: any) => r.id === roomId) as RoomConfig | null;
+    }
+    this.hazardZones = this.hazardZonesByRoom.get(instanceKey) || [];
+    this.obstacleBounds = this.obstacleBoundsByRoom.get(instanceKey) || [];
+  }
+
+  private createRoomGeometry(config: RoomConfig, instanceKey: string, origin: Vector3): void {
+    // Clear previous instance meshes
+    const prevMeshes = this.roomMeshes.get(instanceKey);
+    if (prevMeshes) {
+      prevMeshes.forEach(mesh => mesh.dispose());
+    }
+    this.roomMeshes.set(instanceKey, []);
+
+    this.hazardZonesByRoom.set(instanceKey, []);
+    this.obstacleBoundsByRoom.set(instanceKey, []);
 
     const layout = config.layout;
     const height = layout.length;
@@ -61,22 +93,40 @@ export class RoomManager {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const char = layout[y][x];
-        const position = new Vector3(x * this.tileSize, 0, y * this.tileSize);
+        const position = new Vector3(
+          origin.x + x * this.tileSize,
+          0,
+          origin.z + y * this.tileSize
+        );
 
         if (char === '#') {
           // Wall
           const wall = VisualPlaceholder.createFloorTile(this.scene, `wall_${x}_${y}`, true);
           wall.position = position.add(new Vector3(0, 0.5, 0));
           wall.scaling = new Vector3(1, 2, 1);
-          this.roomMeshes.set(`wall_${x}_${y}`, wall);
+          this.roomMeshes.get(instanceKey)!.push(wall);
         } else if (char === '.' || char === 'S' || char === 'E' || char === 'M' || char === 'R' || char === 'O') {
           // Floor
           const floor = VisualPlaceholder.createFloorTile(this.scene, `floor_${x}_${y}`, false);
           floor.position = position;
-          this.roomMeshes.set(`floor_${x}_${y}`, floor);
+          this.roomMeshes.get(instanceKey)!.push(floor);
         }
       }
     }
+
+    // Door at bottom center of room
+    const doorX = origin.x + Math.floor(width / 2) * this.tileSize + this.tileSize / 2;
+    const doorZ = origin.z + (height - 2) * this.tileSize + this.tileSize / 2;
+    const door = VisualPlaceholder.createFloorTile(this.scene, `door_${instanceKey}`, true);
+    door.position = new Vector3(doorX, 0.6, doorZ);
+    door.scaling = new Vector3(0.8, 1.2, 0.4);
+    const doorMat = new StandardMaterial(`door_${instanceKey}_mat`, this.scene);
+    doorMat.diffuseColor = new Color3(0.2, 0.6, 1.0);
+    doorMat.emissiveColor = new Color3(0.1, 0.3, 0.6);
+    door.material = doorMat;
+    door.isVisible = false;
+    this.roomDoors.set(instanceKey, door);
+    this.roomMeshes.get(instanceKey)!.push(door);
 
     // Create obstacles and hazards
     config.obstacles.forEach((obstacle, i) => {
@@ -84,9 +134,9 @@ export class RoomManager {
       const height = Math.max(1, obstacle.height || 1);
 
       const position = new Vector3(
-        obstacle.x * this.tileSize + (width * this.tileSize) / 2,
+        origin.x + obstacle.x * this.tileSize + (width * this.tileSize) / 2,
         0.4,
-        obstacle.y * this.tileSize + (height * this.tileSize) / 2
+        origin.z + obstacle.y * this.tileSize + (height * this.tileSize) / 2
       );
 
       const mesh = VisualPlaceholder.createFloorTile(this.scene, `obstacle_${i}`, obstacle.type !== 'hazard');
@@ -100,16 +150,23 @@ export class RoomManager {
         mat.alpha = 0.9;
         mesh.material = mat;
 
-        this.hazardZones.push({
-          minX: obstacle.x * this.tileSize,
-          maxX: obstacle.x * this.tileSize + width * this.tileSize,
-          minZ: obstacle.y * this.tileSize,
-          maxZ: obstacle.y * this.tileSize + height * this.tileSize,
+        this.hazardZonesByRoom.get(instanceKey)!.push({
+          minX: origin.x + obstacle.x * this.tileSize,
+          maxX: origin.x + obstacle.x * this.tileSize + width * this.tileSize,
+          minZ: origin.z + obstacle.y * this.tileSize,
+          maxZ: origin.z + obstacle.y * this.tileSize + height * this.tileSize,
           damage: obstacle.damage ?? 5,
+        });
+      } else {
+        this.obstacleBoundsByRoom.get(instanceKey)!.push({
+          minX: origin.x + obstacle.x * this.tileSize,
+          maxX: origin.x + obstacle.x * this.tileSize + width * this.tileSize,
+          minZ: origin.z + obstacle.y * this.tileSize,
+          maxZ: origin.z + obstacle.y * this.tileSize + height * this.tileSize,
         });
       }
 
-      this.roomMeshes.set(`obstacle_${i}`, mesh);
+      this.roomMeshes.get(instanceKey)!.push(mesh);
     });
   }
 
@@ -121,11 +178,13 @@ export class RoomManager {
     const room = roomId ? (this.configLoader.getRooms() as any[]).find(r => r.id === roomId) : this.currentRoom;
     if (!room) return null;
 
+    const origin = this.currentRoomKey ? this.roomOrigins.get(this.currentRoomKey) : new Vector3(0, 0, 0);
+
     const spawn = room.playerSpawnPoint;
     return new Vector3(
-      spawn.x * this.tileSize + this.tileSize / 2,
+      (origin?.x ?? 0) + spawn.x * this.tileSize + this.tileSize / 2,
       0.5,
-      spawn.y * this.tileSize + this.tileSize / 2
+      (origin?.z ?? 0) + spawn.y * this.tileSize + this.tileSize / 2
     );
   }
 
@@ -135,25 +194,43 @@ export class RoomManager {
       return [];
     }
 
+    const origin = this.currentRoomKey ? this.roomOrigins.get(this.currentRoomKey) : new Vector3(0, 0, 0);
+
     const points = room.spawnPoints.map((point: any) => {
       const pos = new Vector3(
-        point.x * this.tileSize + this.tileSize / 2,
+        (origin?.x ?? 0) + point.x * this.tileSize + this.tileSize / 2,
         1.0,
-        point.y * this.tileSize + this.tileSize / 2
+        (origin?.z ?? 0) + point.y * this.tileSize + this.tileSize / 2
       );
       return pos;
     });
     return points;
   }
 
+  getSpawnPointsWithType(): Array<{ position: Vector3; enemyType: string }> {
+    if (!this.currentRoom) return [];
+
+    const origin = this.currentRoomKey ? this.roomOrigins.get(this.currentRoomKey) : new Vector3(0, 0, 0);
+    return this.currentRoom.spawnPoints.map(point => ({
+      position: new Vector3(
+        (origin?.x ?? 0) + point.x * this.tileSize + this.tileSize / 2,
+        1.0,
+        (origin?.z ?? 0) + point.y * this.tileSize + this.tileSize / 2
+      ),
+      enemyType: point.enemyType,
+    }));
+  }
+
   getEnemySpawnPoints(): Array<{ position: Vector3; enemyType: string }> {
     if (!this.currentRoom) return [];
 
+    const origin = this.currentRoomKey ? this.roomOrigins.get(this.currentRoomKey) : new Vector3(0, 0, 0);
+
     return this.currentRoom.spawnPoints.map(point => ({
       position: new Vector3(
-        point.x * this.tileSize + this.tileSize / 2,
+        (origin?.x ?? 0) + point.x * this.tileSize + this.tileSize / 2,
         0.5,
-        point.y * this.tileSize + this.tileSize / 2
+        (origin?.z ?? 0) + point.y * this.tileSize + this.tileSize / 2
       ),
       enemyType: point.enemyType,
     }));
@@ -162,8 +239,12 @@ export class RoomManager {
   isWalkable(x: number, z: number): boolean {
     if (!this.currentRoom) return false;
 
-    const tileX = Math.floor(x / this.tileSize);
-    const tileZ = Math.floor(z / this.tileSize);
+    const origin = this.currentRoomKey ? this.roomOrigins.get(this.currentRoomKey) : new Vector3(0, 0, 0);
+    const localX = x - (origin?.x ?? 0);
+    const localZ = z - (origin?.z ?? 0);
+
+    const tileX = Math.floor(localX / this.tileSize);
+    const tileZ = Math.floor(localZ / this.tileSize);
 
     if (tileZ < 0 || tileZ >= this.currentRoom.layout.length) return false;
     if (tileX < 0 || tileX >= this.currentRoom.layout[0].length) return false;
@@ -175,14 +256,35 @@ export class RoomManager {
   getRoomBounds(): { minX: number; maxX: number; minZ: number; maxZ: number } | null {
     if (!this.currentRoom) return null;
 
+    const origin = this.currentRoomKey ? this.roomOrigins.get(this.currentRoomKey) : new Vector3(0, 0, 0);
+
     const width = this.currentRoom.layout[0].length;
     const height = this.currentRoom.layout.length;
 
     return {
-      minX: 0,
-      maxX: width * this.tileSize,
-      minZ: 0,
-      maxZ: height * this.tileSize,
+      minX: (origin?.x ?? 0),
+      maxX: (origin?.x ?? 0) + width * this.tileSize,
+      minZ: (origin?.z ?? 0),
+      maxZ: (origin?.z ?? 0) + height * this.tileSize,
+    };
+  }
+
+  getRoomBoundsForInstance(instanceKey: string): { minX: number; maxX: number; minZ: number; maxZ: number } | null {
+    const roomId = instanceKey.split('::')[0];
+    const roomsData = this.configLoader.getRooms();
+    if (!Array.isArray(roomsData)) return null;
+    const room = roomsData.find((r: any) => r.id === roomId) as RoomConfig | undefined;
+    if (!room) return null;
+
+    const origin = this.roomOrigins.get(instanceKey) ?? new Vector3(0, 0, 0);
+    const width = room.layout[0].length;
+    const height = room.layout.length;
+
+    return {
+      minX: origin.x,
+      maxX: origin.x + width * this.tileSize,
+      minZ: origin.z,
+      maxZ: origin.z + height * this.tileSize,
     };
   }
 
@@ -190,8 +292,38 @@ export class RoomManager {
     return this.hazardZones;
   }
 
-  dispose(): void {
-    this.roomMeshes.forEach(mesh => mesh.dispose());
+  getObstacleBounds(): Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> {
+    return this.obstacleBounds;
+  }
+
+  setDoorActive(active: boolean): void {
+    if (!this.currentRoomKey) return;
+    const door = this.roomDoors.get(this.currentRoomKey);
+    if (door) {
+      door.isVisible = active;
+    }
+  }
+
+  getDoorPosition(): Vector3 | null {
+    if (!this.currentRoomKey) return null;
+    const door = this.roomDoors.get(this.currentRoomKey);
+    return door ? door.position.clone() : null;
+  }
+
+  clearAllRooms(): void {
+    for (const meshes of this.roomMeshes.values()) {
+      meshes.forEach(mesh => mesh.dispose());
+    }
     this.roomMeshes.clear();
+    this.roomOrigins.clear();
+    this.roomDoors.clear();
+    this.hazardZones = [];
+    this.hazardZonesByRoom.clear();
+    this.obstacleBounds = [];
+    this.obstacleBoundsByRoom.clear();
+  }
+
+  dispose(): void {
+    this.clearAllRooms();
   }
 }

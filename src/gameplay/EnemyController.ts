@@ -26,6 +26,7 @@ export class EnemyController {
   private damage: number = 0;
   private attackRange: number = 0;
   private attackCooldown: number = 0;
+  private dots: Array<{ remaining: number; dps: number }> = [];
   
   private target: Vector3 | null = null;
   private isAlive: boolean = true;
@@ -80,6 +81,21 @@ export class EnemyController {
     const gameplayConfig = configLoader.getGameplay();
     if (gameplayConfig?.debugConfig?.freezeEnemies) {
       return; // Don't update if frozen
+    }
+
+    // Apply DOTs
+    if (this.dots.length > 0) {
+      for (let i = this.dots.length - 1; i >= 0; i--) {
+        const dot = this.dots[i];
+        const dmg = dot.dps * deltaTime;
+        if (dmg > 0) {
+          this.takeDamage(dmg);
+        }
+        dot.remaining -= deltaTime;
+        if (dot.remaining <= 0) {
+          this.dots.splice(i, 1);
+        }
+      }
     }
 
     this.target = playerPosition;
@@ -167,6 +183,12 @@ export class EnemyController {
 
   getRadius(): number {
     return 0.35;
+  }
+
+  applyDot(totalDamage: number, duration: number): void {
+    if (duration <= 0) return;
+    const dps = totalDamage / duration;
+    this.dots.push({ remaining: duration, dps });
   }
 
   getHealth(): Health {

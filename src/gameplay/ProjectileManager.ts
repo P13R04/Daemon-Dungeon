@@ -123,10 +123,13 @@ export class ProjectileManager {
         continue;
       }
 
-      // Check collision with walls
+      // Check collision with walls/obstacles
       if (roomManager && projectile.data) {
         const pos = projectile.data.position;
-        if (!roomManager.isWalkable(pos.x, pos.z)) {
+        const obstacles = roomManager.getObstacleBounds();
+        const hitObstacle = obstacles.some(ob => pos.x >= ob.minX && pos.x <= ob.maxX && pos.z >= ob.minZ && pos.z <= ob.maxZ);
+
+        if (!roomManager.isWalkable(pos.x, pos.z) || hitObstacle) {
           projectile.setActive(false);
           this.projectilePool.release(projectile);
           this.activeProjectiles.splice(i, 1);
@@ -141,6 +144,11 @@ export class ProjectileManager {
           if (distance < 1.0) {
             // Hit!
             enemy.takeDamage(projectile.data.damage);
+
+            const poison = player.getPoisonBonus?.();
+            if (poison && poison.percent > 0 && poison.duration > 0) {
+              enemy.applyDot(projectile.data.damage * poison.percent, poison.duration);
+            }
             
             this.eventBus.emit(GameEvents.PROJECTILE_HIT, {
               projectile: projectile,

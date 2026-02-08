@@ -18,8 +18,8 @@
     "passive": {
       "id": "focus_fire",
       "description": "Vitesse d'attaque augmente de 5% par seconde immobile (max +100%)",
-      "fireRateBonus": 0.05,
-      "maxBonus": 2.0,
+      "fireRateBonus": 0.15,
+      "maxBonus": 4.0,
       "resetOnMove": true
     },
     "ultimate": {

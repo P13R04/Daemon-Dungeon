@@ -68,7 +68,13 @@ export class InputManager {
         }
 
         if (pointerInfo.type === PointerEventTypes.POINTERMOVE) {
-          this.mousePosition = new Vector3(evt.clientX, evt.clientY, 0);
+          const canvas = this.scene?.getEngine().getRenderingCanvas();
+          if (canvas) {
+            const rect = canvas.getBoundingClientRect();
+            this.mousePosition = new Vector3(evt.clientX - rect.left, evt.clientY - rect.top, 0);
+          } else {
+            this.mousePosition = new Vector3(evt.clientX, evt.clientY, 0);
+          }
         }
       });
       return;
@@ -83,7 +89,12 @@ export class InputManager {
 
     if (this.canvas) {
       this.canvas.addEventListener('mousemove', (e: MouseEvent) => {
-        this.mousePosition = new Vector3(e.clientX, e.clientY, 0);
+        const rect = this.canvas?.getBoundingClientRect();
+        if (rect) {
+          this.mousePosition = new Vector3(e.clientX - rect.left, e.clientY - rect.top, 0);
+        } else {
+          this.mousePosition = new Vector3(e.clientX, e.clientY, 0);
+        }
       });
 
       this.canvas.addEventListener('mousedown', mousedownHandler);

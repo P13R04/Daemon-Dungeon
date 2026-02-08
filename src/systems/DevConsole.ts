@@ -6,18 +6,34 @@ import { Scene } from '@babylonjs/core';
 import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Slider, Checkbox, StackPanel } from '@babylonjs/gui';
 import { ConfigLoader } from '../utils/ConfigLoader';
 import { EventBus, GameEvents } from '../core/EventBus';
+import { PlayerController } from '../gameplay/PlayerController';
 
 export class DevConsole {
   private gui: AdvancedDynamicTexture;
   private isVisible: boolean = true;
   private eventBus: EventBus;
   private configLoader: ConfigLoader;
+  private player: PlayerController | null = null;
+  private showLiveStats: boolean = false;
+  private statsPanel: StackPanel | null = null;
+  private dpsInstantText: TextBlock | null = null;
+  private dpsTenSecText: TextBlock | null = null;
+  private moveSpeedText: TextBlock | null = null;
+  private velocityText: TextBlock | null = null;
+  private fireRateText: TextBlock | null = null;
+  private focusBonusText: TextBlock | null = null;
+  private damageEvents: Array<{ t: number; dmg: number }> = [];
 
   constructor(private scene: Scene) {
     this.eventBus = EventBus.getInstance();
     this.configLoader = ConfigLoader.getInstance();
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('DevConsole', true, scene);
     this.createConsoleUI();
+    this.setupLiveStats();
+  }
+
+  setPlayer(player: PlayerController): void {
+    this.player = player;
   }
 
   private createConsoleUI(): void {
@@ -29,7 +45,7 @@ export class DevConsole {
     bgPanel.thickness = 3;
     bgPanel.cornerRadius = 8;
     bgPanel.color = '#00FF00';
-    bgPanel.top = '10px';
+    bgPanel.top = '80px';
     bgPanel.left = '-10px';
     bgPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     bgPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -40,7 +56,7 @@ export class DevConsole {
     panel.width = '480px';
     panel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     panel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    panel.top = '20px';
+    panel.top = '30px';
     bgPanel.addControl(panel);
 
     // Title
@@ -61,6 +77,9 @@ export class DevConsole {
     // Debug Flags Section
     this.createDebugFlagsSection(panel);
 
+    // Live Stats Section
+    this.createLiveStatsSection(panel);
+
     // Toggle button
     const toggleBtn = new Button('devToggleBtn');
     toggleBtn.width = '60px';
@@ -69,7 +88,7 @@ export class DevConsole {
     toggleBtn.color = '#00FF00';
     toggleBtn.fontSize = 12;
     toggleBtn.left = -10;
-    toggleBtn.top = 10;
+    toggleBtn.top = 80;
     toggleBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     toggleBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     
@@ -94,9 +113,9 @@ export class DevConsole {
     sectionTitle.fontSize = 15;
     sectionTitle.fontWeight = 'bold';
     sectionTitle.color = '#00FF00';
-    sectionTitle.height = '28px';
-    sectionTitle.paddingTop = 12;
-    sectionTitle.paddingBottom = 8;
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
     parent.addControl(sectionTitle);
 
     // HP Slider
@@ -184,9 +203,9 @@ export class DevConsole {
     sectionTitle.fontSize = 15;
     sectionTitle.fontWeight = 'bold';
     sectionTitle.color = '#00FF00';
-    sectionTitle.height = '28px';
-    sectionTitle.paddingTop = 12;
-    sectionTitle.paddingBottom = 8;
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
     parent.addControl(sectionTitle);
 
     // Show Enemy Health Bars
@@ -249,6 +268,110 @@ export class DevConsole {
     parent.addControl(damageNumbersContainer);
   }
 
+  private createLiveStatsSection(parent: StackPanel): void {
+    const sectionTitle = new TextBlock('liveStatsTitle');
+    sectionTitle.text = '═══ LIVE STATS ═══';
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#00BFFF';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    const toggleContainer = new StackPanel('liveStatsToggleContainer');
+    toggleContainer.isVertical = false;
+    toggleContainer.height = '30px';
+    toggleContainer.width = '440px';
+    toggleContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const toggleCheckbox = new Checkbox('liveStatsCheckbox');
+    toggleCheckbox.isChecked = this.showLiveStats;
+    toggleCheckbox.width = '25px';
+    toggleCheckbox.height = '25px';
+
+    const toggleLabel = new TextBlock('liveStatsLabel');
+    toggleLabel.text = '  Show Live Stats';
+    toggleLabel.fontSize = 13;
+    toggleLabel.color = '#FFFFFF';
+    toggleLabel.width = '400px';
+    toggleLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    toggleCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      this.showLiveStats = isChecked;
+      if (this.statsPanel) {
+        this.statsPanel.isVisible = isChecked;
+      }
+    });
+
+    toggleContainer.addControl(toggleCheckbox);
+    toggleContainer.addControl(toggleLabel);
+    parent.addControl(toggleContainer);
+
+    this.statsPanel = new StackPanel('liveStatsPanel');
+    this.statsPanel.isVertical = true;
+    this.statsPanel.width = '440px';
+    this.statsPanel.isVisible = this.showLiveStats;
+    parent.addControl(this.statsPanel);
+
+    this.dpsInstantText = this.createStatLine('DPS (1s): 0');
+    this.dpsTenSecText = this.createStatLine('DPS (10s): 0');
+    this.moveSpeedText = this.createStatLine('Move Speed: 0');
+    this.velocityText = this.createStatLine('Velocity: 0');
+    this.fireRateText = this.createStatLine('Fire Rate: 0');
+    this.focusBonusText = this.createStatLine('Focus Bonus: 1.00x');
+
+    this.statsPanel.addControl(this.dpsInstantText);
+    this.statsPanel.addControl(this.dpsTenSecText);
+    this.statsPanel.addControl(this.moveSpeedText);
+    this.statsPanel.addControl(this.velocityText);
+    this.statsPanel.addControl(this.fireRateText);
+    this.statsPanel.addControl(this.focusBonusText);
+  }
+
+  private createStatLine(text: string): TextBlock {
+    const line = new TextBlock(`stat_${text}`);
+    line.text = text;
+    line.fontSize = 12;
+    line.color = '#CCCCCC';
+    line.height = '20px';
+    line.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    return line;
+  }
+
+  private setupLiveStats(): void {
+    this.eventBus.on(GameEvents.ENEMY_DAMAGED, (data) => {
+      if (!data?.damage) return;
+      const now = performance.now() / 1000;
+      this.damageEvents.push({ t: now, dmg: data.damage });
+    });
+
+    this.scene.onBeforeRenderObservable.add(() => {
+      if (!this.showLiveStats || !this.player) return;
+
+      const now = performance.now() / 1000;
+      this.damageEvents = this.damageEvents.filter((e) => now - e.t <= 10);
+
+      const dmg10 = this.damageEvents.reduce((sum, e) => sum + e.dmg, 0);
+      const dmg1 = this.damageEvents.filter((e) => now - e.t <= 1).reduce((sum, e) => sum + e.dmg, 0);
+
+      const dpsInstant = dmg1;
+      const dps10 = dmg10 / 10;
+
+      const moveSpeed = this.player.getMoveSpeed();
+      const velocity = this.player.getVelocity().length();
+      const fireRate = this.player.getCurrentFireRate();
+      const focusBonus = this.player.getFocusFireBonusValue();
+
+      if (this.dpsInstantText) this.dpsInstantText.text = `DPS (1s): ${dpsInstant.toFixed(1)}`;
+      if (this.dpsTenSecText) this.dpsTenSecText.text = `DPS (10s): ${dps10.toFixed(1)}`;
+      if (this.moveSpeedText) this.moveSpeedText.text = `Move Speed: ${moveSpeed.toFixed(2)}`;
+      if (this.velocityText) this.velocityText.text = `Velocity: ${velocity.toFixed(2)}`;
+      if (this.fireRateText) this.fireRateText.text = `Fire Rate: ${fireRate.toFixed(2)}`;
+      if (this.focusBonusText) this.focusBonusText.text = `Focus Bonus: ${focusBonus.toFixed(2)}x`;
+    });
+  }
+
   private createDebugFlagsSection(parent: StackPanel): void {
     const gameplayConfig = this.configLoader.getGameplay();
     if (!gameplayConfig || !gameplayConfig.debugConfig) return;
@@ -258,9 +381,9 @@ export class DevConsole {
     sectionTitle.fontSize = 15;
     sectionTitle.fontWeight = 'bold';
     sectionTitle.color = '#FF9900';
-    sectionTitle.height = '28px';
-    sectionTitle.paddingTop = 12;
-    sectionTitle.paddingBottom = 8;
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
     parent.addControl(sectionTitle);
 
     // God Mode

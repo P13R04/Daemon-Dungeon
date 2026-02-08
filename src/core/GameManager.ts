@@ -37,10 +37,15 @@ export class GameManager {
   private devConsole!: DevConsole;
   
   private isRunning: boolean = false;
-  private gameState: 'menu' | 'playing' | 'roomclear' | 'gameover' = 'menu';
+  private gameState: 'menu' | 'playing' | 'roomclear' | 'bonus' | 'transition' | 'gameover' = 'menu';
   private roomOrder: string[] = [];
   private currentRoomIndex: number = 0;
   private roomCleared: boolean = false;
+  private roomSpacing: number = 14;
+  private cameraMove: { from: Vector3; to: Vector3; t: number; duration: number; nextIndex: number } | null = null;
+  private cameraAlpha: number = 0;
+  private cameraBeta: number = 0;
+  private cameraRadius: number = 0;
 
   private constructor() {
     this.stateMachine = new StateMachine();
@@ -68,6 +73,9 @@ export class GameManager {
     const camera = new ArcRotateCamera('mainCamera', Math.PI / 4 - Math.PI / 2 - Math.PI / 12, Math.PI / 5, 30, Vector3.Zero(), this.scene);
     // Completely disable camera controls - no mouse interaction
     camera.inputs.clear();
+    this.cameraAlpha = camera.alpha;
+    this.cameraBeta = camera.beta;
+    this.cameraRadius = camera.radius;
 
     // Setup lighting
     const light = new HemisphericLight('mainLight', new Vector3(1, 1, 0), this.scene);
@@ -96,6 +104,7 @@ export class GameManager {
     const playerConfig = this.configLoader.getPlayer();
     this.playerController = new PlayerController(this.scene, this.inputManager, playerConfig!);
     this.enemySpawner = new EnemySpawner(this.scene, this.roomManager);
+    this.devConsole.setPlayer(this.playerController);
 
     // Setup event listeners
     this.setupEventListeners();
@@ -123,9 +132,25 @@ export class GameManager {
       this.loadNextRoom();
     });
 
+    this.eventBus.on(GameEvents.BONUS_SELECTED, (data) => {
+      const bonusId = data?.bonusId;
+      if (bonusId) {
+        this.applyBonus(bonusId);
+        const nextIndex = (this.currentRoomIndex + 1) % this.roomOrder.length;
+        this.startRoomTransition(nextIndex);
+      }
+    });
+
     this.eventBus.on(GameEvents.PLAYER_DIED, () => {
       this.gameState = 'gameover';
       this.hudManager.showGameOverScreen();
+    });
+
+    this.eventBus.on(GameEvents.ATTACK_PERFORMED, (data) => {
+      if (this.gameState !== 'playing') return;
+      if (data?.type === 'melee' && data?.attacker) {
+        this.playerController.applyDamage(data.damage || 0);
+      }
     });
   }
 
@@ -145,6 +170,27 @@ export class GameManager {
       lastTime = currentTime;
 
       this.time.update(deltaTime);
+
+      // Camera transition between rooms
+      if (this.cameraMove) {
+        const camera = this.scene.activeCamera;
+        if (camera && camera instanceof ArcRotateCamera) {
+          this.cameraMove.t += deltaTime;
+          const alpha = Math.min(1, this.cameraMove.t / this.cameraMove.duration);
+          const target = Vector3.Lerp(this.cameraMove.from, this.cameraMove.to, alpha);
+          camera.setTarget(target);
+          camera.alpha = this.cameraAlpha;
+          camera.beta = this.cameraBeta;
+          camera.radius = this.cameraRadius;
+          if (alpha >= 1) {
+            const nextIndex = this.cameraMove.nextIndex;
+            this.cameraMove = null;
+            this.currentRoomIndex = nextIndex;
+            this.loadRoomByIndex(nextIndex);
+            this.gameState = 'playing';
+          }
+        }
+      }
 
       if (this.gameState === 'playing') {
         // Update all game systems
@@ -200,9 +246,23 @@ export class GameManager {
         // Room cleared check
         if (!this.roomCleared && enemies.length === 0) {
           this.roomCleared = true;
-          this.gameState = 'roomclear';
-          this.hudManager.showRoomClearScreen();
+          this.roomManager.setDoorActive(true);
           this.eventBus.emit(GameEvents.ROOM_CLEARED, { roomId: this.roomOrder[this.currentRoomIndex] });
+        }
+
+        // Door trigger -> bonus screen
+                      camera.alpha = this.cameraAlpha;
+                      camera.beta = this.cameraBeta;
+                      camera.radius = this.cameraRadius;
+        if (this.roomCleared && this.gameState === 'playing') {
+          const doorPos = this.roomManager.getDoorPosition();
+          if (doorPos) {
+            const playerPos = this.playerController.getPosition();
+            if (Vector3.Distance(playerPos, doorPos) < 1.2) {
+              this.gameState = 'bonus';
+              this.hudManager.showBonusChoices(this.getBonusChoices());
+            }
+          }
         }
       } else {
         this.playerController.setGameplayActive(false);
@@ -270,16 +330,58 @@ export class GameManager {
       }
     }
 
-    // Clamp player to walkable interior bounds (matches PlayerController)
-    const minX = 1;
-    const maxX = 11;
-    const minZ = 1;
-    const maxZ = 9;
-    playerPos.x = Math.max(minX + playerRadius, Math.min(maxX - playerRadius, playerPos.x));
-    playerPos.z = Math.max(minZ + playerRadius, Math.min(maxZ - playerRadius, playerPos.z));
-    playerPos.y = 1.0;
+    // Player vs obstacles
+    const obstacles = this.roomManager.getObstacleBounds();
+    for (const ob of obstacles) {
+      playerPos = this.resolveCircleAabb(playerPos, playerRadius, ob);
+    }
+
+    // Enemies vs obstacles
+    for (const enemy of enemies) {
+      let enemyPos = enemy.getPosition();
+      const radius = enemy.getRadius();
+      for (const ob of obstacles) {
+        enemyPos = this.resolveCircleAabb(enemyPos, radius, ob);
+      }
+      enemy.setPosition(enemyPos);
+    }
+
+    // Clamp player to walkable interior bounds
+    const bounds = this.roomManager.getRoomBounds();
+    if (bounds) {
+      const minX = bounds.minX + 1.5;
+      const maxX = bounds.maxX - 1.5;
+      const minZ = bounds.minZ + 1.5;
+      const maxZ = bounds.maxZ - 1.5;
+      playerPos.x = Math.max(minX, Math.min(maxX, playerPos.x));
+      playerPos.z = Math.max(minZ, Math.min(maxZ, playerPos.z));
+      playerPos.y = 1.0;
+    }
 
     this.playerController.setPosition(playerPos);
+  }
+
+  private resolveCircleAabb(
+    pos: Vector3,
+    radius: number,
+    box: { minX: number; maxX: number; minZ: number; maxZ: number }
+  ): Vector3 {
+    const clampedX = Math.max(box.minX, Math.min(box.maxX, pos.x));
+    const clampedZ = Math.max(box.minZ, Math.min(box.maxZ, pos.z));
+    const dx = pos.x - clampedX;
+    const dz = pos.z - clampedZ;
+    const distSq = dx * dx + dz * dz;
+
+    if (distSq >= radius * radius || distSq === 0) {
+      return pos;
+    }
+
+    const dist = Math.sqrt(distSq);
+    const push = (radius - dist) + 0.001;
+    const nx = dx / dist;
+    const nz = dz / dist;
+
+    return new Vector3(pos.x + nx * push, pos.y, pos.z + nz * push);
   }
 
   private applyHazardDamage(deltaTime: number): void {
@@ -306,20 +408,23 @@ export class GameManager {
     this.roomCleared = false;
     this.hudManager.hideOverlays();
     this.gameState = 'playing';
+    this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex);
     this.loadRoomByIndex(this.currentRoomIndex);
   }
 
   private loadNextRoom(): void {
-    this.currentRoomIndex = (this.currentRoomIndex + 1) % this.roomOrder.length;
+    const nextIndex = (this.currentRoomIndex + 1) % this.roomOrder.length;
     this.roomCleared = false;
     this.hudManager.hideOverlays();
-    this.gameState = 'playing';
-    this.loadRoomByIndex(this.currentRoomIndex);
+    this.startRoomTransition(nextIndex);
   }
 
   private loadRoomByIndex(index: number): void {
     const roomId = this.roomOrder[index];
-    this.roomManager.loadRoom(roomId);
+    const instanceKey = `${roomId}::${index}`;
+    this.roomManager.setCurrentRoom(instanceKey);
+    this.roomManager.setDoorActive(false);
+    this.roomCleared = false;
 
     const roomBounds = this.roomManager.getRoomBounds();
     if (roomBounds) {
@@ -327,7 +432,11 @@ export class GameManager {
       const centerZ = (roomBounds.minZ + roomBounds.maxZ) / 2;
       const camera = this.scene.activeCamera;
       if (camera && camera instanceof ArcRotateCamera) {
-        camera.setTarget(new Vector3(centerX, 0.5, centerZ));
+        const newTarget = new Vector3(centerX, 0.5, centerZ);
+        camera.setTarget(newTarget);
+        camera.alpha = this.cameraAlpha;
+        camera.beta = this.cameraBeta;
+        camera.radius = this.cameraRadius;
       }
     }
 
@@ -340,9 +449,100 @@ export class GameManager {
     this.ultimateManager.dispose();
 
     this.enemySpawner.dispose();
+    this.enemySpawner.setDifficultyLevel(index);
     this.enemySpawner.spawnEnemiesForRoom(roomId);
 
     this.eventBus.emit(GameEvents.ROOM_ENTERED, { roomId });
+  }
+
+  private preloadRoomsAround(preloadIndex: number, activeIndex: number): void {
+    this.roomManager.clearAllRooms();
+
+    const indices = [preloadIndex - 2, preloadIndex - 1, preloadIndex, preloadIndex + 1];
+    for (const idx of indices) {
+      if (idx < 0 || idx >= this.roomOrder.length) continue;
+      const roomId = this.roomOrder[idx];
+      const origin = new Vector3(0, 0, idx * this.roomSpacing);
+      const instanceKey = `${roomId}::${idx}`;
+      this.roomManager.loadRoomInstance(roomId, instanceKey, origin);
+    }
+    const currentRoomId = this.roomOrder[activeIndex];
+    const currentKey = `${currentRoomId}::${activeIndex}`;
+    this.roomManager.setCurrentRoom(currentKey);
+
+    const bounds = this.roomManager.getRoomBoundsForInstance(currentKey);
+    if (bounds) {
+      const centerX = (bounds.minX + bounds.maxX) / 2;
+      const centerZ = (bounds.minZ + bounds.maxZ) / 2;
+      const camera = this.scene.activeCamera;
+      if (camera && camera instanceof ArcRotateCamera) {
+        const newTarget = new Vector3(centerX, 0.5, centerZ);
+        camera.setTarget(newTarget);
+        camera.alpha = this.cameraAlpha;
+        camera.beta = this.cameraBeta;
+        camera.radius = this.cameraRadius;
+      }
+    }
+  }
+
+  private startRoomTransition(nextIndex: number): void {
+    this.hudManager.hideOverlays();
+    this.gameState = 'transition';
+
+    this.preloadRoomsAround(nextIndex, this.currentRoomIndex);
+
+    const nextRoomId = this.roomOrder[nextIndex];
+    const nextKey = `${nextRoomId}::${nextIndex}`;
+    const roomBounds = this.roomManager.getRoomBoundsForInstance(nextKey);
+    if (!roomBounds) {
+      this.currentRoomIndex = nextIndex;
+      this.loadRoomByIndex(nextIndex);
+      this.gameState = 'playing';
+      return;
+    }
+
+    const target = new Vector3(
+      (roomBounds.minX + roomBounds.maxX) / 2,
+      0.5,
+      (roomBounds.minZ + roomBounds.maxZ) / 2
+    );
+
+    const camera = this.scene.activeCamera;
+    if (camera && camera instanceof ArcRotateCamera) {
+      this.cameraMove = {
+        from: camera.getTarget().clone(),
+        to: target,
+        t: 0,
+        duration: 0.6,
+        nextIndex,
+      };
+    } else {
+      this.currentRoomIndex = nextIndex;
+      this.loadRoomByIndex(nextIndex);
+      this.gameState = 'playing';
+    }
+  }
+
+  private getBonusChoices(): Array<{ id: string; label: string }> {
+    return [
+      { id: 'bonus_hp', label: 'HP +10%' },
+      { id: 'bonus_ms', label: 'Move Speed +10%' },
+      { id: 'bonus_poison', label: 'Poison: 20% DMG over 2s' },
+    ];
+  }
+
+  private applyBonus(bonusId: string): void {
+    switch (bonusId) {
+      case 'bonus_hp':
+        this.playerController.applyMaxHpMultiplier(1.1);
+        break;
+      case 'bonus_ms':
+        this.playerController.applyMoveSpeedMultiplier(1.1);
+        break;
+      case 'bonus_poison':
+        this.playerController.enablePoisonBonus(0.2, 2.0);
+        break;
+    }
   }
 
   getScene(): Scene {
