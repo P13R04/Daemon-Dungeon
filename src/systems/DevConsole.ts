@@ -3,7 +3,7 @@
  */
 
 import { Scene } from '@babylonjs/core';
-import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Slider, Checkbox, StackPanel } from '@babylonjs/gui';
+import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Slider, Checkbox, StackPanel, ScrollViewer } from '@babylonjs/gui';
 import { ConfigLoader } from '../utils/ConfigLoader';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { PlayerController } from '../gameplay/PlayerController';
@@ -23,6 +23,9 @@ export class DevConsole {
   private fireRateText: TextBlock | null = null;
   private focusBonusText: TextBlock | null = null;
   private damageEvents: Array<{ t: number; dmg: number }> = [];
+  private roomIds: string[] = [];
+  private roomSelectIndex: number = 0;
+  private roomSelectLabel: TextBlock | null = null;
 
   constructor(private scene: Scene) {
     this.eventBus = EventBus.getInstance();
@@ -30,6 +33,27 @@ export class DevConsole {
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('DevConsole', true, scene);
     this.createConsoleUI();
     this.setupLiveStats();
+    this.applyGuiScaling();
+
+    this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data) => {
+      if (data?.option === 'postProcessingEnabled' || data?.option === 'postProcessingPixelScale') {
+        this.applyGuiScaling();
+      }
+    });
+
+    const engine = this.scene.getEngine();
+    engine.onResizeObservable.add(() => {
+      this.applyGuiScaling();
+    });
+  }
+
+  private applyGuiScaling(): void {
+    const engine = this.scene.getEngine();
+    const scaling = engine.getHardwareScalingLevel();
+    this.gui.renderAtIdealSize = true;
+    this.gui.idealWidth = engine.getRenderWidth(true) * scaling;
+    this.gui.idealHeight = engine.getRenderHeight(true) * scaling;
+    this.gui.renderScale = 1;
   }
 
   setPlayer(player: PlayerController): void {
@@ -40,7 +64,7 @@ export class DevConsole {
     // Background panel
     const bgPanel = new Rectangle('devConsoleBackground');
     bgPanel.width = '520px';
-    bgPanel.height = '780px';
+    bgPanel.height = '85%';
     bgPanel.background = 'rgba(15, 15, 35, 0.98)';
     bgPanel.thickness = 3;
     bgPanel.cornerRadius = 8;
@@ -49,7 +73,21 @@ export class DevConsole {
     bgPanel.left = '-10px';
     bgPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     bgPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    bgPanel.zIndex = 1000;
     this.gui.addControl(bgPanel);
+
+    const scroll = new ScrollViewer('devConsoleScroll');
+    scroll.width = '100%';
+    scroll.height = '100%';
+    scroll.thickness = 0;
+    scroll.background = 'transparent';
+    scroll.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    scroll.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    scroll.barColor = '#00FF00';
+    scroll.thumbLength = 0.2;
+    scroll.barSize = 8;
+    scroll.wheelPrecision = 0.02;
+    bgPanel.addControl(scroll);
 
     // Use StackPanel for proper vertical layout
     const panel = new StackPanel('devConsolePanel');
@@ -57,7 +95,7 @@ export class DevConsole {
     panel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     panel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     panel.top = '30px';
-    bgPanel.addControl(panel);
+    scroll.addControl(panel);
 
     // Title
     const title = new TextBlock('devTitle');
@@ -74,8 +112,14 @@ export class DevConsole {
     // Gameplay Options Section
     this.createGameplayOptionsSection(panel);
 
+    // Post Processing Section
+    this.createPostProcessingSection(panel);
+
     // Debug Flags Section
     this.createDebugFlagsSection(panel);
+
+    // Room Testing Section
+    this.createRoomTestingSection(panel);
 
     // Live Stats Section
     this.createLiveStatsSection(panel);
@@ -238,6 +282,35 @@ export class DevConsole {
     healthBarsContainer.addControl(healthBarsLabel);
     parent.addControl(healthBarsContainer);
 
+    // Show Enemy Names
+    const enemyNamesContainer = new StackPanel('enemyNamesContainer');
+    enemyNamesContainer.isVertical = false;
+    enemyNamesContainer.height = '30px';
+    enemyNamesContainer.width = '440px';
+    enemyNamesContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const enemyNamesCheckbox = new Checkbox('showEnemyNamesCheckbox');
+    enemyNamesCheckbox.isChecked = gameplayConfig.uiConfig.showEnemyNames ?? true;
+    enemyNamesCheckbox.width = '25px';
+    enemyNamesCheckbox.height = '25px';
+
+    const enemyNamesLabel = new TextBlock('showEnemyNamesLabel');
+    enemyNamesLabel.text = '  Show Enemy Names';
+    enemyNamesLabel.fontSize = 13;
+    enemyNamesLabel.color = '#FFFFFF';
+    enemyNamesLabel.width = '400px';
+    enemyNamesLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    enemyNamesCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      gameplayConfig.uiConfig.showEnemyNames = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'showEnemyNames', value: isChecked });
+    });
+
+    enemyNamesContainer.addControl(enemyNamesCheckbox);
+    enemyNamesContainer.addControl(enemyNamesLabel);
+    parent.addControl(enemyNamesContainer);
+
     // Show Damage Numbers
     const damageNumbersContainer = new StackPanel('damageNumbersContainer');
     damageNumbersContainer.isVertical = false;
@@ -266,6 +339,192 @@ export class DevConsole {
     damageNumbersContainer.addControl(damageNumbersCheckbox);
     damageNumbersContainer.addControl(damageNumbersLabel);
     parent.addControl(damageNumbersContainer);
+  }
+
+  private createPostProcessingSection(parent: StackPanel): void {
+    const gameplayConfig = this.configLoader.getGameplay();
+    if (!gameplayConfig) return;
+
+    if (!gameplayConfig.postProcessing) {
+      gameplayConfig.postProcessing = {
+        enabled: true,
+        pixelScale: 1.6,
+        glowIntensity: 0.8,
+        chromaticAmount: 30,
+        chromaticRadial: 0.8,
+        grainIntensity: 12,
+        grainAnimated: true,
+        vignetteEnabled: true,
+        vignetteWeight: 4.0,
+        vignetteColor: [0, 0, 0, 1],
+      };
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+    }
+
+    const pp = gameplayConfig.postProcessing;
+
+    const sectionTitle = new TextBlock('postProcessTitle');
+    sectionTitle.text = '═══ POST PROCESSING ═══';
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#66FFCC';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    const ppEnableRow = new StackPanel('ppEnableRow');
+    ppEnableRow.isVertical = false;
+    ppEnableRow.height = '30px';
+    ppEnableRow.width = '440px';
+    ppEnableRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const ppEnableCheckbox = new Checkbox('ppEnableCheckbox');
+    ppEnableCheckbox.isChecked = !!pp.enabled;
+    ppEnableCheckbox.width = '25px';
+    ppEnableCheckbox.height = '25px';
+
+    const ppEnableLabel = new TextBlock('ppEnableLabel');
+    ppEnableLabel.text = '  Enable Post FX';
+    ppEnableLabel.fontSize = 13;
+    ppEnableLabel.color = '#FFFFFF';
+    ppEnableLabel.width = '400px';
+    ppEnableLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    ppEnableCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      pp.enabled = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingEnabled', value: isChecked });
+    });
+
+    ppEnableRow.addControl(ppEnableCheckbox);
+    ppEnableRow.addControl(ppEnableLabel);
+    parent.addControl(ppEnableRow);
+
+    this.createPostProcessSlider(parent, 'Pixel Scale', pp.pixelScale, 1, 3, 0.1, (value) => {
+      pp.pixelScale = value;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingPixelScale', value });
+    });
+
+    this.createPostProcessSlider(parent, 'Glow Intensity', pp.glowIntensity, 0, 2, 0.05, (value) => {
+      pp.glowIntensity = value;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingGlow', value });
+    });
+
+    this.createPostProcessSlider(parent, 'Chromatic Amount', pp.chromaticAmount, 0, 60, 1, (value) => {
+      pp.chromaticAmount = value;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingChromatic', value });
+    });
+
+    this.createPostProcessSlider(parent, 'Chromatic Radial', pp.chromaticRadial, 0, 1, 0.05, (value) => {
+      pp.chromaticRadial = value;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingChromaticRadial', value });
+    });
+
+    this.createPostProcessSlider(parent, 'Grain Intensity', pp.grainIntensity, 0, 30, 1, (value) => {
+      pp.grainIntensity = value;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingGrain', value });
+    });
+
+    const grainAnimatedRow = new StackPanel('grainAnimatedRow');
+    grainAnimatedRow.isVertical = false;
+    grainAnimatedRow.height = '30px';
+    grainAnimatedRow.width = '440px';
+    grainAnimatedRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const grainAnimatedCheckbox = new Checkbox('grainAnimatedCheckbox');
+    grainAnimatedCheckbox.isChecked = !!pp.grainAnimated;
+    grainAnimatedCheckbox.width = '25px';
+    grainAnimatedCheckbox.height = '25px';
+
+    const grainAnimatedLabel = new TextBlock('grainAnimatedLabel');
+    grainAnimatedLabel.text = '  Animated Grain';
+    grainAnimatedLabel.fontSize = 13;
+    grainAnimatedLabel.color = '#FFFFFF';
+    grainAnimatedLabel.width = '400px';
+    grainAnimatedLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    grainAnimatedCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      pp.grainAnimated = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingGrainAnimated', value: isChecked });
+    });
+
+    grainAnimatedRow.addControl(grainAnimatedCheckbox);
+    grainAnimatedRow.addControl(grainAnimatedLabel);
+    parent.addControl(grainAnimatedRow);
+
+    const vignetteRow = new StackPanel('vignetteRow');
+    vignetteRow.isVertical = false;
+    vignetteRow.height = '30px';
+    vignetteRow.width = '440px';
+    vignetteRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const vignetteCheckbox = new Checkbox('vignetteCheckbox');
+    vignetteCheckbox.isChecked = !!pp.vignetteEnabled;
+    vignetteCheckbox.width = '25px';
+    vignetteCheckbox.height = '25px';
+
+    const vignetteLabel = new TextBlock('vignetteLabel');
+    vignetteLabel.text = '  Vignette';
+    vignetteLabel.fontSize = 13;
+    vignetteLabel.color = '#FFFFFF';
+    vignetteLabel.width = '400px';
+    vignetteLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    vignetteCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      pp.vignetteEnabled = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingVignette', value: isChecked });
+    });
+
+    vignetteRow.addControl(vignetteCheckbox);
+    vignetteRow.addControl(vignetteLabel);
+    parent.addControl(vignetteRow);
+
+    this.createPostProcessSlider(parent, 'Vignette Weight', pp.vignetteWeight, 0, 10, 0.5, (value) => {
+      pp.vignetteWeight = value;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingVignetteWeight', value });
+    });
+  }
+
+  private createPostProcessSlider(
+    parent: StackPanel,
+    label: string,
+    initialValue: number,
+    min: number,
+    max: number,
+    step: number,
+    onChange: (value: number) => void
+  ): void {
+    const labelBlock = new TextBlock(`pp_${label}_label`);
+    labelBlock.text = `${label}: ${initialValue.toFixed(2)}`;
+    labelBlock.fontSize = 13;
+    labelBlock.fontWeight = 'bold';
+    labelBlock.color = '#FFFFFF';
+    labelBlock.height = '25px';
+    parent.addControl(labelBlock);
+
+    const slider = new Slider(`pp_${label}_slider`);
+    slider.minimum = min;
+    slider.maximum = max;
+    slider.value = initialValue;
+    slider.height = '25px';
+    slider.width = '440px';
+    slider.color = '#66FFCC';
+    slider.background = '#444444';
+    slider.onValueChangedObservable.add((value: number) => {
+      const stepped = Math.round(value / step) * step;
+      labelBlock.text = `${label}: ${stepped.toFixed(2)}`;
+      onChange(stepped);
+    });
+    parent.addControl(slider);
   }
 
   private createLiveStatsSection(parent: StackPanel): void {
@@ -327,6 +586,84 @@ export class DevConsole {
     this.statsPanel.addControl(this.velocityText);
     this.statsPanel.addControl(this.fireRateText);
     this.statsPanel.addControl(this.focusBonusText);
+  }
+
+  private createRoomTestingSection(parent: StackPanel): void {
+    const rooms = this.configLoader.getRooms();
+    this.roomIds = Array.isArray(rooms) ? rooms.map((r: any) => r.id) : [];
+    if (this.roomIds.length === 0) {
+      this.roomIds = ['room_test_dummies'];
+    }
+
+    const sectionTitle = new TextBlock('roomTestTitle');
+    sectionTitle.text = '═══ ROOM TESTING ═══';
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#00FFAA';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    const selectorRow = new StackPanel('roomSelectorRow');
+    selectorRow.isVertical = false;
+    selectorRow.height = '34px';
+    selectorRow.width = '440px';
+    selectorRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const prevBtn = Button.CreateSimpleButton('roomPrevBtn', '<');
+    prevBtn.width = '30px';
+    prevBtn.height = '26px';
+    prevBtn.color = '#00FFAA';
+    prevBtn.background = '#1A1A2A';
+    prevBtn.thickness = 1;
+    prevBtn.onPointerUpObservable.add(() => {
+      this.roomSelectIndex = (this.roomSelectIndex - 1 + this.roomIds.length) % this.roomIds.length;
+      this.updateRoomLabel();
+    });
+
+    this.roomSelectLabel = new TextBlock('roomSelectLabel');
+    this.roomSelectLabel.text = this.roomIds[this.roomSelectIndex];
+    this.roomSelectLabel.fontSize = 13;
+    this.roomSelectLabel.color = '#FFFFFF';
+    this.roomSelectLabel.width = '320px';
+    this.roomSelectLabel.height = '26px';
+    this.roomSelectLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const nextBtn = Button.CreateSimpleButton('roomNextBtn', '>');
+    nextBtn.width = '30px';
+    nextBtn.height = '26px';
+    nextBtn.color = '#00FFAA';
+    nextBtn.background = '#1A1A2A';
+    nextBtn.thickness = 1;
+    nextBtn.onPointerUpObservable.add(() => {
+      this.roomSelectIndex = (this.roomSelectIndex + 1) % this.roomIds.length;
+      this.updateRoomLabel();
+    });
+
+    selectorRow.addControl(prevBtn);
+    selectorRow.addControl(this.roomSelectLabel);
+    selectorRow.addControl(nextBtn);
+    parent.addControl(selectorRow);
+
+    const loadBtn = Button.CreateSimpleButton('roomLoadBtn', 'LOAD ROOM');
+    loadBtn.width = '200px';
+    loadBtn.height = '30px';
+    loadBtn.color = '#FFFFFF';
+    loadBtn.background = '#004400';
+    loadBtn.thickness = 1;
+    loadBtn.top = '4px';
+    loadBtn.onPointerUpObservable.add(() => {
+      const roomId = this.roomIds[this.roomSelectIndex];
+      this.eventBus.emit(GameEvents.DEV_ROOM_LOAD_REQUESTED, { roomId });
+    });
+    parent.addControl(loadBtn);
+  }
+
+  private updateRoomLabel(): void {
+    if (this.roomSelectLabel) {
+      this.roomSelectLabel.text = this.roomIds[this.roomSelectIndex] ?? 'unknown';
+    }
   }
 
   private createStatLine(text: string): TextBlock {

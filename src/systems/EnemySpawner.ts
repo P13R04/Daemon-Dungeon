@@ -20,6 +20,12 @@ export class EnemySpawner {
   ) {
     this.eventBus = EventBus.getInstance();
     this.configLoader = ConfigLoader.getInstance();
+    this.eventBus.on(GameEvents.ENEMY_SPAWN_REQUESTED, (data) => {
+      const typeId = data?.typeId;
+      const position = data?.position;
+      if (!typeId || !position) return;
+      this.spawnEnemyAt(typeId, position);
+    });
   }
 
   spawnEnemiesForRoom(roomId: string): void {
@@ -59,6 +65,33 @@ export class EnemySpawner {
     }
   }
 
+  private spawnEnemyAt(typeId: string, position: Vector3): void {
+    const enemyConfig = this.configLoader.getEnemies();
+    if (!enemyConfig) return;
+
+    const enemyTypeConfig = enemyConfig[typeId];
+    if (!enemyTypeConfig) return;
+
+    const gameplayConfig = this.configLoader.getGameplay();
+    const scaling = gameplayConfig?.scaling;
+    const level = Math.max(0, this.difficultyLevel);
+
+    const hpMultiplier = scaling?.enabled ? Math.pow(scaling.hpPerRoom ?? 1, level) : 1;
+    const dmgMultiplier = scaling?.enabled ? Math.pow(scaling.damagePerRoom ?? 1, level) : 1;
+
+    const scaledConfig = {
+      ...enemyTypeConfig,
+      baseStats: {
+        ...enemyTypeConfig.baseStats,
+        hp: Math.round((enemyTypeConfig.baseStats?.hp ?? 40) * hpMultiplier),
+        damage: Math.round((enemyTypeConfig.baseStats?.damage ?? 8) * dmgMultiplier),
+      },
+    };
+
+    const enemy = new EnemyController(this.scene, typeId, position, scaledConfig);
+    this.enemies.push(enemy);
+  }
+
   setDifficultyLevel(level: number): void {
     this.difficultyLevel = level;
   }
@@ -67,7 +100,7 @@ export class EnemySpawner {
     return this.enemies.filter(e => e.isActive());
   }
 
-  update(deltaTime: number, playerPosition: any): void {
+  update(deltaTime: number, playerPosition: any, roomManager?: RoomManager, playerVelocity?: Vector3): void {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       
@@ -76,7 +109,7 @@ export class EnemySpawner {
         continue;
       }
 
-      enemy.update(deltaTime, playerPosition);
+      enemy.update(deltaTime, playerPosition, this.enemies, roomManager, playerVelocity ?? new Vector3(0, 0, 0));
     }
   }
 

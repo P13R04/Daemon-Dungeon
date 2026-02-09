@@ -19,13 +19,18 @@
 - **Enemies**
   - Spawning uses room `spawnPoints` with `enemyType`.
   - Dummy tank enemy for testing: `dummy_tank`.
-  - Enemies die and meshes are disposed.
-  - Enemy health bars follow enemy positions.
+  - Expanded bestiary with new behaviors and configs:
+    - Bull, Pong, Jumper, Fuyard (kite/orbit), Strategist (lead), Sentinel/Turret (ranged).
+    - Healer, Artificer (split impact + DoT zones), Bullet Hell, Mage Missile, Missile.
+  - Crowd steering, obstacle avoidance, and stuck handling for mobs.
+  - Missile collision now explodes on pillar contact.
+  - Enemy health bars follow enemy positions and can be toggled.
 
 - **Combat**
   - Projectiles spawn on click and are destroyed on wall contact.
-  - Enemy damage displays as floating numbers near impact.
+  - Enemy damage displays as floating numbers near impact (throttled + accumulated per enemy).
   - Player vs enemy and enemy vs enemy collision resolution.
+  - Enemy projectiles support friendly/enemy flags, AoE impact, delayed explosions, split nodes and DoT zones.
 
 - **Mage Passive (Focus Fire)**
   - Attack speed ramps while stationary.
@@ -45,11 +50,19 @@
   - Terminal-style HUD skeleton (top integrity bar, wave counter, command log, status panel).
   - Daemon popup with typewriter text and animated placeholder avatar.
   - Dev console shifted down to avoid top HUD overlap; section titles no longer clipped.
+  - Dev console is scrollable and adapts to screen height.
+  - UI scaling decoupled from post-processing upscaling; enemy health bars render on a separate UI layer.
+  - Player health display rounded to integer; bars drain from left to right.
 
 - **Menus**
   - Main menu with Play / Codex / Settings navigation screens.
   - Play now routes to class selection (Mage ready; others coming soon).
   - Back navigation between menu screens.
+
+- **Post Processing**
+  - Default rendering pipeline with pixelation (hardware scaling), glow layer, chromatic aberration, grain, and vignette.
+  - Fully toggleable at runtime via Dev Console with sliders for key parameters.
+  - Disabling post FX fully disposes the pipeline and restores normal scaling.
 
 ## Key Config Files
 - Player stats, passive and ultimate: `src/data/config/player.json`

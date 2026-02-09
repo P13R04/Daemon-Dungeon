@@ -10,6 +10,7 @@
   },
   "uiConfig": {
     "showEnemyHealthBars": true,
+    "showEnemyNames": true,
     "showDamageNumbers": true,
     "showFPS": false,
     "fontSizeHUD": 16,
@@ -26,6 +27,18 @@
     "showPathfinding": false,
     "showColliders": false,
     "drawRaycastDebug": false
+  },
+  "postProcessing": {
+    "enabled": true,
+    "pixelScale": 1.6,
+    "glowIntensity": 0.8,
+    "chromaticAmount": 30,
+    "chromaticRadial": 0.8,
+    "grainIntensity": 12,
+    "grainAnimated": true,
+    "vignetteEnabled": true,
+    "vignetteWeight": 4.0,
+    "vignetteColor": [0, 0, 0, 1]
   },
   "camera": {
     "alpha": -0.7853981633974483,

@@ -8,6 +8,7 @@ import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { Time } from '../core/Time';
 import { Health } from '../components/Health';
+import { Knockback } from '../components/Knockback';
 import { MathUtils } from '../utils/Math';
 import { ConfigLoader } from '../utils/ConfigLoader';
 
@@ -21,6 +22,7 @@ export class PlayerController {
   private config: any;
   private position: Vector3 = Vector3.Zero();
   private velocity: Vector3 = Vector3.Zero();
+  private knockback: Knockback = new Knockback(10);
   private speed: number = 5.5;
   
   // Attack
@@ -86,11 +88,13 @@ export class PlayerController {
     this.updateMovement(deltaTime);
     
     // Update position (simple movement with room boundaries)
-    const newPosition = this.position.add(this.velocity.scale(deltaTime));
+    const knock = this.knockback.update(deltaTime);
+    const newPosition = this.position.add(this.velocity.scale(deltaTime)).add(knock);
     
     this.position = newPosition;
     this.position.y = 1.0; // Keep at visible height
     this.mesh.position = this.position;
+
 
     // Update attack direction based on mouse
     this.updateAimDirection();
@@ -221,6 +225,7 @@ export class PlayerController {
       damage: damage,
       speed: attackConfig.projectileSpeed,
       range: attackConfig.range,
+      friendly: true,
     });
 
     this.eventBus.emit(GameEvents.ATTACK_PERFORMED, {
@@ -344,6 +349,10 @@ export class PlayerController {
     if (this.health.getCurrentHP() <= 0) {
       this.eventBus.emit(GameEvents.PLAYER_DIED, { reason: 'damage' });
     }
+  }
+
+  applyKnockback(force: Vector3): void {
+    this.knockback.apply(force);
   }
 
   heal(amount: number): void {

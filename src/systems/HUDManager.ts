@@ -16,8 +16,11 @@ interface DamageNumber {
 
 export class HUDManager {
   private gui: AdvancedDynamicTexture;
+  private enemyGui: AdvancedDynamicTexture;
   private eventBus: EventBus;
   private damageNumbers: DamageNumber[] = [];
+  private damageNumberCooldowns: Map<string, { lastTime: number; pending: number; lastPosition: Vector3 }> = new Map();
+  private damageNumberCooldown: number = 0.5;
   private enemyHealthBars: Map<string, { container: Rectangle; bar: Rectangle; label: TextBlock }> = new Map();
   private playerHealthDisplay: TextBlock | null = null;
   private playerUltDisplay: TextBlock | null = null;
@@ -46,6 +49,7 @@ export class HUDManager {
   private isEnabled: boolean = true;
   private showDamageNumbers: boolean = true;
   private showEnemyHealthBars: boolean = true;
+  private showEnemyNames: boolean = true;
   private startScreen: Rectangle | null = null;
   private classSelectScreen: Rectangle | null = null;
   private codexScreen: Rectangle | null = null;
@@ -58,23 +62,44 @@ export class HUDManager {
   constructor(private scene: Scene) {
     this.eventBus = EventBus.getInstance();
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('HUD', true, scene);
+    this.enemyGui = AdvancedDynamicTexture.CreateFullscreenUI('EnemyHUD', true, scene);
     this.setupEventListeners();
     this.createPlayerHUD();
     this.createOverlays();
+    this.applyGuiScaling();
+
+    const engine = this.scene.getEngine();
+    engine.onResizeObservable.add(() => {
+      this.applyGuiScaling();
+    });
+  }
+
+  private applyGuiScaling(): void {
+    const engine = this.scene.getEngine();
+    const scaling = engine.getHardwareScalingLevel();
+    this.gui.renderAtIdealSize = true;
+    this.gui.idealWidth = engine.getRenderWidth(true) * scaling;
+    this.gui.idealHeight = engine.getRenderHeight(true) * scaling;
+    this.gui.renderScale = 1;
+
+    // Enemy bars must stay in raw screen space for projection alignment
+    this.enemyGui.renderAtIdealSize = false;
+    this.enemyGui.renderScale = 1;
   }
 
   private setupEventListeners(): void {
     this.eventBus.on(GameEvents.ENEMY_DAMAGED, (data) => {
       if (!data || !data.position) return;
       if (this.showDamageNumbers) {
-        this.addDamageNumber(data.position, data.damage);
+        const enemyId = data?.entityId ?? data?.enemyId ?? 'unknown';
+        this.addDamageNumber(data.position, data.damage, enemyId);
       }
     });
 
     this.eventBus.on(GameEvents.ENEMY_SPAWNED, (data) => {
       const enemyId = data?.enemyId ?? data?.entityId;
       if (!enemyId) return;
-      this.createEnemyHealthBar(enemyId);
+      this.createEnemyHealthBar(enemyId, data?.enemyName);
     });
 
     this.eventBus.on(GameEvents.ENEMY_DIED, (data) => {
@@ -103,11 +128,17 @@ export class HUDManager {
       this.addLogMessage(`WAVE ${this.waveNumber.toString().padStart(2, '0')} INIT.`);
     });
 
+    this.eventBus.on(GameEvents.ROOM_TRANSITION_START, () => {
+      this.clearEnemyHealthBars();
+    });
+
     this.eventBus.on(GameEvents.GAME_START_REQUESTED, () => {
+      this.clearEnemyHealthBars();
       this.resetWaveCounter();
     });
 
     this.eventBus.on(GameEvents.GAME_RESTART_REQUESTED, () => {
+      this.clearEnemyHealthBars();
       this.resetWaveCounter();
     });
 
@@ -135,6 +166,17 @@ export class HUDManager {
         this.showEnemyHealthBars = !!data.value;
         this.updateEnemyHealthBarsVisibility();
       }
+      if (data?.option === 'showEnemyNames') {
+        this.showEnemyNames = !!data.value;
+        this.updateEnemyHealthBarsVisibility();
+      }
+      if (data?.option === 'postProcessingEnabled' || data?.option === 'postProcessingPixelScale') {
+        this.applyGuiScaling();
+      }
+    });
+
+    this.eventBus.on(GameEvents.DEV_ROOM_LOAD_REQUESTED, () => {
+      this.clearEnemyHealthBars();
     });
   }
 
@@ -182,6 +224,8 @@ export class HUDManager {
     this.healthBarFill.height = '100%';
     this.healthBarFill.thickness = 0;
     this.healthBarFill.background = '#00FFD1';
+    this.healthBarFill.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.healthBarFill.left = 0;
     healthBarContainer.addControl(this.healthBarFill);
 
     this.healthValueText = new TextBlock('health_value');
@@ -698,7 +742,7 @@ export class HUDManager {
     return container;
   }
 
-  private createEnemyHealthBar(enemyId: string): void {
+  private createEnemyHealthBar(enemyId: string, enemyName?: string): void {
     const existing = this.enemyHealthBars.get(enemyId);
     if (existing) {
       existing.container.dispose();
@@ -716,17 +760,20 @@ export class HUDManager {
     bar.width = '100%';
     bar.height = '100%';
     bar.background = '#00FF00';
+    bar.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    bar.left = 0;
     container.addControl(bar);
 
     const label = new TextBlock(`healthbar_label_${enemyId}`);
-    label.text = 'E';
+    label.text = enemyName ?? 'E';
     label.fontSize = 10;
     label.color = '#FFFFFF';
     label.width = '80px';
     label.height = '20px';
 
     this.gui.addControl(container);
-    this.gui.addControl(label);
+    this.enemyGui.addControl(container);
+    this.enemyGui.addControl(label);
 
     this.enemyHealthBars.set(enemyId, { container, bar, label });
     this.updateEnemyHealthBarsVisibility();
@@ -741,9 +788,23 @@ export class HUDManager {
     }
   }
 
-  private addDamageNumber(position: Vector3, damage: number): void {
+  private addDamageNumber(position: Vector3, damage: number, sourceId: string = 'unknown'): void {
+    const now = performance.now() / 1000;
+    const existing = this.damageNumberCooldowns.get(sourceId);
+    if (existing) {
+      existing.pending += Math.max(0, damage);
+      existing.lastPosition = position.clone();
+      if (now - existing.lastTime < this.damageNumberCooldown) {
+        return;
+      }
+    }
+
+    const pending = existing?.pending ?? Math.max(0, damage);
+    const basePosition = existing?.lastPosition ?? position.clone();
+    this.damageNumberCooldowns.set(sourceId, { lastTime: now, pending: 0, lastPosition: basePosition.clone() });
+
     const text = new TextBlock(`dmg_${Date.now()}`);
-    text.text = Math.round(damage).toString();
+    text.text = Math.max(1, Math.ceil(pending)).toString();
     text.color = '#FFFFFF';
     text.fontSize = 18;
     text.outlineColor = '#000000';
@@ -753,10 +814,16 @@ export class HUDManager {
     text.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.gui.addControl(text);
 
+    const jitter = new Vector3(
+      (Math.random() - 0.5) * 0.35,
+      (Math.random() - 0.5) * 0.1,
+      (Math.random() - 0.5) * 0.35
+    );
+
     this.damageNumbers.push({
       text,
       value: damage,
-      position: position.clone(),
+      position: basePosition.add(jitter),
       timeElapsed: 0,
       duration: 1.5,
     });
@@ -796,7 +863,7 @@ export class HUDManager {
   private updateEnemyHealthBarsVisibility(): void {
     for (const bar of this.enemyHealthBars.values()) {
       bar.container.isVisible = this.showEnemyHealthBars;
-      bar.label.isVisible = this.showEnemyHealthBars;
+      bar.label.isVisible = this.showEnemyHealthBars && this.showEnemyNames;
     }
   }
 
@@ -842,11 +909,13 @@ export class HUDManager {
   }
 
   private updateHealthDisplay(current: number, max: number): void {
+    const roundedCurrent = Math.round(current);
+    const roundedMax = Math.round(max);
     if (this.playerHealthDisplay) {
-      this.playerHealthDisplay.text = `${current}/${max}`;
+      this.playerHealthDisplay.text = `${roundedCurrent}/${roundedMax}`;
     }
     if (this.healthBarFill) {
-      const percentage = Math.max(0, Math.min(1, max > 0 ? current / max : 0));
+      const percentage = Math.max(0, Math.min(1, roundedMax > 0 ? roundedCurrent / roundedMax : 0));
       this.healthBarFill.width = `${Math.floor(percentage * 100)}%`;
       if (percentage > 0.6) {
         this.healthBarFill.background = '#00FFD1';
@@ -1014,6 +1083,15 @@ export class HUDManager {
 
   dispose(): void {
     this.gui.dispose();
+    this.enemyGui.dispose();
+    this.enemyHealthBars.clear();
+  }
+
+  private clearEnemyHealthBars(): void {
+    for (const bar of this.enemyHealthBars.values()) {
+      bar.container.dispose();
+      bar.label.dispose();
+    }
     this.enemyHealthBars.clear();
   }
 }

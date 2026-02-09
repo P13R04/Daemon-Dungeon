@@ -16,6 +16,7 @@ import { ProjectileManager } from '../gameplay/ProjectileManager';
 import { UltimateManager } from '../gameplay/UltimateManager';
 import { HUDManager } from '../systems/HUDManager';
 import { DevConsole } from '../systems/DevConsole';
+import { PostProcessManager } from '../scene/PostProcess';
 
 export class GameManager {
   private static instance: GameManager;
@@ -35,6 +36,7 @@ export class GameManager {
   private ultimateManager!: UltimateManager;
   private hudManager!: HUDManager;
   private devConsole!: DevConsole;
+  private postProcessManager!: PostProcessManager;
   
   private isRunning: boolean = false;
   private gameState: 'menu' | 'playing' | 'roomclear' | 'bonus' | 'transition' | 'gameover' = 'menu';
@@ -80,6 +82,11 @@ export class GameManager {
     // Setup lighting
     const light = new HemisphericLight('mainLight', new Vector3(1, 1, 0), this.scene);
     light.intensity = 0.9;
+
+    // Post-processing pipeline
+    const gameplayConfig = this.configLoader.getGameplay();
+    this.postProcessManager = new PostProcessManager(this.scene, this.engine);
+    this.postProcessManager.setupPipeline(camera, gameplayConfig?.postProcessing ?? undefined);
 
     // Initialize systems
     this.roomManager = new RoomManager(this.scene);
@@ -130,6 +137,13 @@ export class GameManager {
 
     this.eventBus.on(GameEvents.ROOM_NEXT_REQUESTED, () => {
       this.loadNextRoom();
+    });
+
+    this.eventBus.on(GameEvents.DEV_ROOM_LOAD_REQUESTED, (data) => {
+      const roomId = data?.roomId;
+      if (roomId) {
+        this.loadIsolatedRoom(roomId);
+      }
     });
 
     this.eventBus.on(GameEvents.BONUS_SELECTED, (data) => {
@@ -202,7 +216,12 @@ export class GameManager {
         // Get active enemies for collision checks
         
         // Update enemy AI
-        this.enemySpawner.update(deltaTime, this.playerController.getPosition());
+        this.enemySpawner.update(
+          deltaTime,
+          this.playerController.getPosition(),
+          this.roomManager,
+          this.playerController.getVelocity()
+        );
 
         // Resolve collisions between entities (player/enemies)
         this.resolveEntityCollisions(enemies);
@@ -304,6 +323,10 @@ export class GameManager {
       const minDistance = playerRadius + enemy.getRadius();
 
       if (distance > 0 && distance < minDistance) {
+        const knockback = enemy.handleContactHit?.(playerPos);
+        if (knockback) {
+          this.playerController.applyKnockback(knockback);
+        }
         const push = delta.normalize().scale(minDistance - distance);
         const half = push.scale(0.5);
         playerPos = playerPos.subtract(half);
@@ -344,6 +367,18 @@ export class GameManager {
         enemyPos = this.resolveCircleAabb(enemyPos, radius, ob);
       }
       enemy.setPosition(enemyPos);
+    }
+
+    // Enemies vs room walls (stop bull charge on impact)
+    for (const enemy of enemies) {
+      const enemyPos = enemy.getPosition();
+      if (!this.roomManager.isWalkable(enemyPos.x, enemyPos.z)) {
+        const prevPos = enemy.getPreviousPosition?.() ?? enemyPos;
+        enemy.setPosition(prevPos);
+        if (enemy.onWallCollision) {
+          enemy.onWallCollision();
+        }
+      }
     }
 
     // Clamp player to walkable interior bounds
@@ -417,6 +452,17 @@ export class GameManager {
     this.roomCleared = false;
     this.hudManager.hideOverlays();
     this.startRoomTransition(nextIndex);
+  }
+
+  private loadIsolatedRoom(roomId: string): void {
+    this.cameraMove = null;
+    this.roomOrder = [roomId];
+    this.currentRoomIndex = 0;
+    this.roomCleared = false;
+    this.hudManager.hideOverlays();
+    this.gameState = 'playing';
+    this.preloadRoomsAround(0, 0);
+    this.loadRoomByIndex(0);
   }
 
   private loadRoomByIndex(index: number): void {

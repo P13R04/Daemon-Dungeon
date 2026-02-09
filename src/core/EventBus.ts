@@ -84,6 +84,7 @@ export const GameEvents = {
   ENEMY_DAMAGED: 'enemy:damaged',
   ENEMY_DIED: 'enemy:died',
   ENEMY_ALL_CLEARED: 'enemy:allCleared',
+  ENEMY_SPAWN_REQUESTED: 'enemy:spawnRequested',
   
   // Room events
   ROOM_ENTERED: 'room:entered',
@@ -113,6 +114,7 @@ export const GameEvents = {
   UI_DEV_CONSOLE_TOGGLE: 'ui:devConsoleToggle',
   UI_OPTION_CHANGED: 'ui:optionChanged',
   DEBUG_FLAG_CHANGED: 'debug:flagChanged',
+  DEV_ROOM_LOAD_REQUESTED: 'dev:roomLoadRequested',
   
   // Codex/Achievement events
   CODEX_ENTRY_UNLOCKED: 'codex:entryUnlocked',
