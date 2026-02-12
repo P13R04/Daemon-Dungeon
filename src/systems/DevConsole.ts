@@ -30,7 +30,10 @@ export class DevConsole {
   constructor(private scene: Scene) {
     this.eventBus = EventBus.getInstance();
     this.configLoader = ConfigLoader.getInstance();
+    
+    // Create GUI on main camera (standard fullscreen UI)
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('DevConsole', true, scene);
+    
     this.createConsoleUI();
     this.setupLiveStats();
     this.applyGuiScaling();

@@ -2,7 +2,7 @@
  * EnemyController - Controls a single enemy
  */
 
-import { Scene, Mesh, Vector3 } from '@babylonjs/core';
+import { Scene, Mesh, Vector3, SceneLoader, AnimationGroup, TransformNode, AbstractMesh } from '@babylonjs/core';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { Health } from '../components/Health';
 import { Knockback } from '../components/Knockback';
@@ -43,6 +43,9 @@ export class EnemyController {
   private bullHitRange: number = 1.0;
   private bullCooldownDuration: number = 1.2;
   private bullKnockbackStrength: number = 1.6;
+  private bullAnimGroups: Map<string, AnimationGroup> = new Map();
+  private bullModelRoot: TransformNode | null = null;
+  private bullAnimState: 'none' | 'start' | 'run' | 'end' = 'none';
   private knockbackStrength: number = 0;
   private selfKnockbackStrength: number = 0;
   private useCrowdSteering: boolean = false;
@@ -208,6 +211,7 @@ export class EnemyController {
     // Create visual
     this.mesh = VisualPlaceholder.createEnemyPlaceholder(this.scene, this.id);
     this.mesh.position = this.position.clone();
+    this.mesh.rotation = Vector3.Zero();
     // Ensure enemy is at correct height
     this.mesh.position.y = 1.0;
     
@@ -229,6 +233,10 @@ export class EnemyController {
       enemyName: this.config?.name ?? this.id,
       maxHP: maxHP,
     });
+
+    if (this.behavior === 'bull') {
+      this.loadBullModel();
+    }
   }
 
   update(
@@ -760,6 +768,8 @@ export class EnemyController {
 
     const distance = Vector3.Distance(this.position, playerPosition);
 
+    const previousState = this.bullState;
+
     switch (this.bullState) {
       case 'chase': {
         if (distance <= this.bullTriggerRange) {
@@ -778,6 +788,12 @@ export class EnemyController {
       }
       case 'aim': {
         this.velocity = Vector3.Zero();
+        const dir = playerPosition.subtract(this.position);
+        dir.y = 0;
+        if (dir.lengthSquared() > 0.0001) {
+          this.bullLockedDirection = dir.normalize();
+          this.rotateToward(this.bullLockedDirection, deltaTime, 10);
+        }
         this.bullTimer -= deltaTime;
         if (this.bullTimer <= 0) {
           this.bullState = 'charge';
@@ -786,6 +802,7 @@ export class EnemyController {
         break;
       }
       case 'charge': {
+        this.rotateToward(this.bullLockedDirection, deltaTime, 25);
         this.velocity = this.bullLockedDirection.scale(this.speed * this.bullChargeSpeedMultiplier);
         this.bullTimer -= deltaTime;
         if (this.bullTimer <= 0) {
@@ -806,6 +823,10 @@ export class EnemyController {
       default:
         this.bullState = 'chase';
         break;
+    }
+
+    if (previousState !== this.bullState) {
+      this.handleBullStateChange(previousState, this.bullState);
     }
 
     this.previousPosition = this.position.clone();
@@ -1269,6 +1290,15 @@ export class EnemyController {
   }
 
   dispose(): void {
+    for (const group of this.bullAnimGroups.values()) {
+      group.stop();
+      group.dispose();
+    }
+    this.bullAnimGroups.clear();
+    if (this.bullModelRoot) {
+      this.bullModelRoot.dispose();
+      this.bullModelRoot = null;
+    }
     if (this.mesh) {
       this.mesh.dispose();
     }
@@ -1278,6 +1308,109 @@ export class EnemyController {
     if (!this.mesh) return;
     this.mesh.position = this.position.clone();
     this.mesh.position.y = 1.0 + this.verticalOffset;
+  }
+
+  private rotateToward(direction: Vector3, deltaTime: number, turnSpeed: number): void {
+    if (!this.mesh) return;
+    const dir = direction.clone();
+    dir.y = 0;
+    if (dir.lengthSquared() <= 0.0001) return;
+    const targetYaw = Math.atan2(dir.x, dir.z);
+    const currentYaw = this.mesh.rotation.y;
+    const delta = Math.atan2(Math.sin(targetYaw - currentYaw), Math.cos(targetYaw - currentYaw));
+    const maxStep = turnSpeed * deltaTime;
+    const step = Math.abs(delta) <= maxStep ? delta : Math.sign(delta) * maxStep;
+    this.mesh.rotation.y = currentYaw + step;
+  }
+
+  private handleBullStateChange(previous: typeof this.bullState, next: typeof this.bullState): void {
+    if (next === 'charge') {
+      this.playBullAnimStartThenRun();
+      return;
+    }
+    if (previous === 'charge' && next === 'cooldown') {
+      this.playBullAnimEnd();
+      return;
+    }
+    if (next === 'chase') {
+      this.stopBullAnims();
+    }
+  }
+
+  private playBullAnimStartThenRun(): void {
+    const start = this.bullAnimGroups.get('charge_start.002');
+    const run = this.bullAnimGroups.get('charge_run.001');
+    if (!run) return;
+    if (!start) {
+      this.stopBullAnims();
+      this.bullAnimState = 'run';
+      run.start(true, 1.0, run.from, run.to, false);
+      return;
+    }
+    this.stopBullAnims();
+    this.bullAnimState = 'start';
+    start.start(false, 1.0, start.from, start.to, false);
+    start.onAnimationEndObservable.addOnce(() => {
+      if (this.bullState !== 'charge') {
+        return;
+      }
+      this.stopBullAnims();
+      this.bullAnimState = 'run';
+      run.start(true, 1.0, run.from, run.to, false);
+    });
+  }
+
+  private playBullAnimEnd(): void {
+    const end = this.bullAnimGroups.get('charge_end.004');
+    if (!end) return;
+    this.stopBullAnims();
+    this.bullAnimState = 'end';
+    end.start(false, 1.0, end.from, end.to, false);
+    end.onAnimationEndObservable.addOnce(() => {
+      this.bullAnimState = 'none';
+      end.stop();
+    });
+  }
+
+  private stopBullAnims(): void {
+    for (const group of this.bullAnimGroups.values()) {
+      group.stop();
+    }
+    this.bullAnimState = 'none';
+  }
+
+  private async loadBullModel(): Promise<void> {
+    try {
+      const baseUrl = (import.meta as any).env?.BASE_URL ?? '/';
+      const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+      const rootUrl = `${normalizedBase}models/bull/`;
+      const result = await SceneLoader.ImportMeshAsync(
+        '',
+        rootUrl,
+        'bull.glb',
+        this.scene
+      );
+
+      const root = new TransformNode(`bull_root_${this.id}`, this.scene);
+      for (const mesh of result.meshes as AbstractMesh[]) {
+        if (mesh) {
+          mesh.parent = root;
+        }
+      }
+      root.position = Vector3.Zero();
+      root.rotation = new Vector3(0, Math.PI/2, 0);
+      root.scaling = new Vector3(0.1, 0.1, 0.1);
+      root.parent = this.mesh;
+
+      this.mesh.isVisible = false;
+      this.bullModelRoot = root;
+      this.bullAnimGroups.clear();
+      for (const group of result.animationGroups) {
+        this.bullAnimGroups.set(group.name, group);
+      }
+    } catch (error) {
+      console.warn('Bull model failed to load, using placeholder.', error);
+    }
   }
 
   private getBounceAxis(

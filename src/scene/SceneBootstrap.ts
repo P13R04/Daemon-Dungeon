@@ -11,13 +11,14 @@ export class SceneBootstrap {
     // Basic isometric camera setup
     const camera = new ArcRotateCamera(
       'mainCamera',
-      -Math.PI / 4, // Alpha (horizontal rotation)
-      Math.PI / 3,   // Beta (vertical angle for isometric)
-      20,            // Radius
+      Math.PI / 4 - Math.PI / 2 - Math.PI / 12, // Alpha (horizontal rotation)
+      Math.PI / 5,   // Beta (vertical angle)
+      30,            // Radius
       Vector3.Zero(),
       scene
     );
     camera.attachControl(canvas, true);
+    camera.inputs.clear(); // Disable all camera controls - GameManager handles camera positioning
     camera.lowerRadiusLimit = 10;
     camera.upperRadiusLimit = 30;
     
@@ -27,6 +28,9 @@ export class SceneBootstrap {
     
     // Scene settings
     scene.clearColor = scene.clearColor.set(0.1, 0.1, 0.1, 1);
+    
+    // Store main camera on scene for access by GameManager
+    (scene as any).mainCamera = camera;
     
     return scene;
   }

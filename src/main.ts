@@ -2,6 +2,7 @@
  * Main entry point for Daemon Dungeon
  */
 
+import '@babylonjs/loaders';
 import { GameManager } from './core/GameManager';
 
 window.addEventListener('DOMContentLoaded', async () => {

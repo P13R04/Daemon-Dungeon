@@ -4,6 +4,7 @@
  */
 
 import { Scene, Engine, Vector3, HemisphericLight, ArcRotateCamera, Matrix } from '@babylonjs/core';
+import { SceneBootstrap } from '../scene/SceneBootstrap';
 import { StateMachine, GameState } from './StateMachine';
 import { EventBus, GameEvents } from './EventBus';
 import { Time } from './Time';
@@ -64,24 +65,20 @@ export class GameManager {
   }
 
   async initialize(canvas: HTMLCanvasElement): Promise<void> {
-    // Initialize Babylon.js engine and scene
+    // Initialize Babylon.js engine and scene using SceneBootstrap
     this.engine = new Engine(canvas, true);
-    this.scene = new Scene(this.engine);
+    this.scene = SceneBootstrap.createScene(this.engine, canvas);
 
     // Load configurations
     await this.configLoader.loadAllConfigs();
 
-    // Setup camera
-    const camera = new ArcRotateCamera('mainCamera', Math.PI / 4 - Math.PI / 2 - Math.PI / 12, Math.PI / 5, 30, Vector3.Zero(), this.scene);
-    // Completely disable camera controls - no mouse interaction
-    camera.inputs.clear();
+    // Get camera from scene (created by SceneBootstrap)
+    const camera = (this.scene as any).mainCamera as ArcRotateCamera;
+    if (!camera) throw new Error('Main camera not found in scene');
+    
     this.cameraAlpha = camera.alpha;
     this.cameraBeta = camera.beta;
     this.cameraRadius = camera.radius;
-
-    // Setup lighting
-    const light = new HemisphericLight('mainLight', new Vector3(1, 1, 0), this.scene);
-    light.intensity = 0.9;
 
     // Post-processing pipeline
     const gameplayConfig = this.configLoader.getGameplay();
@@ -270,9 +267,6 @@ export class GameManager {
         }
 
         // Door trigger -> bonus screen
-                      camera.alpha = this.cameraAlpha;
-                      camera.beta = this.cameraBeta;
-                      camera.radius = this.cameraRadius;
         if (this.roomCleared && this.gameState === 'playing') {
           const doorPos = this.roomManager.getDoorPosition();
           if (doorPos) {

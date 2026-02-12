@@ -61,8 +61,11 @@ export class HUDManager {
 
   constructor(private scene: Scene) {
     this.eventBus = EventBus.getInstance();
+    
+    // Create GUIs on main camera
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('HUD', true, scene);
     this.enemyGui = AdvancedDynamicTexture.CreateFullscreenUI('EnemyHUD', true, scene);
+    
     this.setupEventListeners();
     this.createPlayerHUD();
     this.createOverlays();
@@ -248,13 +251,13 @@ export class HUDManager {
     this.waveText.fontSize = 18;
     this.waveText.fontFamily = fontFamily;
     this.waveText.color = '#7CFFEA';
-    this.waveText.right = 20;
-    this.waveText.top = 8;
+    this.waveText.topInPixels = 8;
     this.waveText.width = '160px';
     this.waveText.height = '24px';
     this.waveText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.waveText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.waveText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.waveText.left = '-20px'; // 20px from right border
     this.topBar.addControl(this.waveText);
 
     // Bottom-left command feed
@@ -771,7 +774,6 @@ export class HUDManager {
     label.width = '80px';
     label.height = '20px';
 
-    this.gui.addControl(container);
     this.enemyGui.addControl(container);
     this.enemyGui.addControl(label);
 
