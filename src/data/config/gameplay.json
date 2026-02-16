@@ -8,6 +8,10 @@
       "stunDuration": 2.0
     }
   },
+  "tileHazards": {
+    "poisonDps": 6,
+    "spikesDps": 10
+  },
   "uiConfig": {
     "showEnemyHealthBars": true,
     "showEnemyNames": true,
@@ -23,6 +27,7 @@
     "godMode": false,
     "infiniteUltimate": false,
     "freezeEnemies": false,
+    "daemonVoicelineTest": false,
     "showGrid": false,
     "showPathfinding": false,
     "showColliders": false,

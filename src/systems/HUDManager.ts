@@ -2,9 +2,10 @@
  * HUDManager - Manages health bars, damage numbers, and UI elements
  */
 
-import { Scene, Vector3, Matrix } from '@babylonjs/core';
-import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button } from '@babylonjs/gui';
+import { Scene, Vector3, TransformNode, AbstractMesh } from '@babylonjs/core';
+import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image } from '@babylonjs/gui';
 import { EventBus, GameEvents } from '../core/EventBus';
+import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 
 interface DamageNumber {
   text: TextBlock;
@@ -12,10 +13,12 @@ interface DamageNumber {
   position: Vector3;
   timeElapsed: number;
   duration: number;
+  anchor: TransformNode;
 }
 
 export class HUDManager {
-  private gui: AdvancedDynamicTexture;
+  private guiClean: AdvancedDynamicTexture;
+  private guiFx: AdvancedDynamicTexture;
   private enemyGui: AdvancedDynamicTexture;
   private eventBus: EventBus;
   private damageNumbers: DamageNumber[] = [];
@@ -35,16 +38,22 @@ export class HUDManager {
   private secondaryStatusText: TextBlock | null = null;
   private itemStatusText: TextBlock | null = null;
   private daemonContainer: Rectangle | null = null;
-  private daemonAvatarText: TextBlock | null = null;
+  private daemonAvatarImage: Image | null = null;
   private daemonMessageText: TextBlock | null = null;
   private daemonTypingIndex: number = 0;
   private daemonTypingTimer: number = 0;
   private daemonTypingSpeed: number = 55;
   private daemonFullText: string = '';
   private daemonHoldTimer: number = 0;
+  private daemonHoldDuration: number = 3.5;
   private daemonVisible: boolean = false;
   private avatarFrameTimer: number = 0;
   private avatarFrameIndex: number = 0;
+  private avatarFrameDirection: number = 1;
+  private avatarFrameInterval: number = 0.12;
+  private avatarSequenceMode: 'pingpong' | 'loop' = 'pingpong';
+  private daemonAvatarEmotion: string = 'init';
+  private daemonAvatarSequence: string[] = [];
   private waveNumber: number = 0;
   private isEnabled: boolean = true;
   private showDamageNumbers: boolean = true;
@@ -58,13 +67,42 @@ export class HUDManager {
   private roomClearScreen: Rectangle | null = null;
   private bonusScreen: Rectangle | null = null;
   private bonusButtons: Button[] = [];
+  private readonly daemonAvatarSets: Record<string, string[]> = {
+    'blasé': ['blasé_01.png', 'blasé_02.png'],
+    'bored': ['bored_01.png', 'bored_02.png', 'bored_03.png', 'bored_04.png'],
+    'bsod': ['bsod_01.png', 'bsod_02.png', 'bsod_03.png', 'bsod_04.png'],
+    'censored': ['censored_01.png', 'censored_02.png', 'censored_03.png', 'censored_04.png'],
+    'censuré': ['censuré_01.png', 'censuré_02.png', 'censuré_03.png', 'censuré_04.png'],
+    'choqué': ['choqué_01.png', 'choqué_02.png'],
+    'error': ['error_01.png', 'error_02.png', 'error_03.png', 'error_04.png'],
+    'goofy': ['goofy_01.png', 'goofy_02.png', 'goofy_03.png'],
+    'happy': ['happy_01.png', 'happy_02.png', 'happy_03.png', 'happy_04.png'],
+    'init': ['init_01.png', 'init_02.png', 'init_03.png', 'init_04.png'],
+    'loading': ['loading_01.png', 'loading_02.png'],
+    'override': ['override_01.png', 'override_02.png', 'override_03.png', 'override_04.png'],
+    'reboot': ['reboot_01.png', 'reboot_02.png', 'reboot_03.png', 'reboot_04.png'],
+    'rire': ['rire_01.png', 'rire_02.png', 'rire_03.png', 'rire_04.png'],
+    'supérieur': ['supérieur_01.png', 'supérieur_02.png', 'supérieur_03.png', 'supérieur_04.png'],
+    'surpris': ['surpris_01.png', 'surpris_02.png', 'surpris_03.png', 'surpris_04.png'],
+    'énervé': ['énervé_01.png', 'énervé_02.png', 'énervé_03.png', 'énervé_04.png'],
+  };
 
   constructor(private scene: Scene) {
     this.eventBus = EventBus.getInstance();
     
     // Create GUIs on main camera
-    this.gui = AdvancedDynamicTexture.CreateFullscreenUI('HUD', true, scene);
+    this.guiFx = AdvancedDynamicTexture.CreateFullscreenUI('HUD_FX', true, scene);
+    if (this.guiFx.layer) this.guiFx.layer.layerMask = SCENE_LAYER;
+    this.guiFx.useInvalidateRectOptimization = false;
+    this.guiFx.background = 'transparent';
+    this.guiClean = AdvancedDynamicTexture.CreateFullscreenUI('HUD_CLEAN', true, scene);
+    if (this.guiClean.layer) this.guiClean.layer.layerMask = UI_LAYER;
+    this.guiClean.useInvalidateRectOptimization = false;
+    this.guiClean.background = 'transparent';
     this.enemyGui = AdvancedDynamicTexture.CreateFullscreenUI('EnemyHUD', true, scene);
+    if (this.enemyGui.layer) this.enemyGui.layer.layerMask = SCENE_LAYER;
+    this.enemyGui.useInvalidateRectOptimization = false;
+    this.enemyGui.background = 'transparent';
     
     this.setupEventListeners();
     this.createPlayerHUD();
@@ -80,10 +118,15 @@ export class HUDManager {
   private applyGuiScaling(): void {
     const engine = this.scene.getEngine();
     const scaling = engine.getHardwareScalingLevel();
-    this.gui.renderAtIdealSize = true;
-    this.gui.idealWidth = engine.getRenderWidth(true) * scaling;
-    this.gui.idealHeight = engine.getRenderHeight(true) * scaling;
-    this.gui.renderScale = 1;
+    this.guiFx.renderAtIdealSize = true;
+    this.guiFx.idealWidth = engine.getRenderWidth(true) * scaling;
+    this.guiFx.idealHeight = engine.getRenderHeight(true) * scaling;
+    this.guiFx.renderScale = 1;
+
+    this.guiClean.renderAtIdealSize = true;
+    this.guiClean.idealWidth = engine.getRenderWidth(true) * scaling;
+    this.guiClean.idealHeight = engine.getRenderHeight(true) * scaling;
+    this.guiClean.renderScale = 1;
 
     // Enemy bars must stay in raw screen space for projection alignment
     this.enemyGui.renderAtIdealSize = false;
@@ -102,7 +145,7 @@ export class HUDManager {
     this.eventBus.on(GameEvents.ENEMY_SPAWNED, (data) => {
       const enemyId = data?.enemyId ?? data?.entityId;
       if (!enemyId) return;
-      this.createEnemyHealthBar(enemyId, data?.enemyName);
+      this.createEnemyHealthBar(enemyId, data?.enemyName, data?.mesh);
     });
 
     this.eventBus.on(GameEvents.ENEMY_DIED, (data) => {
@@ -116,13 +159,15 @@ export class HUDManager {
       this.updateHealthDisplay(data.health.current, data.health.max);
       if (data?.damage && data.damage > 0) {
         this.addLogMessage('INTEGRITY BREACH DETECTED.');
-        this.showDaemonMessage(this.getRandomTaunt('damage'));
+        const taunt = this.getRandomTaunt('damage');
+        this.showDaemonMessage(taunt.text, taunt.emotion);
       }
     });
 
     this.eventBus.on(GameEvents.ROOM_CLEARED, () => {
       this.addLogMessage('ROOM STATUS: CLEAR.');
-      this.showDaemonMessage(this.getRandomTaunt('clear'));
+      const taunt = this.getRandomTaunt('clear');
+      this.showDaemonMessage(taunt.text, taunt.emotion);
     });
 
     this.eventBus.on(GameEvents.ROOM_ENTERED, () => {
@@ -147,7 +192,11 @@ export class HUDManager {
 
     this.eventBus.on(GameEvents.DAEMON_TAUNT, (data) => {
       const message = typeof data?.text === 'string' ? data.text : String(data ?? '...');
-      this.showDaemonMessage(message);
+      const emotion = typeof data?.emotion === 'string' ? data.emotion : undefined;
+      const sequence = Array.isArray(data?.sequence) ? data.sequence : undefined;
+      const frameInterval = typeof data?.frameInterval === 'number' ? data.frameInterval : undefined;
+      const holdDuration = typeof data?.holdDuration === 'number' ? data.holdDuration : undefined;
+      this.showDaemonMessage(message, emotion, { sequence, frameInterval, holdDuration });
     });
 
     this.eventBus.on(GameEvents.PLAYER_ULTIMATE_READY, (data) => {
@@ -194,7 +243,7 @@ export class HUDManager {
     this.topBar.background = 'rgba(0, 0, 0, 0.45)';
     this.topBar.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.topBar.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.gui.addControl(this.topBar);
+    this.guiFx.addControl(this.topBar);
 
     const integrityLabel = new TextBlock('integrity_label');
     integrityLabel.text = 'INTEGRITY:';
@@ -271,7 +320,7 @@ export class HUDManager {
     this.logPanel.top = -16;
     this.logPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.logPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    this.gui.addControl(this.logPanel);
+    this.guiFx.addControl(this.logPanel);
 
     const logsStack = new Rectangle('log_stack_container');
     logsStack.width = 1;
@@ -306,7 +355,7 @@ export class HUDManager {
     this.statusPanel.top = -16;
     this.statusPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.statusPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    this.gui.addControl(this.statusPanel);
+    this.guiFx.addControl(this.statusPanel);
 
     this.playerUltDisplay = new TextBlock('ultimate_status');
     this.playerUltDisplay.text = 'ULTI: 0%';
@@ -350,7 +399,7 @@ export class HUDManager {
     this.itemStatusText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.statusPanel.addControl(this.itemStatusText);
 
-    // Daemon popup (placeholder)
+    // Daemon popup
     this.daemonContainer = new Rectangle('daemon_container');
     this.daemonContainer.width = '460px';
     this.daemonContainer.height = '140px';
@@ -361,7 +410,7 @@ export class HUDManager {
     this.daemonContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.daemonContainer.top = 80;
     this.daemonContainer.isVisible = false;
-    this.gui.addControl(this.daemonContainer);
+    this.guiClean.addControl(this.daemonContainer);
 
     const avatarBox = new Rectangle('daemon_avatar');
     avatarBox.width = '90px';
@@ -375,14 +424,13 @@ export class HUDManager {
     avatarBox.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.daemonContainer.addControl(avatarBox);
 
-    this.daemonAvatarText = new TextBlock('daemon_avatar_text');
-    this.daemonAvatarText.text = '[DAEMON]';
-    this.daemonAvatarText.fontSize = 12;
-    this.daemonAvatarText.fontFamily = fontFamily;
-    this.daemonAvatarText.color = '#FFB0C2';
-    this.daemonAvatarText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.daemonAvatarText.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    avatarBox.addControl(this.daemonAvatarText);
+    const initialFrame = this.getAvatarFrameSrc('init_01.png');
+    this.daemonAvatarImage = new Image('daemon_avatar_image', initialFrame);
+    this.daemonAvatarImage.width = '90px';
+    this.daemonAvatarImage.height = '90px';
+    this.daemonAvatarImage.stretch = Image.STRETCH_UNIFORM;
+    avatarBox.addControl(this.daemonAvatarImage);
+    this.daemonAvatarSequence = this.getAvatarFrames('init');
 
     this.daemonMessageText = new TextBlock('daemon_message');
     this.daemonMessageText.text = '';
@@ -436,7 +484,7 @@ export class HUDManager {
     container.isPointerBlocker = true;
     container.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     container.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.gui.addControl(container);
+    this.guiClean.addControl(container);
 
     const title = new TextBlock('main_menu_title');
     title.text = 'DAEMON DUNGEON';
@@ -522,7 +570,7 @@ export class HUDManager {
     container.isPointerBlocker = true;
     container.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     container.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.gui.addControl(container);
+    this.guiClean.addControl(container);
 
     const title = new TextBlock('class_select_title');
     title.text = 'SELECT CLASS';
@@ -601,7 +649,7 @@ export class HUDManager {
     container.isPointerBlocker = true;
     container.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     container.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.gui.addControl(container);
+    this.guiClean.addControl(container);
 
     const title = new TextBlock('codex_title');
     title.text = 'CODEX DATABASE';
@@ -647,7 +695,7 @@ export class HUDManager {
     container.isPointerBlocker = true;
     container.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     container.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.gui.addControl(container);
+    this.guiClean.addControl(container);
 
     const title = new TextBlock('settings_title');
     title.text = 'SETTINGS';
@@ -720,7 +768,7 @@ export class HUDManager {
     container.isPointerBlocker = true;
     container.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     container.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.gui.addControl(container);
+    this.guiClean.addControl(container);
 
     const title = new TextBlock(`${titleText}_title`);
     title.text = titleText;
@@ -745,7 +793,7 @@ export class HUDManager {
     return container;
   }
 
-  private createEnemyHealthBar(enemyId: string, enemyName?: string): void {
+  private createEnemyHealthBar(enemyId: string, enemyName?: string, mesh?: AbstractMesh): void {
     const existing = this.enemyHealthBars.get(enemyId);
     if (existing) {
       existing.container.dispose();
@@ -776,6 +824,13 @@ export class HUDManager {
 
     this.enemyGui.addControl(container);
     this.enemyGui.addControl(label);
+
+    if (mesh) {
+      container.linkWithMesh(mesh);
+      container.linkOffsetY = -60;
+      label.linkWithMesh(mesh);
+      label.linkOffsetY = -80;
+    }
 
     this.enemyHealthBars.set(enemyId, { container, bar, label });
     this.updateEnemyHealthBarsVisibility();
@@ -812,9 +867,9 @@ export class HUDManager {
     text.outlineColor = '#000000';
     text.outlineWidth = 2;
     text.alpha = 1.0;
-    text.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    text.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.gui.addControl(text);
+    text.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    text.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.guiFx.addControl(text);
 
     const jitter = new Vector3(
       (Math.random() - 0.5) * 0.35,
@@ -822,12 +877,18 @@ export class HUDManager {
       (Math.random() - 0.5) * 0.35
     );
 
+    const anchor = new TransformNode(`dmg_anchor_${Date.now()}`, this.scene);
+    anchor.position = basePosition.clone();
+    text.linkWithMesh(anchor);
+    text.linkOffsetY = -20;
+
     this.damageNumbers.push({
       text,
       value: damage,
       position: basePosition.add(jitter),
       timeElapsed: 0,
       duration: 1.5,
+      anchor,
     });
   }
 
@@ -844,21 +905,6 @@ export class HUDManager {
       } else {
         bar.bar.background = '#FF0000';
       }
-    }
-  }
-
-  updateEnemyHealthBarPosition(enemyId: string, screenPosition: Vector3): void {
-    const bar = this.enemyHealthBars.get(enemyId);
-    if (bar) {
-      bar.container.left = `${screenPosition.x - 40}px`;
-      bar.container.top = `${screenPosition.y - 30}px`;
-      bar.label.left = `${screenPosition.x - 40}px`;
-      bar.label.top = `${screenPosition.y - 50}px`;
-
-      bar.container.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-      bar.container.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-      bar.label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-      bar.label.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     }
   }
 
@@ -879,34 +925,21 @@ export class HUDManager {
 
       if (dmg.timeElapsed >= dmg.duration) {
         dmg.text.dispose();
+        dmg.anchor.dispose();
         this.damageNumbers.splice(i, 1);
         continue;
       }
-
-      const camera = this.scene.activeCamera;
-      if (!camera) continue;
-
-      const engine = this.scene.getEngine();
-      const renderWidth = engine.getRenderWidth();
-      const renderHeight = engine.getRenderHeight();
-      const viewport = camera.viewport.toGlobal(engine.getRenderWidth(), engine.getRenderHeight());
-
       const worldPos = dmg.position.add(new Vector3(0, 0.6 + dmg.timeElapsed * 0.6, 0));
-      const screenPos = Vector3.Project(
-        worldPos,
-        Matrix.Identity(),
-        this.scene.getTransformMatrix(),
-        viewport
-      );
-
-      dmg.text.left = `${screenPos.x - renderWidth / 2}px`;
-      dmg.text.top = `${screenPos.y - renderHeight / 2}px`;
+      dmg.anchor.position.copyFrom(worldPos);
       dmg.text.alpha = 1.0 - dmg.timeElapsed / dmg.duration;
     }
   }
 
   private clearDamageNumbers(): void {
-    this.damageNumbers.forEach(dmg => dmg.text.dispose());
+    this.damageNumbers.forEach(dmg => {
+      dmg.text.dispose();
+      dmg.anchor.dispose();
+    });
     this.damageNumbers = [];
   }
 
@@ -956,15 +989,21 @@ export class HUDManager {
     }
   }
 
-  private showDaemonMessage(message: string): void {
+  private showDaemonMessage(
+    message: string,
+    emotion?: string,
+    options?: { sequence?: string[]; frameInterval?: number; holdDuration?: number }
+  ): void {
     if (!this.daemonContainer || !this.daemonMessageText) return;
     this.daemonFullText = message;
     this.daemonTypingIndex = 0;
     this.daemonTypingTimer = 0;
     this.daemonHoldTimer = 0;
+    this.daemonHoldDuration = options?.holdDuration ?? 3.5;
     this.daemonMessageText.text = '';
     this.daemonVisible = true;
     this.daemonContainer.isVisible = true;
+    this.setDaemonAvatarAnimation(message, emotion, options?.sequence, options?.frameInterval);
   }
 
   private updateDaemonPopup(deltaTime: number): void {
@@ -972,10 +1011,9 @@ export class HUDManager {
     if (!this.daemonVisible) return;
 
     this.avatarFrameTimer += deltaTime;
-    if (this.avatarFrameTimer >= 0.15 && this.daemonAvatarText) {
+    if (this.avatarFrameTimer >= this.avatarFrameInterval) {
       this.avatarFrameTimer = 0;
-      this.avatarFrameIndex = (this.avatarFrameIndex + 1) % 2;
-      this.daemonAvatarText.text = this.avatarFrameIndex === 0 ? '[DAEMON]' : '[DAEMON+]';
+      this.advanceDaemonAvatarFrame();
     }
 
     if (this.daemonTypingIndex < this.daemonFullText.length) {
@@ -990,31 +1028,171 @@ export class HUDManager {
     }
 
     this.daemonHoldTimer += deltaTime;
-    if (this.daemonHoldTimer >= 3.5) {
+    if (this.daemonHoldTimer >= this.daemonHoldDuration) {
       this.daemonVisible = false;
       this.daemonContainer.isVisible = false;
     }
   }
 
-  private getRandomTaunt(type: 'damage' | 'clear'): string {
+  private getRandomTaunt(type: 'damage' | 'clear'): { text: string; emotion: string } {
     const damageTaunts = [
-      'Try not to crash this time, user.',
-      'Integrity dropping. Shocking.',
-      'You call that dodging?'
+      { text: 'Integrity dropping. Shocking.', emotion: 'énervé' },
+      { text: 'You call that dodging?', emotion: 'error' },
+      { text: 'Packet loss detected. That was you.', emotion: 'bsod' },
+      { text: 'Try not to crash this time, user.', emotion: 'supérieur' },
+      { text: 'I felt that through the firewall.', emotion: 'surpris' },
     ];
     const clearTaunts = [
-      'Room cleared. Don’t get smug.',
-      'Minimal competence detected.',
-      'Fine. You survived.'
+      { text: 'Room cleared. Don’t get smug.', emotion: 'supérieur' },
+      { text: 'Minimal competence detected.', emotion: 'blasé' },
+      { text: 'Fine. You survived.', emotion: 'happy' },
+      { text: 'CPU cool. Ego not so much.', emotion: 'rire' },
+      { text: 'Cleanup complete. Try not to regress.', emotion: 'override' },
     ];
     const source = type === 'damage' ? damageTaunts : clearTaunts;
     const index = Math.floor(Math.random() * source.length);
     return source[index];
   }
 
+  private setDaemonAvatarAnimation(
+    message: string,
+    preferredEmotion?: string,
+    customSequence?: string[],
+    frameInterval?: number
+  ): void {
+    if (customSequence && customSequence.length > 0) {
+      this.daemonAvatarSequence = customSequence.slice();
+      this.avatarSequenceMode = 'loop';
+      this.avatarFrameIndex = 0;
+      this.avatarFrameDirection = 1;
+      this.avatarFrameInterval = frameInterval ?? 0.18;
+      this.updateDaemonAvatarImage();
+      return;
+    }
+
+    const emotion = this.resolveDaemonEmotion(message, preferredEmotion);
+    this.daemonAvatarEmotion = emotion;
+    this.daemonAvatarSequence = this.buildAvatarSequence(emotion, message);
+    this.avatarSequenceMode = 'pingpong';
+    this.avatarFrameIndex = 0;
+    this.avatarFrameDirection = 1;
+    this.avatarFrameInterval = frameInterval ?? this.computeAvatarInterval(message, emotion);
+    this.updateDaemonAvatarImage();
+  }
+
+  private resolveDaemonEmotion(message: string, preferred?: string): string {
+    if (preferred) {
+      const normalized = this.normalizeEmotionKey(preferred);
+      if (this.daemonAvatarSets[normalized]) return normalized;
+    }
+
+    const lowered = message.toLowerCase();
+    if (lowered.includes('error') || lowered.includes('failed')) return 'error';
+    if (lowered.includes('bsod') || lowered.includes('crash')) return 'bsod';
+    if (lowered.includes('override') || lowered.includes('root')) return 'override';
+    if (lowered.includes('lol') || lowered.includes('haha')) return 'rire';
+    if (lowered.includes('wait') || lowered.includes('loading')) return 'loading';
+    if (lowered.includes('shock') || lowered.includes('?!') || lowered.includes('!?')) return 'surpris';
+
+    const fallback = ['supérieur', 'happy', 'bored', 'goofy'];
+    return fallback[Math.floor(Math.random() * fallback.length)];
+  }
+
+  private normalizeEmotionKey(emotion: string): string {
+    const lowered = emotion.toLowerCase();
+    const aliases: Record<string, string> = {
+      blase: 'blasé',
+      censure: 'censuré',
+      choque: 'choqué',
+      enerve: 'énervé',
+      superieur: 'supérieur',
+    };
+    return aliases[lowered] ?? lowered;
+  }
+
+  private buildAvatarSequence(emotion: string, message: string): string[] {
+    const primary = this.getAvatarFrames(emotion);
+    const secondary = this.getSecondaryEmotion(emotion, message);
+    if (!secondary) return primary;
+
+    const secondaryFrames = this.getAvatarFrames(secondary);
+    const maxLen = Math.max(primary.length, secondaryFrames.length);
+    const mixed: string[] = [];
+    for (let i = 0; i < maxLen; i++) {
+      mixed.push(primary[i % primary.length]);
+      mixed.push(secondaryFrames[i % secondaryFrames.length]);
+    }
+    return mixed;
+  }
+
+  private getSecondaryEmotion(primary: string, message: string): string | null {
+    const lowered = message.toLowerCase();
+    if (lowered.includes('!') || lowered.includes('?') || lowered.includes('...')) {
+      if (primary !== 'bsod') return 'bsod';
+      return 'error';
+    }
+    if (primary === 'rire') return 'goofy';
+    if (primary === 'énervé') return 'error';
+    return null;
+  }
+
+  private computeAvatarInterval(message: string, emotion: string): number {
+    const length = message.length;
+    let interval = 0.12;
+    if (length <= 20) interval = 0.08;
+    if (length >= 80) interval = 0.15;
+    if (message.includes('!') || message.includes('?')) interval = 0.07;
+    if (emotion === 'rire' || emotion === 'goofy') interval = 0.08;
+    if (emotion === 'bsod' || emotion === 'error') interval = 0.1;
+    return interval;
+  }
+
+  private getAvatarFrames(emotion: string): string[] {
+    return this.daemonAvatarSets[emotion] ?? this.daemonAvatarSets['init'];
+  }
+
+  private advanceDaemonAvatarFrame(): void {
+    if (!this.daemonAvatarSequence.length) return;
+    if (this.daemonAvatarSequence.length === 1) {
+      this.avatarFrameIndex = 0;
+      this.updateDaemonAvatarImage();
+      return;
+    }
+
+    if (this.avatarSequenceMode === 'loop') {
+      this.avatarFrameIndex = (this.avatarFrameIndex + 1) % this.daemonAvatarSequence.length;
+    } else {
+      const nextIndex = this.avatarFrameIndex + this.avatarFrameDirection;
+      if (nextIndex >= this.daemonAvatarSequence.length || nextIndex < 0) {
+        this.avatarFrameDirection *= -1;
+        this.avatarFrameIndex += this.avatarFrameDirection;
+      } else {
+        this.avatarFrameIndex = nextIndex;
+      }
+    }
+    this.updateDaemonAvatarImage();
+  }
+
+  private updateDaemonAvatarImage(): void {
+    if (!this.daemonAvatarImage || !this.daemonAvatarSequence.length) return;
+    const fileName = this.daemonAvatarSequence[this.avatarFrameIndex];
+    this.daemonAvatarImage.source = this.getAvatarFrameSrc(fileName);
+  }
+
+  private getAvatarFrameSrc(fileName: string): string {
+    const baseUrl = (import.meta as any).env?.BASE_URL ?? '/';
+    const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+    return `${normalizedBase}avatar_frames_cutout2/${fileName}`;
+  }
+
   toggleDisplay(enabled: boolean): void {
     this.isEnabled = enabled;
-    this.gui.rootContainer.isVisible = enabled;
+    this.guiFx.rootContainer.isVisible = enabled;
+    this.guiClean.rootContainer.isVisible = enabled;
+  }
+
+  isDaemonMessageActive(): boolean {
+    return this.daemonVisible;
   }
 
   showStartScreen(): void {
@@ -1064,17 +1242,14 @@ export class HUDManager {
   }
 
   hideOverlays(): void {
-    if (this.startScreen) this.startScreen.isVisible = false;
-    if (this.classSelectScreen) this.classSelectScreen.isVisible = false;
-    if (this.codexScreen) this.codexScreen.isVisible = false;
-    if (this.settingsScreen) this.settingsScreen.isVisible = false;
-    if (this.gameOverScreen) this.gameOverScreen.isVisible = false;
-    if (this.roomClearScreen) this.roomClearScreen.isVisible = false;
-    if (this.bonusScreen) this.bonusScreen.isVisible = false;
+    this.forceHideOverlays();
     this.setHudVisible(true);
   }
 
   private setHudVisible(visible: boolean): void {
+    if (visible) {
+      this.forceHideOverlays();
+    }
     if (this.playerHealthDisplay) this.playerHealthDisplay.isVisible = visible;
     if (this.playerUltDisplay) this.playerUltDisplay.isVisible = visible;
     if (this.topBar) this.topBar.isVisible = visible;
@@ -1083,8 +1258,19 @@ export class HUDManager {
     if (this.daemonContainer) this.daemonContainer.isVisible = visible && this.daemonVisible;
   }
 
+  private forceHideOverlays(): void {
+    if (this.startScreen) this.startScreen.isVisible = false;
+    if (this.classSelectScreen) this.classSelectScreen.isVisible = false;
+    if (this.codexScreen) this.codexScreen.isVisible = false;
+    if (this.settingsScreen) this.settingsScreen.isVisible = false;
+    if (this.gameOverScreen) this.gameOverScreen.isVisible = false;
+    if (this.roomClearScreen) this.roomClearScreen.isVisible = false;
+    if (this.bonusScreen) this.bonusScreen.isVisible = false;
+  }
+
   dispose(): void {
-    this.gui.dispose();
+    this.guiFx.dispose();
+    this.guiClean.dispose();
     this.enemyGui.dispose();
     this.enemyHealthBars.clear();
   }

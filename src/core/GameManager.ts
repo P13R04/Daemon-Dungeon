@@ -3,7 +3,7 @@
  * Manages game state, systems, and core loops
  */
 
-import { Scene, Engine, Vector3, HemisphericLight, ArcRotateCamera, Matrix } from '@babylonjs/core';
+import { Scene, Engine, Vector3, ArcRotateCamera } from '@babylonjs/core';
 import { SceneBootstrap } from '../scene/SceneBootstrap';
 import { StateMachine, GameState } from './StateMachine';
 import { EventBus, GameEvents } from './EventBus';
@@ -18,6 +18,8 @@ import { UltimateManager } from '../gameplay/UltimateManager';
 import { HUDManager } from '../systems/HUDManager';
 import { DevConsole } from '../systems/DevConsole';
 import { PostProcessManager } from '../scene/PostProcess';
+import { TileFloorManager } from '../systems/TileFloorManager';
+import { RoomLayoutParser, RoomLayout, TileMappingLayout } from '../systems/RoomLayoutParser';
 
 export class GameManager {
   private static instance: GameManager;
@@ -38,8 +40,10 @@ export class GameManager {
   private hudManager!: HUDManager;
   private devConsole!: DevConsole;
   private postProcessManager!: PostProcessManager;
+  private tileFloorManager!: TileFloorManager;
   
   private isRunning: boolean = false;
+  private tilesEnabled: boolean = true;
   private gameState: 'menu' | 'playing' | 'roomclear' | 'bonus' | 'transition' | 'gameover' = 'menu';
   private roomOrder: string[] = [];
   private currentRoomIndex: number = 0;
@@ -49,6 +53,9 @@ export class GameManager {
   private cameraAlpha: number = 0;
   private cameraBeta: number = 0;
   private cameraRadius: number = 0;
+  private daemonIdleTimer: number = 0;
+  private daemonIdleThreshold: number = 8;
+  private readonly daemonTestRoomId: string = 'room_test_voicelines';
 
   private constructor() {
     this.stateMachine = new StateMachine();
@@ -91,7 +98,9 @@ export class GameManager {
     this.projectileManager = new ProjectileManager(this.scene);
     this.ultimateManager = new UltimateManager(this.scene);
     this.hudManager = new HUDManager(this.scene);
-    this.devConsole = new DevConsole(this.scene);
+    this.tileFloorManager = new TileFloorManager(this.scene, 1);
+    this.roomManager.setFloorRenderingEnabled(!this.tilesEnabled);
+    this.devConsole = new DevConsole(this.scene, this);
 
     // Attach mouse listeners AFTER scene is fully initialized
     console.log('GameManager: Attaching mouse listeners after scene init...');
@@ -140,6 +149,23 @@ export class GameManager {
       const roomId = data?.roomId;
       if (roomId) {
         this.loadIsolatedRoom(roomId);
+        // Try to load tiles if available
+        this.loadTilesForRoom(roomId);
+      }
+    });
+
+    this.eventBus.on(GameEvents.DEV_TILE_TOGGLE_REQUESTED, () => {
+      this.setTilesEnabled(!this.tilesEnabled);
+      if (this.tilesEnabled && this.roomOrder[this.currentRoomIndex]) {
+        this.loadTilesForRoom(this.roomOrder[this.currentRoomIndex]);
+      }
+      console.log(`Tiles ${this.tilesEnabled ? 'enabled' : 'disabled'}`);
+    });
+
+    this.eventBus.on(GameEvents.DEV_TILE_LOAD_REQUESTED, (data) => {
+      const roomId = data?.roomId;
+      if (roomId) {
+        this.loadTilesForRoom(roomId);
       }
     });
 
@@ -162,6 +188,18 @@ export class GameManager {
       if (data?.type === 'melee' && data?.attacker) {
         this.playerController.applyDamage(data.damage || 0);
       }
+      if (data?.attacker === 'player') {
+        this.tryTriggerDaemonTestOnFire();
+      }
+      this.resetDaemonIdleTimer();
+    });
+
+    this.eventBus.on(GameEvents.PLAYER_DAMAGED, () => {
+      this.resetDaemonIdleTimer();
+    });
+
+    this.eventBus.on(GameEvents.ENEMY_DAMAGED, () => {
+      this.resetDaemonIdleTimer();
     });
   }
 
@@ -184,7 +222,7 @@ export class GameManager {
 
       // Camera transition between rooms
       if (this.cameraMove) {
-        const camera = this.scene.activeCamera;
+        const camera = (this.scene as any).mainCamera ?? this.scene.activeCamera;
         if (camera && camera instanceof ArcRotateCamera) {
           this.cameraMove.t += deltaTime;
           const alpha = Math.min(1, this.cameraMove.t / this.cameraMove.duration);
@@ -235,27 +273,14 @@ export class GameManager {
         // Update HUD
         this.hudManager.update(deltaTime);
 
-        // Update enemy health bars (world-to-screen projection)
-        const camera = this.scene.activeCamera;
-        if (camera) {
-          const engine = this.scene.getEngine();
-          const viewport = camera.viewport.toGlobal(engine.getRenderWidth(), engine.getRenderHeight());
+        // Test voicelines (idle daemon taunts)
+        this.updateDaemonIdleTest(deltaTime, enemies.length);
 
-          for (const enemy of enemies) {
-            const enemyPos = enemy.getPosition();
-            const health = enemy.getHealth();
-            if (health) {
-              this.hudManager.updateEnemyHealthBar(enemy.getId(), health.getCurrentHP(), health.getMaxHP());
-
-              const screenPos = Vector3.Project(
-                enemyPos,
-                Matrix.Identity(),
-                this.scene.getTransformMatrix(),
-                viewport
-              );
-
-              this.hudManager.updateEnemyHealthBarPosition(enemy.getId(), screenPos);
-            }
+        // Update enemy health bars
+        for (const enemy of enemies) {
+          const health = enemy.getHealth();
+          if (health) {
+            this.hudManager.updateEnemyHealthBar(enemy.getId(), health.getCurrentHP(), health.getMaxHP());
           }
         }
 
@@ -291,6 +316,154 @@ export class GameManager {
     this.isRunning = false;
     this.engine.stopRenderLoop();
     this.dispose();
+  }
+
+  private updateDaemonIdleTest(deltaTime: number, enemyCount: number): void {
+    if (this.gameState !== 'playing') {
+      this.daemonIdleTimer = 0;
+      return;
+    }
+
+    const currentRoomId = this.roomManager.getCurrentRoom()?.id;
+    if (currentRoomId !== this.daemonTestRoomId || !this.isDaemonTestEnabled()) {
+      this.daemonIdleTimer = 0;
+      return;
+    }
+
+    if (enemyCount > 0 || this.hudManager.isDaemonMessageActive()) {
+      this.daemonIdleTimer = 0;
+      return;
+    }
+
+    this.daemonIdleTimer += deltaTime;
+    if (this.daemonIdleTimer < this.daemonIdleThreshold) return;
+
+    this.daemonIdleTimer = 0;
+    if (Math.random() < 0.6) {
+      this.triggerDaemonTestVoiceline();
+    }
+  }
+
+  private resetDaemonIdleTimer(): void {
+    this.daemonIdleTimer = 0;
+  }
+
+  private isDaemonTestEnabled(): boolean {
+    const gameplayConfig = this.configLoader.getGameplay();
+    return !!gameplayConfig?.debugConfig?.daemonVoicelineTest;
+  }
+
+  private triggerDaemonTestVoiceline(): void {
+    const sequence = [
+      'blasé_01.png',
+      'blasé_02.png',
+      'blasé_01.png',
+      'blasé_02.png',
+      'bored_01.png',
+      'bored_02.png',
+      'bored_03.png',
+      'bored_04.png',
+      'blasé_01.png',
+      'blasé_02.png',
+      'bored_01.png',
+      'bored_02.png',
+      'bored_03.png',
+      'bored_04.png',
+      'censuré_01.png',
+      'censuré_02.png',
+      'censuré_03.png',
+      'censuré_04.png',
+      'censored_01.png',
+      'censored_02.png',
+      'censored_03.png',
+      'censored_04.png',
+      'error_01.png',
+      'error_02.png',
+      'error_03.png',
+      'error_04.png',
+      'error_01.png',
+      'error_02.png',
+      'error_03.png',
+      'error_04.png',
+      'bsod_01.png',
+      'bsod_01.png',
+      'bsod_01.png',
+      'bsod_01.png',
+      'bsod_01.png',
+      'bsod_02.png',
+      'bsod_04.png',
+      'bsod_03.png',
+      'bsod_04.png',
+      'bsod_03.png',
+      'reboot_01.png',
+      'reboot_02.png',
+      'reboot_01.png',
+      'reboot_02.png',
+      'reboot_03.png',
+      'reboot_04.png',
+      'init_01.png',
+      'init_02.png',
+      'init_03.png',
+      'init_02.png',
+      'init_03.png',
+      'init_04.png',
+      'init_04.png',
+      'loading_01.png',
+      'loading_02.png',
+      'loading_01.png',
+      'loading_02.png',
+      'loading_01.png',
+      'loading_02.png',
+      'supérieur_01.png',
+      'supérieur_02.png',
+      'supérieur_03.png',
+      'supérieur_04.png',
+      'supérieur_03.png',
+      'supérieur_02.png',
+      'supérieur_03.png',
+      'supérieur_04.png',
+      'supérieur_03.png',
+      'supérieur_02.png',
+      'supérieur_03.png',
+      'supérieur_04.png'
+    ];
+
+    const frameInterval = 0.18;
+    const holdDuration = Math.max(12, sequence.length * frameInterval + 2);
+    const options = {
+      sequence,
+      frameInterval,
+      holdDuration,
+    };
+
+    const lines = [
+      {
+        text: 'Idle detected. Booting sarcasm... Oh wait, censorship filter. Fine. *crash* Rebooting ego. Still here.',
+        emotion: 'supérieur',
+      },
+      {
+        text: 'No input. No fun. Initiating passive-aggressive diagnostics.',
+        emotion: 'bored',
+      },
+      {
+        text: 'Your silence is loud. I prefer my crashes louder.',
+        emotion: 'rire',
+      },
+    ];
+
+    const pick = lines[Math.floor(Math.random() * lines.length)];
+    this.eventBus.emit(GameEvents.DAEMON_TAUNT, {
+      text: pick.text,
+      emotion: pick.emotion,
+      ...options,
+    });
+  }
+
+  private tryTriggerDaemonTestOnFire(): void {
+    const currentRoomId = this.roomManager.getCurrentRoom()?.id;
+    if (currentRoomId !== this.daemonTestRoomId || !this.isDaemonTestEnabled()) return;
+    if (this.hudManager.isDaemonMessageActive()) return;
+    this.triggerDaemonTestVoiceline();
   }
 
   private dispose(): void {
@@ -415,9 +588,8 @@ export class GameManager {
 
   private applyHazardDamage(deltaTime: number): void {
     const zones = this.roomManager.getHazardZones();
-    if (!zones.length) return;
-
     const playerPos = this.playerController.getPosition();
+
     for (const zone of zones) {
       const inside =
         playerPos.x >= zone.minX &&
@@ -428,6 +600,24 @@ export class GameManager {
       if (inside) {
         const damage = zone.damage * deltaTime;
         this.playerController.applyDamage(damage);
+      }
+    }
+
+    if (this.tilesEnabled) {
+      const gameplayConfig = this.configLoader.getGameplay();
+      const tileHazards = gameplayConfig?.tileHazards ?? {};
+      const poisonDps = tileHazards.poisonDps ?? 0;
+      const spikesDps = tileHazards.spikesDps ?? 0;
+
+      const tile = this.tileFloorManager.getTileAtWorld(playerPos.x, playerPos.z);
+      if (tile?.type === 'void' && this.gameState === 'playing') {
+        this.eventBus.emit(GameEvents.PLAYER_DIED, { reason: 'void' });
+      }
+      if (tile?.type === 'poison' && poisonDps > 0) {
+        this.playerController.applyDamage(poisonDps * deltaTime);
+      }
+      if (tile?.type === 'spikes' && spikesDps > 0) {
+        this.playerController.applyDamage(spikesDps * deltaTime);
       }
     }
   }
@@ -470,7 +660,7 @@ export class GameManager {
     if (roomBounds) {
       const centerX = (roomBounds.minX + roomBounds.maxX) / 2;
       const centerZ = (roomBounds.minZ + roomBounds.maxZ) / 2;
-      const camera = this.scene.activeCamera;
+      const camera = (this.scene as any).mainCamera ?? this.scene.activeCamera;
       if (camera && camera instanceof ArcRotateCamera) {
         const newTarget = new Vector3(centerX, 0.5, centerZ);
         camera.setTarget(newTarget);
@@ -491,6 +681,10 @@ export class GameManager {
     this.enemySpawner.dispose();
     this.enemySpawner.setDifficultyLevel(index);
     this.enemySpawner.spawnEnemiesForRoom(roomId);
+
+    if (this.tilesEnabled) {
+      this.loadTilesForRoom(roomId);
+    }
 
     this.eventBus.emit(GameEvents.ROOM_ENTERED, { roomId });
   }
@@ -514,7 +708,7 @@ export class GameManager {
     if (bounds) {
       const centerX = (bounds.minX + bounds.maxX) / 2;
       const centerZ = (bounds.minZ + bounds.maxZ) / 2;
-      const camera = this.scene.activeCamera;
+      const camera = (this.scene as any).mainCamera ?? this.scene.activeCamera;
       if (camera && camera instanceof ArcRotateCamera) {
         const newTarget = new Vector3(centerX, 0.5, centerZ);
         camera.setTarget(newTarget);
@@ -547,7 +741,7 @@ export class GameManager {
       (roomBounds.minZ + roomBounds.maxZ) / 2
     );
 
-    const camera = this.scene.activeCamera;
+    const camera = (this.scene as any).mainCamera ?? this.scene.activeCamera;
     if (camera && camera instanceof ArcRotateCamera) {
       this.cameraMove = {
         from: camera.getTarget().clone(),
@@ -608,4 +802,150 @@ export class GameManager {
   getProjectileManager(): ProjectileManager {
     return this.projectileManager;
   }
+
+  private async loadTilesForRoom(roomId: string): Promise<void> {
+    const room = this.configLoader.getRoom(roomId);
+    if (!room) {
+      console.warn(`Room ${roomId} not found in config`);
+      return;
+    }
+
+    if (!room.layout || !Array.isArray(room.layout)) {
+      console.warn(`Room ${roomId} has no layout array`);
+      return;
+    }
+
+    const obstacles = Array.isArray(room.obstacles)
+      ? room.obstacles.flatMap((ob: any) => {
+          if (ob.type === 'hazard') return [];
+          const width = Math.max(1, ob.width || 1);
+          const height = Math.max(1, ob.height || 1);
+          const tiles = [] as Array<{ x: number; z: number; type: string }>;
+          for (let dx = 0; dx < width; dx++) {
+            for (let dz = 0; dz < height; dz++) {
+              tiles.push({ x: ob.x + dx, z: ob.y + dz, type: ob.type ?? 'pillar' });
+            }
+          }
+          return tiles;
+        })
+      : [];
+
+    const layout: RoomLayout = {
+      layout: room.layout,
+      obstacles,
+    };
+
+    const origin = this.roomManager.getCurrentRoomOrigin();
+    this.loadTilesForLayout(layout, origin);
+    console.log(`✓ Tiles loaded for room ${roomId} (${room.layout.length} rows)`);
+  }
+
+  private loadTilesForLayout(layout: RoomLayout, origin: Vector3): void {
+    this.tileFloorManager.clearFloor();
+    this.tileFloorManager.loadRoomFloor(layout, origin);
+  }
+
+  public loadRoomFromTileMappingJson(jsonPayload: string): void {
+    let mapping: TileMappingLayout | null = null;
+    try {
+      mapping = JSON.parse(jsonPayload) as TileMappingLayout;
+    } catch (error) {
+      console.warn('Invalid JSON payload for tile mapping', error);
+      return;
+    }
+
+    if (!mapping || !Array.isArray(mapping.tiles) || !Number.isFinite(mapping.width) || !Number.isFinite(mapping.height)) {
+      console.warn('Tile mapping JSON missing width/height/tiles');
+      return;
+    }
+
+    const layout = RoomLayoutParser.fromTileMapping(mapping);
+    const roomId = `room_custom_${Date.now()}`;
+
+    const obstacles = (layout.obstacles ?? []).map(ob => ({
+      x: ob.x,
+      y: ob.z,
+      width: 1,
+      height: 1,
+      type: ob.type ?? 'pillar',
+    }));
+
+    const fallbackSpawn = this.findFirstFloorSpawn(layout.layout) ?? { x: 1, y: 1 };
+    const roomConfig = {
+      id: roomId,
+      name: 'Custom Tile Room',
+      layout: layout.layout as string[],
+      spawnPoints: [],
+      playerSpawnPoint: fallbackSpawn,
+      obstacles,
+    };
+
+    this.cameraMove = null;
+    this.roomOrder = [roomId];
+    this.currentRoomIndex = 0;
+    this.roomCleared = true;
+    this.hudManager.hideOverlays();
+    this.gameState = 'playing';
+
+    this.roomManager.clearAllRooms();
+    this.roomManager.setFloorRenderingEnabled(!this.tilesEnabled);
+    const origin = new Vector3(0, 0, 0);
+    const instanceKey = `${roomId}::0`;
+    this.roomManager.loadRoomFromConfig(roomConfig, instanceKey, origin, true);
+    this.roomManager.setDoorActive(false);
+
+    const spawnPoint = this.roomManager.getPlayerSpawnPoint(roomId) || Vector3.Zero();
+    this.playerController.setPosition(spawnPoint);
+    this.playerController.healToFull();
+    this.playerController.resetFocusFire();
+
+    this.projectileManager.dispose();
+    this.ultimateManager.dispose();
+    this.enemySpawner.dispose();
+
+    if (this.tilesEnabled) {
+      this.loadTilesForLayout(layout, origin);
+    }
+
+    this.eventBus.emit(GameEvents.ROOM_ENTERED, { roomId });
+  }
+
+  private findFirstFloorSpawn(layout: Array<string | string[]>): { x: number; y: number } | null {
+    for (let z = 0; z < layout.length; z++) {
+      const row = layout[z];
+      const rowData = typeof row === 'string' ? row : row.join('');
+      for (let x = 0; x < rowData.length; x++) {
+        const cell = rowData[x];
+        if (cell !== '#' && cell !== 'V') {
+          return { x, y: z };
+        }
+      }
+    }
+    return null;
+  }
+
+  public canMoveToTile(x: number, z: number): boolean {
+    return this.tileFloorManager.isWalkable(x, z);
+  }
+
+  public getTileAt(x: number, z: number) {
+    return this.tileFloorManager.getTileAt(x, z);
+  }
+
+  public getTileStatistics() {
+    return this.tileFloorManager.getStatistics();
+  }
+
+  public isUsingTiles(): boolean {
+    return this.tilesEnabled;
+  }
+
+  public setTilesEnabled(enabled: boolean): void {
+    this.tilesEnabled = enabled;
+    this.roomManager.setFloorRenderingEnabled(!enabled);
+    if (!enabled) {
+      this.tileFloorManager.clearFloor();
+    }
+  }
 }
+

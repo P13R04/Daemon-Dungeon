@@ -1,0 +1,122 @@
+:root {
+  --bg: #111111;
+  --panel: #1e1e1e;
+  --text: #e6e6e6;
+  --accent: #f0b429;
+  --void: #080808;
+  --floor: #6f6f6f;
+  --wall: #2f66ff;
+  --poison: #2e9e4f;
+  --spikes: #aa2c2c;
+  --pillar: #8a6d3b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: radial-gradient(1200px 600px at 10% 0%, #1c1c1c, var(--bg));
+  color: var(--text);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid #2b2b2b;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.controls label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+}
+
+.controls input {
+  width: 64px;
+  padding: 4px 6px;
+  background: #2a2a2a;
+  color: var(--text);
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+}
+
+button {
+  padding: 6px 10px;
+  background: #2a2a2a;
+  color: var(--text);
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+.palette {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #151515;
+  border-bottom: 1px solid #242424;
+}
+
+.palette .tool.active {
+  outline: 2px solid var(--accent);
+}
+
+main {
+  padding: 16px;
+}
+
+.grid {
+  display: grid;
+  gap: 1px;
+  background: #222222;
+  width: fit-content;
+  border: 1px solid #333333;
+}
+
+.cell {
+  width: 32px;
+  height: 32px;
+  background: var(--void);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  user-select: none;
+}
+
+.cell.edit-floor { background: var(--floor); }
+.cell.edit-void { background: var(--void); }
+.cell.edit-wall { background: var(--wall); }
+.cell.edit-pillar { background: var(--pillar); }
+.cell.edit-poison { background: var(--poison); }
+.cell.edit-spikes { background: var(--spikes); }
+
+.cell.preview {
+  background-size: cover;
+  background-position: center;
+}
+
+@media (max-width: 900px) {
+  .cell { width: 24px; height: 24px; }
+}

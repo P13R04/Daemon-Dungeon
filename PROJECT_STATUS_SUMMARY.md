@@ -15,6 +15,16 @@
   - Rooms defined in JSON with 13x11 layouts.
   - New test room: `room_test_dummies`.
   - Hazard zones on the floor (damage over time).
+  - **Tile System (NEW)**:
+    - Adjacency-based tile rendering with automatic texture selection and rotation.
+    - Integrated tiles_mapping editor for visual room design.
+    - Support for floor, wall, pillar, poison, void, and spikes tiles.
+    - Tile-based hazards: poison (6 DPS), spikes (10 DPS), void (instant death).
+    - Coordinate mapping solved: editor Y-axis (down) properly mapped to Babylon Z-axis.
+    - Test rooms: room_test_json, room_test_tiles_hazards, room_test_tiles_maze.
+    - Pixel-perfect texture rendering with NEAREST_SAMPLINGMODE.
+    - Multi-room support with origin-aware positioning.
+    - Export from tiles_mapping editor to game-compatible JSON.
 
 - **Enemies**
   - Spawning uses room `spawnPoints` with `enemyType`.
@@ -68,6 +78,8 @@
 - Player stats, passive and ultimate: `src/data/config/player.json`
 - Enemy types: `src/data/config/enemies.json`
 - Rooms: `src/data/config/rooms.json`
+- Gameplay (tile hazards): `src/data/config/gameplay.json`
+- Tile editor: `tiles_mapping/index.html`
 
 ## Known Limitations / TODO
 - Room progression logic is basic (single test flow).
@@ -77,8 +89,22 @@
 - Advanced collision with walls for entities still simplified.
 - Codex and Settings screens are placeholders.
 - Class selection is placeholder (no carousel yet).
+- **Tile System TODO**:
+  - Add physical hitboxes for wall/pillar tiles.
+  - Implement void transparency with visual falling effect.
+  - Render walls as 3D geometry instead of flat tiles.
+  - Integrate enemy spawning on specific tiles.
+  - Support varied obstacle types (crates, statues, etc.).
+  - Adapt pathfinding system to tile-based rooms.
+  - Generalize tile system to all existing rooms.
 
 ## Notes for Teammates
 - Test room is currently `room_test_dummies`.
 - Dummy enemies are immobile; good for tuning combat.
 - Use the Dev Console for debug toggles.
+- **Tile System Usage**:
+  - Design rooms in `tiles_mapping/index.html` editor.
+  - Export with `exportGameJSON()` in browser console.
+  - Test rooms: `room_test_json`, `room_test_tiles_hazards`, `room_test_tiles_maze`.
+  - Load custom rooms: `window.gameManager.loadRoom('room_name')`.
+  - See `TILE_SYSTEM_FINAL_IMPLEMENTATION.md` for complete documentation.

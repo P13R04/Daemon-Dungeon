@@ -28,6 +28,7 @@ export class RoomManager {
   private currentRoomKey: string | null = null;
   private obstacleBounds: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> = [];
   private obstacleBoundsByRoom: Map<string, Array<{ minX: number; maxX: number; minZ: number; maxZ: number }>> = new Map();
+  private floorRenderingEnabled: boolean = true;
 
   constructor(scene: Scene, tileSize: number = 1.0) {
     this.scene = scene;
@@ -41,6 +42,18 @@ export class RoomManager {
     const roomConfig = this.loadRoomInstance(roomId, instanceKey, new Vector3(0, 0, 0));
     if (roomConfig) {
       this.setCurrentRoom(instanceKey);
+    }
+    return roomConfig;
+  }
+
+  loadRoomFromConfig(roomConfig: RoomConfig, instanceKey: string, origin: Vector3, setCurrent: boolean = true): RoomConfig {
+    this.roomOrigins.set(instanceKey, origin.clone());
+    this.createRoomGeometry(roomConfig, instanceKey, origin.clone());
+    if (setCurrent) {
+      this.currentRoomKey = instanceKey;
+      this.currentRoom = roomConfig;
+      this.hazardZones = this.hazardZonesByRoom.get(instanceKey) || [];
+      this.obstacleBounds = this.obstacleBoundsByRoom.get(instanceKey) || [];
     }
     return roomConfig;
   }
@@ -74,6 +87,15 @@ export class RoomManager {
     this.obstacleBounds = this.obstacleBoundsByRoom.get(instanceKey) || [];
   }
 
+  getCurrentRoomOrigin(): Vector3 {
+    if (!this.currentRoomKey) return new Vector3(0, 0, 0);
+    return this.roomOrigins.get(this.currentRoomKey) ?? new Vector3(0, 0, 0);
+  }
+
+  setFloorRenderingEnabled(enabled: boolean): void {
+    this.floorRenderingEnabled = enabled;
+  }
+
   private createRoomGeometry(config: RoomConfig, instanceKey: string, origin: Vector3): void {
     // Clear previous instance meshes
     const prevMeshes = this.roomMeshes.get(instanceKey);
@@ -105,8 +127,7 @@ export class RoomManager {
           wall.position = position.add(new Vector3(0, 0.5, 0));
           wall.scaling = new Vector3(1, 2, 1);
           this.roomMeshes.get(instanceKey)!.push(wall);
-        } else if (char === '.' || char === 'S' || char === 'E' || char === 'M' || char === 'R' || char === 'O') {
-          // Floor
+        } else if (this.floorRenderingEnabled && (char === '.' || char === 'S' || char === 'E' || char === 'M' || char === 'R' || char === 'O' || char === 'P' || char === 'V' || char === '^')) {
           const floor = VisualPlaceholder.createFloorTile(this.scene, `floor_${x}_${y}`, false);
           floor.position = position;
           this.roomMeshes.get(instanceKey)!.push(floor);
@@ -250,7 +271,7 @@ export class RoomManager {
     if (tileX < 0 || tileX >= this.currentRoom.layout[0].length) return false;
 
     const char = this.currentRoom.layout[tileZ][tileX];
-    return char !== '#';
+    return char !== '#' && char !== 'V';
   }
 
   getRoomBounds(): { minX: number; maxX: number; minZ: number; maxZ: number } | null {
