@@ -2,11 +2,17 @@
  * SceneBootstrap - Initializes the Babylon.js scene with base settings
  */
 
-import { Scene, Engine, ArcRotateCamera, Vector3, HemisphericLight } from '@babylonjs/core';
+import { Scene, Engine, ArcRotateCamera, Vector3, HemisphericLight, FreeCamera, Color4 } from '@babylonjs/core';
+import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 
 export class SceneBootstrap {
   static createScene(engine: Engine, canvas: HTMLCanvasElement): Scene {
     const scene = new Scene(engine);
+
+    // Ensure 3D meshes only render on the main scene layer.
+    scene.onNewMeshAddedObservable.add((mesh) => {
+      mesh.layerMask = SCENE_LAYER;
+    });
     
     // Basic isometric camera setup
     const camera = new ArcRotateCamera(
@@ -21,6 +27,12 @@ export class SceneBootstrap {
     camera.inputs.clear(); // Disable all camera controls - GameManager handles camera positioning
     camera.lowerRadiusLimit = 10;
     camera.upperRadiusLimit = 30;
+    camera.layerMask = SCENE_LAYER;
+
+    const uiCamera = new FreeCamera('uiCamera', new Vector3(0, 0, -10), scene);
+    uiCamera.layerMask = UI_LAYER;
+    uiCamera.clearColor = new Color4(0, 0, 0, 0);
+    (uiCamera as any).clear = false;
     
     // Basic lighting
     const light = new HemisphericLight('light', new Vector3(0, 1, 0), scene);
@@ -29,8 +41,11 @@ export class SceneBootstrap {
     // Scene settings
     scene.clearColor = scene.clearColor.set(0.1, 0.1, 0.1, 1);
     
-    // Store main camera on scene for access by GameManager
+    // Store cameras on scene for access by GameManager
     (scene as any).mainCamera = camera;
+    (scene as any).uiCamera = uiCamera;
+    scene.activeCameras = [camera, uiCamera];
+    scene.activeCamera = camera;
     
     return scene;
   }

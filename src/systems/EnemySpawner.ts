@@ -29,6 +29,11 @@ export class EnemySpawner {
   }
 
   spawnEnemiesForRoom(roomId: string): void {
+    // Skip spawning for tile testing rooms
+    if (roomId.startsWith('room_tiles_')) {
+      return;
+    }
+
     const room = this.configLoader.getRoom(roomId);
     const enemyConfig = this.configLoader.getEnemies();
 

@@ -3,7 +3,7 @@
  * Pixelation, chromatic aberration, CRT/scanlines, glow
  */
 
-import { Scene, Camera, DefaultRenderingPipeline, Color4, Engine } from '@babylonjs/core';
+import { Scene, Camera, DefaultRenderingPipeline, Color4, Engine, PostProcess, Effect } from '@babylonjs/core';
 import { EventBus, GameEvents } from '../core/EventBus';
 
 interface PostProcessingConfig {
@@ -23,6 +23,7 @@ export class PostProcessManager {
   private scene: Scene;
   private engine: Engine;
   private pipeline?: DefaultRenderingPipeline;
+  private pixelate?: PostProcess;
   private camera?: Camera;
   private eventBus: EventBus;
   private config: PostProcessingConfig = {
@@ -73,8 +74,6 @@ export class PostProcessManager {
     }
     if (!this.pipeline) return;
 
-    this.engine.setHardwareScalingLevel(this.clamp(this.config.pixelScale, 1, 3));
-
     this.pipeline.imageProcessingEnabled = true;
     this.pipeline.imageProcessing.contrast = 1.15;
     this.pipeline.imageProcessing.exposure = 1.0;
@@ -101,6 +100,12 @@ export class PostProcessManager {
     }
 
     this.pipeline.fxaaEnabled = false;
+
+    if (this.config.pixelScale > 1.0) {
+      this.ensurePixelate();
+    } else {
+      this.disposePixelate();
+    }
   }
 
   private bindEvents(): void {
@@ -160,7 +165,44 @@ export class PostProcessManager {
       this.pipeline.dispose();
       this.pipeline = undefined;
     }
-    this.engine.setHardwareScalingLevel(1);
+    this.disposePixelate();
+  }
+
+  private ensurePixelate(): void {
+    if (!this.camera) return;
+
+    if (!Effect.ShadersStore['pixelateFragmentShader']) {
+      Effect.ShadersStore['pixelateFragmentShader'] = `
+        precision highp float;
+        varying vec2 vUV;
+        uniform sampler2D textureSampler;
+        uniform vec2 pixelSize;
+        void main(void) {
+          vec2 coord = vec2(
+            pixelSize.x * floor(vUV.x / pixelSize.x),
+            pixelSize.y * floor(vUV.y / pixelSize.y)
+          );
+          gl_FragColor = texture2D(textureSampler, coord);
+        }
+      `;
+    }
+
+    if (!this.pixelate) {
+      this.pixelate = new PostProcess('pixelate', 'pixelate', ['pixelSize'], null, 1.0, this.camera);
+      this.pixelate.onApply = (effect) => {
+        const width = this.engine.getRenderWidth();
+        const height = this.engine.getRenderHeight();
+        const scale = this.clamp(this.config.pixelScale, 1, 6);
+        effect.setFloat2('pixelSize', scale / width, scale / height);
+      };
+    }
+  }
+
+  private disposePixelate(): void {
+    if (this.pixelate) {
+      this.pixelate.dispose();
+      this.pixelate = undefined;
+    }
   }
 
   private clamp(value: number, min: number, max: number): number {

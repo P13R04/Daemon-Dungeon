@@ -115,6 +115,8 @@ export const GameEvents = {
   UI_OPTION_CHANGED: 'ui:optionChanged',
   DEBUG_FLAG_CHANGED: 'debug:flagChanged',
   DEV_ROOM_LOAD_REQUESTED: 'dev:roomLoadRequested',
+  DEV_TILE_TOGGLE_REQUESTED: 'dev:tileToggleRequested',
+  DEV_TILE_LOAD_REQUESTED: 'dev:tileLoadRequested',
   
   // Codex/Achievement events
   CODEX_ENTRY_UNLOCKED: 'codex:entryUnlocked',

@@ -7,6 +7,7 @@ import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Slider, 
 import { ConfigLoader } from '../utils/ConfigLoader';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { PlayerController } from '../gameplay/PlayerController';
+import { UI_LAYER } from '../ui/uiLayers';
 
 export class DevConsole {
   private gui: AdvancedDynamicTexture;
@@ -26,13 +27,19 @@ export class DevConsole {
   private roomIds: string[] = [];
   private roomSelectIndex: number = 0;
   private roomSelectLabel: TextBlock | null = null;
+  private gameManager: any;
 
-  constructor(private scene: Scene) {
+  constructor(private scene: Scene, gameManager: any) {
+    this.gameManager = gameManager;
     this.eventBus = EventBus.getInstance();
     this.configLoader = ConfigLoader.getInstance();
     
     // Create GUI on main camera (standard fullscreen UI)
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('DevConsole', true, scene);
+    if (this.gui.layer) {
+      this.gui.layer.layerMask = UI_LAYER;
+    }
+    this.gui.useInvalidateRectOptimization = false;
     
     this.createConsoleUI();
     this.setupLiveStats();
@@ -598,6 +605,18 @@ export class DevConsole {
       this.roomIds = ['room_test_dummies'];
     }
 
+    // Add example tile rooms
+    const tileRoomIds = [
+      'room_tiles_basic',
+      'room_tiles_poison',
+      'room_tiles_void',
+      'room_tiles_mixed_obstacles',
+      'room_tiles_complex',
+      'room_tiles_narrow_corridor',
+      'room_tiles_circular_arena'
+    ];
+    this.roomIds = [...this.roomIds, ...tileRoomIds];
+
     const sectionTitle = new TextBlock('roomTestTitle');
     sectionTitle.text = '═══ ROOM TESTING ═══';
     sectionTitle.fontSize = 15;
@@ -661,6 +680,90 @@ export class DevConsole {
       this.eventBus.emit(GameEvents.DEV_ROOM_LOAD_REQUESTED, { roomId });
     });
     parent.addControl(loadBtn);
+
+    // Add tile controls
+    const tileSectionTitle = new TextBlock('tileSectionTitle');
+    tileSectionTitle.text = '═══ TILE SYSTEM ═══';
+    tileSectionTitle.fontSize = 15;
+    tileSectionTitle.fontWeight = 'bold';
+    tileSectionTitle.color = '#FFD700';
+    tileSectionTitle.height = '34px';
+    tileSectionTitle.paddingTop = 6;
+    tileSectionTitle.paddingBottom = 6;
+    parent.addControl(tileSectionTitle);
+
+    const tileButtonRow = new StackPanel('tileButtonRow');
+    tileButtonRow.isVertical = false;
+    tileButtonRow.height = '34px';
+    tileButtonRow.width = '440px';
+    tileButtonRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const toggleTilesBtn = Button.CreateSimpleButton('toggleTilesBtn', 'TOGGLE TILES');
+    toggleTilesBtn.width = '200px';
+    toggleTilesBtn.height = '30px';
+    toggleTilesBtn.color = '#FFFFFF';
+    toggleTilesBtn.background = '#444400';
+    toggleTilesBtn.thickness = 1;
+    toggleTilesBtn.onPointerUpObservable.add(() => {
+      this.eventBus.emit(GameEvents.DEV_TILE_TOGGLE_REQUESTED);
+      toggleTilesBtn.background = this.gameManager.isUsingTiles() ? '#004400' : '#444400';
+    });
+    tileButtonRow.addControl(toggleTilesBtn);
+
+    const loadTilesBtn = Button.CreateSimpleButton('loadTilesBtn', 'LOAD TILES');
+    loadTilesBtn.width = '200px';
+    loadTilesBtn.height = '30px';
+    loadTilesBtn.color = '#FFFFFF';
+    loadTilesBtn.background = '#004400';
+    loadTilesBtn.thickness = 1;
+    loadTilesBtn.onPointerUpObservable.add(() => {
+      const roomId = this.roomIds[this.roomSelectIndex];
+      this.eventBus.emit(GameEvents.DEV_TILE_LOAD_REQUESTED, { roomId });
+      this.gameManager.setTilesEnabled(true);
+    });
+    tileButtonRow.addControl(loadTilesBtn);
+
+    parent.addControl(tileButtonRow);
+
+    const tileButtonRow2 = new StackPanel('tileButtonRow2');
+    tileButtonRow2.isVertical = false;
+    tileButtonRow2.height = '34px';
+    tileButtonRow2.width = '440px';
+    tileButtonRow2.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const loadTileJsonBtn = Button.CreateSimpleButton('loadTileJsonBtn', 'LOAD TILE JSON');
+    loadTileJsonBtn.width = '200px';
+    loadTileJsonBtn.height = '30px';
+    loadTileJsonBtn.color = '#FFFFFF';
+    loadTileJsonBtn.background = '#222244';
+    loadTileJsonBtn.thickness = 1;
+    loadTileJsonBtn.onPointerUpObservable.add(() => {
+      const payload = window.prompt('Paste tile mapping JSON (tiles_mapping export)');
+      if (!payload) return;
+      this.gameManager.loadRoomFromTileMappingJson(payload);
+      this.gameManager.setTilesEnabled(true);
+    });
+    tileButtonRow2.addControl(loadTileJsonBtn);
+
+    parent.addControl(tileButtonRow2);
+
+    const tileStatsLabel = new TextBlock('tileStatsLabel');
+    tileStatsLabel.text = 'Tiles: Disabled';
+    tileStatsLabel.fontSize = 12;
+    tileStatsLabel.color = '#FFD700';
+    tileStatsLabel.height = '20px';
+    tileStatsLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    parent.addControl(tileStatsLabel);
+
+    // Update tile stats regularly
+    this.scene.onBeforeRenderObservable.add(() => {
+      if (this.gameManager.isUsingTiles()) {
+        const stats = this.gameManager.getTileStatistics();
+        tileStatsLabel.text = `Tiles: Enabled (${stats.totalTiles} tiles)`;
+      } else {
+        tileStatsLabel.text = 'Tiles: Disabled';
+      }
+    });
   }
 
   private updateRoomLabel(): void {
@@ -813,6 +916,35 @@ export class DevConsole {
     freezeContainer.addControl(freezeCheckbox);
     freezeContainer.addControl(freezeLabel);
     parent.addControl(freezeContainer);
+
+    // Daemon voiceline test
+    const daemonTestContainer = new StackPanel('daemonVoicelineContainer');
+    daemonTestContainer.isVertical = false;
+    daemonTestContainer.height = '30px';
+    daemonTestContainer.width = '440px';
+    daemonTestContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const daemonTestCheckbox = new Checkbox('daemonVoicelineCheckbox');
+    daemonTestCheckbox.isChecked = gameplayConfig.debugConfig.daemonVoicelineTest;
+    daemonTestCheckbox.width = '25px';
+    daemonTestCheckbox.height = '25px';
+
+    const daemonTestLabel = new TextBlock('daemonVoicelineLabel');
+    daemonTestLabel.text = '  Daemon Voiceline Test';
+    daemonTestLabel.fontSize = 13;
+    daemonTestLabel.color = '#FFFFFF';
+    daemonTestLabel.width = '400px';
+    daemonTestLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    daemonTestCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      gameplayConfig.debugConfig.daemonVoicelineTest = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.DEBUG_FLAG_CHANGED, { flag: 'daemonVoicelineTest', value: isChecked });
+    });
+
+    daemonTestContainer.addControl(daemonTestCheckbox);
+    daemonTestContainer.addControl(daemonTestLabel);
+    parent.addControl(daemonTestContainer);
   }
 
   private toggleConsole(): void {

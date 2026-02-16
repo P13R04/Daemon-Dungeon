@@ -133,7 +133,7 @@ export class PlayerController {
   }
 
   private updateAimDirection(): void {
-    const camera = this.scene.activeCamera;
+    const camera = (this.scene as any).mainCamera ?? this.scene.activeCamera;
     if (!camera || !this.mesh) return;
 
     const mousePos = this.inputManager.getMousePosition();

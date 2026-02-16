@@ -232,6 +232,7 @@ export class EnemyController {
       entityId: this.id,
       enemyName: this.config?.name ?? this.id,
       maxHP: maxHP,
+      mesh: this.mesh,
     });
 
     if (this.behavior === 'bull') {
