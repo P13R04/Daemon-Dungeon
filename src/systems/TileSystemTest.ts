@@ -12,22 +12,22 @@ export class TileSystemTest {
    */
   static validateTextureReferences(): { valid: boolean; missing: string[] } {
     const textureMap: { [key: string]: TileType[] } = {
-      'assets/tiles_test/floor_base.png': ['floor_base'],
-      'assets/tiles_test/floor_var1.png': ['floor_var1'],
-      'assets/tiles_test/floor_var2.png': ['floor_var2'],
+      'assets/tiles_test/floor_base.png': ['floor'],
+      'assets/tiles_test/floor_var1.png': ['floor'],
+      'assets/tiles_test/floor_var2.png': ['floor'],
       
       // Circuit borders
-      'assets/tiles_test/circuit_border_side.png': ['floor_base'],
-      'assets/tiles_test/circuit_border_side_opposite.png': ['floor_base'],
-      'assets/tiles_test/circuit_border_corner.png': ['floor_base'],
-      'assets/tiles_test/circuit_border_corner_reversed.png': ['floor_base'],
-      'assets/tiles_test/circuit_border_corner_reversed_opposite.png': ['floor_base'],
-      'assets/tiles_test/circuit_border_corner_opposite_reversed.png': ['floor_base'],
-      'assets/tiles_test/circuit_border_side_and_reversed.png': ['floor_base'],
-      'assets/tiles_test/circuit_border_side_and_reversed2.png': ['floor_base'],
-      'assets/tiles_test/circuit_border_side_and_reversed_alt.png': ['floor_base'],
-      'assets/tiles_test/circuit_border_side3.png': ['floor_base'],
-      'assets/tiles_test/circuit_border_side4.png': ['floor_base'],
+      'assets/tiles_test/circuit_border_side.png': ['floor'],
+      'assets/tiles_test/circuit_border_side_opposite.png': ['floor'],
+      'assets/tiles_test/circuit_border_corner.png': ['floor'],
+      'assets/tiles_test/circuit_border_corner_reversed.png': ['floor'],
+      'assets/tiles_test/circuit_border_corner_reversed_opposite.png': ['floor'],
+      'assets/tiles_test/circuit_border_corner_opposite_reversed.png': ['floor'],
+      'assets/tiles_test/circuit_border_side_and_reversed.png': ['floor'],
+      'assets/tiles_test/circuit_border_side_and_reversed2.png': ['floor'],
+      'assets/tiles_test/circuit_border_side_and_reversed_alt.png': ['floor'],
+      'assets/tiles_test/circuit_border_side3.png': ['floor'],
+      'assets/tiles_test/circuit_border_side4.png': ['floor'],
       
       // Poison transitions
       'assets/tiles_test/poison_base.png': ['poison'],
@@ -50,7 +50,7 @@ export class TileSystemTest {
       'assets/tiles_test/vide_alone.png': ['void'],
       
       // Others
-      'assets/tiles_test/spikes.png': ['floor_base'],
+      'assets/tiles_test/spikes.png': ['spikes'],
       'assets/tiles_test/floor_surrounded_poison.png': ['poison'],
       'assets/tiles_test/floor_surrounded_void.png': ['void'],
     };
@@ -258,13 +258,12 @@ export class TileSystemTest {
 
     // Remplir avec les types
     const typeMap: { [key in TileType]: string } = {
-      floor_base: '.',
-      floor_var1: ',',
-      floor_var2: ':',
+      floor: '.',
       wall: '#',
       pillar: 'O',
       poison: 'P',
       void: 'V',
+      spikes: '^',
     };
 
     for (const tile of tiles) {

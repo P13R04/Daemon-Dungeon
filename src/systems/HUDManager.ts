@@ -67,6 +67,8 @@ export class HUDManager {
   private roomClearScreen: Rectangle | null = null;
   private bonusScreen: Rectangle | null = null;
   private bonusButtons: Button[] = [];
+  private avatarImageCache: Map<string, HTMLImageElement> = new Map();
+  private avatarPreloadPromise: Promise<void> | null = null;
   private readonly daemonAvatarSets: Record<string, string[]> = {
     'blasé': ['blasé_01.png', 'blasé_02.png'],
     'bored': ['bored_01.png', 'bored_02.png', 'bored_03.png', 'bored_04.png'],
@@ -89,6 +91,11 @@ export class HUDManager {
 
   constructor(private scene: Scene) {
     this.eventBus = EventBus.getInstance();
+    
+    // Preload all avatar frames in background
+    this.preloadAllAvatarFrames().catch(err => {
+      console.warn('Avatar frames preload failed:', err);
+    });
     
     // Create GUIs on main camera
     this.guiFx = AdvancedDynamicTexture.CreateFullscreenUI('HUD_FX', true, scene);
@@ -155,19 +162,19 @@ export class HUDManager {
       this.addLogMessage('ENEMY UNIT DEL...');
     });
 
-    this.eventBus.on(GameEvents.PLAYER_DAMAGED, (data) => {
+    this.eventBus.on(GameEvents.PLAYER_DAMAGED, async (data) => {
       this.updateHealthDisplay(data.health.current, data.health.max);
       if (data?.damage && data.damage > 0) {
         this.addLogMessage('INTEGRITY BREACH DETECTED.');
         const taunt = this.getRandomTaunt('damage');
-        this.showDaemonMessage(taunt.text, taunt.emotion);
+        await this.showDaemonMessage(taunt.text, taunt.emotion);
       }
     });
 
-    this.eventBus.on(GameEvents.ROOM_CLEARED, () => {
+    this.eventBus.on(GameEvents.ROOM_CLEARED, async () => {
       this.addLogMessage('ROOM STATUS: CLEAR.');
       const taunt = this.getRandomTaunt('clear');
-      this.showDaemonMessage(taunt.text, taunt.emotion);
+      await this.showDaemonMessage(taunt.text, taunt.emotion);
     });
 
     this.eventBus.on(GameEvents.ROOM_ENTERED, () => {
@@ -190,13 +197,14 @@ export class HUDManager {
       this.resetWaveCounter();
     });
 
-    this.eventBus.on(GameEvents.DAEMON_TAUNT, (data) => {
+    this.eventBus.on(GameEvents.DAEMON_TAUNT, async (data) => {
       const message = typeof data?.text === 'string' ? data.text : String(data ?? '...');
       const emotion = typeof data?.emotion === 'string' ? data.emotion : undefined;
       const sequence = Array.isArray(data?.sequence) ? data.sequence : undefined;
       const frameInterval = typeof data?.frameInterval === 'number' ? data.frameInterval : undefined;
       const holdDuration = typeof data?.holdDuration === 'number' ? data.holdDuration : undefined;
-      this.showDaemonMessage(message, emotion, { sequence, frameInterval, holdDuration });
+      const preload = data?.preload !== false; // Preload by default
+      await this.showDaemonMessage(message, emotion, { sequence, frameInterval, holdDuration, preload });
     });
 
     this.eventBus.on(GameEvents.PLAYER_ULTIMATE_READY, (data) => {
@@ -989,12 +997,18 @@ export class HUDManager {
     }
   }
 
-  private showDaemonMessage(
+  private async showDaemonMessage(
     message: string,
     emotion?: string,
-    options?: { sequence?: string[]; frameInterval?: number; holdDuration?: number }
-  ): void {
+    options?: { sequence?: string[]; frameInterval?: number; holdDuration?: number; preload?: boolean }
+  ): Promise<void> {
     if (!this.daemonContainer || !this.daemonMessageText) return;
+    
+    // Preload frames if requested
+    if (options?.preload !== false && options?.sequence && options.sequence.length > 0) {
+      await this.preloadAvatarFrames(options.sequence);
+    }
+    
     this.daemonFullText = message;
     this.daemonTypingIndex = 0;
     this.daemonTypingTimer = 0;
@@ -1176,13 +1190,109 @@ export class HUDManager {
   private updateDaemonAvatarImage(): void {
     if (!this.daemonAvatarImage || !this.daemonAvatarSequence.length) return;
     const fileName = this.daemonAvatarSequence[this.avatarFrameIndex];
-    this.daemonAvatarImage.source = this.getAvatarFrameSrc(fileName);
+    const src = this.getAvatarFrameSrc(fileName);
+    
+    // Use cached image if available for instant display
+    const cached = this.avatarImageCache.get(fileName);
+    if (cached && cached.complete) {
+      this.daemonAvatarImage.source = src;
+    } else {
+      this.daemonAvatarImage.source = src;
+    }
   }
 
-  private getAvatarFrameSrc(fileName: string): string {
+  private getAvatarFrameSrc(fileName: string, normalization: 'NFC' | 'NFD' = 'NFD'): string {
     const baseUrl = (import.meta as any).env?.BASE_URL ?? '/';
     const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-    return `${normalizedBase}avatar_frames_cutout2/${fileName}`;
+    // Normalize to specified form and encode for URL
+    // macOS uses NFD (decomposed) while JavaScript uses NFC (composed) by default
+    const normalizedFileName = fileName.normalize(normalization);
+    const encodedFileName = encodeURIComponent(normalizedFileName);
+    return `${normalizedBase}avatar_frames_cutout2/${encodedFileName}`;
+  }
+
+  /**
+   * Preload specific avatar frames into cache
+   * @param frames Array of filenames to preload
+   */
+  private preloadAvatarFrames(frames: string[]): Promise<void> {
+    const promises = frames.map(fileName => {
+      // Skip if already cached
+      if (this.avatarImageCache.has(fileName)) {
+        return Promise.resolve();
+      }
+
+      return this.loadAvatarFrame(fileName);
+    });
+
+    return Promise.all(promises).then(() => {});
+  }
+
+  /**
+   * Load a single avatar frame with fallback for Unicode normalization issues
+   * @param fileName The frame filename to load
+   */
+  private loadAvatarFrame(fileName: string): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const img = document.createElement('img') as HTMLImageElement;
+
+      // Try NFD first (macOS filesystem format)
+      const srcNFD = this.getAvatarFrameSrc(fileName, 'NFD');
+
+      img.onload = () => {
+        this.avatarImageCache.set(fileName, img);
+        resolve();
+      };
+
+      img.onerror = () => {
+        // NFD failed, try NFC (standard Unicode composition)
+        const imgNFC = document.createElement('img') as HTMLImageElement;
+        const srcNFC = this.getAvatarFrameSrc(fileName, 'NFC');
+
+        imgNFC.onload = () => {
+          this.avatarImageCache.set(fileName, imgNFC);
+          resolve();
+        };
+
+        imgNFC.onerror = () => {
+          console.warn(`Failed to preload avatar frame: ${fileName}`);
+          console.warn(`  Tried NFD: ${srcNFD}`);
+          console.warn(`  Tried NFC: ${srcNFC}`);
+          resolve();
+        };
+
+        imgNFC.src = srcNFC;
+      };
+
+      img.src = srcNFD;
+    });
+  }
+
+  /**
+   * Preload all avatar emotion sets for instant playback
+   * Called during initialization
+   */
+  public async preloadAllAvatarFrames(): Promise<void> {
+    if (this.avatarPreloadPromise) {
+      return this.avatarPreloadPromise;
+    }
+
+    const allFrames = new Set<string>();
+    for (const emotionFrames of Object.values(this.daemonAvatarSets)) {
+      emotionFrames.forEach(frame => allFrames.add(frame));
+    }
+
+    console.log(`Preloading ${allFrames.size} avatar frames...`);
+    this.avatarPreloadPromise = this.preloadAvatarFrames(Array.from(allFrames));
+    
+    try {
+      await this.avatarPreloadPromise;
+      console.log(`✓ Avatar frames preloaded (${this.avatarImageCache.size} images cached)`);
+    } catch (err) {
+      console.warn('Some avatar frames failed to preload:', err);
+    }
+
+    return this.avatarPreloadPromise;
   }
 
   toggleDisplay(enabled: boolean): void {

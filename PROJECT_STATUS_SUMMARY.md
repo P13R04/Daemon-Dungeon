@@ -83,6 +83,7 @@
 
 ## Known Limitations / TODO
 - Room progression logic is basic (single test flow).
+- Bundle size optimization deferred (code splitting, lazy loading).
 - Damage numbers are simple and can be refined.
 - Combat feedback FX (hit flashes, impact effects) not yet added.
 - Hazard zones are basic rectangles (no fancy VFX yet).

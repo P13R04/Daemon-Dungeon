@@ -31,7 +31,8 @@ export class SceneBootstrap {
 
     const uiCamera = new FreeCamera('uiCamera', new Vector3(0, 0, -10), scene);
     uiCamera.layerMask = UI_LAYER;
-    uiCamera.clearColor = new Color4(0, 0, 0, 0);
+    // Note: clearColor is a Scene property, not FreeCamera property
+    // The UI layer will be transparent through layerMask
     (uiCamera as any).clear = false;
     
     // Basic lighting

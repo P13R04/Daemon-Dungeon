@@ -434,6 +434,7 @@ export class GameManager {
       sequence,
       frameInterval,
       holdDuration,
+      preload: true, // Preload frames for smooth animation
     };
 
     const lines = [
