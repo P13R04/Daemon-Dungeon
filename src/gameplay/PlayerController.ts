@@ -4,7 +4,7 @@
 
 import { Scene, Mesh, Vector3, Matrix } from '@babylonjs/core';
 import { InputManager } from '../input/InputManager';
-import { VisualPlaceholder } from '../utils/VisualPlaceholder';
+import { PlayerAnimationController } from './PlayerAnimationController';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { Time } from '../core/Time';
 import { Health } from '../components/Health';
@@ -18,6 +18,8 @@ export class PlayerController {
   private inputManager: InputManager;
   private eventBus: EventBus;
   private time: Time;
+  private animationController!: PlayerAnimationController;
+  private modelLoadingPromise: Promise<void> | null = null;
   
   private config: any;
   private position: Vector3 = Vector3.Zero();
@@ -61,9 +63,27 @@ export class PlayerController {
   private scene: Scene;
 
   private initialize(): void {
-    // Create visual
-    this.mesh = VisualPlaceholder.createPlayerPlaceholder(this.scene, 'player');
-    this.mesh.position.y = 1.0; // Raise above ground
+    // Create animation controller and load model asynchronously
+    this.animationController = new PlayerAnimationController(this.scene);
+    
+    // Start loading the mage model (fire and forget, with error handling)
+    this.modelLoadingPromise = this.animationController
+      .loadModel('assets/models/player/')
+      .then(() => {
+        // Get mesh reference from animation controller
+        const loadedMesh = this.animationController.getMesh();
+        if (loadedMesh) {
+          this.mesh = loadedMesh;
+          this.mesh.position.y = 1.0; // Raise above ground
+          console.log('✓ Player mage model loaded successfully');
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load player model:', error);
+        // Fallback: create a simple placeholder if model loading fails
+        console.warn('Creating fallback placeholder...');
+        this.createFallbackPlaceholder();
+      });
     
     // Setup health
     const maxHP = this.config.mage.baseStats.hp;
@@ -74,6 +94,20 @@ export class PlayerController {
     this.fireRate = this.config.mage.baseStats.fireRate;
     this.baseFireRate = this.fireRate;
     this.speed = this.config.mage.baseStats.speed;
+  }
+
+  /**
+   * Fallback placeholder creation if model loading fails
+   */
+  private createFallbackPlaceholder(): void {
+    const { MeshBuilder, StandardMaterial, Color3 } = require('@babylonjs/core');
+    const cube = MeshBuilder.CreateBox('player_fallback', { size: 0.6 }, this.scene);
+    const material = new StandardMaterial('player_mat', this.scene);
+    material.diffuseColor = new Color3(0.2, 0.5, 1.0); // Blue
+    material.emissiveColor = new Color3(0.1, 0.3, 0.5);
+    cube.material = material;
+    cube.position.y = 1.0;
+    this.mesh = cube;
   }
 
   setPosition(position: Vector3): void {
@@ -107,6 +141,15 @@ export class PlayerController {
 
     // Update ultimate
     this.updateUltimate(deltaTime);
+
+    // Update animations based on current state
+    // Priority: Ultimate > Attack > Movement > Idle
+    const isUltimateActive = this.inputManager.isSpacePressed() && this.ultCharge >= 1.0;
+    this.animationController.updateAnimationState(
+      this.isMoving,
+      this.isFiring,
+      isUltimateActive
+    );
 
     // Handle input
     this.handleInput(deltaTime);
@@ -385,6 +428,9 @@ export class PlayerController {
   dispose(): void {
     if (this.mesh) {
       this.mesh.dispose();
+    }
+    if (this.animationController) {
+      this.animationController.dispose();
     }
   }
 }
