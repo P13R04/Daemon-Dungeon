@@ -27,6 +27,13 @@ export class PlayerController {
   private knockback: Knockback = new Knockback(10);
   private speed: number = 5.5;
   
+  // Direction tracking for model rotation
+  private lastMovementDirection: Vector3 = new Vector3(1, 0, 0);
+  private lastAttackDirection: Vector3 = new Vector3(1, 0, 0);
+  
+  // Ultimate state tracking
+  private wasUltimateActive: boolean = false;
+  
   // Attack
   private attackDirection: Vector3 = new Vector3(1, 0, 0);
   private fireRate: number = 0.15;
@@ -112,7 +119,13 @@ export class PlayerController {
 
   setPosition(position: Vector3): void {
     this.position = position.clone();
-    this.mesh.position.copyFrom(position);
+    const parent = this.animationController.getParent();
+    if (parent) {
+      parent.position.copyFrom(position);
+      parent.position.y = 1.0;
+    } else if (this.mesh) {
+      this.mesh.position.copyFrom(position);
+    }
   }
 
   update(deltaTime: number): void {
@@ -127,11 +140,14 @@ export class PlayerController {
     
     this.position = newPosition;
     this.position.y = 1.0; // Keep at visible height
-    this.mesh.position = this.position;
-
-
-    // Update attack direction based on mouse
-    this.updateAimDirection();
+    
+    // Update parent position (which contains the mesh)
+    const parent = this.animationController.getParent();
+    if (parent) {
+      parent.position.copyFrom(this.position);
+    } else if (this.mesh) {
+      this.mesh.position = this.position;
+    }
 
     // Update attack cooldown
     this.timeSinceLastAttack += deltaTime;
@@ -144,7 +160,7 @@ export class PlayerController {
 
     // Update animations based on current state
     // Priority: Ultimate > Attack > Movement > Idle
-    const isUltimateActive = this.inputManager.isSpacePressed() && this.ultCharge >= 1.0;
+    const isUltimateActive = this.inputManager.isSpaceHeld() && this.ultCharge >= 1.0;
     this.animationController.updateAnimationState(
       this.isMoving,
       this.isFiring,
@@ -156,6 +172,9 @@ export class PlayerController {
 
     // Reset input frame state
     this.inputManager.updateFrame();
+
+    // Update smooth rotation toward target direction
+    this.animationController.updateRotation(deltaTime);
   }
 
   private updateMovement(deltaTime: number): void {
@@ -168,6 +187,12 @@ export class PlayerController {
       
       // Move in XZ plane (top-down)
       this.velocity = new Vector3(input.x, 0, input.z).normalize().scale(this.speed);
+      
+      // Update last movement direction for model rotation
+      this.lastMovementDirection = new Vector3(input.x, 0, input.z).normalize();
+      
+      // Set rotation target (rotation will be interpolated smoothly)
+      this.animationController.rotateTowardDirection(this.lastMovementDirection);
     } else {
       this.isMoving = false;
       this.velocity = Vector3.Zero();
@@ -190,6 +215,7 @@ export class PlayerController {
         dir.y = 0;
         if (dir.lengthSquared() > 0.0001) {
           this.attackDirection = dir.normalize();
+          this.lastAttackDirection = this.attackDirection.clone();
           return;
         }
       }
@@ -246,21 +272,42 @@ export class PlayerController {
     this.isFiring = this.inputManager.isMouseDown();
     // Attack (click = single shot, hold = continuous)
     if (this.isFiring) {
+      // Update aim direction only when firing
+      this.updateAimDirection();
+      
       if (this.timeSinceLastAttack >= this.fireRate) {
         this.fireProjectile();
         this.timeSinceLastAttack = 0;
       }
     }
 
-    // Ultimate (space)
-    if (this.inputManager.isSpacePressed() && this.ultCharge >= 1.0) {
+    // Ultimate (space) - trigger only once when transitioning from not-ready to ready+pressed
+    const isSpaceHeld = this.inputManager.isSpaceHeld();
+    const isUltimateReadyAndPressed = isSpaceHeld && this.ultCharge >= 1.0;
+    
+    if (isUltimateReadyAndPressed && !this.wasUltimateActive) {
       this.castUltimate();
     }
+    this.wasUltimateActive = isUltimateReadyAndPressed;
+
+    // Apply rotation based on state
+    if (this.isFiring) {
+      // While attacking: rotate toward attack direction (mouse aim)
+      this.animationController.rotateTowardDirection(this.attackDirection);
+    } else if (!this.isMoving) {
+      // While idle: keep last attack direction
+      this.animationController.rotateTowardDirection(this.lastAttackDirection);
+    }
+    // While moving: rotation is already applied in updateMovement()
   }
 
   private fireProjectile(): void {
     const attackConfig = this.config.mage.attack;
     const damage = this.config.mage.baseStats.damage;
+
+    // Rotate model to face attack direction at moment of firing
+    console.log(`🎯 Attack fired, rotating to: x=${this.attackDirection.x.toFixed(2)}, z=${this.attackDirection.z.toFixed(2)}`);
+    this.animationController.rotateTowardDirection(this.attackDirection);
 
     this.eventBus.emit(GameEvents.PROJECTILE_SPAWNED, {
       position: this.position.clone(),
@@ -280,13 +327,19 @@ export class PlayerController {
   private castUltimate(): void {
     const ultConfig = this.config.mage.ultimate;
     
-    this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_USED, {
-      position: this.position.clone(),
-      radius: ultConfig.radius,
-      damage: ultConfig.damage,
-      duration: ultConfig.dotDuration,
-      dotTickRate: ultConfig.dotTickRate,
-      healPerTick: ultConfig.healPerTick,
+    // Rotate model to face attack direction when casting ultimate
+    this.animationController.rotateTowardDirection(this.attackDirection);
+    
+    // Set callback to emit event when animation finishes
+    this.animationController.setOnUltimateAnimationFinished(() => {
+      this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_USED, {
+        position: this.position.clone(),
+        radius: ultConfig.radius,
+        damage: ultConfig.damage,
+        duration: ultConfig.dotDuration,
+        dotTickRate: ultConfig.dotTickRate,
+        healPerTick: ultConfig.healPerTick,
+      });
     });
 
     this.ultCharge = 0;

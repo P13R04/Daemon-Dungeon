@@ -3,7 +3,7 @@
  * Handles loading mage.glb and managing animation states with proper prioritization
  */
 
-import { Scene, Mesh, AnimationGroup, SceneLoader, Vector3 } from '@babylonjs/core';
+import { Scene, Mesh, AnimationGroup, SceneLoader, Vector3, TransformNode } from '@babylonjs/core';
 
 export enum AnimationState {
   IDLE = 'idle',
@@ -21,6 +21,7 @@ export interface AnimationTransition {
 
 export class PlayerAnimationController {
   private mesh: Mesh | null = null;
+  private meshParent: TransformNode | null = null;  // Parent for rotation/position
   private scene: Scene;
   private animationGroups: Map<string, AnimationGroup> = new Map();
 
@@ -28,6 +29,13 @@ export class PlayerAnimationController {
   private currentState: AnimationState = AnimationState.IDLE;
   private currentAnimation: string = '';
   private isTransitioning: boolean = false;
+  private isAnimationPlaying: boolean = false;
+  private isUltimateActive: boolean = false; // Track ultimate state
+  private onUltimateAnimationFinished: (() => void) | null = null; // Callback when ultimate animation ends
+
+  // Rotation system - progressive interpolation
+  private targetRotationY: number = 0; // Target angle to rotate towards
+  private rotationSpeed: number = 12; // Radians per second - controls rotation smoothness
 
   // Attack animation alternation and speed variation
   private lastAttackWasAttack1: boolean = false;
@@ -56,13 +64,32 @@ export class PlayerAnimationController {
       this.mesh = result.meshes[0] as Mesh;
       this.mesh.name = 'player_mage';
 
+      // Scale down model by factor of 10
+      this.mesh.scaling.scaleInPlace(0.1);
+
+      // Create parent TransformNode for rotation and position management
+      // This avoids animation keyframes overriding our rotation
+      this.meshParent = new TransformNode('player_mage_parent', this.scene);
+      this.meshParent.position.y = 1.0;
+      
+      // Set mesh local position to 0 (parent controls world position)
+      this.mesh.parent = this.meshParent;
+      this.mesh.position = Vector3.Zero();
+
+      // Debug: log all meshes loaded
+      console.log(`📦 Total meshes loaded: ${result.meshes.length}`);
+      result.meshes.forEach((m, idx) => {
+        console.log(`   [${idx}] ${m.name} (children: ${m.getChildren().length})`);
+      });
+
       // Extract all animation groups
       result.animationGroups.forEach((group) => {
         this.animationGroups.set(group.name, group);
         console.log(`✓ Loaded animation: ${group.name}`);
       });
 
-      console.log(`✓ Player model loaded: ${this.mesh.name}, animations: ${this.animationGroups.size}`);
+      console.log(`✓ Player model loaded: ${this.mesh.name}, animations: ${this.animationGroups.size}, scale: 0.1`);
+      console.log(`✓ Parent TransformNode created for rotation management`);
 
       // Initialize with Idle animation
       this.playAnimation(AnimationState.IDLE);
@@ -98,7 +125,8 @@ export class PlayerAnimationController {
         this.currentState = AnimationState.IDLE;
         this.isWalking = false;
         this.hasStartedWalking = false;
-        break;
+        this._playAnimationLoop(animationName, speedMultiplier);
+        return;
 
       case AnimationState.WALKING:
         // Use Start_walking → Walking transition
@@ -145,6 +173,11 @@ export class PlayerAnimationController {
         animationName = 'Ultime';
         this.currentState = AnimationState.ULTIMATE;
         this._playAnimationOnce(animationName, () => {
+          // Animation finished - call the ultimate callback if set
+          if (this.onUltimateAnimationFinished) {
+            this.onUltimateAnimationFinished();
+            this.onUltimateAnimationFinished = null; // Reset callback
+          }
           // After ultimate, return to current movement state
           if (this.isWalking) {
             this.playAnimation(AnimationState.WALKING);
@@ -167,15 +200,34 @@ export class PlayerAnimationController {
     isFiring: boolean,
     isUltimateActive: boolean
   ): void {
-    // Priority: Ultimate > Attack > Movement > Idle
-    if (isUltimateActive && this.currentState !== AnimationState.ULTIMATE) {
+    // If ultimate becomes active, trigger animation (allow retrigger each time)
+    if (isUltimateActive && !this.isUltimateActive) {
       this.playAnimation(AnimationState.ULTIMATE);
+      this.isUltimateActive = true;
+      return;
+    }
+
+    // If ultimate is no longer active, reset flag to allow next cast
+    if (!isUltimateActive && this.isUltimateActive) {
+      this.isUltimateActive = false;
+      // Fall through to check other states
+    }
+
+    // Keep ultimate running until animation finishes
+    if (this.currentState === AnimationState.ULTIMATE && this.isAnimationCurrentlyPlaying()) {
       return;
     }
 
     // Attack takes priority over movement
+    // BUT: if attack animation is still playing, let it finish
     if (isFiring && this.currentState !== AnimationState.ATTACKING) {
       this.playAnimation(AnimationState.ATTACKING);
+      return;
+    }
+
+    // If currently attacking but animation finished, allow state change
+    if (this.currentState === AnimationState.ATTACKING && this.isAnimationCurrentlyPlaying()) {
+      // Keep attacking until animation finishes
       return;
     }
 
@@ -200,19 +252,34 @@ export class PlayerAnimationController {
   }
 
   /**
+   * Set callback to be called when ultimate animation finishes
+   */
+  setOnUltimateAnimationFinished(callback: (() => void) | null): void {
+    this.onUltimateAnimationFinished = callback;
+  }
+
+  /**
+   * Get the parent TransformNode (for positioning)
+   */
+  getParent(): TransformNode | null {
+    return this.meshParent;
+  }
+
+  /**
+   * Set position of the parent (world position of the model)
+   */
+  setPosition(position: Vector3): void {
+    if (this.meshParent) {
+      this.meshParent.position.copyFrom(position);
+      this.meshParent.position.y = 1.0; // Ensure correct height
+    }
+  }
+
+  /**
    * Get current animation state
    */
   getCurrentState(): AnimationState {
     return this.currentState;
-  }
-
-  /**
-   * Position the mesh at a given location
-   */
-  setPosition(position: Vector3): void {
-    if (this.mesh) {
-      this.mesh.position.copyFrom(position);
-    }
   }
 
   /**
@@ -221,6 +288,9 @@ export class PlayerAnimationController {
   dispose(): void {
     if (this.mesh) {
       this.mesh.dispose();
+    }
+    if (this.meshParent) {
+      this.meshParent.dispose();
     }
     this.animationGroups.forEach((group) => {
       group.dispose();
@@ -270,7 +340,7 @@ export class PlayerAnimationController {
 
     group.speedRatio = speedMultiplier;
     group.loopAnimation = true;
-    group.play();
+    group.play(true);  // Pass true to enable looping
     this.currentAnimation = animationName;
   }
 
@@ -286,5 +356,78 @@ export class PlayerAnimationController {
    */
   hasAnimation(name: string): boolean {
     return this.animationGroups.has(name);
+  }
+
+  /**
+   * Rotate the model to face a direction (8-directional)
+   * Direction is a normalized Vector3 in 3D space
+   * Rotation is applied to parent TransformNode, not the mesh directly
+   */
+  rotateTowardDirection(direction: Vector3): void {
+    if (!this.meshParent || direction.lengthSquared() < 0.0001) {
+      return;
+    }
+
+    // Calculate target angle from direction vector
+    // Front direction convention: positive Z is forward
+    // Apply -90° offset for model orientation
+    this.targetRotationY = Math.atan2(direction.x, direction.z) - Math.PI / 2;
+  }
+
+  /**
+   * Update rotation smoothly toward target (call this every frame)
+   * Should be called from PlayerController.update()
+   */
+  updateRotation(deltaTime: number): void {
+    if (!this.meshParent) return;
+
+    const currentRotation = this.meshParent.rotation.y;
+    const diff = this.targetRotationY - currentRotation;
+
+    // Normalize angle difference to [-PI, PI] for shortest path
+    const normalizedDiff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    
+    // Calculate max rotation for this frame
+    const maxRotation = this.rotationSpeed * deltaTime;
+    
+    // Interpolate towards target
+    if (Math.abs(normalizedDiff) > maxRotation) {
+      // Still rotating - apply max rotation in correct direction
+      this.meshParent.rotation.y += Math.sign(normalizedDiff) * maxRotation;
+    } else {
+      // Close enough - snap to target
+      this.meshParent.rotation.y = this.targetRotationY;
+    }
+  }
+
+  /**
+   * Check if current animation is still playing
+   */
+  isAnimationCurrentlyPlaying(): boolean {
+    if (!this.currentAnimation) return false;
+    const group = this.animationGroups.get(this.currentAnimation);
+    return group ? group.isPlaying : false;
+  }
+
+  /**
+   * Debug: Log mesh hierarchy
+   */
+  debugMeshHierarchy(): void {
+    if (!this.mesh) return;
+    console.log(`🔍 === MESH DEBUG ===`);
+    console.log(`Mesh: ${this.mesh.name}`);
+    console.log(`  Position: ${this.mesh.position.x}, ${this.mesh.position.y}, ${this.mesh.position.z}`);
+    console.log(`  Rotation: ${this.mesh.rotation.x}, ${this.mesh.rotation.y}, ${this.mesh.rotation.z}`);
+    console.log(`  Scaling: ${this.mesh.scaling.x}, ${this.mesh.scaling.y}, ${this.mesh.scaling.z}`);
+    console.log(`  Children: ${this.mesh.getChildren().length}`);
+    
+    this.mesh.getChildren().forEach((child, idx) => {
+      console.log(`  [${idx}] ${child.name}`);
+      console.log(`      Type: ${child.constructor.name}`);
+      if ('rotation' in child) {
+        const rot = child as any;
+        console.log(`      Rotation: ${rot.rotation.x}, ${rot.rotation.y}, ${rot.rotation.z}`);
+      }
+    });
   }
 }

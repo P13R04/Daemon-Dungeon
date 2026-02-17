@@ -163,12 +163,20 @@ export class InputManager {
   }
 
   /**
-   * Check if space was pressed this frame
+   * Check if space was pressed this frame (one-shot, resets after read)
    */
   isSpacePressed(): boolean {
     const result = this.spacePressedThisFrame;
     this.spacePressedThisFrame = false;
     return result;
+  }
+
+  /**
+   * Check if space is currently held down (continuous, no reset)
+   * Use this for checking ongoing input states like Ultimate charge
+   */
+  isSpaceHeld(): boolean {
+    return this.spacePressed;
   }
 
   /**

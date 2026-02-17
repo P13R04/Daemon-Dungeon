@@ -79,9 +79,9 @@ export class DevConsole {
     bgPanel.thickness = 3;
     bgPanel.cornerRadius = 8;
     bgPanel.color = '#00FF00';
-    bgPanel.top = '80px';
-    bgPanel.left = '-10px';
-    bgPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    bgPanel.top = '120px';
+    bgPanel.left = '10px';
+    bgPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     bgPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     bgPanel.zIndex = 1000;
     this.gui.addControl(bgPanel);
@@ -141,9 +141,9 @@ export class DevConsole {
     toggleBtn.background = '#004400';
     toggleBtn.color = '#00FF00';
     toggleBtn.fontSize = 12;
-    toggleBtn.left = -10;
-    toggleBtn.top = 80;
-    toggleBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    toggleBtn.left = 10;
+    toggleBtn.top = 85;
+    toggleBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     toggleBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     
     const toggleLabel = new TextBlock('devToggleLabel');
