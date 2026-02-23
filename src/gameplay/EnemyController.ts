@@ -13,10 +13,11 @@ import { ConfigLoader } from '../utils/ConfigLoader';
 import type { RoomManager } from '../systems/RoomManager';
 
 export class EnemyController {
-  private mesh!: Mesh;
+  public mesh!: Mesh; // Public pour DevConsole
   private health!: Health;
   private eventBus: EventBus;
   private time: Time;
+  private static globalHeightOffset: number = 0; // Global height adjustment for all enemies
   private scene: Scene;
   private id: string;
   
@@ -213,7 +214,7 @@ export class EnemyController {
     this.mesh.position = this.position.clone();
     this.mesh.rotation = Vector3.Zero();
     // Ensure enemy is at correct height
-    this.mesh.position.y = 1.0;
+    this.mesh.position.y = 1.0 + EnemyController.globalHeightOffset;
     
     console.log('Enemy initialized:', this.id, 'at position:', this.mesh.position);
     console.log('Enemy mesh visible:', this.mesh.isVisible, 'enabled:', this.mesh.isEnabled());
@@ -1260,7 +1261,7 @@ export class EnemyController {
 
   setPosition(position: Vector3): void {
     this.position = position.clone();
-    this.position.y = 1.0;
+    this.position.y = 1.0 + EnemyController.globalHeightOffset;
     this.applyMeshPosition();
   }
 
@@ -1308,7 +1309,7 @@ export class EnemyController {
   private applyMeshPosition(): void {
     if (!this.mesh) return;
     this.mesh.position = this.position.clone();
-    this.mesh.position.y = 1.0 + this.verticalOffset;
+    this.mesh.position.y = 1.0 + this.verticalOffset + EnemyController.globalHeightOffset;
   }
 
   private rotateToward(direction: Vector3, deltaTime: number, turnSpeed: number): void {
@@ -1412,6 +1413,14 @@ export class EnemyController {
     } catch (error) {
       console.warn('Bull model failed to load, using placeholder.', error);
     }
+  }
+
+  static setGlobalHeightOffset(offset: number): void {
+    EnemyController.globalHeightOffset = offset;
+  }
+
+  static getGlobalHeightOffset(): number {
+    return EnemyController.globalHeightOffset;
   }
 
   private getBounceAxis(

@@ -28,6 +28,25 @@
     <button class="tool" data-type="spikes">Spikes</button>
   </section>
 
+  <aside class="enemy-panel">
+    <h3>Enemy Spawns</h3>
+    <button id="enemyModeBtn">Enemy Mode (OFF)</button>
+    <button id="enemyOnlyViewBtn">Show Enemies Only</button>
+    <div class="enemy-controls">
+      <label>
+        Enemy Type:
+        <select id="enemySelector"></select>
+      </label>
+      <div class="coords-input">
+        <label>X: <input id="enemyX" type="number" step="0.1" min="0" value="5.5" /></label>
+        <label>Z: <input id="enemyZ" type="number" step="0.1" min="0" value="5.5" /></label>
+        <button id="addEnemyBtn">Add Enemy</button>
+      </div>
+      <p class="hint">Click on grid in Enemy Mode to place enemies at cell centers, or use coordinates for precise placement.</p>
+    </div>
+    <ul id="enemyList"></ul>
+  </aside>
+
   <main>
     <div id="grid" class="grid"></div>
   </main>

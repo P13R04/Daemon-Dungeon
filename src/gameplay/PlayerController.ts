@@ -18,7 +18,7 @@ export class PlayerController {
   private inputManager: InputManager;
   private eventBus: EventBus;
   private time: Time;
-  private animationController!: PlayerAnimationController;
+  public animationController!: PlayerAnimationController; // Public pour DevConsole
   private modelLoadingPromise: Promise<void> | null = null;
   
   private config: any;
@@ -30,6 +30,8 @@ export class PlayerController {
   // Direction tracking for model rotation
   private lastMovementDirection: Vector3 = new Vector3(1, 0, 0);
   private lastAttackDirection: Vector3 = new Vector3(1, 0, 0);
+  private wasJustAttacking: boolean = false; // Track if we just attacked to show attack direction briefly
+  private justAttackingTimeLeft: number = 0; // Time remaining to show attack direction (0.3 seconds)
   
   // Ultimate state tracking
   private wasUltimateActive: boolean = false;
@@ -119,13 +121,9 @@ export class PlayerController {
 
   setPosition(position: Vector3): void {
     this.position = position.clone();
-    const parent = this.animationController.getParent();
-    if (parent) {
-      parent.position.copyFrom(position);
-      parent.position.y = 1.0;
-    } else if (this.mesh) {
-      this.mesh.position.copyFrom(position);
-    }
+    this.position.y = 1.0; // Keep player at floor level
+    // Use animation controller's setPosition which handles height offset
+    this.animationController.setPosition(this.position);
   }
 
   update(deltaTime: number): void {
@@ -139,18 +137,21 @@ export class PlayerController {
     const newPosition = this.position.add(this.velocity.scale(deltaTime)).add(knock);
     
     this.position = newPosition;
-    this.position.y = 1.0; // Keep at visible height
+    this.position.y = 1.0; // Keep at floor level
     
-    // Update parent position (which contains the mesh)
-    const parent = this.animationController.getParent();
-    if (parent) {
-      parent.position.copyFrom(this.position);
-    } else if (this.mesh) {
-      this.mesh.position = this.position;
-    }
+    // Update parent position using animation controller (handles height offset)
+    this.animationController.setPosition(this.position);
 
     // Update attack cooldown
     this.timeSinceLastAttack += deltaTime;
+
+    // Update just-attacking flag timer (keep attack direction for 0.3 seconds)
+    if (this.wasJustAttacking) {
+      this.justAttackingTimeLeft -= deltaTime;
+      if (this.justAttackingTimeLeft <= 0) {
+        this.wasJustAttacking = false;
+      }
+    }
 
     // Update passive (Focus Fire)
     this.updateFocusFire(deltaTime);
@@ -181,6 +182,9 @@ export class PlayerController {
     const input = this.inputManager.getMovementInput();
 
     if (input.length() > 0) {
+      // Reset "just attacking" flag when starting to move
+      this.wasJustAttacking = false;
+      
       this.isMoving = true;
       this.timeSinceMovement = 0;
       this.focusFireBonus = 1.0; // Reset focus fire
@@ -202,21 +206,27 @@ export class PlayerController {
 
   private updateAimDirection(): void {
     const camera = (this.scene as any).mainCamera ?? this.scene.activeCamera;
-    if (!camera || !this.mesh) return;
+    if (!camera) return;
 
     const mousePos = this.inputManager.getMousePosition();
+    
+    // Create a ray from mouse position through the scene
     const ray = this.scene.createPickingRay(mousePos.x, mousePos.y, Matrix.Identity(), camera, false);
 
+    // Find where the ray intersects the ground plane (y = 1.0, same as player height)
     if (Math.abs(ray.direction.y) > 0.0001) {
-      const t = -ray.origin.y / ray.direction.y;
+      const t = (1.0 - ray.origin.y) / ray.direction.y;
       if (t > 0) {
+        // Point where mouse ray hits the ground plane
         const hitPoint = ray.origin.add(ray.direction.scale(t));
-        const dir = hitPoint.subtract(this.mesh.position);
-        dir.y = 0;
+        
+        // Calculate direction from player position to this hit point
+        const dir = hitPoint.subtract(this.position);
+        dir.y = 0; // Flatten to horizontal plane
+        
         if (dir.lengthSquared() > 0.0001) {
           this.attackDirection = dir.normalize();
           this.lastAttackDirection = this.attackDirection.clone();
-          return;
         }
       }
     }
@@ -274,6 +284,8 @@ export class PlayerController {
     if (this.isFiring) {
       // Update aim direction only when firing
       this.updateAimDirection();
+      this.wasJustAttacking = true; // Mark that we just attacked
+      this.justAttackingTimeLeft = 999; // Keep attack direction indefinitely until we move
       
       if (this.timeSinceLastAttack >= this.fireRate) {
         this.fireProjectile();
@@ -295,8 +307,13 @@ export class PlayerController {
       // While attacking: rotate toward attack direction (mouse aim)
       this.animationController.rotateTowardDirection(this.attackDirection);
     } else if (!this.isMoving) {
-      // While idle: keep last attack direction
-      this.animationController.rotateTowardDirection(this.lastAttackDirection);
+      // While idle: keep last movement direction
+      // Only briefly show attack direction if we just finished attacking
+      if (this.wasJustAttacking) {
+        this.animationController.rotateTowardDirection(this.lastAttackDirection);
+      } else {
+        this.animationController.rotateTowardDirection(this.lastMovementDirection);
+      }
     }
     // While moving: rotation is already applied in updateMovement()
   }

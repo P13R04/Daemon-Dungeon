@@ -1,13 +1,61 @@
 [
   {
+    "id": "room_test_pillar_top_left",
+    "name": "Pillar Top Left Test",
+    "layout": [
+      "##########",
+      "#........#",
+      "#.#......#",
+      "#........#",
+      "#........#",
+      "#........#",
+      "#........#",
+      "#........#",
+      "#........#",
+      "##########"
+    ],
+    "spawnPoints": [
+      {
+        "x": 5,
+        "y": 5,
+        "enemyType": "dummy_tank"
+      }
+    ],
+    "obstacles": []
+  },
+  {
+    "id": "room_test_poison_pattern",
+    "name": "Poison Pattern Test",
+    "layout": [
+      "##########",
+      "#........#",
+      "#.#..PPP.#",
+      "#....PPP.#",
+      "#.#..PPP.#",
+      "#.#..P...#",
+      "#........#",
+      "#........#",
+      "#........#",
+      "##########"
+    ],
+    "spawnPoints": [
+      {
+        "x": 5,
+        "y": 4,
+        "enemyType": "dummy_tank"
+      }
+    ],
+    "obstacles": []
+  },
+  {
     "id": "room_test_dummies",
     "name": "Dummy Test",
     "layout": [
       "#############",
       "#...........#",
       "#...........#",
-      "#...........#",
-      "#...........#",
+      "#.....PP....#",
+      "#.....PP....#",
       "#...........#",
       "#...........#",
       "#...........#",
@@ -16,14 +64,23 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 4, "y": 5, "enemyType": "dummy_tank" },
-      { "x": 6, "y": 5, "enemyType": "dummy_tank" },
-      { "x": 8, "y": 5, "enemyType": "dummy_tank" }
+      {
+        "x": 4,
+        "y": 5,
+        "enemyType": "dummy_tank"
+      },
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "dummy_tank"
+      },
+      {
+        "x": 8,
+        "y": 5,
+        "enemyType": "dummy_tank"
+      }
     ],
-    "playerSpawnPoint": { "x": 2, "y": 2 },
-    "obstacles": [
-      { "x": 5, "y": 2, "width": 2, "height": 2, "type": "hazard", "damage": 25 }
-    ]
+    "obstacles": []
   },
   {
     "id": "room_test_1",
@@ -42,9 +99,12 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 5, "y": 5, "enemyType": "zombie_basic" }
+      {
+        "x": 5,
+        "y": 5,
+        "enemyType": "zombie_basic"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 5 },
     "obstacles": []
   },
   {
@@ -64,11 +124,20 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 6, "y": 5, "enemyType": "zombie_basic" }
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "zombie_basic"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 8 },
     "obstacles": [
-      { "x": 4, "y": 4, "width": 1, "height": 1, "type": "pillar" }
+      {
+        "x": 4,
+        "y": 6,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      }
     ]
   },
   {
@@ -88,9 +157,12 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 6, "y": 5, "enemyType": "bull" }
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "bull"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 8 },
     "obstacles": []
   },
   {
@@ -110,12 +182,27 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 6, "y": 5, "enemyType": "pong" }
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "pong"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 8 },
     "obstacles": [
-      { "x": 3, "y": 3, "width": 1, "height": 1, "type": "pillar" },
-      { "x": 8, "y": 6, "width": 1, "height": 1, "type": "pillar" }
+      {
+        "x": 3,
+        "y": 7,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      },
+      {
+        "x": 8,
+        "y": 4,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      }
     ]
   },
   {
@@ -135,11 +222,20 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 6, "y": 5, "enemyType": "jumper" }
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "jumper"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 8 },
     "obstacles": [
-      { "x": 5, "y": 4, "width": 1, "height": 1, "type": "pillar" }
+      {
+        "x": 5,
+        "y": 6,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      }
     ]
   },
   {
@@ -159,11 +255,20 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 6, "y": 5, "enemyType": "fuyard" }
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "fuyard"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 8 },
     "obstacles": [
-      { "x": 4, "y": 4, "width": 1, "height": 1, "type": "pillar" }
+      {
+        "x": 4,
+        "y": 6,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      }
     ]
   },
   {
@@ -183,11 +288,20 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 6, "y": 5, "enemyType": "strategist" }
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "strategist"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 8 },
     "obstacles": [
-      { "x": 5, "y": 4, "width": 1, "height": 1, "type": "pillar" }
+      {
+        "x": 5,
+        "y": 6,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      }
     ]
   },
   {
@@ -207,11 +321,20 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 6, "y": 5, "enemyType": "sentinel" }
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "sentinel"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 8 },
     "obstacles": [
-      { "x": 5, "y": 4, "width": 1, "height": 1, "type": "pillar" }
+      {
+        "x": 5,
+        "y": 6,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      }
     ]
   },
   {
@@ -231,9 +354,12 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 6, "y": 5, "enemyType": "turret" }
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "turret"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 8 },
     "obstacles": []
   },
   {
@@ -253,13 +379,30 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 3, "y": 5, "enemyType": "zombie_basic" },
-      { "x": 6, "y": 5, "enemyType": "healer" },
-      { "x": 9, "y": 5, "enemyType": "zombie_basic" }
+      {
+        "x": 3,
+        "y": 5,
+        "enemyType": "zombie_basic"
+      },
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "healer"
+      },
+      {
+        "x": 9,
+        "y": 5,
+        "enemyType": "zombie_basic"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 8 },
     "obstacles": [
-      { "x": 5, "y": 4, "width": 1, "height": 1, "type": "pillar" }
+      {
+        "x": 5,
+        "y": 6,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      }
     ]
   },
   {
@@ -279,11 +422,20 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 6, "y": 5, "enemyType": "artificer" }
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "artificer"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 8 },
     "obstacles": [
-      { "x": 5, "y": 4, "width": 1, "height": 1, "type": "pillar" }
+      {
+        "x": 5,
+        "y": 6,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      }
     ]
   },
   {
@@ -303,9 +455,12 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 6, "y": 5, "enemyType": "bullet_hell" }
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "bullet_hell"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 8 },
     "obstacles": []
   },
   {
@@ -325,12 +480,27 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 6, "y": 5, "enemyType": "mage_missile" }
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "mage_missile"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 8 },
     "obstacles": [
-      { "x": 4, "y": 4, "width": 1, "height": 1, "type": "pillar" },
-      { "x": 8, "y": 6, "width": 1, "height": 1, "type": "pillar" }
+      {
+        "x": 4,
+        "y": 6,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      },
+      {
+        "x": 8,
+        "y": 4,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      }
     ]
   },
   {
@@ -350,9 +520,14 @@
       "#############"
     ],
     "spawnPoints": [],
-    "playerSpawnPoint": { "x": 6, "y": 9 },
     "obstacles": [
-      { "x": 6, "y": 4, "width": 1, "height": 1, "type": "pillar" }
+      {
+        "x": 6,
+        "y": 6,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      }
     ]
   },
   {
@@ -371,8 +546,13 @@
       "#.....M.....#",
       "#############"
     ],
-    "spawnPoints": [],
-    "playerSpawnPoint": { "x": 6, "y": 9 },
+    "spawnPoints": [
+      {
+        "x": 6,
+        "y": 5,
+        "enemyType": "dummy_tank"
+      }
+    ],
     "obstacles": []
   },
   {
@@ -400,8 +580,13 @@
       "VVVVVVVVVVVVVVVVVVVV",
       "VVVVVVVVVVVVVVVVVVVV"
     ],
-    "spawnPoints": [],
-    "playerSpawnPoint": { "x": 10, "y": 6 },
+    "spawnPoints": [
+      {
+        "x": 10,
+        "y": 10,
+        "enemyType": "dummy_tank"
+      }
+    ],
     "obstacles": []
   },
   {
@@ -421,12 +606,25 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 2, "y": 2, "enemyType": "zombie_basic" },
-      { "x": 8, "y": 6, "enemyType": "zombie_basic" }
+      {
+        "x": 2,
+        "y": 2,
+        "enemyType": "zombie_basic"
+      },
+      {
+        "x": 8,
+        "y": 6,
+        "enemyType": "zombie_basic"
+      }
     ],
-    "playerSpawnPoint": { "x": 1, "y": 1 },
     "obstacles": [
-      { "x": 5, "y": 4, "width": 1, "height": 1, "type": "pillar" }
+      {
+        "x": 5,
+        "y": 6,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      }
     ]
   },
   {
@@ -446,13 +644,30 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 2, "y": 2, "enemyType": "zombie_basic" },
-      { "x": 8, "y": 2, "enemyType": "zombie_basic" },
-      { "x": 2, "y": 6, "enemyType": "zombie_basic" }
+      {
+        "x": 2,
+        "y": 2,
+        "enemyType": "zombie_basic"
+      },
+      {
+        "x": 8,
+        "y": 2,
+        "enemyType": "zombie_basic"
+      },
+      {
+        "x": 2,
+        "y": 6,
+        "enemyType": "zombie_basic"
+      }
     ],
-    "playerSpawnPoint": { "x": 1, "y": 1 },
     "obstacles": [
-      { "x": 5, "y": 4, "width": 1, "height": 1, "type": "pillar" }
+      {
+        "x": 5,
+        "y": 6,
+        "width": 1,
+        "height": 1,
+        "type": "pillar"
+      }
     ]
   },
   {
@@ -472,9 +687,12 @@
       "#############"
     ],
     "spawnPoints": [
-      { "x": 1, "y": 1, "enemyType": "dummy_tank" }
+      {
+        "x": 1,
+        "y": 1,
+        "enemyType": "dummy_tank"
+      }
     ],
-    "playerSpawnPoint": { "x": 6, "y": 3 },
     "obstacles": []
   }
 ]

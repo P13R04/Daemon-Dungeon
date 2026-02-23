@@ -43,14 +43,16 @@ export class RoomLayoutParser {
 
     const layout = layoutData as Array<string | string[]>;
 
-    for (let z = 0; z < layout.length; z++) {
-      const row = layout[z];
+    for (let y = 0; y < layout.length; y++) {
+      const row = layout[y];
       if (!row) continue;
 
       const rowData = typeof row === 'string' ? row : row.join('');
 
       for (let x = 0; x < rowData.length; x++) {
         const cell = rowData[x];
+        // Invert Z axis: first line (y=0) should have largest Z (far/top), last line should have smallest Z (near/bottom)
+        const z = layout.length - 1 - y;
         const tileData = this.cellToTile(cell, x, z);
 
         if (tileData) {
@@ -131,11 +133,14 @@ export class RoomLayoutParser {
     const layout: string[] = [];
     const obstacles: Array<{ x: number; z: number; type: string }> = [];
 
-    for (let z = 0; z < mapping.height; z++) {
-      const row = mapping.tiles[z] || [];
+    for (let y = 0; y < mapping.height; y++) {
+      const row = mapping.tiles[y] || [];
       let rowStr = '';
       for (let x = 0; x < mapping.width; x++) {
         const cell = row[x] ?? 'void';
+        // Invert Z axis to match camera view
+        const z = mapping.height - 1 - y;
+        
         switch (cell) {
           case 'wall':
             rowStr += '#';
@@ -173,11 +178,13 @@ export class RoomLayoutParser {
     const layout = roomLayout.layout;
 
     // Extract from layout grid
-    for (let z = 0; z < layout.length; z++) {
-      const row = layout[z];
+    for (let y = 0; y < layout.length; y++) {
+      const row = layout[y];
       for (let x = 0; x < row.length; x++) {
         const cell = row[x];
         if (['M', 'R', 'S', 'E'].includes(cell)) {
+          // Invert Z axis to match camera view
+          const z = layout.length - 1 - y;
           spawnPoints.push({
             x,
             z,

@@ -472,10 +472,11 @@ export class TileSystem {
       height: this.tileSize,
     }, this.scene);
 
+    // Center the ground tile on its grid position (CreateGround has centered pivot)
     tileMesh.position = new Vector3(
-      this.origin.x + tile.x * this.tileSize,
+      this.origin.x + tile.x * this.tileSize + this.tileSize / 2,
       this.origin.y,
-      this.origin.z + tile.z * this.tileSize
+      this.origin.z + tile.z * this.tileSize + this.tileSize / 2
     );
 
     const renderData = this.getTileRenderData(tile, this.getAdjacencies(tile.x, tile.z, this.tileGrid));

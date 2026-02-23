@@ -29,6 +29,7 @@ export class RoomManager {
   private obstacleBounds: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> = [];
   private obstacleBoundsByRoom: Map<string, Array<{ minX: number; maxX: number; minZ: number; maxZ: number }>> = new Map();
   private floorRenderingEnabled: boolean = true;
+  private wallsVisible: boolean = true; // Toggle for walls/pillars visibility
 
   constructor(scene: Scene, tileSize: number = 1.0) {
     this.scene = scene;
@@ -115,29 +116,41 @@ export class RoomManager {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const char = layout[y][x];
+        // Invert Y to Z to match tile system (layout[0] = far/top = max Z)
+        const z = height - 1 - y;
         const position = new Vector3(
           origin.x + x * this.tileSize,
           0,
-          origin.z + y * this.tileSize
+          origin.z + z * this.tileSize
         );
 
         if (char === '#') {
-          // Wall
+          // Wall - centered on tile, scaled to fill entire tile
           const wall = VisualPlaceholder.createFloorTile(this.scene, `wall_${x}_${y}`, true);
-          wall.position = position.add(new Vector3(0, 0.5, 0));
-          wall.scaling = new Vector3(1, 2, 1);
+          wall.position = position.add(new Vector3(this.tileSize / 2, 1.0, this.tileSize / 2)); // Center on tile, height 1.0
+          wall.scaling = new Vector3(this.tileSize, 2, this.tileSize); // Scale to fill tile, height 2
+          wall.isVisible = this.wallsVisible; // Respect visibility setting
           this.roomMeshes.get(instanceKey)!.push(wall);
+          
+          // Add hitbox for wall collision
+          this.obstacleBoundsByRoom.get(instanceKey)!.push({
+            minX: origin.x + x * this.tileSize,
+            maxX: origin.x + (x + 1) * this.tileSize,
+            minZ: origin.z + z * this.tileSize,
+            maxZ: origin.z + (z + 1) * this.tileSize,
+          });
         } else if (this.floorRenderingEnabled && (char === '.' || char === 'S' || char === 'E' || char === 'M' || char === 'R' || char === 'O' || char === 'P' || char === 'V' || char === '^')) {
           const floor = VisualPlaceholder.createFloorTile(this.scene, `floor_${x}_${y}`, false);
-          floor.position = position;
+          floor.position = position.add(new Vector3(this.tileSize / 2, 0, this.tileSize / 2)); // Center floor on tile
+          floor.scaling = new Vector3(this.tileSize, 1, this.tileSize); // Scale to fill tile
           this.roomMeshes.get(instanceKey)!.push(floor);
         }
       }
     }
 
-    // Door at bottom center of room
+    // Door at top center of room (large Z = far/top after Z inversion)
     const doorX = origin.x + Math.floor(width / 2) * this.tileSize + this.tileSize / 2;
-    const doorZ = origin.z + (height - 2) * this.tileSize + this.tileSize / 2;
+    const doorZ = origin.z + (height - 2) * this.tileSize + this.tileSize / 2;  // Near max Z (far/top)
     const door = VisualPlaceholder.createFloorTile(this.scene, `door_${instanceKey}`, true);
     door.position = new Vector3(doorX, 0.6, doorZ);
     door.scaling = new Vector3(0.8, 1.2, 0.4);
@@ -149,10 +162,18 @@ export class RoomManager {
     this.roomDoors.set(instanceKey, door);
     this.roomMeshes.get(instanceKey)!.push(door);
 
-    // Create obstacles and hazards
+    // Create obstacles (pillars only - hazards are now handled by poison/spike tiles)
+    const layoutHeight = config.layout.length;
     config.obstacles.forEach((obstacle, i) => {
+      // Skip hazard type obstacles - use poison tiles (P) in layout instead
+      if (obstacle.type === 'hazard') {
+        return;
+      }
+
       const width = Math.max(1, obstacle.width || 1);
       const height = Math.max(1, obstacle.height || 1);
+      
+      // Note: obstacle.y is already inverted in rooms.json to match Z-axis inversion
 
       const position = new Vector3(
         origin.x + obstacle.x * this.tileSize + (width * this.tileSize) / 2,
@@ -160,32 +181,17 @@ export class RoomManager {
         origin.z + obstacle.y * this.tileSize + (height * this.tileSize) / 2
       );
 
-      const mesh = VisualPlaceholder.createFloorTile(this.scene, `obstacle_${i}`, obstacle.type !== 'hazard');
+      const mesh = VisualPlaceholder.createFloorTile(this.scene, `obstacle_${i}`, true);
       mesh.position = position;
-      mesh.scaling = new Vector3(width * this.tileSize, obstacle.type === 'hazard' ? 0.2 : 1, height * this.tileSize);
+      mesh.scaling = new Vector3(width * this.tileSize, 1, height * this.tileSize);
 
-      if (obstacle.type === 'hazard') {
-        const mat = new StandardMaterial(`hazard_${i}_mat`, this.scene);
-        mat.diffuseColor = new Color3(1.0, 0.2, 0.2);
-        mat.emissiveColor = new Color3(0.6, 0.1, 0.1);
-        mat.alpha = 0.9;
-        mesh.material = mat;
-
-        this.hazardZonesByRoom.get(instanceKey)!.push({
-          minX: origin.x + obstacle.x * this.tileSize,
-          maxX: origin.x + obstacle.x * this.tileSize + width * this.tileSize,
-          minZ: origin.z + obstacle.y * this.tileSize,
-          maxZ: origin.z + obstacle.y * this.tileSize + height * this.tileSize,
-          damage: obstacle.damage ?? 5,
-        });
-      } else {
-        this.obstacleBoundsByRoom.get(instanceKey)!.push({
-          minX: origin.x + obstacle.x * this.tileSize,
-          maxX: origin.x + obstacle.x * this.tileSize + width * this.tileSize,
-          minZ: origin.z + obstacle.y * this.tileSize,
-          maxZ: origin.z + obstacle.y * this.tileSize + height * this.tileSize,
-        });
-      }
+      // Add collision bounds for solid obstacles
+      this.obstacleBoundsByRoom.get(instanceKey)!.push({
+        minX: origin.x + obstacle.x * this.tileSize,
+        maxX: origin.x + obstacle.x * this.tileSize + width * this.tileSize,
+        minZ: origin.z + obstacle.y * this.tileSize,
+        maxZ: origin.z + obstacle.y * this.tileSize + height * this.tileSize,
+      });
 
       this.roomMeshes.get(instanceKey)!.push(mesh);
     });
@@ -201,11 +207,17 @@ export class RoomManager {
 
     const origin = this.currentRoomKey ? this.roomOrigins.get(this.currentRoomKey) : new Vector3(0, 0, 0);
 
-    const spawn = room.playerSpawnPoint;
+    // Auto-calculate spawn point: at bottom of room (small Z = near/bottom), centered horizontally
+    const layout = room.layout;
+    const width = layout[0].length;
+    const height = layout.length;
+    const spawnX = Math.floor(width / 2); // Center horizontally
+    const spawnZ = 1; // Small Z = near/bottom (opposite of door which is at height-2)
+
     return new Vector3(
-      (origin?.x ?? 0) + spawn.x * this.tileSize + this.tileSize / 2,
+      (origin?.x ?? 0) + spawnX * this.tileSize + this.tileSize / 2,
       0.5,
-      (origin?.z ?? 0) + spawn.y * this.tileSize + this.tileSize / 2
+      (origin?.z ?? 0) + spawnZ * this.tileSize + this.tileSize / 2
     );
   }
 
@@ -216,12 +228,15 @@ export class RoomManager {
     }
 
     const origin = this.currentRoomKey ? this.roomOrigins.get(this.currentRoomKey) : new Vector3(0, 0, 0);
+    const layoutHeight = room.layout.length;
 
     const points = room.spawnPoints.map((point: any) => {
+      // Invert Y coordinate to match Z axis inversion
+      const invertedY = layoutHeight - 1 - point.y;
       const pos = new Vector3(
         (origin?.x ?? 0) + point.x * this.tileSize + this.tileSize / 2,
         1.0,
-        (origin?.z ?? 0) + point.y * this.tileSize + this.tileSize / 2
+        (origin?.z ?? 0) + invertedY * this.tileSize + this.tileSize / 2
       );
       return pos;
     });
@@ -232,11 +247,13 @@ export class RoomManager {
     if (!this.currentRoom) return [];
 
     const origin = this.currentRoomKey ? this.roomOrigins.get(this.currentRoomKey) : new Vector3(0, 0, 0);
+    const layoutHeight = this.currentRoom.layout.length;
+    
     return this.currentRoom.spawnPoints.map(point => ({
       position: new Vector3(
         (origin?.x ?? 0) + point.x * this.tileSize + this.tileSize / 2,
         1.0,
-        (origin?.z ?? 0) + point.y * this.tileSize + this.tileSize / 2
+        (origin?.z ?? 0) + (layoutHeight - 1 - point.y) * this.tileSize + this.tileSize / 2
       ),
       enemyType: point.enemyType,
     }));
@@ -246,12 +263,13 @@ export class RoomManager {
     if (!this.currentRoom) return [];
 
     const origin = this.currentRoomKey ? this.roomOrigins.get(this.currentRoomKey) : new Vector3(0, 0, 0);
+    const layoutHeight = this.currentRoom.layout.length;
 
     return this.currentRoom.spawnPoints.map(point => ({
       position: new Vector3(
         (origin?.x ?? 0) + point.x * this.tileSize + this.tileSize / 2,
         0.5,
-        (origin?.z ?? 0) + point.y * this.tileSize + this.tileSize / 2
+        (origin?.z ?? 0) + (layoutHeight - 1 - point.y) * this.tileSize + this.tileSize / 2
       ),
       enemyType: point.enemyType,
     }));
@@ -323,6 +341,22 @@ export class RoomManager {
     if (door) {
       door.isVisible = active;
     }
+  }
+
+  public setWallsVisible(visible: boolean): void {
+    this.wallsVisible = visible;
+    // Update all existing walls
+    for (const meshes of this.roomMeshes.values()) {
+      for (const mesh of meshes) {
+        if (mesh.name.includes('wall_')) {
+          mesh.isVisible = visible;
+        }
+      }
+    }
+  }
+
+  public areWallsVisible(): boolean {
+    return this.wallsVisible;
   }
 
   getDoorPosition(): Vector3 | null {

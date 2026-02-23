@@ -12,6 +12,7 @@ import { ConfigLoader } from '../utils/ConfigLoader';
 import { InputManager } from '../input/InputManager';
 import { PlayerController } from '../gameplay/PlayerController';
 import { EnemySpawner } from '../systems/EnemySpawner';
+import { EnemyController } from '../gameplay/EnemyController';
 import { RoomManager } from '../systems/RoomManager';
 import { ProjectileManager } from '../gameplay/ProjectileManager';
 import { UltimateManager } from '../gameplay/UltimateManager';
@@ -48,7 +49,7 @@ export class GameManager {
   private roomOrder: string[] = [];
   private currentRoomIndex: number = 0;
   private roomCleared: boolean = false;
-  private roomSpacing: number = 14;
+  private roomSpacing: number = 17; // Increased from 14 to match larger tile size (1.2)
   private cameraMove: { from: Vector3; to: Vector3; t: number; duration: number; nextIndex: number } | null = null;
   private cameraAlpha: number = 0;
   private cameraBeta: number = 0;
@@ -93,12 +94,12 @@ export class GameManager {
     this.postProcessManager.setupPipeline(camera, gameplayConfig?.postProcessing ?? undefined);
 
     // Initialize systems
-    this.roomManager = new RoomManager(this.scene);
+    this.roomManager = new RoomManager(this.scene, 1.2); // Tile size increased by 20%
     this.inputManager = new InputManager(canvas, this.scene);
     this.projectileManager = new ProjectileManager(this.scene);
     this.ultimateManager = new UltimateManager(this.scene);
     this.hudManager = new HUDManager(this.scene);
-    this.tileFloorManager = new TileFloorManager(this.scene, 1);
+    this.tileFloorManager = new TileFloorManager(this.scene, 1.2); // Tile size increased by 20%
     this.roomManager.setFloorRenderingEnabled(!this.tilesEnabled);
     this.devConsole = new DevConsole(this.scene, this);
 
@@ -948,5 +949,79 @@ export class GameManager {
       this.tileFloorManager.clearFloor();
     }
   }
-}
 
+  // Camera parameters for dev console
+  public getCameraAlpha(): number {
+    return this.cameraAlpha;
+  }
+
+  public getCameraBeta(): number {
+    return this.cameraBeta;
+  }
+
+  public getCameraRadius(): number {
+    return this.cameraRadius;
+  }
+
+  public setCameraAlpha(alpha: number): void {
+    this.cameraAlpha = alpha;
+    const camera = (this.scene as any).mainCamera as ArcRotateCamera;
+    if (camera) {
+      camera.alpha = alpha;
+    }
+  }
+
+  public setCameraBeta(beta: number): void {
+    this.cameraBeta = beta;
+    const camera = (this.scene as any).mainCamera as ArcRotateCamera;
+    if (camera) {
+      camera.beta = beta;
+    }
+  }
+
+  public setCameraRadius(radius: number): void {
+    this.cameraRadius = radius;
+    const camera = (this.scene as any).mainCamera as ArcRotateCamera;
+    if (camera) {
+      camera.radius = radius;
+    }
+  }
+
+  // Player and enemy height controls
+  public setPlayerHeightOffset(offset: number): void {
+    if (this.playerController?.animationController) {
+      this.playerController.animationController.setHeightOffset(offset);
+    }
+  }
+
+  public getPlayerHeightOffset(): number {
+    if (this.playerController?.animationController) {
+      return this.playerController.animationController.getHeightOffset();
+    }
+    return 0;
+  }
+
+  public setEnemyHeightOffset(offset: number): void {
+    EnemyController.setGlobalHeightOffset(offset);
+    // Update existing enemies (mesh is now public)
+    const enemies = this.enemySpawner?.getEnemies() || [];
+    for (const enemy of enemies) {
+      if (enemy.mesh) {
+        enemy.mesh.position.y = 1.0 + offset;
+      }
+    }
+  }
+
+  public getEnemyHeightOffset(): number {
+    return EnemyController.getGlobalHeightOffset();
+  }
+
+  // Walls visibility control
+  public setWallsVisible(visible: boolean): void {
+    this.roomManager.setWallsVisible(visible);
+  }
+
+  public areWallsVisible(): boolean {
+    return this.roomManager.areWallsVisible();
+  }
+}

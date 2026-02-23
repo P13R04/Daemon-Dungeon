@@ -36,6 +36,9 @@ export class PlayerAnimationController {
   // Rotation system - progressive interpolation
   private targetRotationY: number = 0; // Target angle to rotate towards
   private rotationSpeed: number = 12; // Radians per second - controls rotation smoothness
+  
+  // Height adjustment
+  private heightOffset: number = -2; // Adjustable height offset (default -2 for mage)
 
   // Attack animation alternation and speed variation
   private lastAttackWasAttack1: boolean = false;
@@ -70,7 +73,7 @@ export class PlayerAnimationController {
       // Create parent TransformNode for rotation and position management
       // This avoids animation keyframes overriding our rotation
       this.meshParent = new TransformNode('player_mage_parent', this.scene);
-      this.meshParent.position.y = 1.0;
+      this.meshParent.position.y = 1.0 + this.heightOffset;
       
       // Set mesh local position to 0 (parent controls world position)
       this.mesh.parent = this.meshParent;
@@ -271,8 +274,19 @@ export class PlayerAnimationController {
   setPosition(position: Vector3): void {
     if (this.meshParent) {
       this.meshParent.position.copyFrom(position);
-      this.meshParent.position.y = 1.0; // Ensure correct height
+      this.meshParent.position.y = 1.0 + this.heightOffset; // Ensure correct height with offset
     }
+  }
+
+  setHeightOffset(offset: number): void {
+    this.heightOffset = offset;
+    if (this.meshParent) {
+      this.meshParent.position.y = 1.0 + offset;
+    }
+  }
+
+  getHeightOffset(): number {
+    return this.heightOffset;
   }
 
   /**

@@ -96,7 +96,7 @@ export class DevConsole {
     scroll.barColor = '#00FF00';
     scroll.thumbLength = 0.2;
     scroll.barSize = 8;
-    scroll.wheelPrecision = 0.02;
+    scroll.wheelPrecision = 0.5; // Improved scroll sensitivity (was 0.02)
     bgPanel.addControl(scroll);
 
     // Use StackPanel for proper vertical layout
@@ -130,6 +130,9 @@ export class DevConsole {
 
     // Room Testing Section
     this.createRoomTestingSection(panel);
+
+    // Camera Section
+    this.createCameraSection(panel);
 
     // Live Stats Section
     this.createLiveStatsSection(panel);
@@ -605,18 +608,6 @@ export class DevConsole {
       this.roomIds = ['room_test_dummies'];
     }
 
-    // Add example tile rooms
-    const tileRoomIds = [
-      'room_tiles_basic',
-      'room_tiles_poison',
-      'room_tiles_void',
-      'room_tiles_mixed_obstacles',
-      'room_tiles_complex',
-      'room_tiles_narrow_corridor',
-      'room_tiles_circular_arena'
-    ];
-    this.roomIds = [...this.roomIds, ...tileRoomIds];
-
     const sectionTitle = new TextBlock('roomTestTitle');
     sectionTitle.text = '═══ ROOM TESTING ═══';
     sectionTitle.fontSize = 15;
@@ -770,6 +761,160 @@ export class DevConsole {
     if (this.roomSelectLabel) {
       this.roomSelectLabel.text = this.roomIds[this.roomSelectIndex] ?? 'unknown';
     }
+  }
+
+  private createCameraSection(parent: StackPanel): void {
+    // Camera section title
+    const sectionTitle = new TextBlock('cameraSectionTitle');
+    sectionTitle.text = '═══ CAMERA ═══';
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#00AAFF';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    // Alpha (horizontal angle) slider
+    const alphaLabel = new TextBlock('alphaLabel');
+    alphaLabel.text = `Alpha: ${(this.gameManager.getCameraAlpha() * 180 / Math.PI).toFixed(1)}°`;
+    alphaLabel.fontSize = 13;
+    alphaLabel.fontWeight = 'bold';
+    alphaLabel.color = '#FFFFFF';
+    alphaLabel.height = '25px';
+    parent.addControl(alphaLabel);
+
+    const alphaSlider = new Slider('alphaSlider');
+    alphaSlider.minimum = -Math.PI;
+    alphaSlider.maximum = Math.PI;
+    alphaSlider.value = this.gameManager.getCameraAlpha();
+    alphaSlider.height = '25px';
+    alphaSlider.width = '440px';
+    alphaSlider.color = '#00AAFF';
+    alphaSlider.background = '#444444';
+
+    alphaSlider.onValueChangedObservable.add((value: number) => {
+      alphaLabel.text = `Alpha: ${(value * 180 / Math.PI).toFixed(1)}°`;
+      this.gameManager.setCameraAlpha(value);
+    });
+    parent.addControl(alphaSlider);
+
+    // Beta (vertical angle) slider
+    const betaLabel = new TextBlock('betaLabel');
+    betaLabel.text = `Beta: ${(this.gameManager.getCameraBeta() * 180 / Math.PI).toFixed(1)}°`;
+    betaLabel.fontSize = 13;
+    betaLabel.fontWeight = 'bold';
+    betaLabel.color = '#FFFFFF';
+    betaLabel.height = '25px';
+    parent.addControl(betaLabel);
+
+    const betaSlider = new Slider('betaSlider');
+    betaSlider.minimum = 0.1;  // Avoid looking straight down/up
+    betaSlider.maximum = Math.PI - 0.1;
+    betaSlider.value = this.gameManager.getCameraBeta();
+    betaSlider.height = '25px';
+    betaSlider.width = '440px';
+    betaSlider.color = '#00AAFF';
+    betaSlider.background = '#444444';
+
+    betaSlider.onValueChangedObservable.add((value: number) => {
+      betaLabel.text = `Beta: ${(value * 180 / Math.PI).toFixed(1)}°`;
+      this.gameManager.setCameraBeta(value);
+    });
+    parent.addControl(betaSlider);
+
+    // Radius (zoom) slider
+    const radiusLabel = new TextBlock('radiusLabel');
+    radiusLabel.text = `Radius: ${this.gameManager.getCameraRadius().toFixed(1)}`;
+    radiusLabel.fontSize = 13;
+    radiusLabel.fontWeight = 'bold';
+    radiusLabel.color = '#FFFFFF';
+    radiusLabel.height = '25px';
+    parent.addControl(radiusLabel);
+
+    const radiusSlider = new Slider('radiusSlider');
+    radiusSlider.minimum = 10;
+    radiusSlider.maximum = 50;
+    radiusSlider.value = this.gameManager.getCameraRadius();
+    radiusSlider.height = '25px';
+    radiusSlider.width = '440px';
+    radiusSlider.color = '#00AAFF';
+    radiusSlider.background = '#444444';
+
+    radiusSlider.onValueChangedObservable.add((value: number) => {
+      radiusLabel.text = `Radius: ${value.toFixed(1)}`;
+      this.gameManager.setCameraRadius(value);
+    });
+    parent.addControl(radiusSlider);
+
+    // Player Height Offset slider
+    const playerHeightLabel = new TextBlock('playerHeightLabel');
+    playerHeightLabel.text = `Player Height: ${this.gameManager.getPlayerHeightOffset().toFixed(2)}`;
+    playerHeightLabel.fontSize = 13;
+    playerHeightLabel.fontWeight = 'bold';
+    playerHeightLabel.color = '#FFFFFF';
+    playerHeightLabel.height = '25px';
+    parent.addControl(playerHeightLabel);
+
+    const playerHeightSlider = new Slider('playerHeightSlider');
+    playerHeightSlider.minimum = -2;
+    playerHeightSlider.maximum = 2;
+    playerHeightSlider.value = this.gameManager.getPlayerHeightOffset();
+    playerHeightSlider.height = '25px';
+    playerHeightSlider.width = '440px';
+    playerHeightSlider.color = '#00AAFF';
+    playerHeightSlider.background = '#444444';
+
+    playerHeightSlider.onValueChangedObservable.add((value: number) => {
+      playerHeightLabel.text = `Player Height: ${value.toFixed(2)}`;
+      this.gameManager.setPlayerHeightOffset(value);
+    });
+    parent.addControl(playerHeightSlider);
+
+    // Enemy Height Offset slider
+    const enemyHeightLabel = new TextBlock('enemyHeightLabel');
+    enemyHeightLabel.text = `Enemy Height: ${this.gameManager.getEnemyHeightOffset().toFixed(2)}`;
+    enemyHeightLabel.fontSize = 13;
+    enemyHeightLabel.fontWeight = 'bold';
+    enemyHeightLabel.color = '#FFFFFF';
+    enemyHeightLabel.height = '25px';
+    parent.addControl(enemyHeightLabel);
+
+    const enemyHeightSlider = new Slider('enemyHeightSlider');
+    enemyHeightSlider.minimum = -2;
+    enemyHeightSlider.maximum = 2;
+    enemyHeightSlider.value = this.gameManager.getEnemyHeightOffset();
+    enemyHeightSlider.height = '25px';
+    enemyHeightSlider.width = '440px';
+    enemyHeightSlider.color = '#FF8800';
+    enemyHeightSlider.background = '#444444';
+
+    enemyHeightSlider.onValueChangedObservable.add((value: number) => {
+      enemyHeightLabel.text = `Enemy Height: ${value.toFixed(2)}`;
+      this.gameManager.setEnemyHeightOffset(value);
+    });
+    parent.addControl(enemyHeightSlider);
+
+    // Walls visibility toggle
+    const wallsLabel = new TextBlock('wallsLabel');
+    wallsLabel.text = 'Show Walls/Pillars';
+    wallsLabel.fontSize = 13;
+    wallsLabel.fontWeight = 'bold';
+    wallsLabel.color = '#FFFFFF';
+    wallsLabel.height = '25px';
+    parent.addControl(wallsLabel);
+
+    const wallsCheckbox = new Checkbox('wallsCheckbox');
+    wallsCheckbox.width = '20px';
+    wallsCheckbox.height = '20px';
+    wallsCheckbox.isChecked = this.gameManager.areWallsVisible();
+    wallsCheckbox.color = '#00AAFF';
+    wallsCheckbox.background = '#444444';
+
+    wallsCheckbox.onIsCheckedChangedObservable.add((value: boolean) => {
+      this.gameManager.setWallsVisible(value);
+    });
+    parent.addControl(wallsCheckbox);
   }
 
   private createStatLine(text: string): TextBlock {

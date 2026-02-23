@@ -2,6 +2,23 @@ const TILESET_PATH = "tiles_test";
 
 const TYPES = ["void", "floor", "wall", "pillar", "poison", "spikes"];
 
+// Enemy types list from enemies.json
+const ENEMY_TYPES = [
+  { id: "zombie_basic", name: "Zombie", color: "#50FF50" },
+  { id: "dummy_tank", name: "Dummy", color: "#CCCCCC" },
+  { id: "bull", name: "Bull", color: "#FF5050" },
+  { id: "shooter", name: "Shooter", color: "#FF9950" },
+  { id: "sentinel", name: "Sentinel", color: "#5050FF" },
+  { id: "turret", name: "Turret", color: "#9950FF" },
+  { id: "healer", name: "Healer", color: "#50FF99" },
+  { id: "artificer", name: "Artificer", color: "#FFFF50" },
+  { id: "bullet_hell", name: "Bullet Hell", color: "#FF50FF" },
+  { id: "mage_missile", name: "Mage Missile", color: "#50FFFF" }
+];
+
+// Enemy spawns array
+let enemySpawns = [];
+
 class Grid {
   constructor(width, height, fill = "void") {
     this.width = width;
@@ -453,7 +470,10 @@ function render() {
     cell.style.backgroundImage = "";
     cell.style.transform = "";
 
-    if (mode === "edit") {
+    if (enemyOnlyView) {
+      // Enemy only view: simple gray grid
+      cell.classList.add("enemy-only-mode");
+    } else if (mode === "edit") {
       cell.classList.add(`edit-${type}`);
     } else {
       cell.classList.add("preview");
@@ -471,27 +491,34 @@ function render() {
         cell.style.transform = "";
       }
     }
+
+    // Enemy marker overlay (check if enemy position is within this cell)
+    const spawnsHere = enemySpawns.filter(spawn => 
+      Math.floor(spawn.x) === x && Math.floor(spawn.z) === y
+    );
+    if (spawnsHere.length > 0) {
+      const enemy = spawnsHere[0];
+      const enemyType = ENEMY_TYPES.find(t => t.id === enemy.enemyType);
+      const marker = document.createElement('div');
+      marker.className = 'enemy-marker';
+      if (enemyOnlyView) {
+        marker.classList.add('enemy-marker-large');
+      }
+      marker.style.backgroundColor = enemyType ? enemyType.color : '#FFFF00';
+      marker.title = `${enemyType ? enemyType.name : enemy.enemyType} (${enemy.x.toFixed(1)}, ${enemy.z.toFixed(1)})`;
+      cell.appendChild(marker);
+    }
   }
 }
 
 function exportJSON() {
   const blob = new Blob([JSON.stringify(grid.toJSON(), null, 2)], { type: "application/json" });
+
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
   link.download = "room.json";
   link.click();
   URL.revokeObjectURL(link.href);
-}
-
-function findFirstFloor(layout) {
-  for (let y = 0; y < layout.length; y++) {
-    for (let x = 0; x < layout[y].length; x++) {
-      if (layout[y][x] !== "#" && layout[y][x] !== "V") {
-        return { x, y };
-      }
-    }
-  }
-  return { x: 1, y: 1 };
 }
 
 function exportGameJSON() {
@@ -517,7 +544,9 @@ function exportGameJSON() {
           break;
         case "pillar":
           row += ".";
-          obstacles.push({ x, y, width: 1, height: 1, type: "pillar" });
+          // Invert Y coordinate to match Z-axis inversion in game
+          const invertedY = grid.height - 1 - y;
+          obstacles.push({ x, y: invertedY, width: 1, height: 1, type: "pillar" });
           break;
         case "floor":
         default:
@@ -528,13 +557,18 @@ function exportGameJSON() {
     layout.push(row);
   }
 
-  const playerSpawnPoint = findFirstFloor(layout);
+  // Convert enemy spawns with Z-axis inversion (editor Z → game Y inverted)
+  const spawnPoints = enemySpawns.map(spawn => ({
+    x: Math.round(spawn.x * 10) / 10,  // 1 decimal precision
+    y: grid.height - 1 - Math.round(spawn.z * 10) / 10,  // INVERTED: editor Z → game Y
+    enemyType: spawn.enemyType
+  }));
+
   const room = {
     id: "room_custom",
     name: "Custom Room",
     layout,
-    spawnPoints: [],
-    playerSpawnPoint,
+    spawnPoints,
     obstacles,
   };
 
@@ -545,6 +579,106 @@ function exportGameJSON() {
   link.click();
   URL.revokeObjectURL(link.href);
 }
+
+const enemyModeBtn = document.getElementById("enemyModeBtn");
+const enemyOnlyViewBtn = document.getElementById("enemyOnlyViewBtn");
+const enemySelector = document.getElementById("enemySelector");
+const addEnemyBtn = document.getElementById("addEnemyBtn");
+const enemyXInput = document.getElementById("enemyX");
+const enemyZInput = document.getElementById("enemyZ");
+const enemyList = document.getElementById("enemyList");
+
+let enemyMode = false;
+let enemyOnlyView = false;
+let selectedEnemyType = "zombie_basic";
+
+// Populate enemy type selector
+ENEMY_TYPES.forEach(enemy => {
+  const option = document.createElement("option");
+  option.value = enemy.id;
+  option.textContent = enemy.name;
+  enemySelector.appendChild(option);
+});
+
+enemySelector.addEventListener("change", (e) => {
+  selectedEnemyType = e.target.value;
+});
+
+enemyModeBtn.addEventListener("click", () => {
+  enemyMode = !enemyMode;
+  enemyModeBtn.textContent = enemyMode ? "Enemy Mode (ON)" : "Enemy Mode (OFF)";
+  enemyModeBtn.classList.toggle("active", enemyMode);
+});
+
+enemyOnlyViewBtn.addEventListener("click", () => {
+  enemyOnlyView = !enemyOnlyView;
+  enemyOnlyViewBtn.textContent = enemyOnlyView ? "Show All" : "Show Enemies Only";
+  enemyOnlyViewBtn.classList.toggle("active", enemyOnlyView);
+  render();
+});
+
+addEnemyBtn.addEventListener("click", () => {
+  const x = parseFloat(enemyXInput.value);
+  const z = parseFloat(enemyZInput.value);
+  if (isNaN(x) || isNaN(z)) {
+    alert("Invalid coordinates");
+    return;
+  }
+  if (x < 0 || x >= grid.width || z < 0 || z >= grid.height) {
+    alert("Coordinates out of bounds");
+    return;
+  }
+  enemySpawns.push({ x, z, enemyType: selectedEnemyType });
+  updateEnemyList();
+  render();
+});
+
+function updateEnemyList() {
+  enemyList.innerHTML = "";
+  enemySpawns.forEach((spawn, index) => {
+    const li = document.createElement("li");
+    const enemyType = ENEMY_TYPES.find(t => t.id === spawn.enemyType);
+    li.innerHTML = `
+      <div class="enemy-info">
+        <span style="color: ${enemyType ? enemyType.color : '#FFFF00'}">●</span>
+        <span>${enemyType ? enemyType.name : spawn.enemyType}</span>
+      </div>
+      <div class="enemy-sliders">
+        <label>X: 
+          <input type="range" min="0" max="${grid.width - 0.1}" step="0.1" value="${spawn.x}" 
+            oninput="updateEnemyPos(${index}, parseFloat(this.value), null)" />
+          <input type="number" step="0.1" min="0" max="${grid.width - 0.1}" value="${spawn.x.toFixed(1)}" 
+            style="width:50px" oninput="updateEnemyPos(${index}, parseFloat(this.value), null)" />
+        </label>
+        <label>Z: 
+          <input type="range" min="0" max="${grid.height - 0.1}" step="0.1" value="${spawn.z}" 
+            oninput="updateEnemyPos(${index}, null, parseFloat(this.value))" />
+          <input type="number" step="0.1" min="0" max="${grid.height - 0.1}" value="${spawn.z.toFixed(1)}" 
+            style="width:50px" oninput="updateEnemyPos(${index}, null, parseFloat(this.value))" />
+        </label>
+      </div>
+      <button onclick="removeEnemy(${index})">Remove</button>
+    `;
+    enemyList.appendChild(li);
+  });
+}
+
+window.updateEnemyPos = function(index, newX, newZ) {
+  if (newX !== null && !isNaN(newX)) {
+    enemySpawns[index].x = Math.max(0, Math.min(grid.width - 0.1, newX));
+  }
+  if (newZ !== null && !isNaN(newZ)) {
+    enemySpawns[index].z = Math.max(0, Math.min(grid.height - 0.1, newZ));
+  }
+  updateEnemyList();
+  render();
+};
+
+window.removeEnemy = function(index) {
+  enemySpawns.splice(index, 1);
+  updateEnemyList();
+  render();
+};
 
 modeBtn.addEventListener("click", () => {
   mode = mode === "edit" ? "preview" : "edit";
@@ -571,12 +705,24 @@ toolButtons.forEach(btn => {
 gridEl.addEventListener("mousedown", (event) => {
   const cell = event.target.closest(".cell");
   if (!cell) return;
-  isPainting = true;
-  paintCell(Number(cell.dataset.x), Number(cell.dataset.y));
+  
+  const x = Number(cell.dataset.x);
+  const y = Number(cell.dataset.y);
+  
+  if (enemyMode) {
+    // Click in enemy mode: place enemy at cell center
+    enemySpawns.push({ x: x + 0.5, z: y + 0.5, enemyType: selectedEnemyType });
+    updateEnemyList();
+    render();
+  } else {
+    // Paint mode
+    isPainting = true;
+    paintCell(x, y);
+  }
 });
 
 gridEl.addEventListener("mouseover", (event) => {
-  if (!isPainting) return;
+  if (!isPainting || enemyMode) return;
   const cell = event.target.closest(".cell");
   if (!cell) return;
   paintCell(Number(cell.dataset.x), Number(cell.dataset.y));
