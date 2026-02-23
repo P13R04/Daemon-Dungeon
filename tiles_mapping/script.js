@@ -16,8 +16,16 @@ const ENEMY_TYPES = [
   { id: "mage_missile", name: "Mage Missile", color: "#50FFFF" }
 ];
 
-// Enemy spawns array
+const FRIENDLY_TYPES = [
+  { id: "shopkeeper_default", name: "Shopkeeper", color: "rgb(255,255,120)"},
+  { id: "friendly_turret_shot", name: "Bullet turret", color: "rgb(60,120,180)"},
+  { id: "friendly_turret_aoe", name: "Bomber turret", color: "rgb(180,120,60)"},
+  { id: "heal_drone", name: "Healer drone", color: "rgb(60,120,180)"},
+]
+
+// Enemy/Friendly spawns array
 let enemySpawns = [];
+let friendlySpawns = [];
 
 class Grid {
   constructor(width, height, fill = "void") {
@@ -508,6 +516,26 @@ function render() {
       marker.title = `${enemyType ? enemyType.name : enemy.enemyType} (${enemy.x.toFixed(1)}, ${enemy.z.toFixed(1)})`;
       cell.appendChild(marker);
     }
+    const friendliesHere = friendlySpawns.filter(spawn =>
+      Math.floor(spawn.x) === x && Math.floor(spawn.z) === y
+    );
+
+    if (friendliesHere.length > 0) {
+      const f = friendliesHere[0];
+      const friendlyType = FRIENDLY_TYPES.find(t => t.id === f.friendlyType);
+
+      const marker = document.createElement("div");
+      marker.className = "enemy-marker";
+      if (enemyOnlyView) marker.classList.add("enemy-marker-large");
+
+      marker.style.backgroundColor = friendlyType ? friendlyType.color : "#00FFFF";
+      marker.style.outline = "2px solid #000"; // optional: make it distinct
+      marker.title = `${friendlyType ? friendlyType.name : f.friendlyType} (${f.x.toFixed(
+        1
+      )}, ${f.z.toFixed(1)})`;
+
+      cell.appendChild(marker);
+    }
   }
 }
 
@@ -563,12 +591,18 @@ function exportGameJSON() {
     y: grid.height - 1 - Math.round(spawn.z * 10) / 10,  // INVERTED: editor Z → game Y
     enemyType: spawn.enemyType
   }));
+  const friendlySpawnPoints = friendlySpawns.map(spawn => ({
+    x: Math.round(spawn.x * 10) / 10,
+    y: grid.height - 1 - Math.round(spawn.z * 10) / 10, // same inversion
+    friendlyType: spawn.friendlyType
+  }));
 
   const room = {
     id: "room_custom",
     name: "Custom Room",
     layout,
     spawnPoints,
+    friendlySpawnPoints,
     obstacles,
   };
 
@@ -588,9 +622,46 @@ const enemyXInput = document.getElementById("enemyX");
 const enemyZInput = document.getElementById("enemyZ");
 const enemyList = document.getElementById("enemyList");
 
+const friendlySelector = document.getElementById("friendlySelector");
+const addFriendlyBtn = document.getElementById("addFriendlyBtn");
+const friendlyXInput = document.getElementById("friendlyX");
+const friendlyZInput = document.getElementById("friendlyZ");
+const friendlyList = document.getElementById("friendlyList");
+
 let enemyMode = false;
 let enemyOnlyView = false;
 let selectedEnemyType = "zombie_basic";
+let friendlyMode = false;
+let friendlyOnlyView = false;
+let selectedFriendlyType = null;
+
+function setEnemyMode(on) {
+  enemyMode = !!on;
+  if (enemyMode) friendlyMode = false; // exclusif
+
+  // UI enemy
+  enemyModeBtn.classList.toggle("active", enemyMode);
+  enemyModeBtn.textContent = enemyMode ? "Enemy Mode (ON)" : "Enemy Mode (OFF)";
+
+  // UI friendly (si on coupe friendly)
+  friendlyModeBtn.classList.toggle("active", friendlyMode);
+  friendlyModeBtn.textContent = friendlyMode ? "Friendly Mode (ON)" : "Friendly Mode (OFF)";
+}
+
+function setFriendlyMode(on) {
+  friendlyMode = !!on;
+  if (friendlyMode) enemyMode = false; // exclusif
+
+  // UI friendly
+  friendlyModeBtn.classList.toggle("active", friendlyMode);
+  friendlyModeBtn.textContent = friendlyMode ? "Friendly Mode (ON)" : "Friendly Mode (OFF)";
+
+  // UI enemy (si on coupe enemy)
+  enemyModeBtn.classList.toggle("active", enemyMode);
+  enemyModeBtn.textContent = enemyMode ? "Enemy Mode (ON)" : "Enemy Mode (OFF)";
+}
+
+
 
 // Populate enemy type selector
 ENEMY_TYPES.forEach(enemy => {
@@ -605,15 +676,17 @@ enemySelector.addEventListener("change", (e) => {
 });
 
 enemyModeBtn.addEventListener("click", () => {
-  enemyMode = !enemyMode;
-  enemyModeBtn.textContent = enemyMode ? "Enemy Mode (ON)" : "Enemy Mode (OFF)";
-  enemyModeBtn.classList.toggle("active", enemyMode);
+  setEnemyMode(!enemyMode);
+  render();
 });
 
 enemyOnlyViewBtn.addEventListener("click", () => {
   enemyOnlyView = !enemyOnlyView;
-  enemyOnlyViewBtn.textContent = enemyOnlyView ? "Show All" : "Show Enemies Only";
+  if (enemyOnlyView) friendlyOnlyView = false;
+
   enemyOnlyViewBtn.classList.toggle("active", enemyOnlyView);
+  friendlyOnlyViewBtn.classList.toggle("active", friendlyOnlyView);
+
   render();
 });
 
@@ -632,6 +705,63 @@ addEnemyBtn.addEventListener("click", () => {
   updateEnemyList();
   render();
 });
+
+// Populate friendly type selector
+FRIENDLY_TYPES.forEach(f => {
+  const option = document.createElement("option");
+  option.value = f.id;
+  option.textContent = f.name;
+  friendlySelector.appendChild(option);
+});
+
+// default selection
+selectedFriendlyType = FRIENDLY_TYPES[0]?.id ?? null;
+
+friendlySelector.addEventListener("change", (e) => {
+  selectedFriendlyType = e.target.value;
+});
+
+const friendlyModeBtn = document.getElementById("friendlyModeBtn");
+const friendlyOnlyViewBtn = document.getElementById("friendlyOnlyViewBtn");
+
+friendlyModeBtn.addEventListener("click", () => {
+  setFriendlyMode(!friendlyMode);
+  render();
+});
+
+friendlyOnlyViewBtn.addEventListener("click", () => {
+  friendlyOnlyView = !friendlyOnlyView;
+  if (friendlyOnlyView) enemyOnlyView = false;
+
+  friendlyOnlyViewBtn.classList.toggle("active", friendlyOnlyView);
+  enemyOnlyViewBtn.classList.toggle("active", enemyOnlyView);
+
+  render();
+});
+addFriendlyBtn.addEventListener("click", () => {
+  const x = parseFloat(friendlyXInput.value);
+  const z = parseFloat(friendlyZInput.value);
+
+  if (isNaN(x) || isNaN(z)) {
+    alert("Invalid coordinates");
+    return;
+  }
+  if (x < 0 || x >= grid.width || z < 0 || z >= grid.height) {
+    alert("Coordinates out of bounds");
+    return;
+  }
+  if (!selectedFriendlyType) {
+    alert("No friendly type selected");
+    return;
+  }
+
+  friendlySpawns.push({ x, z, friendlyType: selectedFriendlyType });
+  updateFriendlyList();
+  render();
+});
+
+
+
 
 function updateEnemyList() {
   enemyList.innerHTML = "";
@@ -663,6 +793,27 @@ function updateEnemyList() {
   });
 }
 
+function updateFriendlyList() {
+  const list = document.getElementById("friendlyList");
+  list.innerHTML = "";
+
+  friendlySpawns.forEach((spawn, index) => {
+    const li = document.createElement("li");
+    li.textContent = `${spawn.friendlyType} (${spawn.x.toFixed(1)}, ${spawn.z.toFixed(1)})`;
+
+    const removeBtn = document.createElement("button");
+    removeBtn.textContent = "Remove";
+    removeBtn.onclick = () => {
+      friendlySpawns.splice(index, 1);
+      updateFriendlyList();
+      render();
+    };
+
+    li.appendChild(removeBtn);
+    list.appendChild(li);
+  });
+}
+
 window.updateEnemyPos = function(index, newX, newZ) {
   if (newX !== null && !isNaN(newX)) {
     enemySpawns[index].x = Math.max(0, Math.min(grid.width - 0.1, newX));
@@ -673,6 +824,8 @@ window.updateEnemyPos = function(index, newX, newZ) {
   updateEnemyList();
   render();
 };
+
+
 
 window.removeEnemy = function(index) {
   enemySpawns.splice(index, 1);
@@ -709,13 +862,15 @@ gridEl.addEventListener("mousedown", (event) => {
   const x = Number(cell.dataset.x);
   const y = Number(cell.dataset.y);
   
-  if (enemyMode) {
-    // Click in enemy mode: place enemy at cell center
+  if (friendlyMode) {
+    friendlySpawns.push({ x: x + 0.5, z: y + 0.5, friendlyType: selectedFriendlyType });
+    updateFriendlyList();
+    render();
+  } else if (enemyMode) {
     enemySpawns.push({ x: x + 0.5, z: y + 0.5, enemyType: selectedEnemyType });
     updateEnemyList();
     render();
   } else {
-    // Paint mode
     isPainting = true;
     paintCell(x, y);
   }

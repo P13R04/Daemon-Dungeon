@@ -278,3 +278,35 @@ main {
   color: white;
   font-weight: bold;
 }
+
+
+.friendly-panel {
+  position: fixed;
+  right: 320px; /* shift left of enemy panel */
+  top: 120px;
+  width: 300px;
+  background: var(--panel);
+  border: 1px solid #2b2b2b;
+  border-radius: 8px 0 0 8px;
+  padding: 16px;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+}
+
+.friendly-panel h3 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: #77ffcc;
+}
+
+#friendlyModeBtn.active {
+  background: #77ffcc;
+  color: #111;
+  font-weight: bold;
+}
+
+#friendlyOnlyViewBtn.active {
+  background: #33cccc;
+  color: white;
+  font-weight: bold;
+}

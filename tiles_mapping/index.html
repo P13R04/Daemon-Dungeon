@@ -47,6 +47,32 @@
     <ul id="enemyList"></ul>
   </aside>
 
+  <aside class="friendly-panel">
+  <h3>Friendly Spawns</h3>
+  <button id="friendlyModeBtn">Friendly Mode (OFF)</button>
+  <button id="friendlyOnlyViewBtn">Show Friendlies Only</button>
+
+  <div class="friendly-controls">
+    <label>
+      Friendly Type:
+      <select id="friendlySelector"></select>
+    </label>
+
+    <div class="coords-input">
+      <label>X: <input id="friendlyX" type="number" step="0.1" min="0" value="5.5" /></label>
+      <label>Z: <input id="friendlyZ" type="number" step="0.1" min="0" value="5.5" /></label>
+      <button id="addFriendlyBtn">Add Friendly</button>
+    </div>
+
+    <p class="hint">
+      Click on grid in Friendly Mode to place friendlies at cell centers,
+      or use coordinates for precise placement.
+    </p>
+  </div>
+
+  <ul id="friendlyList"></ul>
+</aside>
+
   <main>
     <div id="grid" class="grid"></div>
   </main>
