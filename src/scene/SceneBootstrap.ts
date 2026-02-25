@@ -4,6 +4,7 @@
 
 import { Scene, Engine, ArcRotateCamera, Vector3, HemisphericLight, FreeCamera, Color4 } from '@babylonjs/core';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
+import { createSynthwaveGridBackground } from './SynthwaveBackground';
 
 export class SceneBootstrap {
   static createScene(engine: Engine, canvas: HTMLCanvasElement): Scene {
@@ -37,10 +38,11 @@ export class SceneBootstrap {
     
     // Basic lighting
     const light = new HemisphericLight('light', new Vector3(0, 1, 0), scene);
-    light.intensity = 0.7;
+    light.intensity = 0.55;
     
     // Scene settings
-    scene.clearColor = scene.clearColor.set(0.1, 0.1, 0.1, 1);
+    scene.clearColor = scene.clearColor.set(0.02, 0.02, 0.06, 1);
+    createSynthwaveGridBackground(scene);
     
     // Store cameras on scene for access by GameManager
     (scene as any).mainCamera = camera;

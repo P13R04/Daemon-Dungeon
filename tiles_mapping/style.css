@@ -8,7 +8,6 @@
   --wall: #2f66ff;
   --poison: #2e9e4f;
   --spikes: #aa2c2c;
-  --pillar: #8a6d3b;
 }
 
 * { box-sizing: border-box; }
@@ -57,6 +56,14 @@ body {
   border-radius: 4px;
 }
 
+#roomName {
+  width: 140px;
+}
+
+#roomId {
+  width: 150px;
+}
+
 button {
   padding: 6px 10px;
   background: #2a2a2a;
@@ -92,6 +99,7 @@ main {
   background: #222222;
   width: fit-content;
   border: 1px solid #333333;
+  position: relative;
 }
 
 .cell {
@@ -108,7 +116,6 @@ main {
 .cell.edit-floor { background: var(--floor); }
 .cell.edit-void { background: var(--void); }
 .cell.edit-wall { background: var(--wall); }
-.cell.edit-pillar { background: var(--pillar); }
 .cell.edit-poison { background: var(--poison); }
 .cell.edit-spikes { background: var(--spikes); }
 
@@ -234,7 +241,7 @@ main {
 }
 
 .enemy-sliders input[type="number"] {
-  width: 50px;
+  width: 62px;
   padding: 2px 4px;
 }
 
@@ -254,17 +261,21 @@ main {
 }
 
 .enemy-marker {
-  position: absolute;
+  position: relative;
   width: 10px;
   height: 10px;
   border-radius: 50%;
   border: 2px solid white;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 10;
   box-shadow: 0 0 4px rgba(0,0,0,0.8);
+}
+
+.enemy-marker-floating {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 20;
 }
 
 .enemy-marker-large {

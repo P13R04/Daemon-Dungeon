@@ -73,7 +73,18 @@ export class ConfigLoader {
       this.playerConfig = await this.loadJSON('/src/data/config/player.json');
       this.enemiesConfig = await this.loadJSON('/src/data/config/enemies.json');
       this.gameplayConfig = await this.loadJSON('/src/data/config/gameplay.json');
-      this.roomsConfig = await this.loadJSON('/src/data/config/rooms.json');
+
+      const roomModules = import.meta.glob('../data/rooms/room_*.json', { eager: true }) as Record<string, any>;
+      const loadedRooms = Object.values(roomModules)
+        .map((module: any) => module?.default ?? module)
+        .filter((room: any) => room && typeof room.id === 'string');
+
+      if (loadedRooms.length > 0) {
+        this.roomsConfig = loadedRooms.sort((a: any, b: any) => a.id.localeCompare(b.id));
+      } else {
+        this.roomsConfig = await this.loadJSON('/src/data/config/rooms.json');
+      }
+
       console.log('All configs loaded successfully');
     } catch (error) {
       console.error('Failed to load configs:', error);

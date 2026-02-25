@@ -60,7 +60,7 @@ export class PlayerAnimationController {
   /**
    * Load the mage.glb model and extract animation groups
    */
-  async loadModel(modelPath: string = 'assets/models/player/'): Promise<Mesh> {
+  async loadModel(modelPath: string = '/models/player/'): Promise<Mesh> {
     try {
       const result = await SceneLoader.ImportMeshAsync('', modelPath, 'mage.glb', this.scene);
 

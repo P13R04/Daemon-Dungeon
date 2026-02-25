@@ -8,6 +8,7 @@ import { ConfigLoader } from '../utils/ConfigLoader';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { PlayerController } from '../gameplay/PlayerController';
 import { UI_LAYER } from '../ui/uiLayers';
+import { listAllVoicelineIds, getVoiceline } from '../data/voicelines/VoicelineDefinitions';
 
 export class DevConsole {
   private gui: AdvancedDynamicTexture;
@@ -27,12 +28,21 @@ export class DevConsole {
   private roomIds: string[] = [];
   private roomSelectIndex: number = 0;
   private roomSelectLabel: TextBlock | null = null;
+  private voicelineIds: string[] = [];
+  private voicelineSelectIndex: number = 0;
+  private voicelineSelectLabel: TextBlock | null = null;
   private gameManager: any;
 
   constructor(private scene: Scene, gameManager: any) {
     this.gameManager = gameManager;
     this.eventBus = EventBus.getInstance();
     this.configLoader = ConfigLoader.getInstance();
+    
+    // Initialize voiceline list
+    this.voicelineIds = listAllVoicelineIds();
+    if (this.voicelineIds.length === 0) {
+      this.voicelineIds = ['error_404_skill_not_found'];
+    }
     
     // Create GUI on main camera (standard fullscreen UI)
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('DevConsole', true, scene);
@@ -130,6 +140,9 @@ export class DevConsole {
 
     // Room Testing Section
     this.createRoomTestingSection(panel);
+
+    // Voiceline Testing Section
+    this.createVoicelineTestingSection(panel);
 
     // Camera Section
     this.createCameraSection(panel);
@@ -760,6 +773,83 @@ export class DevConsole {
   private updateRoomLabel(): void {
     if (this.roomSelectLabel) {
       this.roomSelectLabel.text = this.roomIds[this.roomSelectIndex] ?? 'unknown';
+    }
+  }
+
+  private createVoicelineTestingSection(parent: StackPanel): void {
+    const sectionTitle = new TextBlock('voicelineTestTitle');
+    sectionTitle.text = '═══ VOICELINE TESTING ═══';
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#FF00FF';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    const selectorRow = new StackPanel('voicelineSelectorRow');
+    selectorRow.isVertical = false;
+    selectorRow.height = '34px';
+    selectorRow.width = '440px';
+    selectorRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const prevBtn = Button.CreateSimpleButton('voicelinePrevBtn', '<');
+    prevBtn.width = '30px';
+    prevBtn.height = '26px';
+    prevBtn.color = '#FF00FF';
+    prevBtn.background = '#1A1A2A';
+    prevBtn.thickness = 1;
+    prevBtn.onPointerUpObservable.add(() => {
+      this.voicelineSelectIndex = (this.voicelineSelectIndex - 1 + this.voicelineIds.length) % this.voicelineIds.length;
+      this.updateVoicelineLabel();
+    });
+
+    this.voicelineSelectLabel = new TextBlock('voicelineSelectLabel');
+    this.voicelineSelectLabel.text = this.voicelineIds[this.voicelineSelectIndex];
+    this.voicelineSelectLabel.fontSize = 13;
+    this.voicelineSelectLabel.color = '#FFFFFF';
+    this.voicelineSelectLabel.width = '320px';
+    this.voicelineSelectLabel.height = '26px';
+    this.voicelineSelectLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const nextBtn = Button.CreateSimpleButton('voicelineNextBtn', '>');
+    nextBtn.width = '30px';
+    nextBtn.height = '26px';
+    nextBtn.color = '#FF00FF';
+    nextBtn.background = '#1A1A2A';
+    nextBtn.thickness = 1;
+    nextBtn.onPointerUpObservable.add(() => {
+      this.voicelineSelectIndex = (this.voicelineSelectIndex + 1) % this.voicelineIds.length;
+      this.updateVoicelineLabel();
+    });
+
+    selectorRow.addControl(prevBtn);
+    selectorRow.addControl(this.voicelineSelectLabel);
+    selectorRow.addControl(nextBtn);
+    parent.addControl(selectorRow);
+
+    const playBtn = Button.CreateSimpleButton('voicelinePlayBtn', 'PLAY VOICELINE');
+    playBtn.width = '200px';
+    playBtn.height = '30px';
+    playBtn.color = '#FFFFFF';
+    playBtn.background = '#440044';
+    playBtn.thickness = 1;
+    playBtn.top = '4px';
+    playBtn.onPointerUpObservable.add(() => {
+      const voicelineId = this.voicelineIds[this.voicelineSelectIndex];
+      const voiceline = getVoiceline(voicelineId);
+      if (voiceline && this.gameManager?.getHUDManager) {
+        this.gameManager.getHUDManager().playVoiceline(voiceline);
+      } else {
+        console.warn(`Voiceline not found or HUD Manager not ready: ${voicelineId}`);
+      }
+    });
+    parent.addControl(playBtn);
+  }
+
+  private updateVoicelineLabel(): void {
+    if (this.voicelineSelectLabel) {
+      this.voicelineSelectLabel.text = this.voicelineIds[this.voicelineSelectIndex] ?? 'unknown';
     }
   }
 

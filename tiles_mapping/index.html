@@ -10,12 +10,16 @@
   <header class="topbar">
     <div class="brand">Room Editor</div>
     <div class="controls">
-      <label>Width <input id="gridWidth" type="number" min="2" max="64" value="20" /></label>
-      <label>Height <input id="gridHeight" type="number" min="2" max="64" value="20" /></label>
+      <label>Room Name <input id="roomName" type="text" value="Custom Room" /></label>
+      <label>Room ID <input id="roomId" type="text" value="room_custom" /></label>
+      <label>Width <input id="gridWidth" type="number" min="2" max="64" value="15" /></label>
+      <label>Height <input id="gridHeight" type="number" min="2" max="64" value="15" /></label>
       <button id="resizeBtn">Resize</button>
       <button id="modeBtn" data-mode="edit">Edit Mode</button>
-      <button id="exportBtn">Export JSON</button>
-      <button id="exportGameBtn">Export Game JSON</button>
+      <button id="importRoomBtn">Import Room JSON</button>
+      <button id="exportRoomBtn">Export Room JSON</button>
+      <button id="saveRoomBtn">Save To Game Rooms Folder</button>
+      <input id="importRoomInput" type="file" accept="application/json,.json" hidden />
     </div>
   </header>
 
@@ -23,7 +27,6 @@
     <button class="tool" data-type="void">Void</button>
     <button class="tool" data-type="floor">Floor</button>
     <button class="tool" data-type="wall">Wall</button>
-    <button class="tool" data-type="pillar">Pillar</button>
     <button class="tool" data-type="poison">Poison</button>
     <button class="tool" data-type="spikes">Spikes</button>
   </section>
@@ -38,11 +41,11 @@
         <select id="enemySelector"></select>
       </label>
       <div class="coords-input">
-        <label>X: <input id="enemyX" type="number" step="0.1" min="0" value="5.5" /></label>
-        <label>Z: <input id="enemyZ" type="number" step="0.1" min="0" value="5.5" /></label>
+        <label>X: <input id="enemyX" type="number" step="0.1" min="0" value="7" /></label>
+        <label>Z: <input id="enemyZ" type="number" step="0.1" min="0" value="7" /></label>
         <button id="addEnemyBtn">Add Enemy</button>
       </div>
-      <p class="hint">Click on grid in Enemy Mode to place enemies at cell centers, or use coordinates for precise placement.</p>
+      <p class="hint">Enemy mode: click/drag on the grid for floating placement (between cells), or edit precise X/Z below.</p>
     </div>
     <ul id="enemyList"></ul>
   </aside>

@@ -938,6 +938,10 @@ export class GameManager {
     return this.tileFloorManager.getStatistics();
   }
 
+  public getHUDManager(): HUDManager {
+    return this.hudManager;
+  }
+
   public isUsingTiles(): boolean {
     return this.tilesEnabled;
   }

@@ -77,7 +77,7 @@ export class PlayerController {
     
     // Start loading the mage model (fire and forget, with error handling)
     this.modelLoadingPromise = this.animationController
-      .loadModel('assets/models/player/')
+      .loadModel('/models/player/')
       .then(() => {
         // Get mesh reference from animation controller
         const loadedMesh = this.animationController.getMesh();
