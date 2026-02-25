@@ -32,6 +32,9 @@ export class DevConsole {
   private voicelineSelectIndex: number = 0;
   private voicelineSelectLabel: TextBlock | null = null;
   private gameManager: any;
+  private devScrollViewer?: ScrollViewer;
+  private devScrollWheelObserver: any;
+  private lastValidDevScrollValue: number = 0;
 
   constructor(private scene: Scene, gameManager: any) {
     this.gameManager = gameManager;
@@ -97,6 +100,7 @@ export class DevConsole {
     this.gui.addControl(bgPanel);
 
     const scroll = new ScrollViewer('devConsoleScroll');
+    this.devScrollViewer = scroll;
     scroll.width = '100%';
     scroll.height = '100%';
     scroll.thickness = 0;
@@ -104,9 +108,53 @@ export class DevConsole {
     scroll.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     scroll.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     scroll.barColor = '#00FF00';
-    scroll.thumbLength = 0.2;
-    scroll.barSize = 8;
-    scroll.wheelPrecision = 0.5; // Improved scroll sensitivity (was 0.02)
+    scroll.thumbLength = 0.35;
+    scroll.barSize = 12;
+    scroll.wheelPrecision = 0;
+
+    const verticalBar = scroll.verticalBar;
+    let isInternalDevScrollUpdate = false;
+
+    verticalBar.onValueChangedObservable.add((value) => {
+      const normalized = Number.isFinite(value) ? value : this.lastValidDevScrollValue;
+      const next = this.clamp01(normalized);
+
+      // Reject unexpected large jumps (wrap-like behavior)
+      const jump = Math.abs(next - this.lastValidDevScrollValue);
+      if (!isInternalDevScrollUpdate && jump > 0.2) {
+        isInternalDevScrollUpdate = true;
+        verticalBar.value = this.lastValidDevScrollValue;
+        isInternalDevScrollUpdate = false;
+        return;
+      }
+
+      if (next !== value) {
+        isInternalDevScrollUpdate = true;
+        verticalBar.value = next;
+        isInternalDevScrollUpdate = false;
+        return;
+      }
+
+      this.lastValidDevScrollValue = next;
+    });
+
+    this.devScrollWheelObserver = scroll.onWheelObservable.add((delta: any) => {
+      const rawY = Number(delta?.y ?? 0);
+      if (!Number.isFinite(rawY) || rawY === 0) return;
+
+      const direction = Math.sign(rawY);
+      const magnitude = Math.min(Math.abs(rawY), 120);
+      const step = 0.002 + magnitude * 0.00008;
+      const current = this.lastValidDevScrollValue;
+      const next = this.clamp01(current + direction * step);
+      if (next === current) return;
+
+      isInternalDevScrollUpdate = true;
+      verticalBar.value = next;
+      isInternalDevScrollUpdate = false;
+      this.lastValidDevScrollValue = next;
+    });
+
     bgPanel.addControl(scroll);
 
     // Use StackPanel for proper vertical layout
@@ -378,8 +426,11 @@ export class DevConsole {
         glowIntensity: 0.8,
         chromaticAmount: 30,
         chromaticRadial: 0.8,
+        grainEnabled: true,
         grainIntensity: 12,
         grainAnimated: true,
+        crtLinesEnabled: true,
+        crtLineIntensity: 0.35,
         vignetteEnabled: true,
         vignetteWeight: 4.0,
         vignetteColor: [0, 0, 0, 1],
@@ -388,6 +439,9 @@ export class DevConsole {
     }
 
     const pp = gameplayConfig.postProcessing;
+    if (pp.grainEnabled === undefined) pp.grainEnabled = true;
+    if (pp.crtLinesEnabled === undefined) pp.crtLinesEnabled = true;
+    if (pp.crtLineIntensity === undefined) pp.crtLineIntensity = 0.35;
 
     const sectionTitle = new TextBlock('postProcessTitle');
     sectionTitle.text = '═══ POST PROCESSING ═══';
@@ -451,6 +505,34 @@ export class DevConsole {
       this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingChromaticRadial', value });
     });
 
+    const grainEnabledRow = new StackPanel('grainEnabledRow');
+    grainEnabledRow.isVertical = false;
+    grainEnabledRow.height = '30px';
+    grainEnabledRow.width = '440px';
+    grainEnabledRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const grainEnabledCheckbox = new Checkbox('grainEnabledCheckbox');
+    grainEnabledCheckbox.isChecked = pp.grainEnabled !== false;
+    grainEnabledCheckbox.width = '25px';
+    grainEnabledCheckbox.height = '25px';
+
+    const grainEnabledLabel = new TextBlock('grainEnabledLabel');
+    grainEnabledLabel.text = '  Enable Grain';
+    grainEnabledLabel.fontSize = 13;
+    grainEnabledLabel.color = '#FFFFFF';
+    grainEnabledLabel.width = '400px';
+    grainEnabledLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    grainEnabledCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      pp.grainEnabled = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingGrainEnabled', value: isChecked });
+    });
+
+    grainEnabledRow.addControl(grainEnabledCheckbox);
+    grainEnabledRow.addControl(grainEnabledLabel);
+    parent.addControl(grainEnabledRow);
+
     this.createPostProcessSlider(parent, 'Grain Intensity', pp.grainIntensity, 0, 30, 1, (value) => {
       pp.grainIntensity = value;
       this.configLoader.updateGameplayConfig(gameplayConfig);
@@ -484,6 +566,34 @@ export class DevConsole {
     grainAnimatedRow.addControl(grainAnimatedCheckbox);
     grainAnimatedRow.addControl(grainAnimatedLabel);
     parent.addControl(grainAnimatedRow);
+
+    const crtLinesRow = new StackPanel('crtLinesRow');
+    crtLinesRow.isVertical = false;
+    crtLinesRow.height = '30px';
+    crtLinesRow.width = '440px';
+    crtLinesRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const crtLinesCheckbox = new Checkbox('crtLinesCheckbox');
+    crtLinesCheckbox.isChecked = pp.crtLinesEnabled !== false;
+    crtLinesCheckbox.width = '25px';
+    crtLinesCheckbox.height = '25px';
+
+    const crtLinesLabel = new TextBlock('crtLinesLabel');
+    crtLinesLabel.text = '  CRT Lines';
+    crtLinesLabel.fontSize = 13;
+    crtLinesLabel.color = '#FFFFFF';
+    crtLinesLabel.width = '400px';
+    crtLinesLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    crtLinesCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      pp.crtLinesEnabled = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingCrtLinesEnabled', value: isChecked });
+    });
+
+    crtLinesRow.addControl(crtLinesCheckbox);
+    crtLinesRow.addControl(crtLinesLabel);
+    parent.addControl(crtLinesRow);
 
     const vignetteRow = new StackPanel('vignetteRow');
     vignetteRow.isVertical = false;
@@ -1191,7 +1301,17 @@ export class DevConsole {
     }
   }
 
+  private clamp01(value: number): number {
+    return Math.max(0, Math.min(1, value));
+  }
+
   dispose(): void {
+    if (this.devScrollViewer && this.devScrollWheelObserver) {
+      this.devScrollViewer.onWheelObservable.remove(this.devScrollWheelObserver);
+      this.devScrollWheelObserver = undefined;
+    }
+    this.devScrollViewer = undefined;
+
     this.gui.dispose();
   }
 }

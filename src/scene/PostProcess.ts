@@ -6,14 +6,17 @@
 import { Scene, Camera, DefaultRenderingPipeline, Color4, Engine, PostProcess, Effect } from '@babylonjs/core';
 import { EventBus, GameEvents } from '../core/EventBus';
 
-interface PostProcessingConfig {
+export interface PostProcessingConfig {
   enabled: boolean;
   pixelScale: number;
   glowIntensity: number;
   chromaticAmount: number;
   chromaticRadial: number;
+  grainEnabled: boolean;
   grainIntensity: number;
   grainAnimated: boolean;
+  crtLinesEnabled: boolean;
+  crtLineIntensity: number;
   vignetteEnabled: boolean;
   vignetteWeight: number;
   vignetteColor: [number, number, number, number];
@@ -24,6 +27,7 @@ export class PostProcessManager {
   private engine: Engine;
   private pipeline?: DefaultRenderingPipeline;
   private pixelate?: PostProcess;
+  private crtLines?: PostProcess;
   private camera?: Camera;
   private eventBus: EventBus;
   private config: PostProcessingConfig = {
@@ -32,8 +36,11 @@ export class PostProcessManager {
     glowIntensity: 0.8,
     chromaticAmount: 30,
     chromaticRadial: 0.8,
+    grainEnabled: true,
     grainIntensity: 12,
     grainAnimated: true,
+    crtLinesEnabled: true,
+    crtLineIntensity: 0.35,
     vignetteEnabled: true,
     vignetteWeight: 4.0,
     vignetteColor: [0, 0, 0, 1],
@@ -88,7 +95,7 @@ export class PostProcessManager {
       this.pipeline.chromaticAberration.radialIntensity = this.config.chromaticRadial;
     }
 
-    this.pipeline.grainEnabled = this.config.grainIntensity > 0;
+    this.pipeline.grainEnabled = this.config.grainEnabled && this.config.grainIntensity > 0;
     if (this.pipeline.grain) {
       this.pipeline.grain.intensity = this.config.grainIntensity;
       this.pipeline.grain.animated = this.config.grainAnimated;
@@ -105,6 +112,12 @@ export class PostProcessManager {
       this.ensurePixelate();
     } else {
       this.disposePixelate();
+    }
+
+    if (this.config.crtLinesEnabled) {
+      this.ensureCrtLines();
+    } else {
+      this.disposeCrtLines();
     }
   }
 
@@ -136,8 +149,14 @@ export class PostProcessManager {
         case 'postProcessingGrain':
           this.applyConfig({ ...this.config, grainIntensity: Number(data.value) });
           break;
+        case 'postProcessingGrainEnabled':
+          this.applyConfig({ ...this.config, grainEnabled: !!data.value });
+          break;
         case 'postProcessingGrainAnimated':
           this.applyConfig({ ...this.config, grainAnimated: !!data.value });
+          break;
+        case 'postProcessingCrtLinesEnabled':
+          this.applyConfig({ ...this.config, crtLinesEnabled: !!data.value });
           break;
         case 'postProcessingVignette':
           this.applyConfig({ ...this.config, vignetteEnabled: !!data.value });
@@ -166,6 +185,7 @@ export class PostProcessManager {
       this.pipeline = undefined;
     }
     this.disposePixelate();
+    this.disposeCrtLines();
   }
 
   private ensurePixelate(): void {
@@ -202,6 +222,44 @@ export class PostProcessManager {
     if (this.pixelate) {
       this.pixelate.dispose();
       this.pixelate = undefined;
+    }
+  }
+
+  private ensureCrtLines(): void {
+    if (!this.camera) return;
+
+    if (!Effect.ShadersStore['crtLinesFragmentShader']) {
+      Effect.ShadersStore['crtLinesFragmentShader'] = `
+        precision highp float;
+        varying vec2 vUV;
+        uniform sampler2D textureSampler;
+        uniform float screenHeight;
+        uniform float lineStrength;
+
+        void main(void) {
+          vec4 color = texture2D(textureSampler, vUV);
+          float phase = sin(vUV.y * screenHeight * 3.14159265);
+          float scanline = 0.75 + 0.25 * phase;
+          float multiplier = mix(1.0, scanline, clamp(lineStrength, 0.0, 1.0));
+          color.rgb *= multiplier;
+          gl_FragColor = color;
+        }
+      `;
+    }
+
+    if (!this.crtLines) {
+      this.crtLines = new PostProcess('crtLines', 'crtLines', ['screenHeight', 'lineStrength'], null, 1.0, this.camera);
+      this.crtLines.onApply = (effect) => {
+        effect.setFloat('screenHeight', this.engine.getRenderHeight());
+        effect.setFloat('lineStrength', this.clamp(this.config.crtLineIntensity, 0, 1));
+      };
+    }
+  }
+
+  private disposeCrtLines(): void {
+    if (this.crtLines) {
+      this.crtLines.dispose();
+      this.crtLines = undefined;
     }
   }
 

@@ -84,10 +84,10 @@ class Projectile implements IPoolable {
     this.mesh.position = data.position.clone();
   }
 
-  update(deltaTime: number): void {
+  update(deltaTime: number, speedMultiplier: number = 1): void {
     if (!this.data || !this.mesh) return;
 
-    const movement = this.data.direction.scale(this.data.speed * deltaTime);
+    const movement = this.data.direction.scale(this.data.speed * speedMultiplier * deltaTime);
     this.data.position.addInPlace(movement);
     this.data.distanceTraveled += movement.length();
     
@@ -131,6 +131,7 @@ export class ProjectileManager {
   private delayedExplosions: DelayedExplosion[] = [];
   private activeAoeZones: AoeZone[] = [];
   private activeSplitTravels: SplitTravel[] = [];
+  private hostileSlowZone: { center: Vector3; radius: number; multiplier: number } | null = null;
 
   constructor(private scene: Scene, poolSize: number = 20) {
     this.eventBus = EventBus.getInstance();
@@ -302,7 +303,15 @@ export class ProjectileManager {
 
     for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
       const projectile = this.activeProjectiles[i];
-      projectile.update(deltaTime);
+      let speedMultiplier = 1;
+      if (projectile.data && !projectile.data.friendly && this.hostileSlowZone) {
+        const dist = Vector3.Distance(projectile.data.position, this.hostileSlowZone.center);
+        if (dist <= this.hostileSlowZone.radius) {
+          speedMultiplier = this.hostileSlowZone.multiplier;
+        }
+      }
+
+      projectile.update(deltaTime, speedMultiplier);
 
       if (!projectile.isActive()) {
         this.projectilePool.release(projectile);
@@ -440,6 +449,40 @@ export class ProjectileManager {
 
   getActiveProjectiles(): Projectile[] {
     return this.activeProjectiles;
+  }
+
+  setHostileProjectileSlowZone(zone: { center: Vector3; radius: number; multiplier: number } | null): void {
+    this.hostileSlowZone = zone ? {
+      center: zone.center.clone(),
+      radius: zone.radius,
+      multiplier: zone.multiplier,
+    } : null;
+  }
+
+  countHostileProjectilesInRadius(center: Vector3, radius: number): number {
+    let count = 0;
+    for (const projectile of this.activeProjectiles) {
+      if (!projectile.data || projectile.data.friendly) continue;
+      if (Vector3.Distance(projectile.data.position, center) <= radius) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  destroyHostileProjectilesInRadius(center: Vector3, radius: number): number {
+    let destroyed = 0;
+    for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
+      const projectile = this.activeProjectiles[i];
+      if (!projectile.data || projectile.data.friendly) continue;
+      if (Vector3.Distance(projectile.data.position, center) > radius) continue;
+
+      projectile.setActive(false);
+      this.projectilePool.release(projectile);
+      this.activeProjectiles.splice(i, 1);
+      destroyed++;
+    }
+    return destroyed;
   }
 
   private applyImpactAoeToPlayer(projectile: Projectile, position: Vector3, player: any): void {

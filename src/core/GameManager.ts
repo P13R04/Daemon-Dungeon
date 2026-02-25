@@ -21,11 +21,15 @@ import { DevConsole } from '../systems/DevConsole';
 import { PostProcessManager } from '../scene/PostProcess';
 import { TileFloorManager } from '../systems/TileFloorManager';
 import { RoomLayoutParser, RoomLayout, TileMappingLayout } from '../systems/RoomLayoutParser';
+import { ClassSelectScene } from '../scene/ClassSelectScene';
+import { MainMenuScene } from '../scene/MainMenuScene';
+import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 
 export class GameManager {
   private static instance: GameManager;
   
   private engine!: Engine;
+  private canvas!: HTMLCanvasElement;
   private scene!: Scene;
   private stateMachine: StateMachine;
   private eventBus: EventBus;
@@ -42,8 +46,13 @@ export class GameManager {
   private devConsole!: DevConsole;
   private postProcessManager!: PostProcessManager;
   private tileFloorManager!: TileFloorManager;
+  private mainMenuScene?: MainMenuScene;
+  private classSelectScene?: ClassSelectScene;
   
   private isRunning: boolean = false;
+  private gameplayInitialized: boolean = false;
+  private gameplayStartInProgress: boolean = false;
+  private eventListenersBound: boolean = false;
   private tilesEnabled: boolean = true;
   private gameState: 'menu' | 'playing' | 'roomclear' | 'bonus' | 'transition' | 'gameover' = 'menu';
   private roomOrder: string[] = [];
@@ -73,59 +82,21 @@ export class GameManager {
   }
 
   async initialize(canvas: HTMLCanvasElement): Promise<void> {
-    // Initialize Babylon.js engine and scene using SceneBootstrap
+    this.canvas = canvas;
+
+    // Initialize Babylon.js engine
     this.engine = new Engine(canvas, true);
-    this.scene = SceneBootstrap.createScene(this.engine, canvas);
 
     // Load configurations
     await this.configLoader.loadAllConfigs();
 
-    // Get camera from scene (created by SceneBootstrap)
-    const camera = (this.scene as any).mainCamera as ArcRotateCamera;
-    if (!camera) throw new Error('Main camera not found in scene');
-    
-    this.cameraAlpha = camera.alpha;
-    this.cameraBeta = camera.beta;
-    this.cameraRadius = camera.radius;
-
-    // Post-processing pipeline
-    const gameplayConfig = this.configLoader.getGameplay();
-    this.postProcessManager = new PostProcessManager(this.scene, this.engine);
-    this.postProcessManager.setupPipeline(camera, gameplayConfig?.postProcessing ?? undefined);
-
-    // Initialize systems
-    this.roomManager = new RoomManager(this.scene, 1.2); // Tile size increased by 20%
-    this.inputManager = new InputManager(canvas, this.scene);
-    this.projectileManager = new ProjectileManager(this.scene);
-    this.ultimateManager = new UltimateManager(this.scene);
-    this.hudManager = new HUDManager(this.scene);
-    this.tileFloorManager = new TileFloorManager(this.scene, 1.2); // Tile size increased by 20%
-    this.roomManager.setFloorRenderingEnabled(!this.tilesEnabled);
-    this.devConsole = new DevConsole(this.scene, this);
-
-    // Attach mouse listeners AFTER scene is fully initialized
-    console.log('GameManager: Attaching mouse listeners after scene init...');
-    this.inputManager.attachMouseListeners();
-
-    // Build room order
-    const rooms = this.configLoader.getRooms();
-    this.roomOrder = Array.isArray(rooms) ? rooms.map((r: any) => r.id) : [];
-    if (this.roomOrder.length === 0) {
-      this.roomOrder = ['room_test_dummies'];
-    }
-
-    // Initialize player & enemies (actual room load happens on start)
-    const playerConfig = this.configLoader.getPlayer();
-    this.playerController = new PlayerController(this.scene, this.inputManager, playerConfig!);
-    this.enemySpawner = new EnemySpawner(this.scene, this.roomManager);
-    this.devConsole.setPlayer(this.playerController);
-
     // Setup event listeners
     this.setupEventListeners();
 
-    // Start in menu
+    await this.openMainMenuScene();
+
+    // Start in menu scene
     this.gameState = 'menu';
-    this.hudManager.showStartScreen();
 
     // Start game loop
     this.startGameLoop();
@@ -133,20 +104,110 @@ export class GameManager {
     this.isRunning = true;
   }
 
+  private async openMainMenuScene(): Promise<void> {
+    if (this.classSelectScene) {
+      this.classSelectScene.dispose();
+      this.classSelectScene = undefined;
+    }
+    if (this.mainMenuScene) {
+      this.mainMenuScene.dispose();
+      this.mainMenuScene = undefined;
+    }
+
+    this.mainMenuScene = new MainMenuScene(this.engine, () => {
+      void this.openClassSelectScene();
+    });
+    this.scene = this.mainMenuScene.getScene();
+  }
+
+  private async openClassSelectScene(): Promise<void> {
+    if (this.mainMenuScene) {
+      this.mainMenuScene.dispose();
+      this.mainMenuScene = undefined;
+    }
+    if (this.classSelectScene) {
+      this.classSelectScene.dispose();
+      this.classSelectScene = undefined;
+    }
+
+    const classSelectPostFx = this.configLoader.getGameplay()?.postProcessing;
+    this.classSelectScene = new ClassSelectScene(this.engine, () => {
+      this.eventBus.emit(GameEvents.GAME_START_REQUESTED);
+    }, () => {
+      void this.openMainMenuScene();
+    }, classSelectPostFx);
+    this.scene = this.classSelectScene.getScene();
+  }
+
+  private async initializeGameplayScene(): Promise<void> {
+    if (this.gameplayInitialized) return;
+
+    if (this.mainMenuScene) {
+      this.mainMenuScene.dispose();
+      this.mainMenuScene = undefined;
+    }
+    if (this.classSelectScene) {
+      this.classSelectScene.dispose();
+      this.classSelectScene = undefined;
+    }
+
+    this.scene = SceneBootstrap.createScene(this.engine, this.canvas);
+
+    const camera = (this.scene as any).mainCamera as ArcRotateCamera;
+    if (!camera) throw new Error('Main camera not found in scene');
+
+    this.cameraAlpha = camera.alpha;
+    this.cameraBeta = camera.beta;
+    this.cameraRadius = camera.radius;
+
+    const gameplayConfig = this.configLoader.getGameplay();
+    this.postProcessManager = new PostProcessManager(this.scene, this.engine);
+    this.postProcessManager.setupPipeline(camera, gameplayConfig?.postProcessing ?? undefined);
+
+    this.roomManager = new RoomManager(this.scene, 1.2);
+    this.inputManager = new InputManager(this.canvas, this.scene);
+    this.projectileManager = new ProjectileManager(this.scene);
+    this.ultimateManager = new UltimateManager(this.scene);
+    this.hudManager = new HUDManager(this.scene);
+    this.tileFloorManager = new TileFloorManager(this.scene, 1.2);
+    this.roomManager.setFloorRenderingEnabled(!this.tilesEnabled);
+    this.devConsole = new DevConsole(this.scene, this);
+
+    this.inputManager.attachMouseListeners();
+
+    const rooms = this.configLoader.getRooms();
+    this.roomOrder = Array.isArray(rooms) ? rooms.map((r: any) => r.id) : [];
+    if (this.roomOrder.length === 0) {
+      this.roomOrder = ['room_test_dummies'];
+    }
+
+    const playerConfig = this.configLoader.getPlayer();
+    this.playerController = new PlayerController(this.scene, this.inputManager, playerConfig!);
+    this.enemySpawner = new EnemySpawner(this.scene, this.roomManager);
+    this.devConsole.setPlayer(this.playerController);
+
+    this.gameplayInitialized = true;
+  }
+
   private setupEventListeners(): void {
+    if (this.eventListenersBound) return;
+    this.eventListenersBound = true;
+
     this.eventBus.on(GameEvents.GAME_START_REQUESTED, () => {
-      this.startNewGame();
+      void this.startNewGame();
     });
 
     this.eventBus.on(GameEvents.GAME_RESTART_REQUESTED, () => {
-      this.startNewGame();
+      void this.startNewGame();
     });
 
     this.eventBus.on(GameEvents.ROOM_NEXT_REQUESTED, () => {
+      if (!this.gameplayInitialized) return;
       this.loadNextRoom();
     });
 
     this.eventBus.on(GameEvents.DEV_ROOM_LOAD_REQUESTED, (data) => {
+      if (!this.gameplayInitialized) return;
       const roomId = data?.roomId;
       if (roomId) {
         this.loadIsolatedRoom(roomId);
@@ -156,6 +217,7 @@ export class GameManager {
     });
 
     this.eventBus.on(GameEvents.DEV_TILE_TOGGLE_REQUESTED, () => {
+      if (!this.gameplayInitialized) return;
       this.setTilesEnabled(!this.tilesEnabled);
       if (this.tilesEnabled && this.roomOrder[this.currentRoomIndex]) {
         this.loadTilesForRoom(this.roomOrder[this.currentRoomIndex]);
@@ -164,6 +226,7 @@ export class GameManager {
     });
 
     this.eventBus.on(GameEvents.DEV_TILE_LOAD_REQUESTED, (data) => {
+      if (!this.gameplayInitialized) return;
       const roomId = data?.roomId;
       if (roomId) {
         this.loadTilesForRoom(roomId);
@@ -171,6 +234,7 @@ export class GameManager {
     });
 
     this.eventBus.on(GameEvents.BONUS_SELECTED, (data) => {
+      if (!this.gameplayInitialized) return;
       const bonusId = data?.bonusId;
       if (bonusId) {
         this.applyBonus(bonusId);
@@ -180,11 +244,13 @@ export class GameManager {
     });
 
     this.eventBus.on(GameEvents.PLAYER_DIED, () => {
+      if (!this.gameplayInitialized) return;
       this.gameState = 'gameover';
       this.hudManager.showGameOverScreen();
     });
 
     this.eventBus.on(GameEvents.ATTACK_PERFORMED, (data) => {
+      if (!this.gameplayInitialized) return;
       if (this.gameState !== 'playing') return;
       if (data?.type === 'melee' && data?.attacker) {
         this.playerController.applyDamage(data.damage || 0);
@@ -221,8 +287,12 @@ export class GameManager {
 
       this.time.update(deltaTime);
 
+      if (this.classSelectScene && this.scene === this.classSelectScene.getScene()) {
+        this.classSelectScene.update(deltaTime);
+      }
+
       // Camera transition between rooms
-      if (this.cameraMove) {
+      if (this.gameplayInitialized && this.cameraMove) {
         const camera = (this.scene as any).mainCamera ?? this.scene.activeCamera;
         if (camera && camera instanceof ArcRotateCamera) {
           this.cameraMove.t += deltaTime;
@@ -242,12 +312,23 @@ export class GameManager {
         }
       }
 
-      if (this.gameState === 'playing') {
+      if (this.gameplayInitialized && this.gameState === 'playing') {
         // Update all game systems
         const enemies = this.enemySpawner.getEnemies();
         this.playerController.setGameplayActive(true);
         this.playerController.setEnemiesPresent(enemies.length > 0);
         this.playerController.update(deltaTime);
+
+        const secondaryActive = this.playerController.isSecondaryActive();
+        const secondaryRadius = this.playerController.getSecondaryZoneRadius();
+        const secondarySlow = this.playerController.getSecondarySlowMultiplier();
+        const playerPosForSecondary = this.playerController.getPosition();
+
+        this.projectileManager.setHostileProjectileSlowZone(
+          secondaryActive
+            ? { center: playerPosForSecondary, radius: secondaryRadius, multiplier: secondarySlow }
+            : null
+        );
         
         // Get active enemies for collision checks
         
@@ -259,6 +340,10 @@ export class GameManager {
           this.playerController.getVelocity()
         );
 
+        if (secondaryActive) {
+          this.applySecondaryEnemySlow(enemies, playerPosForSecondary, secondaryRadius, secondarySlow);
+        }
+
         // Resolve collisions between entities (player/enemies)
         this.resolveEntityCollisions(enemies);
 
@@ -267,12 +352,23 @@ export class GameManager {
         
         // Update projectiles and check collisions
         this.projectileManager.update(deltaTime, enemies, this.playerController, this.roomManager);
+
+        const secondaryBurst = this.playerController.consumePendingSecondaryBurst();
+        if (secondaryBurst) {
+          this.resolveSecondaryBurst(secondaryBurst, enemies);
+        }
         
         // Update ultimate zones
         this.ultimateManager.update(deltaTime, enemies, this.playerController);
         
         // Update HUD
         this.hudManager.update(deltaTime);
+        this.hudManager.updateSecondaryResource(
+          this.playerController.getSecondaryResourceCurrent(),
+          this.playerController.getSecondaryResourceMax(),
+          this.playerController.isSecondaryActive(),
+          this.playerController.getSecondaryActivationThreshold()
+        );
 
         // Test voicelines (idle daemon taunts)
         this.updateDaemonIdleTest(deltaTime, enemies.length);
@@ -303,9 +399,16 @@ export class GameManager {
             }
           }
         }
-      } else {
+      } else if (this.gameplayInitialized) {
         this.playerController.setGameplayActive(false);
+        this.projectileManager.setHostileProjectileSlowZone(null);
         this.hudManager.update(deltaTime);
+        this.hudManager.updateSecondaryResource(
+          this.playerController.getSecondaryResourceCurrent(),
+          this.playerController.getSecondaryResourceMax(),
+          this.playerController.isSecondaryActive(),
+          this.playerController.getSecondaryActivationThreshold()
+        );
       }
 
       // Render scene
@@ -476,7 +579,16 @@ export class GameManager {
     this.playerController?.dispose();
     this.enemySpawner?.dispose();
     this.roomManager?.dispose();
-    this.scene?.dispose();
+    if (this.mainMenuScene) {
+      this.mainMenuScene.dispose();
+      this.mainMenuScene = undefined;
+    }
+    if (this.classSelectScene) {
+      this.classSelectScene.dispose();
+      this.classSelectScene = undefined;
+    } else {
+      this.scene?.dispose();
+    }
     this.engine?.dispose();
   }
 
@@ -624,16 +736,80 @@ export class GameManager {
     }
   }
 
-  private startNewGame(): void {
-    this.currentRoomIndex = 0;
-    this.roomCleared = false;
-    this.hudManager.hideOverlays();
-    this.gameState = 'playing';
-    this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex);
-    this.loadRoomByIndex(this.currentRoomIndex);
+  private applySecondaryEnemySlow(enemies: any[], center: Vector3, radius: number, speedMultiplier: number): void {
+    const clamped = Math.max(0.05, Math.min(1, speedMultiplier));
+    for (const enemy of enemies) {
+      const current = enemy.getPosition();
+      if (Vector3.Distance(current, center) > radius) continue;
+      const previous = enemy.getPreviousPosition?.() ?? current;
+      const slowed = Vector3.Lerp(previous, current, clamped);
+      enemy.setPosition(slowed);
+    }
+  }
+
+  private resolveSecondaryBurst(
+    burst: {
+      position: Vector3;
+      radius: number;
+      baseDamage: number;
+      damagePerEnemy: number;
+      damagePerProjectile: number;
+      knockback: number;
+    },
+    enemies: any[]
+  ): void {
+    let enemiesInZone = 0;
+    for (const enemy of enemies) {
+      if (Vector3.Distance(enemy.getPosition(), burst.position) <= burst.radius) {
+        enemiesInZone++;
+      }
+    }
+
+    const projectilesInZone = this.projectileManager.countHostileProjectilesInRadius(burst.position, burst.radius);
+    this.projectileManager.destroyHostileProjectilesInRadius(burst.position, burst.radius);
+
+    const burstDamage = burst.baseDamage + (enemiesInZone * burst.damagePerEnemy) + (projectilesInZone * burst.damagePerProjectile);
+
+    for (const enemy of enemies) {
+      const enemyPos = enemy.getPosition();
+      const distance = Vector3.Distance(enemyPos, burst.position);
+      if (distance > burst.radius) continue;
+
+      enemy.takeDamage(burstDamage);
+
+      const outward = enemyPos.subtract(burst.position);
+      const force = outward.lengthSquared() > 0.0001
+        ? outward.normalize().scale(burst.knockback)
+        : new Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize().scale(burst.knockback);
+      enemy.applyExternalKnockback(force);
+    }
+
+    const blast = VisualPlaceholder.createAoEPlaceholder(this.scene, `player_secondary_burst_${Date.now()}`, burst.radius);
+    blast.position = burst.position.clone();
+    setTimeout(() => blast.dispose(), 220);
+  }
+
+  private async startNewGame(): Promise<void> {
+    if (this.gameplayStartInProgress) return;
+    this.gameplayStartInProgress = true;
+    try {
+      if (!this.gameplayInitialized) {
+        await this.initializeGameplayScene();
+      }
+
+      this.currentRoomIndex = 0;
+      this.roomCleared = false;
+      this.hudManager.hideOverlays();
+      this.gameState = 'playing';
+      this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex);
+      this.loadRoomByIndex(this.currentRoomIndex);
+    } finally {
+      this.gameplayStartInProgress = false;
+    }
   }
 
   private loadNextRoom(): void {
+    if (!this.gameplayInitialized) return;
     const nextIndex = (this.currentRoomIndex + 1) % this.roomOrder.length;
     this.roomCleared = false;
     this.hudManager.hideOverlays();
@@ -641,6 +817,7 @@ export class GameManager {
   }
 
   private loadIsolatedRoom(roomId: string): void {
+    if (!this.gameplayInitialized) return;
     this.cameraMove = null;
     this.roomOrder = [roomId];
     this.currentRoomIndex = 0;
@@ -652,6 +829,7 @@ export class GameManager {
   }
 
   private loadRoomByIndex(index: number): void {
+    if (!this.gameplayInitialized) return;
     const roomId = this.roomOrder[index];
     const instanceKey = `${roomId}::${index}`;
     this.roomManager.setCurrentRoom(instanceKey);
@@ -692,6 +870,7 @@ export class GameManager {
   }
 
   private preloadRoomsAround(preloadIndex: number, activeIndex: number): void {
+    if (!this.gameplayInitialized) return;
     this.roomManager.clearAllRooms();
 
     const indices = [preloadIndex - 2, preloadIndex - 1, preloadIndex, preloadIndex + 1];
@@ -722,6 +901,7 @@ export class GameManager {
   }
 
   private startRoomTransition(nextIndex: number): void {
+    if (!this.gameplayInitialized) return;
     this.hudManager.hideOverlays();
     this.gameState = 'transition';
 
@@ -848,6 +1028,8 @@ export class GameManager {
   }
 
   public loadRoomFromTileMappingJson(jsonPayload: string): void {
+    if (!this.gameplayInitialized) return;
+
     let mapping: TileMappingLayout | null = null;
     try {
       mapping = JSON.parse(jsonPayload) as TileMappingLayout;

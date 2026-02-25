@@ -9,6 +9,8 @@ export class InputManager {
   private mousePosition: Vector3 = Vector3.Zero();
   private mouseClick: boolean = false;
   private mouseClickThisFrame: boolean = false;
+  private rightMouseClick: boolean = false;
+  private rightMouseClickThisFrame: boolean = false;
   private spacePressed: boolean = false;
   private spacePressedThisFrame: boolean = false;
   private canvas: HTMLCanvasElement | null = null;
@@ -58,12 +60,18 @@ export class InputManager {
           if (evt.button === 0) {
             this.mouseClickThisFrame = true;
             this.mouseClick = true;
+          } else if (evt.button === 2) {
+            evt.preventDefault();
+            this.rightMouseClickThisFrame = true;
+            this.rightMouseClick = true;
           }
         }
 
         if (pointerInfo.type === PointerEventTypes.POINTERUP) {
           if (evt.button === 0) {
             this.mouseClick = false;
+          } else if (evt.button === 2) {
+            this.rightMouseClick = false;
           }
         }
 
@@ -84,6 +92,10 @@ export class InputManager {
       if (e.button === 0) { // Left click
         this.mouseClickThisFrame = true;
         this.mouseClick = true;
+      } else if (e.button === 2) {
+        e.preventDefault();
+        this.rightMouseClickThisFrame = true;
+        this.rightMouseClick = true;
       }
     };
 
@@ -102,7 +114,13 @@ export class InputManager {
       this.canvas.addEventListener('mouseup', (e: MouseEvent) => {
         if (e.button === 0) {
           this.mouseClick = false;
+        } else if (e.button === 2) {
+          this.rightMouseClick = false;
         }
+      });
+
+      this.canvas.addEventListener('contextmenu', (e: MouseEvent) => {
+        e.preventDefault();
       });
       return;
     }
@@ -116,6 +134,8 @@ export class InputManager {
     window.addEventListener('mouseup', (e: MouseEvent) => {
       if (e.button === 0) {
         this.mouseClick = false;
+      } else if (e.button === 2) {
+        this.rightMouseClick = false;
       }
     });
   }
@@ -162,6 +182,16 @@ export class InputManager {
     return result;
   }
 
+  isRightMouseDown(): boolean {
+    return this.rightMouseClick;
+  }
+
+  isRightMouseClickedThisFrame(): boolean {
+    const result = this.rightMouseClickThisFrame;
+    this.rightMouseClickThisFrame = false;
+    return result;
+  }
+
   /**
    * Check if space was pressed this frame (one-shot, resets after read)
    */
@@ -191,6 +221,7 @@ export class InputManager {
    */
   updateFrame(): void {
     this.mouseClickThisFrame = false;
+    this.rightMouseClickThisFrame = false;
     this.spacePressedThisFrame = false;
   }
 }

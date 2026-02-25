@@ -38,6 +38,7 @@ export class HUDManager {
   private logMessages: string[] = [];
   private statusPanel: Rectangle | null = null;
   private secondaryStatusText: TextBlock | null = null;
+  private secondaryResourceBarFill: Rectangle | null = null;
   private itemStatusText: TextBlock | null = null;
   private daemonContainer: Rectangle | null = null;
   private daemonAvatarImage: Image | null = null;
@@ -378,7 +379,7 @@ export class HUDManager {
     this.statusPanel.addControl(this.playerUltDisplay);
 
     this.secondaryStatusText = new TextBlock('secondary_status');
-    this.secondaryStatusText.text = 'SEC: N/A';
+    this.secondaryStatusText.text = 'STANCE: 100%';
     this.secondaryStatusText.fontSize = 14;
     this.secondaryStatusText.fontFamily = fontFamily;
     this.secondaryStatusText.color = '#B8FFE6';
@@ -391,13 +392,33 @@ export class HUDManager {
     this.secondaryStatusText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.statusPanel.addControl(this.secondaryStatusText);
 
+    const secondaryBarContainer = new Rectangle('secondary_resource_container');
+    secondaryBarContainer.width = '220px';
+    secondaryBarContainer.height = '12px';
+    secondaryBarContainer.thickness = 1;
+    secondaryBarContainer.color = '#7CFFEA';
+    secondaryBarContainer.background = 'rgba(10, 30, 35, 0.7)';
+    secondaryBarContainer.left = 10;
+    secondaryBarContainer.top = 62;
+    secondaryBarContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    secondaryBarContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.statusPanel.addControl(secondaryBarContainer);
+
+    this.secondaryResourceBarFill = new Rectangle('secondary_resource_fill');
+    this.secondaryResourceBarFill.width = '100%';
+    this.secondaryResourceBarFill.height = '100%';
+    this.secondaryResourceBarFill.thickness = 0;
+    this.secondaryResourceBarFill.background = '#66CCFF';
+    this.secondaryResourceBarFill.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    secondaryBarContainer.addControl(this.secondaryResourceBarFill);
+
     this.itemStatusText = new TextBlock('item_status');
     this.itemStatusText.text = 'ITEM: NONE';
     this.itemStatusText.fontSize = 14;
     this.itemStatusText.fontFamily = fontFamily;
     this.itemStatusText.color = '#B8FFE6';
     this.itemStatusText.left = 10;
-    this.itemStatusText.top = 64;
+    this.itemStatusText.top = 80;
     this.itemStatusText.width = '220px';
     this.itemStatusText.height = '22px';
     this.itemStatusText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -964,6 +985,31 @@ export class HUDManager {
         this.healthBarFill.background = '#FFD24A';
       } else {
         this.healthBarFill.background = '#FF4A66';
+      }
+    }
+  }
+
+  updateSecondaryResource(current: number, max: number, active: boolean, activationThreshold: number): void {
+    const clampedMax = Math.max(1, max);
+    const clampedCurrent = Math.max(0, Math.min(clampedMax, current));
+    const ratio = clampedCurrent / clampedMax;
+    const thresholdRatio = Math.max(0, Math.min(1, activationThreshold / clampedMax));
+    const percentage = Math.round(ratio * 100);
+
+    if (this.secondaryStatusText) {
+      const state = active ? 'ACTIVE' : (ratio >= thresholdRatio ? 'READY' : 'RECHARGE');
+      this.secondaryStatusText.text = `STANCE: ${percentage}% [${state}]`;
+      this.secondaryStatusText.color = active ? '#66CCFF' : (ratio >= thresholdRatio ? '#B8FFE6' : '#FFCC66');
+    }
+
+    if (this.secondaryResourceBarFill) {
+      this.secondaryResourceBarFill.width = `${Math.floor(ratio * 100)}%`;
+      if (active) {
+        this.secondaryResourceBarFill.background = '#66CCFF';
+      } else if (ratio >= thresholdRatio) {
+        this.secondaryResourceBarFill.background = '#7CFFEA';
+      } else {
+        this.secondaryResourceBarFill.background = '#FFCC66';
       }
     }
   }

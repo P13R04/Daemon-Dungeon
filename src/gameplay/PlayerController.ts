@@ -2,7 +2,8 @@
  * PlayerController - Controls the player character (Mage)
  */
 
-import { Scene, Mesh, Vector3, Matrix } from '@babylonjs/core';
+import { Scene, Mesh, Vector3, Matrix, StandardMaterial, Color3 } from '@babylonjs/core';
+import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { InputManager } from '../input/InputManager';
 import { PlayerAnimationController } from './PlayerAnimationController';
 import { EventBus, GameEvents } from '../core/EventBus';
@@ -59,6 +60,31 @@ export class PlayerController {
   private hasEnemiesInRoom: boolean = false;
   private gameplayActive: boolean = false;
 
+  // Secondary stance (mage posture)
+  private secondaryResourceMax: number = 100;
+  private secondaryResource: number = 100;
+  private secondaryActivationThreshold: number = 25;
+  private secondaryDrainPerSecond: number = 12;
+  private secondaryRegenPerSecond: number = 16;
+  private secondaryBurstCost: number = 50;
+  private secondaryZoneRadius: number = 4.2;
+  private secondarySlowMultiplier: number = 0.2; // 80% slow
+  private secondaryBurstBaseDamage: number = 18;
+  private secondaryBurstDamagePerEnemy: number = 8;
+  private secondaryBurstDamagePerProjectile: number = 5;
+  private secondaryBurstKnockback: number = 2.6;
+  private secondaryActive: boolean = false;
+  private secondaryLockUntilRightRelease: boolean = false;
+  private secondaryZoneMesh: Mesh | null = null;
+  private pendingSecondaryBurst: {
+    position: Vector3;
+    radius: number;
+    baseDamage: number;
+    damagePerEnemy: number;
+    damagePerProjectile: number;
+    knockback: number;
+  } | null = null;
+
   constructor(scene: Scene, inputManager: InputManager, config: any) {
     this.scene = scene;
     this.inputManager = inputManager;
@@ -103,6 +129,8 @@ export class PlayerController {
     this.fireRate = this.config.mage.baseStats.fireRate;
     this.baseFireRate = this.fireRate;
     this.speed = this.config.mage.baseStats.speed;
+
+    this.createSecondaryZoneVisual();
   }
 
   /**
@@ -170,6 +198,8 @@ export class PlayerController {
 
     // Handle input
     this.handleInput(deltaTime);
+
+    this.updateSecondaryStance(deltaTime);
 
     // Reset input frame state
     this.inputManager.updateFrame();
@@ -279,7 +309,7 @@ export class PlayerController {
   }
 
   private handleInput(deltaTime: number): void {
-    this.isFiring = this.inputManager.isMouseDown();
+    this.isFiring = this.inputManager.isMouseDown() && !this.secondaryActive;
     // Attack (click = single shot, hold = continuous)
     if (this.isFiring) {
       // Update aim direction only when firing
@@ -316,6 +346,77 @@ export class PlayerController {
       }
     }
     // While moving: rotation is already applied in updateMovement()
+  }
+
+  private createSecondaryZoneVisual(): void {
+    const mesh = VisualPlaceholder.createAoEPlaceholder(this.scene, 'player_secondary_zone', this.secondaryZoneRadius);
+    const material = new StandardMaterial('player_secondary_zone_mat', this.scene);
+    material.diffuseColor = new Color3(0.3, 0.8, 1.0);
+    material.emissiveColor = new Color3(0.1, 0.35, 0.5);
+    material.alpha = 0.25;
+    mesh.material = material;
+    mesh.isVisible = false;
+    mesh.position.y = 1.02;
+    this.secondaryZoneMesh = mesh;
+  }
+
+  private updateSecondaryStance(deltaTime: number): void {
+    const rightHeld = this.inputManager.isRightMouseDown();
+
+    if (!this.gameplayActive) {
+      this.secondaryActive = false;
+      this.secondaryLockUntilRightRelease = false;
+    }
+
+    if (this.secondaryLockUntilRightRelease && !rightHeld) {
+      this.secondaryLockUntilRightRelease = false;
+    }
+
+    if (!this.secondaryLockUntilRightRelease && rightHeld) {
+      if (!this.secondaryActive && this.secondaryResource >= this.secondaryActivationThreshold) {
+        this.secondaryActive = true;
+      }
+    }
+
+    if (!rightHeld) {
+      this.secondaryActive = false;
+    }
+
+    if (this.secondaryActive) {
+      const leftClicked = this.inputManager.isMouseClickedThisFrame();
+      if (leftClicked && this.secondaryResource >= this.secondaryBurstCost) {
+        this.triggerSecondaryBurst();
+        this.secondaryResource = Math.max(0, this.secondaryResource - this.secondaryBurstCost);
+        this.secondaryActive = false;
+        this.secondaryLockUntilRightRelease = true;
+      } else {
+        this.secondaryResource = Math.max(0, this.secondaryResource - this.secondaryDrainPerSecond * deltaTime);
+        if (this.secondaryResource <= 0) {
+          this.secondaryActive = false;
+          this.secondaryLockUntilRightRelease = true;
+        }
+      }
+    } else {
+      this.secondaryResource = Math.min(this.secondaryResourceMax, this.secondaryResource + this.secondaryRegenPerSecond * deltaTime);
+    }
+
+    if (this.secondaryZoneMesh) {
+      this.secondaryZoneMesh.isVisible = this.secondaryActive;
+      this.secondaryZoneMesh.position.x = this.position.x;
+      this.secondaryZoneMesh.position.z = this.position.z;
+      this.secondaryZoneMesh.position.y = 1.02;
+    }
+  }
+
+  private triggerSecondaryBurst(): void {
+    this.pendingSecondaryBurst = {
+      position: this.position.clone(),
+      radius: this.secondaryZoneRadius,
+      baseDamage: this.secondaryBurstBaseDamage,
+      damagePerEnemy: this.secondaryBurstDamagePerEnemy,
+      damagePerProjectile: this.secondaryBurstDamagePerProjectile,
+      knockback: this.secondaryBurstKnockback,
+    };
   }
 
   private fireProjectile(): void {
@@ -428,6 +529,43 @@ export class PlayerController {
     return { percent: this.poisonBonusPercent, duration: this.poisonDuration };
   }
 
+  isSecondaryActive(): boolean {
+    return this.secondaryActive;
+  }
+
+  getSecondaryZoneRadius(): number {
+    return this.secondaryZoneRadius;
+  }
+
+  getSecondarySlowMultiplier(): number {
+    return this.secondarySlowMultiplier;
+  }
+
+  getSecondaryResourceCurrent(): number {
+    return this.secondaryResource;
+  }
+
+  getSecondaryResourceMax(): number {
+    return this.secondaryResourceMax;
+  }
+
+  getSecondaryActivationThreshold(): number {
+    return this.secondaryActivationThreshold;
+  }
+
+  consumePendingSecondaryBurst(): {
+    position: Vector3;
+    radius: number;
+    baseDamage: number;
+    damagePerEnemy: number;
+    damagePerProjectile: number;
+    knockback: number;
+  } | null {
+    const payload = this.pendingSecondaryBurst;
+    this.pendingSecondaryBurst = null;
+    return payload;
+  }
+
   setEnemiesPresent(hasEnemies: boolean): void {
     this.hasEnemiesInRoom = hasEnemies;
   }
@@ -496,6 +634,10 @@ export class PlayerController {
   }
 
   dispose(): void {
+    if (this.secondaryZoneMesh) {
+      this.secondaryZoneMesh.dispose();
+      this.secondaryZoneMesh = null;
+    }
     if (this.mesh) {
       this.mesh.dispose();
     }

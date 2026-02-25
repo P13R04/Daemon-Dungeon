@@ -39,8 +39,11 @@
     "glowIntensity": 0.8,
     "chromaticAmount": 30,
     "chromaticRadial": 0.8,
+    "grainEnabled": true,
     "grainIntensity": 12,
     "grainAnimated": true,
+    "crtLinesEnabled": true,
+    "crtLineIntensity": 0.35,
     "vignetteEnabled": true,
     "vignetteWeight": 4.0,
     "vignetteColor": [0, 0, 0, 1]

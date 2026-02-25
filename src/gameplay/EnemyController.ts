@@ -1275,6 +1275,10 @@ export class EnemyController {
     this.dots.push({ remaining: duration, dps });
   }
 
+  applyExternalKnockback(force: Vector3): void {
+    this.knockback.apply(force);
+  }
+
   getHealth(): Health {
     return this.health;
   }
