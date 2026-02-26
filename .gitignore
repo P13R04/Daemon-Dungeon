@@ -7,3 +7,5 @@ dist/
 .env
 .env.local
 archive/
+archive_docs/
+archive-local/
