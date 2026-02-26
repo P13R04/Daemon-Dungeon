@@ -53,7 +53,7 @@ export class ClassSelectScene {
 
   constructor(
     private engine: Engine,
-    private onStartMage: () => void,
+    private onStartClass: (classId: 'mage' | 'firewall' | 'rogue') => void,
     private onBackToTitle: () => void,
     postProcessingConfig?: Partial<PostProcessingConfig>
   ) {
@@ -251,10 +251,7 @@ export class ClassSelectScene {
     startButton.thickness = 2;
     startButton.top = '22px';
     startButton.onPointerUpObservable.add(() => {
-      const current = this.items[this.selectedIndex];
-      if (current?.id === 'mage') {
-        this.onStartMage();
-      }
+      this.tryStartSelectedClass();
     });
     infoPanel.addControl(startButton);
 
@@ -271,11 +268,11 @@ export class ClassSelectScene {
 
     const firewallRoot = new TransformNode('classFirewallRoot', this.scene);
     this.createCylinderPlaceholder(firewallRoot, new Color3(1.0, 0.45, 0.25), 2.8, 1.2, 'FIREWALL');
-    this.items.push({ id: 'firewall', label: 'FIREWALL', playable: false, root: firewallRoot });
+    this.items.push({ id: 'firewall', label: 'FIREWALL', playable: true, root: firewallRoot });
 
     const rogueRoot = new TransformNode('classRogueRoot', this.scene);
     this.createCylinderPlaceholder(rogueRoot, new Color3(0.6, 0.9, 0.35), 2.4, 0.9, 'ROGUE');
-    this.items.push({ id: 'rogue', label: 'ROGUE', playable: false, root: rogueRoot });
+    this.items.push({ id: 'rogue', label: 'ROGUE', playable: true, root: rogueRoot });
   }
 
   private async loadMageModelInto(root: TransformNode): Promise<void> {
@@ -423,8 +420,8 @@ export class ClassSelectScene {
 
   private tryStartSelectedClass(): void {
     const selected = this.items[this.selectedIndex];
-    if (selected?.id === 'mage') {
-      this.onStartMage();
+    if (selected?.playable) {
+      this.onStartClass(selected.id);
     }
   }
 
@@ -444,12 +441,18 @@ export class ClassSelectScene {
       this.startButton.isEnabled = true;
       this.startButton.background = '#1D3B3A';
       this.startButton.color = '#FFFFFF';
+      if (this.startButton.textBlock) {
+        this.startButton.textBlock.text = `START AS ${selected.label}`;
+      }
     } else {
       this.infoText.text = `${selected.label} // COMING SOON`;
       this.infoText.color = '#7C9C98';
       this.startButton.isEnabled = false;
       this.startButton.background = 'rgba(20,30,35,0.75)';
       this.startButton.color = '#7C9C98';
+      if (this.startButton.textBlock) {
+        this.startButton.textBlock.text = 'UNAVAILABLE';
+      }
     }
   }
 

@@ -378,6 +378,28 @@ export class ProjectileManager {
           }
           const distance = Vector3.Distance(projectile.data.position, player.getPosition());
           if (distance < 0.8) {
+            const reflection = player.reflectProjectileIfShielding?.(
+              projectile.data.position,
+              projectile.data.damage,
+              projectile.data.direction
+            );
+
+            if (reflection) {
+              this.spawnProjectile(
+                reflection.position,
+                reflection.direction,
+                reflection.damage,
+                projectile.data.speed * reflection.speedMultiplier,
+                projectile.data.range,
+                true
+              );
+              this.handleProjectileImpact(projectile, projectile.data.position.clone());
+              projectile.setActive(false);
+              this.projectilePool.release(projectile);
+              this.activeProjectiles.splice(i, 1);
+              continue;
+            }
+
             player.applyDamage(projectile.data.damage);
             this.eventBus.emit(GameEvents.PROJECTILE_HIT, {
               projectile: projectile,

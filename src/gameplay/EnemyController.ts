@@ -122,6 +122,7 @@ export class EnemyController {
   
   private target: Vector3 | null = null;
   private isAlive: boolean = true;
+  private stunRemaining: number = 0;
 
   constructor(scene: Scene, typeId: string, position: Vector3, config: any) {
     this.scene = scene;
@@ -246,7 +247,8 @@ export class EnemyController {
     playerPosition: Vector3,
     allEnemies: EnemyController[] = [],
     roomManager?: RoomManager,
-    playerVelocity: Vector3 = Vector3.Zero()
+    playerVelocity: Vector3 = Vector3.Zero(),
+    playerDetected: boolean = true
   ): void {
     if (!this.isAlive || !this.mesh) return;
 
@@ -270,6 +272,30 @@ export class EnemyController {
           this.dots.splice(i, 1);
         }
       }
+    }
+
+    if (this.stunRemaining > 0) {
+      this.stunRemaining = Math.max(0, this.stunRemaining - deltaTime);
+      this.previousPosition = this.position.clone();
+      const knock = this.knockback.update(deltaTime);
+      this.position = this.position.add(knock);
+      this.applyMeshPosition();
+      if (this.attackCooldown > 0) {
+        this.attackCooldown -= deltaTime;
+      }
+      return;
+    }
+
+    if (!playerDetected) {
+      this.velocity = Vector3.Zero();
+      this.previousPosition = this.position.clone();
+      const knock = this.knockback.update(deltaTime);
+      this.position = this.position.add(knock);
+      this.applyMeshPosition();
+      if (this.attackCooldown > 0) {
+        this.attackCooldown -= deltaTime;
+      }
+      return;
     }
 
     this.target = playerPosition;
@@ -1277,6 +1303,11 @@ export class EnemyController {
 
   applyExternalKnockback(force: Vector3): void {
     this.knockback.apply(force);
+  }
+
+  applyStun(duration: number): void {
+    if (duration <= 0) return;
+    this.stunRemaining = Math.max(this.stunRemaining, duration);
   }
 
   getHealth(): Health {

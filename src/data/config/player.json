@@ -33,6 +33,114 @@
       "dotTickRate": 0.5,
       "healPerTick": 6,
       "areaSize": 8
+    },
+    "secondary": {
+      "resourceMax": 100,
+      "activationThreshold": 25,
+      "drainPerSecond": 12,
+      "regenPerSecond": 16,
+      "burstCost": 50,
+      "zoneRadius": 4.2,
+      "slowMultiplier": 0.2,
+      "burstBaseDamage": 18,
+      "burstDamagePerEnemy": 8,
+      "burstDamagePerProjectile": 5,
+      "burstKnockback": 2.6
+    }
+  },
+  "firewall": {
+    "name": "Firewall",
+    "description": "Tank de proximité",
+    "baseStats": {
+      "hp": 180,
+      "speed": 4.2,
+      "damage": 18,
+      "fireRate": 0.85
+    },
+    "attack": {
+      "type": "melee_cone",
+      "range": 2.8,
+      "coneAngleDeg": 70,
+      "damage": 28,
+      "knockback": 1.4
+    },
+    "shield": {
+      "frontalAngleDeg": 95,
+      "projectileReflectMultiplier": 1.0,
+      "meleeBlockRatio": 1.0,
+      "resourceMax": 100,
+      "activationThreshold": 20,
+      "drainPerSecond": 16,
+      "regenPerSecond": 18
+    },
+    "shieldBash": {
+      "damage": 26,
+      "dashSpeed": 14,
+      "dashDuration": 0.25,
+      "hitRadius": 1.1,
+      "knockback": 3.2,
+      "stunDuration": 1.0,
+      "cooldown": 0.9,
+      "cost": 25
+    },
+    "passive": {
+      "riposteMeleeRatio": 0.35
+    },
+    "ultimate": {
+      "id": "fortress_singularity",
+      "chargeTime": 30,
+      "cooldown": 0,
+      "radius": 4.8,
+      "damage": 34,
+      "stunDuration": 3.0,
+      "pullStrength": 0.65
+    }
+  },
+  "rogue": {
+    "name": "Rogue",
+    "description": "Assassin mobile au corps à corps",
+    "baseStats": {
+      "hp": 90,
+      "speed": 6.4,
+      "damage": 18,
+      "fireRate": 0.32
+    },
+    "attack": {
+      "type": "melee_single",
+      "range": 1.9,
+      "coneAngleDeg": 65,
+      "damage": 18,
+      "knockback": 0.9
+    },
+    "stealth": {
+      "resourceMax": 100,
+      "activationThreshold": 18,
+      "drainPerSecond": 14,
+      "regenPerSecond": 20,
+      "zoneRadius": 4.5
+    },
+    "dashAttack": {
+      "cost": 28,
+      "dashSpeed": 18,
+      "dashDuration": 0.32,
+      "hitRadius": 1.05,
+      "damage": 28,
+      "knockback": 1.6,
+      "cooldown": 0.7
+    },
+    "passive": {
+      "critChance": 0.22,
+      "critMultiplier": 2.0
+    },
+    "ultimate": {
+      "id": "shadow_hunt",
+      "cooldown": 0,
+      "chargeTime": 30,
+      "zoneRadius": 5.5,
+      "duration": 6,
+      "hitDamage": 22,
+      "teleportInterval": 0.22,
+      "teleportOffset": 0.8
     }
   }
 }

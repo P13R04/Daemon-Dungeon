@@ -100,7 +100,13 @@ export class EnemySpawner {
     return this.enemies.filter(e => e.isActive());
   }
 
-  update(deltaTime: number, playerPosition: any, roomManager?: RoomManager, playerVelocity?: Vector3): void {
+  update(
+    deltaTime: number,
+    playerPosition: Vector3,
+    roomManager?: RoomManager,
+    playerVelocity?: Vector3,
+    detectionRange?: number
+  ): void {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       
@@ -109,7 +115,18 @@ export class EnemySpawner {
         continue;
       }
 
-      enemy.update(deltaTime, playerPosition, this.enemies, roomManager, playerVelocity ?? new Vector3(0, 0, 0));
+      const detected =
+        detectionRange == null ||
+        Vector3.Distance(enemy.getPosition(), playerPosition) <= detectionRange;
+
+      enemy.update(
+        deltaTime,
+        playerPosition,
+        this.enemies,
+        roomManager,
+        playerVelocity ?? new Vector3(0, 0, 0),
+        detected
+      );
     }
   }
 

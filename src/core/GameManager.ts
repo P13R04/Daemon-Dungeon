@@ -53,6 +53,7 @@ export class GameManager {
   private gameplayInitialized: boolean = false;
   private gameplayStartInProgress: boolean = false;
   private eventListenersBound: boolean = false;
+  private selectedClassId: 'mage' | 'firewall' | 'rogue' = 'mage';
   private tilesEnabled: boolean = true;
   private gameState: 'menu' | 'playing' | 'roomclear' | 'bonus' | 'transition' | 'gameover' = 'menu';
   private roomOrder: string[] = [];
@@ -66,6 +67,15 @@ export class GameManager {
   private daemonIdleTimer: number = 0;
   private daemonIdleThreshold: number = 8;
   private readonly daemonTestRoomId: string = 'room_test_voicelines';
+  private rogueUltimateState: {
+    remaining: number;
+    zoneRadius: number;
+    hitDamage: number;
+    teleportInterval: number;
+    teleportOffset: number;
+    timer: number;
+    targetedEnemyIds: Set<string>;
+  } | null = null;
 
   private constructor() {
     this.stateMachine = new StateMachine();
@@ -131,8 +141,8 @@ export class GameManager {
     }
 
     const classSelectPostFx = this.configLoader.getGameplay()?.postProcessing;
-    this.classSelectScene = new ClassSelectScene(this.engine, () => {
-      this.eventBus.emit(GameEvents.GAME_START_REQUESTED);
+    this.classSelectScene = new ClassSelectScene(this.engine, (classId) => {
+      this.eventBus.emit(GameEvents.GAME_START_REQUESTED, { classId });
     }, () => {
       void this.openMainMenuScene();
     }, classSelectPostFx);
@@ -182,7 +192,7 @@ export class GameManager {
     }
 
     const playerConfig = this.configLoader.getPlayer();
-    this.playerController = new PlayerController(this.scene, this.inputManager, playerConfig!);
+    this.playerController = new PlayerController(this.scene, this.inputManager, playerConfig!, this.selectedClassId);
     this.enemySpawner = new EnemySpawner(this.scene, this.roomManager);
     this.devConsole.setPlayer(this.playerController);
 
@@ -193,7 +203,11 @@ export class GameManager {
     if (this.eventListenersBound) return;
     this.eventListenersBound = true;
 
-    this.eventBus.on(GameEvents.GAME_START_REQUESTED, () => {
+    this.eventBus.on(GameEvents.GAME_START_REQUESTED, (data) => {
+      const classId = data?.classId as ('mage' | 'firewall' | 'rogue' | undefined);
+      if (classId) {
+        this.selectedClassId = classId;
+      }
       void this.startNewGame();
     });
 
@@ -253,7 +267,26 @@ export class GameManager {
       if (!this.gameplayInitialized) return;
       if (this.gameState !== 'playing') return;
       if (data?.type === 'melee' && data?.attacker) {
-        this.playerController.applyDamage(data.damage || 0);
+        const rawDamage = data.damage || 0;
+        let finalDamage = rawDamage;
+        if (this.playerController.getClassId() === 'firewall' && data.attacker !== 'player') {
+          const enemies = this.enemySpawner?.getEnemies?.() ?? [];
+          const attackerEnemy = enemies.find((enemy: any) => enemy.getId?.() === data.attacker);
+          if (attackerEnemy) {
+            const attackerPos = attackerEnemy.getPosition();
+            if (this.playerController.canBlockMeleeFrom(attackerPos)) {
+              const blockRatio = this.playerController.getTankMeleeBlockRatio();
+              finalDamage = Math.max(0, rawDamage * (1 - blockRatio));
+              const riposteRatio = this.playerController.getTankRiposteMeleeRatio();
+              if (riposteRatio > 0) {
+                attackerEnemy.takeDamage(rawDamage * riposteRatio);
+              }
+            }
+          }
+        }
+        if (finalDamage > 0) {
+          this.playerController.applyDamage(finalDamage);
+        }
       }
       if (data?.attacker === 'player') {
         this.tryTriggerDaemonTestOnFire();
@@ -323,9 +356,14 @@ export class GameManager {
         const secondaryRadius = this.playerController.getSecondaryZoneRadius();
         const secondarySlow = this.playerController.getSecondarySlowMultiplier();
         const playerPosForSecondary = this.playerController.getPosition();
+        const isMageSecondary = this.playerController.getClassId() === 'mage' && secondaryActive;
+        const rogueStealthRange =
+          this.playerController.getClassId() === 'rogue' && this.playerController.isSecondaryActive()
+            ? this.playerController.getRogueStealthRadius()
+            : undefined;
 
         this.projectileManager.setHostileProjectileSlowZone(
-          secondaryActive
+          isMageSecondary
             ? { center: playerPosForSecondary, radius: secondaryRadius, multiplier: secondarySlow }
             : null
         );
@@ -337,10 +375,11 @@ export class GameManager {
           deltaTime,
           this.playerController.getPosition(),
           this.roomManager,
-          this.playerController.getVelocity()
+          this.playerController.getVelocity(),
+          rogueStealthRange
         );
 
-        if (secondaryActive) {
+        if (isMageSecondary) {
           this.applySecondaryEnemySlow(enemies, playerPosForSecondary, secondaryRadius, secondarySlow);
         }
 
@@ -357,6 +396,38 @@ export class GameManager {
         if (secondaryBurst) {
           this.resolveSecondaryBurst(secondaryBurst, enemies);
         }
+
+        const tankSweep = this.playerController.consumePendingTankSweep();
+        if (tankSweep) {
+          this.resolveTankSweep(tankSweep, enemies);
+        }
+
+        const tankShieldBash = this.playerController.consumePendingTankShieldBash();
+        if (tankShieldBash) {
+          this.resolveTankShieldBash(tankShieldBash, enemies);
+        }
+
+        const tankUltimate = this.playerController.consumePendingTankUltimate();
+        if (tankUltimate) {
+          this.resolveTankUltimate(tankUltimate, enemies);
+        }
+
+        const rogueStrike = this.playerController.consumePendingRogueStrike();
+        if (rogueStrike) {
+          this.resolveRogueStrike(rogueStrike, enemies);
+        }
+
+        const rogueDashAttack = this.playerController.consumePendingRogueDashAttack();
+        if (rogueDashAttack) {
+          this.resolveRogueDashAttack(rogueDashAttack, enemies);
+        }
+
+        const rogueUltimate = this.playerController.consumePendingRogueUltimate();
+        if (rogueUltimate) {
+          this.startRogueUltimate(rogueUltimate);
+        }
+
+        this.updateRogueUltimate(deltaTime, enemies);
         
         // Update ultimate zones
         this.ultimateManager.update(deltaTime, enemies, this.playerController);
@@ -789,6 +860,221 @@ export class GameManager {
     setTimeout(() => blast.dispose(), 220);
   }
 
+
+  private resolveTankSweep(
+    sweep: {
+      origin: Vector3;
+      direction: Vector3;
+      range: number;
+      coneAngleDeg: number;
+      damage: number;
+      knockback: number;
+    },
+    enemies: any[]
+  ): void {
+    const dir = sweep.direction.lengthSquared() > 0.0001 ? sweep.direction.normalize() : new Vector3(1, 0, 0);
+    const maxAngle = (sweep.coneAngleDeg * Math.PI) / 180;
+
+    for (const enemy of enemies) {
+      const toEnemy = enemy.getPosition().subtract(sweep.origin);
+      toEnemy.y = 0;
+      const distance = toEnemy.length();
+      if (distance <= 0.0001 || distance > sweep.range) continue;
+
+      const dot = Vector3.Dot(dir, toEnemy.normalize());
+      const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+      if (angle > maxAngle * 0.5) continue;
+
+      enemy.takeDamage(sweep.damage);
+      enemy.applyExternalKnockback(toEnemy.normalize().scale(sweep.knockback));
+    }
+  }
+
+  private resolveTankShieldBash(
+    bash: {
+      origin: Vector3;
+      radius: number;
+      damage: number;
+      knockback: number;
+      stunDuration: number;
+    },
+    enemies: any[]
+  ): void {
+    for (const enemy of enemies) {
+      const toEnemy = enemy.getPosition().subtract(bash.origin);
+      const distance = toEnemy.length();
+      if (distance > bash.radius) continue;
+      enemy.takeDamage(bash.damage);
+      const force = toEnemy.lengthSquared() > 0.0001
+        ? toEnemy.normalize().scale(bash.knockback)
+        : new Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize().scale(bash.knockback);
+      enemy.applyExternalKnockback(force);
+      enemy.applyStun?.(bash.stunDuration);
+    }
+  }
+
+  private resolveTankUltimate(
+    ultimate: {
+      position: Vector3;
+      radius: number;
+      damage: number;
+      stunDuration: number;
+      pullStrength: number;
+    },
+    enemies: any[]
+  ): void {
+    for (const enemy of enemies) {
+      const enemyPos = enemy.getPosition();
+      const toEnemy = enemyPos.subtract(ultimate.position);
+      const distance = toEnemy.length();
+      if (distance > ultimate.radius) continue;
+
+      enemy.takeDamage(ultimate.damage);
+      enemy.applyStun?.(ultimate.stunDuration);
+
+      const pullDir = ultimate.position.subtract(enemyPos);
+      if (pullDir.lengthSquared() > 0.0001) {
+        enemy.applyExternalKnockback(pullDir.normalize().scale(ultimate.pullStrength));
+      }
+    }
+  }
+
+  private resolveRogueStrike(
+    strike: {
+      origin: Vector3;
+      direction: Vector3;
+      range: number;
+      coneAngleDeg: number;
+      damage: number;
+      knockback: number;
+    },
+    enemies: any[]
+  ): void {
+    const dir = strike.direction.lengthSquared() > 0.0001 ? strike.direction.normalize() : new Vector3(1, 0, 0);
+    const maxAngle = (strike.coneAngleDeg * Math.PI) / 180;
+    let bestEnemy: any = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (const enemy of enemies) {
+      const toEnemy = enemy.getPosition().subtract(strike.origin);
+      toEnemy.y = 0;
+      const distance = toEnemy.length();
+      if (distance <= 0.0001 || distance > strike.range) continue;
+      const angle = Math.acos(Math.max(-1, Math.min(1, Vector3.Dot(dir, toEnemy.normalize()))));
+      if (angle > maxAngle * 0.5) continue;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestEnemy = enemy;
+      }
+    }
+
+    if (!bestEnemy) return;
+    bestEnemy.takeDamage(strike.damage);
+    const forceDir = bestEnemy.getPosition().subtract(strike.origin);
+    if (forceDir.lengthSquared() > 0.0001) {
+      bestEnemy.applyExternalKnockback(forceDir.normalize().scale(strike.knockback));
+    }
+  }
+
+  private resolveRogueDashAttack(
+    dash: {
+      from: Vector3;
+      to: Vector3;
+      radius: number;
+      damage: number;
+      knockback: number;
+    },
+    enemies: any[]
+  ): void {
+    const segment = dash.to.subtract(dash.from);
+    const segmentLenSq = Math.max(0.0001, segment.lengthSquared());
+
+    for (const enemy of enemies) {
+      const enemyPos = enemy.getPosition();
+      const toEnemy = enemyPos.subtract(dash.from);
+      const t = Math.max(0, Math.min(1, Vector3.Dot(toEnemy, segment) / segmentLenSq));
+      const closestPoint = dash.from.add(segment.scale(t));
+      const distanceToPath = Vector3.Distance(enemyPos, closestPoint);
+      if (distanceToPath > dash.radius) continue;
+
+      enemy.takeDamage(dash.damage);
+      const forceDir = enemyPos.subtract(closestPoint);
+      if (forceDir.lengthSquared() > 0.0001) {
+        enemy.applyExternalKnockback(forceDir.normalize().scale(dash.knockback));
+      }
+    }
+  }
+
+  private startRogueUltimate(payload: {
+    duration: number;
+    zoneRadius: number;
+    hitDamage: number;
+    teleportInterval: number;
+    teleportOffset: number;
+  }): void {
+    this.playerController.setRogueUltimateActive(true);
+    this.rogueUltimateState = {
+      remaining: payload.duration,
+      zoneRadius: payload.zoneRadius,
+      hitDamage: payload.hitDamage,
+      teleportInterval: payload.teleportInterval,
+      teleportOffset: payload.teleportOffset,
+      timer: 0,
+      targetedEnemyIds: new Set<string>(),
+    };
+  }
+
+  private updateRogueUltimate(deltaTime: number, enemies: any[]): void {
+    if (!this.rogueUltimateState) return;
+    if (this.playerController.getClassId() !== 'rogue') {
+      this.playerController.setRogueUltimateActive(false);
+      this.rogueUltimateState = null;
+      return;
+    }
+
+    this.rogueUltimateState.remaining -= deltaTime;
+    this.rogueUltimateState.timer -= deltaTime;
+    if (this.rogueUltimateState.remaining <= 0) {
+      this.playerController.setRogueUltimateActive(false);
+      this.rogueUltimateState = null;
+      return;
+    }
+    if (this.rogueUltimateState.timer > 0) return;
+
+    const playerPos = this.playerController.getPosition();
+    const inZone = enemies.filter((enemy) => Vector3.Distance(enemy.getPosition(), playerPos) <= this.rogueUltimateState!.zoneRadius);
+    if (inZone.length === 0) return;
+
+    const untargeted = inZone.filter((enemy) => !this.rogueUltimateState!.targetedEnemyIds.has(enemy.getId()));
+    const candidates = untargeted.length > 0 ? untargeted : inZone;
+    if (untargeted.length === 0) {
+      this.rogueUltimateState.targetedEnemyIds.clear();
+    }
+
+    let target = candidates[0];
+    let bestDistance = Vector3.Distance(playerPos, target.getPosition());
+    for (let i = 1; i < candidates.length; i++) {
+      const candidate = candidates[i];
+      const distance = Vector3.Distance(playerPos, candidate.getPosition());
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        target = candidate;
+      }
+    }
+
+    const targetPos = target.getPosition();
+    const toTarget = targetPos.subtract(playerPos);
+    toTarget.y = 0;
+    const teleportDir = toTarget.lengthSquared() > 0.0001 ? toTarget.normalize() : new Vector3(1, 0, 0);
+    const newPlayerPos = targetPos.subtract(teleportDir.scale(this.rogueUltimateState.teleportOffset));
+    newPlayerPos.y = 1.0;
+    this.playerController.setPosition(newPlayerPos);
+
+    target.takeDamage(this.playerController.computeRogueHitDamage(this.rogueUltimateState.hitDamage));
+    this.rogueUltimateState.targetedEnemyIds.add(target.getId());
+    this.rogueUltimateState.timer = this.rogueUltimateState.teleportInterval;
+  }
+
   private async startNewGame(): Promise<void> {
     if (this.gameplayStartInProgress) return;
     this.gameplayStartInProgress = true;
@@ -799,6 +1085,8 @@ export class GameManager {
 
       this.currentRoomIndex = 0;
       this.roomCleared = false;
+      this.rogueUltimateState = null;
+      this.playerController.setRogueUltimateActive(false);
       this.hudManager.hideOverlays();
       this.gameState = 'playing';
       this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex);
@@ -822,6 +1110,8 @@ export class GameManager {
     this.roomOrder = [roomId];
     this.currentRoomIndex = 0;
     this.roomCleared = false;
+    this.rogueUltimateState = null;
+    this.playerController.setRogueUltimateActive(false);
     this.hudManager.hideOverlays();
     this.gameState = 'playing';
     this.preloadRoomsAround(0, 0);
@@ -835,6 +1125,8 @@ export class GameManager {
     this.roomManager.setCurrentRoom(instanceKey);
     this.roomManager.setDoorActive(false);
     this.roomCleared = false;
+    this.rogueUltimateState = null;
+    this.playerController.setRogueUltimateActive(false);
 
     const roomBounds = this.roomManager.getRoomBounds();
     if (roomBounds) {
