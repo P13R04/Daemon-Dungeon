@@ -9,7 +9,7 @@ import {
   Material,
 } from '@babylonjs/core';
 
-export function createSynthwaveGridBackground(scene: Scene): void {
+export function createSynthwaveGridBackground(scene: Scene, layerMask?: number): void {
   const baseMesh = MeshBuilder.CreateGround(
     'synthwave_base_bg',
     {
@@ -22,6 +22,9 @@ export function createSynthwaveGridBackground(scene: Scene): void {
 
   baseMesh.position = new Vector3(0, -16.0, 0);
   baseMesh.isPickable = false;
+  if (layerMask != null) {
+    baseMesh.layerMask = layerMask;
+  }
 
   const baseMaterial = new StandardMaterial('synthwave_base_mat', scene);
   baseMaterial.disableLighting = true;
@@ -42,6 +45,9 @@ export function createSynthwaveGridBackground(scene: Scene): void {
 
   perspectiveMesh.position = new Vector3(0, -15.97, 0);
   perspectiveMesh.isPickable = false;
+  if (layerMask != null) {
+    perspectiveMesh.layerMask = layerMask;
+  }
 
   const flowMesh = MeshBuilder.CreateGround(
     'synthwave_grid_flow_bg',
@@ -55,11 +61,14 @@ export function createSynthwaveGridBackground(scene: Scene): void {
 
   flowMesh.position = new Vector3(0, -15.965, 0);
   flowMesh.isPickable = false;
+  if (layerMask != null) {
+    flowMesh.layerMask = layerMask;
+  }
 
   const perspectiveTextureSize = 2048;
-  const perspectiveTexture = new DynamicTexture('synthwave_grid_perspective_texture', { width: perspectiveTextureSize, height: perspectiveTextureSize }, scene, false);
+  const perspectiveTexture = new DynamicTexture('synthwave_grid_perspective_texture', { width: perspectiveTextureSize, height: perspectiveTextureSize }, scene, true);
   perspectiveTexture.hasAlpha = true;
-  const perspectiveCtx = perspectiveTexture.getContext();
+  const perspectiveCtx = perspectiveTexture.getContext() as unknown as CanvasRenderingContext2D;
 
   perspectiveCtx.clearRect(0, 0, perspectiveTextureSize, perspectiveTextureSize);
 
@@ -73,7 +82,7 @@ export function createSynthwaveGridBackground(scene: Scene): void {
   perspectiveCtx.fillStyle = horizonGlow;
   perspectiveCtx.fillRect(0, 0, perspectiveTextureSize, horizonY + perspectiveTextureSize * 0.28);
 
-  const gridLineCount = 110;
+  const gridLineCount = 96;
 
   const fixedLineGradient = perspectiveCtx.createLinearGradient(0, 0, perspectiveTextureSize, 0);
   fixedLineGradient.addColorStop(0, 'rgba(156, 124, 255, 1)');
@@ -83,7 +92,7 @@ export function createSynthwaveGridBackground(scene: Scene): void {
   fixedLineGradient.addColorStop(1, 'rgba(156, 124, 255, 1)');
 
   perspectiveCtx.strokeStyle = fixedLineGradient;
-  perspectiveCtx.lineWidth = 0.75;
+  perspectiveCtx.lineWidth = 1.35;
   for (let i = 0; i < gridLineCount; i++) {
     const t = i / (gridLineCount - 1);
     const x = Math.round(t * perspectiveTextureSize) + 0.5;
@@ -93,8 +102,21 @@ export function createSynthwaveGridBackground(scene: Scene): void {
     perspectiveCtx.stroke();
   }
 
+  // Fade near the horizon to avoid sub-pixel moiré shimmer on distant lines
+  perspectiveCtx.save();
+  perspectiveCtx.globalCompositeOperation = 'destination-in';
+  const perspectiveFade = perspectiveCtx.createLinearGradient(0, horizonY, 0, perspectiveTextureSize);
+  perspectiveFade.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  perspectiveFade.addColorStop(0.12, 'rgba(0, 0, 0, 0.72)');
+  perspectiveFade.addColorStop(0.28, 'rgba(0, 0, 0, 1)');
+  perspectiveFade.addColorStop(1, 'rgba(0, 0, 0, 1)');
+  perspectiveCtx.fillStyle = perspectiveFade;
+  perspectiveCtx.fillRect(0, horizonY, perspectiveTextureSize, perspectiveTextureSize - horizonY);
+  perspectiveCtx.restore();
+
   perspectiveTexture.update(false);
-  perspectiveTexture.updateSamplingMode(Texture.NEAREST_SAMPLINGMODE);
+  perspectiveTexture.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
+  perspectiveTexture.anisotropicFilteringLevel = 8;
   perspectiveTexture.wrapU = Texture.CLAMP_ADDRESSMODE;
   perspectiveTexture.wrapV = Texture.CLAMP_ADDRESSMODE;
   perspectiveTexture.uScale = 1;
@@ -107,16 +129,15 @@ export function createSynthwaveGridBackground(scene: Scene): void {
   perspectiveMaterial.diffuseTexture = perspectiveTexture;
   perspectiveMaterial.opacityTexture = perspectiveTexture;
   perspectiveMaterial.useAlphaFromDiffuseTexture = true;
-  perspectiveMaterial.transparencyMode = Material.MATERIAL_ALPHATEST;
-  perspectiveMaterial.alphaCutOff = 0.05;
+  perspectiveMaterial.transparencyMode = Material.MATERIAL_ALPHABLEND;
   perspectiveMaterial.emissiveTexture = perspectiveTexture;
   perspectiveMaterial.emissiveColor = new Color3(0.78, 0.9, 1.0);
   perspectiveMesh.material = perspectiveMaterial;
 
   const flowTextureSize = 2048;
-  const flowTexture = new DynamicTexture('synthwave_grid_flow_texture', { width: flowTextureSize, height: flowTextureSize }, scene, false);
+  const flowTexture = new DynamicTexture('synthwave_grid_flow_texture', { width: flowTextureSize, height: flowTextureSize }, scene, true);
   flowTexture.hasAlpha = true;
-  const flowCtx = flowTexture.getContext();
+  const flowCtx = flowTexture.getContext() as unknown as CanvasRenderingContext2D;
   flowCtx.clearRect(0, 0, flowTextureSize, flowTextureSize);
 
   const flowLineCount = gridLineCount;
@@ -126,7 +147,7 @@ export function createSynthwaveGridBackground(scene: Scene): void {
   flowHorizontalGradient.addColorStop(0.5, 'rgba(120, 210, 255, 1)');
   flowHorizontalGradient.addColorStop(0.53, 'rgba(156, 124, 255, 1)');
   flowHorizontalGradient.addColorStop(1, 'rgba(156, 124, 255, 1)');
-  flowCtx.lineWidth = 0.75;
+  flowCtx.lineWidth = 1.35;
   for (let i = 0; i < flowLineCount; i++) {
     const t = i / (flowLineCount - 1);
     const y = Math.round(t * flowTextureSize) + 0.5;
@@ -139,8 +160,21 @@ export function createSynthwaveGridBackground(scene: Scene): void {
   }
   flowCtx.globalAlpha = 1;
 
+  // Same horizon fade for the scrolling layer to keep both grids visually stable
+  flowCtx.save();
+  flowCtx.globalCompositeOperation = 'destination-in';
+  const flowFade = flowCtx.createLinearGradient(0, horizonY, 0, flowTextureSize);
+  flowFade.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  flowFade.addColorStop(0.1, 'rgba(0, 0, 0, 0.68)');
+  flowFade.addColorStop(0.26, 'rgba(0, 0, 0, 1)');
+  flowFade.addColorStop(1, 'rgba(0, 0, 0, 1)');
+  flowCtx.fillStyle = flowFade;
+  flowCtx.fillRect(0, horizonY, flowTextureSize, flowTextureSize - horizonY);
+  flowCtx.restore();
+
   flowTexture.update(false);
-  flowTexture.updateSamplingMode(Texture.NEAREST_SAMPLINGMODE);
+  flowTexture.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
+  flowTexture.anisotropicFilteringLevel = 8;
   flowTexture.wrapU = Texture.WRAP_ADDRESSMODE;
   flowTexture.wrapV = Texture.WRAP_ADDRESSMODE;
   flowTexture.uScale = 1;
@@ -153,8 +187,7 @@ export function createSynthwaveGridBackground(scene: Scene): void {
   flowMaterial.diffuseTexture = flowTexture;
   flowMaterial.opacityTexture = flowTexture;
   flowMaterial.useAlphaFromDiffuseTexture = true;
-  flowMaterial.transparencyMode = Material.MATERIAL_ALPHATEST;
-  flowMaterial.alphaCutOff = 0.05;
+  flowMaterial.transparencyMode = Material.MATERIAL_ALPHABLEND;
   flowMaterial.emissiveTexture = flowTexture;
   flowMaterial.emissiveColor = new Color3(0.78, 0.9, 1.0);
   flowMesh.material = flowMaterial;

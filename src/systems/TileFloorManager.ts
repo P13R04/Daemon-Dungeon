@@ -24,6 +24,10 @@ export class TileFloorManager {
     this.roomParent = new TransformNode('floor_tiles', scene);
   }
 
+  update(deltaTime: number): void {
+    this.tileSystem.update(deltaTime);
+  }
+
   /**
    * Load and render a room's floor using tiles
    */
@@ -97,6 +101,12 @@ export class TileFloorManager {
     const tile = this.getTileAtWorld(x, z);
     if (!tile) return false;
     return tile.type !== 'wall' && tile.type !== 'pillar' && tile.type !== 'void';
+  }
+
+  isSpikeActiveAtWorld(x: number, z: number): boolean {
+    const tile = this.getTileAtWorld(x, z);
+    if (!tile || tile.type !== 'spikes') return false;
+    return this.tileSystem.areSpikesActive();
   }
 
   /**

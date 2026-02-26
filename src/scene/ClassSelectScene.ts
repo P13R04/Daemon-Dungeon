@@ -22,6 +22,7 @@ import { AdvancedDynamicTexture, Button, Control, Rectangle, TextBlock } from '@
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { PostProcessManager, PostProcessingConfig } from './PostProcess';
 import { ClassSelectDevConsole } from './ClassSelectDevConsole';
+import { createSynthwaveGridBackground } from './SynthwaveBackground';
 
 interface ClassCarouselItem {
   id: 'mage' | 'firewall' | 'rogue';
@@ -146,21 +147,7 @@ export class ClassSelectScene {
   }
 
   private createEnvironment(): void {
-    const floor = MeshBuilder.CreateGround('classSelectFloor', { width: 20, height: 20 }, this.scene);
-    floor.layerMask = SCENE_LAYER;
-    const floorMat = new StandardMaterial('classSelectFloorMat', this.scene);
-    floorMat.diffuseColor = new Color3(0.08, 0.08, 0.12);
-    floorMat.emissiveColor = new Color3(0.02, 0.05, 0.08);
-    floor.material = floorMat;
-
-    const centerRing = MeshBuilder.CreateTorus('classSelectRing', { diameter: 5, thickness: 0.08, tessellation: 64 }, this.scene);
-    centerRing.position.y = 0.03;
-    centerRing.rotation.x = Math.PI / 2;
-    centerRing.layerMask = SCENE_LAYER;
-    const ringMat = new StandardMaterial('classSelectRingMat', this.scene);
-    ringMat.emissiveColor = new Color3(0.12, 0.6, 0.8);
-    ringMat.diffuseColor = new Color3(0.03, 0.15, 0.25);
-    centerRing.material = ringMat;
+    createSynthwaveGridBackground(this.scene, SCENE_LAYER);
   }
 
   private createUi(): { infoText: TextBlock; startButton: Button } {

@@ -46,6 +46,7 @@ export interface GameplayConfig {
 export interface RoomConfig {
   id: string;
   name: string;
+  roomType?: string;
   layout: string[];
   spawnPoints: { player: [number, number]; enemies: [number, number][] };
   [key: string]: any;

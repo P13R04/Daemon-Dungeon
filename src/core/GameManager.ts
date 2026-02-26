@@ -386,6 +386,10 @@ export class GameManager {
         // Resolve collisions between entities (player/enemies)
         this.resolveEntityCollisions(enemies);
 
+        if (this.tilesEnabled) {
+          this.tileFloorManager.update(deltaTime);
+        }
+
         // Apply hazard damage zones
         this.applyHazardDamage(deltaTime);
         
@@ -801,7 +805,7 @@ export class GameManager {
       if (tile?.type === 'poison' && poisonDps > 0) {
         this.playerController.applyDamage(poisonDps * deltaTime);
       }
-      if (tile?.type === 'spikes' && spikesDps > 0) {
+      if (tile?.type === 'spikes' && spikesDps > 0 && this.tileFloorManager.isSpikeActiveAtWorld(playerPos.x, playerPos.z)) {
         this.playerController.applyDamage(spikesDps * deltaTime);
       }
     }
@@ -1158,7 +1162,12 @@ export class GameManager {
       this.loadTilesForRoom(roomId);
     }
 
-    this.eventBus.emit(GameEvents.ROOM_ENTERED, { roomId });
+    const currentRoomConfig = this.roomManager.getCurrentRoom();
+    this.eventBus.emit(GameEvents.ROOM_ENTERED, {
+      roomId,
+      roomName: currentRoomConfig?.name ?? roomId,
+      roomType: currentRoomConfig?.roomType ?? 'normal',
+    });
   }
 
   private preloadRoomsAround(preloadIndex: number, activeIndex: number): void {
@@ -1350,6 +1359,7 @@ export class GameManager {
     const roomConfig = {
       id: roomId,
       name: 'Custom Tile Room',
+      roomType: 'normal',
       layout: layout.layout as string[],
       spawnPoints: [],
       playerSpawnPoint: fallbackSpawn,
@@ -1383,7 +1393,11 @@ export class GameManager {
       this.loadTilesForLayout(layout, origin);
     }
 
-    this.eventBus.emit(GameEvents.ROOM_ENTERED, { roomId });
+    this.eventBus.emit(GameEvents.ROOM_ENTERED, {
+      roomId,
+      roomName: roomConfig.name,
+      roomType: roomConfig.roomType ?? 'normal',
+    });
   }
 
   private findFirstFloorSpawn(layout: Array<string | string[]>): { x: number; y: number } | null {

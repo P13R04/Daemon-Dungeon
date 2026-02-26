@@ -84,6 +84,13 @@ export class HUDManager {
   private roomClearScreen: Rectangle | null = null;
   private bonusScreen: Rectangle | null = null;
   private bonusButtons: Button[] = [];
+  private bossAlertContainer: Rectangle | null = null;
+  private bossAlertSubtitle: TextBlock | null = null;
+  private bossAlertPulseOverlay: Rectangle | null = null;
+  private bossAlertActive: boolean = false;
+  private bossAlertElapsed: number = 0;
+  private bossAlertDuration: number = 3.0;
+  private bossAlertPulseCount: number = 3;
   private avatarImageCache: Map<string, HTMLImageElement> = new Map();
   private avatarPreloadPromise: Promise<void> | null = null;
   private readonly daemonAvatarSets: Record<string, string[]> = DAEMON_ANIMATION_PRESETS;
@@ -176,10 +183,16 @@ export class HUDManager {
       await this.showDaemonMessage(taunt.text, taunt.emotion);
     });
 
-    this.eventBus.on(GameEvents.ROOM_ENTERED, () => {
+    this.eventBus.on(GameEvents.ROOM_ENTERED, (data) => {
       this.waveNumber += 1;
       this.updateWaveText(this.waveNumber);
       this.addLogMessage(`WAVE ${this.waveNumber.toString().padStart(2, '0')} INIT.`);
+
+      const roomType = typeof data?.roomType === 'string' ? data.roomType.toLowerCase() : 'normal';
+      if (roomType === 'boss') {
+        const roomName = typeof data?.roomName === 'string' ? data.roomName : 'Unknown Chamber';
+        this.triggerBossRoomAlert(roomName);
+      }
     });
 
     this.eventBus.on(GameEvents.ROOM_TRANSITION_START, () => {
@@ -473,6 +486,49 @@ export class HUDManager {
     this.daemonMessageText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.daemonMessageText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.daemonContainer.addControl(this.daemonMessageText);
+
+    this.bossAlertPulseOverlay = new Rectangle('boss_alert_pulse_overlay');
+    this.bossAlertPulseOverlay.width = 1;
+    this.bossAlertPulseOverlay.height = 1;
+    this.bossAlertPulseOverlay.thickness = 0;
+    this.bossAlertPulseOverlay.background = '#FF1C32';
+    this.bossAlertPulseOverlay.alpha = 0;
+    this.bossAlertPulseOverlay.isVisible = false;
+    this.bossAlertPulseOverlay.isPointerBlocker = false;
+    this.bossAlertPulseOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.bossAlertPulseOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.guiFx.addControl(this.bossAlertPulseOverlay);
+
+    this.bossAlertContainer = new Rectangle('boss_alert_container');
+    this.bossAlertContainer.width = '540px';
+    this.bossAlertContainer.height = '140px';
+    this.bossAlertContainer.thickness = 2;
+    this.bossAlertContainer.color = '#FF5366';
+    this.bossAlertContainer.background = 'rgba(25, 0, 0, 0.7)';
+    this.bossAlertContainer.top = 120;
+    this.bossAlertContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.bossAlertContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.bossAlertContainer.isVisible = false;
+    this.bossAlertContainer.isPointerBlocker = false;
+    this.guiFx.addControl(this.bossAlertContainer);
+
+    const bossTitle = new TextBlock('boss_alert_title');
+    bossTitle.text = 'BOSS ROOM';
+    bossTitle.fontSize = 44;
+    bossTitle.fontFamily = fontFamily;
+    bossTitle.color = '#FFBBC2';
+    bossTitle.top = -26;
+    bossTitle.height = '60px';
+    this.bossAlertContainer.addControl(bossTitle);
+
+    this.bossAlertSubtitle = new TextBlock('boss_alert_subtitle');
+    this.bossAlertSubtitle.text = '';
+    this.bossAlertSubtitle.fontSize = 23;
+    this.bossAlertSubtitle.fontFamily = fontFamily;
+    this.bossAlertSubtitle.color = '#FFDDE1';
+    this.bossAlertSubtitle.top = 22;
+    this.bossAlertSubtitle.height = '50px';
+    this.bossAlertContainer.addControl(this.bossAlertSubtitle);
   }
 
   private createOverlays(): void {
@@ -944,6 +1000,7 @@ export class HUDManager {
 
   update(deltaTime: number): void {
     this.updateDaemonPopup(deltaTime);
+    this.updateBossRoomAlert(deltaTime);
 
     // Update damage numbers
     for (let i = this.damageNumbers.length - 1; i >= 0; i--) {
@@ -1311,6 +1368,53 @@ export class HUDManager {
     const source = type === 'damage' ? damageTaunts : clearTaunts;
     const index = Math.floor(Math.random() * source.length);
     return source[index];
+  }
+
+  private triggerBossRoomAlert(roomName: string): void {
+    this.addLogMessage('WARNING: BOSS CHAMBER DETECTED.');
+    this.bossAlertActive = true;
+    this.bossAlertElapsed = 0;
+
+    if (this.bossAlertSubtitle) {
+      this.bossAlertSubtitle.text = roomName.toUpperCase();
+    }
+    if (this.bossAlertContainer) {
+      this.bossAlertContainer.alpha = 1;
+      this.bossAlertContainer.isVisible = true;
+    }
+    if (this.bossAlertPulseOverlay) {
+      this.bossAlertPulseOverlay.alpha = 0;
+      this.bossAlertPulseOverlay.isVisible = true;
+    }
+  }
+
+  private updateBossRoomAlert(deltaTime: number): void {
+    if (!this.bossAlertActive) return;
+
+    this.bossAlertElapsed += deltaTime;
+    const t = Math.min(1, this.bossAlertElapsed / this.bossAlertDuration);
+    const pulse = Math.max(0, Math.sin(t * Math.PI * this.bossAlertPulseCount));
+    const decay = 1 - t * 0.6;
+
+    if (this.bossAlertPulseOverlay) {
+      this.bossAlertPulseOverlay.alpha = 0.16 * pulse * decay;
+    }
+
+    if (this.bossAlertContainer) {
+      this.bossAlertContainer.alpha = t < 0.75 ? 1 : (1 - t) / 0.25;
+    }
+
+    if (t >= 1) {
+      this.bossAlertActive = false;
+      if (this.bossAlertContainer) {
+        this.bossAlertContainer.isVisible = false;
+        this.bossAlertContainer.alpha = 1;
+      }
+      if (this.bossAlertPulseOverlay) {
+        this.bossAlertPulseOverlay.isVisible = false;
+        this.bossAlertPulseOverlay.alpha = 0;
+      }
+    }
   }
 
   private setDaemonAvatarAnimation(

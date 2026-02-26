@@ -9,6 +9,7 @@ import { ConfigLoader } from '../utils/ConfigLoader';
 export interface RoomConfig {
   id: string;
   name: string;
+  roomType?: string;
   layout: string[];
   spawnPoints: Array<{ x: number; y: number; enemyType: string }>;
   playerSpawnPoint: { x: number; y: number };

@@ -1,0 +1,70 @@
+{
+  "id": "room_03",
+  "name": "Kernel Abyss",
+  "roomType": "boss",
+  "layout": [
+    "#############",
+    "#...........#",
+    "#...........#",
+    "#....O.O....#",
+    "#...........#",
+    "#...........#",
+    "#....O.O....#",
+    "#...........#",
+    "#...........#",
+    "#...........#",
+    "#############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 6,
+      "y": 4,
+      "enemyType": "bull_boss"
+    },
+    {
+      "x": 3,
+      "y": 7,
+      "enemyType": "jumper_boss"
+    },
+    {
+      "x": 9,
+      "y": 7,
+      "enemyType": "necromancer_boss"
+    },
+    {
+      "x": 6,
+      "y": 2,
+      "enemyType": "spike_strategist_boss"
+    }
+  ],
+  "obstacles": [
+    {
+      "x": 5,
+      "y": 7,
+      "width": 1,
+      "height": 1,
+      "type": "pillar"
+    },
+    {
+      "x": 7,
+      "y": 7,
+      "width": 1,
+      "height": 1,
+      "type": "pillar"
+    },
+    {
+      "x": 5,
+      "y": 4,
+      "width": 1,
+      "height": 1,
+      "type": "pillar"
+    },
+    {
+      "x": 7,
+      "y": 4,
+      "width": 1,
+      "height": 1,
+      "type": "pillar"
+    }
+  ]
+}

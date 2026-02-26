@@ -8,7 +8,7 @@
  * - Supports: floor_base, floor_var1, floor_var2, poison, void, walls (3D only)
  */
 
-import { Scene, StandardMaterial, Texture, Mesh, MeshBuilder, Vector3 } from '@babylonjs/core';
+import { Scene, StandardMaterial, Texture, Mesh, MeshBuilder, Vector3, Color3 } from '@babylonjs/core';
 
 export type TileType =
   | 'floor'
@@ -39,6 +39,13 @@ interface TextureCache {
   [key: string]: Texture;
 }
 
+interface PoisonParticleData {
+  mesh: Mesh;
+  baseY: number;
+  phase: number;
+  speed: number;
+}
+
 export class TileSystem {
   private scene: Scene;
   private tileSize: number = 1;
@@ -48,6 +55,13 @@ export class TileSystem {
   private origin: Vector3 = Vector3.Zero();
   private readonly textureBasePath: string = '/tiles_test';
   private readonly rotationOffsetDegrees: number = 0;
+  private spikeMeshes: Map<string, Mesh[]> = new Map();
+  private poisonParticles: Map<string, PoisonParticleData[]> = new Map();
+  private poisonParticleMaterial: StandardMaterial | null = null;
+  private spikesActive: boolean = true;
+  private spikesCycleTimer: number = 1.0;
+  private readonly spikesActiveDuration: number = 1.0;
+  private readonly spikesInactiveDuration: number = 1.0;
 
   constructor(scene: Scene, tileSize: number = 1) {
     this.scene = scene;
@@ -489,6 +503,14 @@ export class TileSystem {
       tileMesh.material = material;
     }
 
+    if (tile.type === 'spikes') {
+      this.setupSpikeTileVisuals(key, tile, tileMesh);
+    }
+
+    if (tile.type === 'poison') {
+      this.setupPoisonTileParticles(key, tile);
+    }
+
     const rotationRadians = ((renderData.rotationDegrees + this.rotationOffsetDegrees) * Math.PI) / 180;
     tileMesh.rotation = new Vector3(0, rotationRadians, 0);
 
@@ -522,6 +544,8 @@ export class TileSystem {
   }
 
   clearTiles(): void {
+    this.clearSpikeMeshes();
+    this.clearPoisonParticles();
     this.tileMeshes.forEach(mesh => {
       if (mesh) mesh.dispose();
     });
@@ -533,6 +557,156 @@ export class TileSystem {
     this.clearTiles();
     Object.values(this.textureCache).forEach(texture => texture.dispose());
     this.textureCache = {};
+    if (this.poisonParticleMaterial) {
+      this.poisonParticleMaterial.dispose();
+      this.poisonParticleMaterial = null;
+    }
+  }
+
+  update(deltaTime: number): void {
+    this.updatePoisonParticles(deltaTime);
+
+    this.spikesCycleTimer -= deltaTime;
+    if (this.spikesCycleTimer > 0) return;
+
+    this.spikesActive = !this.spikesActive;
+    this.spikesCycleTimer = this.spikesActive ? this.spikesActiveDuration : this.spikesInactiveDuration;
+    this.applySpikeVisualState();
+  }
+
+  areSpikesActive(): boolean {
+    return this.spikesActive;
+  }
+
+  private setupSpikeTileVisuals(key: string, tile: TileData, tileMesh: Mesh): void {
+    const spikeMaterial = new StandardMaterial(`spike_mat_${key}`, this.scene);
+    spikeMaterial.diffuseColor = new Color3(0.62, 0.08, 0.08);
+    spikeMaterial.emissiveColor = new Color3(0.24, 0.03, 0.03);
+    spikeMaterial.alpha = 0.95;
+
+    const meshes: Mesh[] = [];
+
+    // 14x14 motif with 2 pixels empty / 2 pixels spikes along length
+    // Use three centers aligned to the "spike" bands: 2.5, 6.5, 10.5
+    const patternCenters = [2.5, 6.5, 10.5];
+    const toLocal = (pixelCenter: number) => ((pixelCenter / 14) - 0.5) * this.tileSize;
+    const spikeHeight = this.tileSize * 0.38;
+    const spikeBase = this.tileSize * 0.19;
+
+    const centerX = this.origin.x + tile.x * this.tileSize + this.tileSize / 2;
+    const centerZ = this.origin.z + tile.z * this.tileSize + this.tileSize / 2;
+
+    for (const px of patternCenters) {
+      for (const pz of patternCenters) {
+        const spike = MeshBuilder.CreateCylinder(`spike_${key}_${px}_${pz}`, {
+          height: spikeHeight,
+          diameterTop: 0,
+          diameterBottom: spikeBase,
+          tessellation: 4,
+        }, this.scene);
+        spike.position.x = centerX + toLocal(px);
+        spike.position.z = centerZ + toLocal(pz);
+        spike.position.y = this.origin.y + spikeHeight / 2;
+        spike.rotation.y = Math.PI / 4;
+        spike.material = spikeMaterial;
+        spike.isPickable = false;
+        meshes.push(spike);
+      }
+    }
+
+    this.spikeMeshes.set(key, meshes);
+    this.applySpikeTileState(key, tileMesh);
+  }
+
+  private applySpikeVisualState(): void {
+    for (const [key] of this.spikeMeshes) {
+      const tileMesh = this.tileMeshes.get(key);
+      if (!tileMesh) continue;
+      this.applySpikeTileState(key, tileMesh);
+    }
+  }
+
+  private applySpikeTileState(key: string, tileMesh: Mesh): void {
+    const meshes = this.spikeMeshes.get(key) ?? [];
+    for (const spike of meshes) {
+      spike.isVisible = this.spikesActive;
+    }
+  }
+
+  private clearSpikeMeshes(): void {
+    for (const meshes of this.spikeMeshes.values()) {
+      for (const mesh of meshes) {
+        const material = mesh.material;
+        mesh.dispose();
+        if (material && typeof (material as any).dispose === 'function') {
+          (material as any).dispose();
+        }
+      }
+    }
+    this.spikeMeshes.clear();
+  }
+
+  private setupPoisonTileParticles(key: string, tile: TileData): void {
+    const count = 12;
+    const particles: PoisonParticleData[] = [];
+
+    const centerX = this.origin.x + tile.x * this.tileSize + this.tileSize / 2;
+    const centerZ = this.origin.z + tile.z * this.tileSize + this.tileSize / 2;
+
+    for (let i = 0; i < count; i++) {
+      const particle = MeshBuilder.CreateSphere(`poison_fx_${key}_${i}`, {
+        diameter: this.tileSize * 0.06,
+        segments: 1,
+      }, this.scene);
+
+      const localX = (Math.random() - 0.5) * this.tileSize * 0.8;
+      const localZ = (Math.random() - 0.5) * this.tileSize * 0.8;
+      const baseY = this.origin.y + 0.08 + Math.random() * this.tileSize * 0.18;
+
+      particle.position.set(centerX + localX, baseY, centerZ + localZ);
+      particle.isPickable = false;
+
+      if (!this.poisonParticleMaterial) {
+        this.poisonParticleMaterial = new StandardMaterial('poison_particles_mat', this.scene);
+        this.poisonParticleMaterial.diffuseColor = new Color3(0.2, 1.0, 0.45);
+        this.poisonParticleMaterial.emissiveColor = new Color3(0.08, 0.55, 0.2);
+        this.poisonParticleMaterial.alpha = 0.9;
+      }
+      particle.material = this.poisonParticleMaterial;
+
+      particles.push({
+        mesh: particle,
+        baseY,
+        phase: Math.random() * Math.PI * 2,
+        speed: 1.2 + Math.random() * 1.6,
+      });
+    }
+
+    this.poisonParticles.set(key, particles);
+  }
+
+  private updatePoisonParticles(deltaTime: number): void {
+    if (this.poisonParticles.size === 0) return;
+
+    for (const particles of this.poisonParticles.values()) {
+      for (const particle of particles) {
+        particle.phase += deltaTime * particle.speed;
+        const bob = Math.sin(particle.phase) * this.tileSize * 0.045;
+        const wobble = Math.cos(particle.phase * 0.7) * this.tileSize * 0.02;
+        particle.mesh.position.y = particle.baseY + bob;
+        particle.mesh.position.x += wobble * deltaTime;
+        particle.mesh.position.z += Math.sin(particle.phase * 1.3) * this.tileSize * 0.004 * deltaTime;
+      }
+    }
+  }
+
+  private clearPoisonParticles(): void {
+    for (const particles of this.poisonParticles.values()) {
+      for (const particle of particles) {
+        particle.mesh.dispose();
+      }
+    }
+    this.poisonParticles.clear();
   }
 
   getStats(): { tileCount: number; textureCount: number; meshCount: number } {

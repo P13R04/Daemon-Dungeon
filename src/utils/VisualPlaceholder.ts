@@ -36,11 +36,13 @@ export class VisualPlaceholder {
   }
 
   static createAoEPlaceholder(scene: Scene, name: string, radius: number): Mesh {
-    // Transparent cylinder for AoE zone
-    const mesh = MeshBuilder.CreateCylinder(name, { height: 0.1, diameter: radius * 2 }, scene);
+    // Flat transparent disc for ground AoE zone
+    const mesh = MeshBuilder.CreateDisc(name, { radius, tessellation: 32 }, scene);
+    mesh.rotation.x = Math.PI / 2;
     const material = new StandardMaterial(`${name}_mat`, scene);
     material.diffuseColor = new Color3(0.5, 1.0, 0.5); // Green
     material.alpha = 0.3;
+    material.needDepthPrePass = true;
     mesh.material = material;
     return mesh;
   }
