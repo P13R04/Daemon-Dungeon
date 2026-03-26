@@ -64,6 +64,21 @@ body {
   width: 150px;
 }
 
+#roomFolderStatus {
+  font-size: 12px;
+  color: #c97c7c;
+  border: 1px solid #4a2d2d;
+  padding: 5px 8px;
+  border-radius: 4px;
+  background: #2a1a1a;
+}
+
+#roomFolderStatus.ready {
+  color: #97f0a8;
+  border-color: #2f5b35;
+  background: #1d2f1f;
+}
+
 button {
   padding: 6px 10px;
   background: #2a2a2a;
@@ -74,6 +89,20 @@ button {
 }
 
 button:hover {
+  border-color: var(--accent);
+}
+
+.toplink {
+  padding: 6px 10px;
+  background: #2a2a2a;
+  color: var(--text);
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.toplink:hover {
   border-color: var(--accent);
 }
 

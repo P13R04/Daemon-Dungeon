@@ -4,7 +4,7 @@
  */
 
 import { Scene, TransformNode, Vector3 } from '@babylonjs/core';
-import { TileSystem, TileData } from './TileSystem';
+import { TileSystem, TileData, TileRenderProfile } from './TileSystem';
 import { RoomLayoutParser, RoomLayout } from './RoomLayoutParser';
 
 export class TileFloorManager {
@@ -22,6 +22,10 @@ export class TileFloorManager {
     
     // Create a parent node for room tiles
     this.roomParent = new TransformNode('floor_tiles', scene);
+  }
+
+  setRenderProfile(profile: TileRenderProfile): void {
+    this.tileSystem.setRenderProfile(profile);
   }
 
   update(deltaTime: number): void {

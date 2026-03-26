@@ -1,11 +1,11 @@
 /**
- * PlayerController - Controls the player character (Mage)
+ * PlayerController - Controls the player character (Mage, Tank, Rogue)
  */
 
 import { Scene, Mesh, Vector3, Matrix, StandardMaterial, Color3, MeshBuilder } from '@babylonjs/core';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { InputManager } from '../input/InputManager';
-import { PlayerAnimationController } from './PlayerAnimationController';
+import { PlayerAnimationController, AnimationState } from './PlayerAnimationController';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { Time } from '../core/Time';
 import { Health } from '../components/Health';
@@ -136,7 +136,9 @@ export class PlayerController {
     radius: number;
     damage: number;
     stunDuration: number;
-    pullStrength: number;
+    knockbackStrength: number;
+    tickInterval: number;
+    duration: number; // Duration before animation ends
   } | null = null;
 
   // Rogue gameplay
@@ -172,6 +174,7 @@ export class PlayerController {
   private rogueUltimateTeleportInterval: number = 0.22;
   private rogueUltimateTeleportOffset: number = 0.8;
   private rogueUltimateActive: boolean = false;
+  private tankUltimateActive: boolean = false;
   private pendingRogueStrike: {
     origin: Vector3;
     direction: Vector3;
@@ -194,6 +197,10 @@ export class PlayerController {
     teleportInterval: number;
     teleportOffset: number;
   } | null = null;
+  private damageBoostTimer: number = 0;
+  private damageBoostMultiplier: number = 1;
+  private damageReductionTimer: number = 0;
+  private damageReductionRatio: number = 0;
 
   constructor(scene: Scene, inputManager: InputManager, config: any, classId: PlayerClassId = 'mage') {
     this.scene = scene;
@@ -210,7 +217,7 @@ export class PlayerController {
 
   private initialize(): void {
     if (this.classId === 'mage') {
-      this.animationController = new PlayerAnimationController(this.scene);
+      this.animationController = new PlayerAnimationController(this.scene, 'mage');
       this.modelLoadingPromise = this.animationController
         .loadModel('/models/player/')
         .then(() => {
@@ -224,6 +231,38 @@ export class PlayerController {
         .catch((error) => {
           console.error('Failed to load player model:', error);
           this.createFallbackPlaceholder();
+        });
+    } else if (this.classId === 'firewall') {
+      this.animationController = new PlayerAnimationController(this.scene, 'firewall');
+      this.modelLoadingPromise = this.animationController
+        .loadModel('/models/player/')
+        .then(() => {
+          const loadedMesh = this.animationController.getMesh();
+          if (loadedMesh) {
+            this.mesh = loadedMesh;
+            this.mesh.position.y = 1.0;
+            console.log('✓ Player tank model loaded successfully');
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to load player tank model:', error);
+          this.createClassPlaceholder(this.classId);
+        });
+    } else if (this.classId === 'rogue') {
+      this.animationController = new PlayerAnimationController(this.scene, 'rogue');
+      this.modelLoadingPromise = this.animationController
+        .loadModel('/models/player/')
+        .then(() => {
+          const loadedMesh = this.animationController.getMesh();
+          if (loadedMesh) {
+            this.mesh = loadedMesh;
+            this.mesh.position.y = 1.0;
+            console.log('✓ Player rogue model loaded successfully');
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to load player rogue model:', error);
+          this.createClassPlaceholder(this.classId);
         });
     } else {
       this.createClassPlaceholder(this.classId);
@@ -424,6 +463,19 @@ export class PlayerController {
   update(deltaTime: number): void {
     if (!this.mesh) return;
 
+    if (this.damageBoostTimer > 0) {
+      this.damageBoostTimer = Math.max(0, this.damageBoostTimer - deltaTime);
+      if (this.damageBoostTimer <= 0) {
+        this.damageBoostMultiplier = 1;
+      }
+    }
+    if (this.damageReductionTimer > 0) {
+      this.damageReductionTimer = Math.max(0, this.damageReductionTimer - deltaTime);
+      if (this.damageReductionTimer <= 0) {
+        this.damageReductionRatio = 0;
+      }
+    }
+
     if (this.tankShieldBashCooldownTimer > 0) {
       this.tankShieldBashCooldownTimer = Math.max(0, this.tankShieldBashCooldownTimer - deltaTime);
     }
@@ -457,7 +509,7 @@ export class PlayerController {
           from: this.rogueDashStartPosition.clone(),
           to: this.position.clone(),
           radius: this.rogueDashHitRadius,
-          damage: this.computeRogueDamage(this.rogueDashDamage),
+          damage: this.computeRogueDamage(this.applyDamageModifiers(this.rogueDashDamage)),
           knockback: this.rogueDashKnockback,
         };
         this.rogueDashRemaining = 0;
@@ -529,7 +581,8 @@ export class PlayerController {
     this.inputManager.updateFrame();
 
     // Update smooth rotation toward target direction
-    if (this.animationController) {
+    // During tank ultimate, keep model orientation frozen.
+    if (this.animationController && !(this.classId === 'firewall' && this.tankUltimateActive)) {
       this.animationController.updateRotation(deltaTime);
     }
   }
@@ -552,7 +605,7 @@ export class PlayerController {
       this.lastMovementDirection = new Vector3(input.x, 0, input.z).normalize();
       
       // Set rotation target (rotation will be interpolated smoothly)
-      if (this.animationController) {
+      if (this.animationController && !(this.classId === 'firewall' && this.tankUltimateActive)) {
         this.animationController.rotateTowardDirection(this.lastMovementDirection);
       }
     } else {
@@ -648,53 +701,63 @@ export class PlayerController {
   private handleInput(deltaTime: number): void {
     this.updateAimDirection();
 
+    void deltaTime;
+
     const leftHeld = this.inputManager.isMouseDown();
     const leftClicked = this.inputManager.isMouseClickedThisFrame();
     const rightHeld = this.inputManager.isRightMouseDown();
+    const slot1Held = this.inputManager.isAttackSlotHeld(1) || leftHeld;
+    const slot1Pressed = this.inputManager.isAttackSlotPressedThisFrame(1) || leftClicked;
+    const slot2Held = this.inputManager.isAttackSlotHeld(2) || rightHeld;
 
     if (this.classId === 'firewall') {
-      if (this.tankShieldLockUntilRightRelease && !rightHeld) {
+      if (this.tankShieldLockUntilRightRelease && !slot2Held) {
         this.tankShieldLockUntilRightRelease = false;
       }
-      if (!this.tankShieldLockUntilRightRelease && rightHeld && this.tankStanceResource >= this.tankStanceActivationThreshold) {
-        this.tankShieldActive = true;
-      } else if (!rightHeld) {
+      if (!this.tankShieldLockUntilRightRelease && slot2Held && this.tankStanceResource >= this.tankStanceActivationThreshold) {
+        if (!this.tankShieldActive) {
+          this.tankShieldActive = true;
+          this.animationController.activateShield();
+        }
+      } else if (!slot2Held && this.tankShieldActive) {
         this.tankShieldActive = false;
+        this.animationController.deactivateShield();
       }
 
-      this.isFiring = leftHeld;
-      if (this.tankShieldActive && leftClicked && this.tankShieldBashCooldownTimer <= 0 && this.tankShieldBashRemaining <= 0 && this.tankStanceResource >= this.tankShieldBashCost) {
+      this.isFiring = slot1Held;
+      if (this.tankShieldActive && slot1Pressed && this.tankShieldBashCooldownTimer <= 0 && this.tankShieldBashRemaining <= 0 && this.tankStanceResource >= this.tankShieldBashCost) {
         this.tankShieldBashDirection = this.attackDirection.clone();
         this.tankShieldBashRemaining = this.tankShieldBashDuration;
         this.tankShieldBashCooldownTimer = this.tankShieldBashCooldown;
         this.tankStanceResource = Math.max(0, this.tankStanceResource - this.tankShieldBashCost);
         this.tankShieldActive = false;
         this.tankShieldLockUntilRightRelease = true;
-      } else if (!this.tankShieldActive && this.timeSinceLastAttack >= this.fireRate && leftHeld) {
+        this.animationController.playShieldBash();
+      } else if (!this.tankShieldActive && this.timeSinceLastAttack >= this.fireRate && slot1Held) {
         this.pendingTankSweep = {
           origin: this.position.clone(),
           direction: this.attackDirection.clone(),
           range: this.tankPrimaryRange,
           coneAngleDeg: this.tankPrimaryConeAngleDeg,
-          damage: this.tankPrimaryDamage,
+          damage: this.applyDamageModifiers(this.tankPrimaryDamage),
           knockback: this.tankPrimaryKnockback,
         };
         this.timeSinceLastAttack = 0;
       }
     } else if (this.classId === 'rogue') {
-      if (this.rogueStealthLockUntilRightRelease && !rightHeld) {
+      if (this.rogueStealthLockUntilRightRelease && !slot2Held) {
         this.rogueStealthLockUntilRightRelease = false;
       }
-      if (!this.rogueStealthLockUntilRightRelease && rightHeld && this.rogueStealthResource >= this.rogueStealthActivationThreshold) {
+      if (!this.rogueStealthLockUntilRightRelease && slot2Held && this.rogueStealthResource >= this.rogueStealthActivationThreshold) {
         this.rogueStealthActive = true;
-      } else if (!rightHeld) {
+      } else if (!slot2Held) {
         this.rogueStealthActive = false;
       }
 
-      this.isFiring = leftHeld;
+      this.isFiring = slot1Held;
       if (
         this.rogueStealthActive &&
-        leftClicked &&
+        slot1Pressed &&
         this.rogueDashCooldownTimer <= 0 &&
         this.rogueDashRemaining <= 0 &&
         this.rogueStealthResource >= this.rogueDashCost
@@ -716,13 +779,13 @@ export class PlayerController {
           attacker: 'player',
           type: 'melee',
         });
-      } else if (!this.rogueStealthActive && this.rogueDashRemaining <= 0 && this.timeSinceLastAttack >= this.fireRate && leftHeld) {
+      } else if (!this.rogueStealthActive && this.rogueDashRemaining <= 0 && this.timeSinceLastAttack >= this.fireRate && slot1Held) {
         this.pendingRogueStrike = {
           origin: this.position.clone(),
           direction: this.attackDirection.clone(),
           range: this.roguePrimaryRange,
           coneAngleDeg: this.roguePrimaryConeAngleDeg,
-          damage: this.computeRogueDamage(this.roguePrimaryDamage),
+          damage: this.computeRogueDamage(this.applyDamageModifiers(this.roguePrimaryDamage)),
           knockback: this.roguePrimaryKnockback,
         };
         this.timeSinceLastAttack = 0;
@@ -732,7 +795,7 @@ export class PlayerController {
         });
       }
     } else {
-      this.isFiring = leftHeld && !this.secondaryActive;
+      this.isFiring = slot1Held && !this.secondaryActive;
       if (this.isFiring) {
         this.wasJustAttacking = true;
         this.justAttackingTimeLeft = 999;
@@ -753,7 +816,7 @@ export class PlayerController {
     this.wasUltimateActive = isUltimateReadyAndPressed;
 
     // Apply rotation based on state
-    if (this.animationController) {
+    if (this.animationController && !(this.classId === 'firewall' && this.tankUltimateActive)) {
       if (this.isFiring) {
         this.animationController.rotateTowardDirection(this.attackDirection);
       } else if (!this.isMoving) {
@@ -789,7 +852,7 @@ export class PlayerController {
       return;
     }
 
-    const rightHeld = this.inputManager.isRightMouseDown();
+    const rightHeld = this.inputManager.isRightMouseDown() || this.inputManager.isAttackSlotHeld(2);
 
     if (!this.gameplayActive) {
       this.secondaryActive = false;
@@ -811,7 +874,7 @@ export class PlayerController {
     }
 
     if (this.secondaryActive) {
-      const leftClicked = this.inputManager.isMouseClickedThisFrame();
+      const leftClicked = this.inputManager.isMouseClickedThisFrame() || this.inputManager.isAttackSlotPressedThisFrame(1);
       if (leftClicked && this.secondaryResource >= this.secondaryBurstCost) {
         this.triggerSecondaryBurst();
         this.secondaryResource = Math.max(0, this.secondaryResource - this.secondaryBurstCost);
@@ -837,7 +900,7 @@ export class PlayerController {
   }
 
   private updateTankStance(deltaTime: number): void {
-    const rightHeld = this.inputManager.isRightMouseDown();
+    const rightHeld = this.inputManager.isRightMouseDown() || this.inputManager.isAttackSlotHeld(2);
 
     if (!this.gameplayActive) {
       this.tankShieldActive = false;
@@ -870,7 +933,7 @@ export class PlayerController {
   }
 
   private updateRogueStealth(deltaTime: number): void {
-    const rightHeld = this.inputManager.isRightMouseDown();
+    const rightHeld = this.inputManager.isRightMouseDown() || this.inputManager.isAttackSlotHeld(2);
 
     if (!this.gameplayActive) {
       this.rogueStealthActive = false;
@@ -912,7 +975,7 @@ export class PlayerController {
     this.pendingSecondaryBurst = {
       position: this.position.clone(),
       radius: this.secondaryZoneRadius,
-      baseDamage: this.secondaryBurstBaseDamage,
+      baseDamage: this.applyDamageModifiers(this.secondaryBurstBaseDamage),
       damagePerEnemy: this.secondaryBurstDamagePerEnemy,
       damagePerProjectile: this.secondaryBurstDamagePerProjectile,
       knockback: this.secondaryBurstKnockback,
@@ -922,7 +985,7 @@ export class PlayerController {
   private fireProjectile(): void {
     const classConfig = this.config[this.classId] ?? this.config.mage;
     const attackConfig = classConfig.attack;
-    const damage = classConfig.baseStats.damage;
+    const damage = this.applyDamageModifiers(classConfig.baseStats.damage);
 
     // Rotate model to face attack direction at moment of firing
     console.log(`🎯 Attack fired, rotating to: x=${this.attackDirection.x.toFixed(2)}, z=${this.attackDirection.z.toFixed(2)}`);
@@ -951,12 +1014,18 @@ export class PlayerController {
       this.pendingTankUltimate = {
         position: this.position.clone(),
         radius: this.readPositiveNumber(ultConfig.radius, 4.2),
-        damage: this.readPositiveNumber(ultConfig.damage, 60),
+        damage: this.applyDamageModifiers(this.readPositiveNumber(ultConfig.damage, 12)),
         stunDuration: this.readPositiveNumber(ultConfig.stunDuration, 1.2),
-        pullStrength: this.readPositiveNumber(ultConfig.pullStrength, 4.0),
+        knockbackStrength: this.readPositiveNumber(
+          ultConfig.knockbackStrength,
+          this.readPositiveNumber(ultConfig.pullStrength, 2.4)
+        ),
+        tickInterval: this.readPositiveNumber(ultConfig.tickInterval, 0.6),
+        duration: this.readPositiveNumber(ultConfig.duration, 5),
       };
       this.ultCharge = 0;
       this.ultCooldown = this.readPositiveNumber(ultConfig.cooldown, 14);
+      this.animationController.playAnimation(AnimationState.ULTIMATE);
       return;
     }
 
@@ -965,7 +1034,7 @@ export class PlayerController {
       this.pendingRogueUltimate = {
         duration: this.readPositiveNumber(ultConfig.duration, this.rogueUltimateDuration),
         zoneRadius: this.readPositiveNumber(ultConfig.zoneRadius, this.rogueUltimateZoneRadius),
-        hitDamage: this.readPositiveNumber(ultConfig.hitDamage, this.rogueUltimateHitDamage),
+        hitDamage: this.applyDamageModifiers(this.readPositiveNumber(ultConfig.hitDamage, this.rogueUltimateHitDamage)),
         teleportInterval: this.readPositiveNumber(ultConfig.teleportInterval, this.rogueUltimateTeleportInterval),
         teleportOffset: this.readPositiveNumber(ultConfig.teleportOffset, this.rogueUltimateTeleportOffset),
       };
@@ -981,7 +1050,7 @@ export class PlayerController {
         this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_USED, {
           position: this.position.clone(),
           radius: ultConfig.radius,
-          damage: ultConfig.damage,
+          damage: this.applyDamageModifiers(ultConfig.damage),
           duration: ultConfig.dotDuration,
           dotTickRate: ultConfig.dotTickRate,
           healPerTick: ultConfig.healPerTick,
@@ -991,7 +1060,7 @@ export class PlayerController {
       this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_USED, {
         position: this.position.clone(),
         radius: ultConfig.radius,
-        damage: ultConfig.damage,
+        damage: this.applyDamageModifiers(ultConfig.damage),
         duration: ultConfig.dotDuration,
         dotTickRate: ultConfig.dotTickRate,
         healPerTick: ultConfig.healPerTick,
@@ -1056,6 +1125,12 @@ export class PlayerController {
 
   applyMoveSpeedMultiplier(multiplier: number): void {
     this.speed *= multiplier;
+  }
+
+  applyFireRateMultiplier(multiplier: number): void {
+    if (!Number.isFinite(multiplier) || multiplier <= 0) return;
+    this.baseFireRate = Math.max(0.01, this.baseFireRate / multiplier);
+    this.fireRate = this.baseFireRate;
   }
 
   enablePoisonBonus(percent: number, duration: number): void {
@@ -1193,7 +1268,9 @@ export class PlayerController {
     radius: number;
     damage: number;
     stunDuration: number;
-    pullStrength: number;
+    knockbackStrength: number;
+    tickInterval: number;
+    duration: number;
   } | null {
     const payload = this.pendingTankUltimate;
     this.pendingTankUltimate = null;
@@ -1245,12 +1322,20 @@ export class PlayerController {
     this.rogueUltimateActive = active;
   }
 
+  setTankUltimateActive(active: boolean): void {
+    if (this.classId !== 'firewall') {
+      this.tankUltimateActive = false;
+      return;
+    }
+    this.tankUltimateActive = active;
+  }
+
   getRogueStealthRadius(): number {
     return this.classId === 'rogue' ? this.rogueStealthZoneRadius : 0;
   }
 
   computeRogueHitDamage(baseDamage: number): number {
-    return this.computeRogueDamage(baseDamage);
+    return this.computeRogueDamage(this.applyDamageModifiers(baseDamage));
   }
 
   setEnemiesPresent(hasEnemies: boolean): void {
@@ -1273,18 +1358,22 @@ export class PlayerController {
     if (this.classId === 'rogue' && this.rogueUltimateActive) {
       return;
     }
+    if (this.classId === 'firewall' && this.tankUltimateActive) {
+      return;
+    }
     const configLoader = ConfigLoader.getInstance();
     const gameplayConfig = configLoader.getGameplay();
     if (gameplayConfig?.debugConfig?.godMode) {
       return;
     }
-    this.health.takeDamage(amount);
+    const reducedDamage = amount * (1 - Math.max(0, Math.min(0.95, this.damageReductionRatio)));
+    this.health.takeDamage(reducedDamage);
     this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
       health: {
         current: this.health.getCurrentHP(),
         max: this.health.getMaxHP(),
       },
-      damage: amount,
+      damage: reducedDamage,
     });
 
     if (this.health.getCurrentHP() <= 0) {
@@ -1321,6 +1410,36 @@ export class PlayerController {
         damage: 0,
       });
     }
+  }
+
+  refillUltimate(): void {
+    this.ultCharge = 1.0;
+    this.ultCooldown = 0;
+    this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_READY, { charge: this.ultCharge });
+  }
+
+  activateDamageBoost(multiplier: number, duration: number): void {
+    if (!Number.isFinite(multiplier) || multiplier <= 1 || duration <= 0) return;
+    this.damageBoostMultiplier = Math.max(this.damageBoostMultiplier, multiplier);
+    this.damageBoostTimer = Math.max(this.damageBoostTimer, duration);
+  }
+
+  activateDamageReduction(ratio: number, duration: number): void {
+    if (!Number.isFinite(ratio) || ratio <= 0 || duration <= 0) return;
+    this.damageReductionRatio = Math.max(this.damageReductionRatio, Math.min(0.95, ratio));
+    this.damageReductionTimer = Math.max(this.damageReductionTimer, duration);
+  }
+
+  getDamageBoostState(): { active: boolean; remaining: number } {
+    return { active: this.damageBoostTimer > 0, remaining: this.damageBoostTimer };
+  }
+
+  getDamageReductionState(): { active: boolean; remaining: number } {
+    return { active: this.damageReductionTimer > 0, remaining: this.damageReductionTimer };
+  }
+
+  private applyDamageModifiers(baseDamage: number): number {
+    return baseDamage * this.damageBoostMultiplier;
   }
 
   dispose(): void {

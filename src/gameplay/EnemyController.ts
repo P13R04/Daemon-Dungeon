@@ -25,6 +25,7 @@ export class EnemyController {
   private static globalHeightOffset: number = 0; // Global height adjustment for all enemies
   private scene: Scene;
   private id: string;
+  private typeId: string;
   
   private config: any;
   private position: Vector3 = Vector3.Zero();
@@ -167,6 +168,7 @@ export class EnemyController {
 
   constructor(scene: Scene, typeId: string, position: Vector3, config: any) {
     this.scene = scene;
+    this.typeId = typeId;
     this.config = config;
     this.position = position.clone();
     this.eventBus = EventBus.getInstance();
@@ -294,6 +296,7 @@ export class EnemyController {
 
     this.eventBus.emit(GameEvents.ENEMY_SPAWNED, {
       entityId: this.id,
+      enemyType: this.typeId,
       enemyName: this.config?.name ?? this.id,
       maxHP: maxHP,
       mesh: this.mesh,
@@ -1991,6 +1994,7 @@ export class EnemyController {
     }
     this.eventBus.emit(GameEvents.ENEMY_DIED, {
       entityId: this.id,
+      enemyType: this.typeId,
       position: this.position.clone(),
     });
   }

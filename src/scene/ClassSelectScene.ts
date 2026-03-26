@@ -14,6 +14,9 @@ import {
   Scalar,
   AbstractMesh,
   AnimationGroup,
+  Sound,
+  ParticleSystem,
+  DynamicTexture,
   PointerEventTypes,
   Observer,
   PointerInfo,
@@ -29,6 +32,14 @@ interface ClassCarouselItem {
   label: string;
   playable: boolean;
   root: TransformNode;
+}
+
+interface RoguePreviewTuning {
+  offsetX: number;
+  offsetZ: number;
+  targetHeight: number;
+  targetFootprint: number;
+  selectedScaleMultiplier: number;
 }
 
 export class ClassSelectScene {
@@ -47,6 +58,30 @@ export class ClassSelectScene {
   private pointerObserver?: Observer<PointerInfo>;
   private mageIdleGroup: AnimationGroup | null = null;
   private mageUltimateGroup: AnimationGroup | null = null;
+  private tankIdleGroup: AnimationGroup | null = null;
+  private rogueTake001Group: AnimationGroup | null = null;
+  private rogueSelectSound: Sound | null = null;
+  private rogueSelectionTimeoutId: number | null = null;
+  private rogueSelectionPlayToken: number = 0;
+  private tankThrusterParticles: ParticleSystem[] = [];
+  private tankThrusterTextures: DynamicTexture[] = [];
+  private tankThrusterAnchors: TransformNode[] = [];
+  private rogueModelContainer: TransformNode | null = null;
+  private rogueRawBounds: {
+    minX: number;
+    minY: number;
+    minZ: number;
+    maxX: number;
+    maxY: number;
+    maxZ: number;
+  } | null = null;
+  private roguePreviewTuning: RoguePreviewTuning = {
+    offsetX: -14,
+    offsetZ: -7.55,
+    targetHeight: 3.4,
+    targetFootprint: 2.2,
+    selectedScaleMultiplier: 1.65,
+  };
   private postProcessManager: PostProcessManager;
   private devConsole: ClassSelectDevConsole;
   private postProcessConfig: PostProcessingConfig;
@@ -83,6 +118,7 @@ export class ClassSelectScene {
     this.postProcessManager.setupPipeline(this.camera, this.postProcessConfig);
 
     this.createEnvironment();
+    this.loadRogueSelectionSound();
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('ClassSelectUI', true, this.scene);
     if (this.gui.layer) {
@@ -99,7 +135,13 @@ export class ClassSelectScene {
     this.refreshSelectionUi();
     this.updateCarouselLayout();
 
-    this.devConsole = new ClassSelectDevConsole(this.scene, this.gui, this.camera, this.postProcessManager, this.postProcessConfig);
+    this.devConsole = new ClassSelectDevConsole(
+      this.scene,
+      this.gui,
+      this.camera,
+      this.postProcessManager,
+      this.postProcessConfig
+    );
   }
 
   getScene(): Scene {
@@ -114,11 +156,29 @@ export class ClassSelectScene {
 
   dispose(): void {
     window.removeEventListener('keydown', this.keyHandler);
+    this.clearRogueSelectionTimer();
+    if (this.rogueSelectSound) {
+      this.rogueSelectSound.dispose();
+      this.rogueSelectSound = null;
+    }
     if (this.pointerObserver) {
       this.scene.onPointerObservable.remove(this.pointerObserver);
       this.pointerObserver = undefined;
     }
     this.devConsole.dispose();
+    for (const ps of this.tankThrusterParticles) {
+      ps.stop();
+      ps.dispose();
+    }
+    this.tankThrusterParticles = [];
+    for (const tex of this.tankThrusterTextures) {
+      tex.dispose();
+    }
+    this.tankThrusterTextures = [];
+    for (const anchor of this.tankThrusterAnchors) {
+      anchor.dispose();
+    }
+    this.tankThrusterAnchors = [];
     this.gui.dispose();
     this.scene.dispose();
   }
@@ -148,6 +208,20 @@ export class ClassSelectScene {
 
   private createEnvironment(): void {
     createSynthwaveGridBackground(this.scene, SCENE_LAYER);
+  }
+
+  private loadRogueSelectionSound(): void {
+    this.rogueSelectSound = new Sound(
+      'classSelectRogueSfx',
+      '/sfx/oiia-oiia-sound.mp3',
+      this.scene,
+      undefined,
+      {
+        autoplay: false,
+        loop: false,
+        volume: 0.9,
+      }
+    );
   }
 
   private createUi(): { infoText: TextBlock; startButton: Button } {
@@ -254,11 +328,17 @@ export class ClassSelectScene {
     });
 
     const firewallRoot = new TransformNode('classFirewallRoot', this.scene);
-    this.createCylinderPlaceholder(firewallRoot, new Color3(1.0, 0.45, 0.25), 2.8, 1.2, 'FIREWALL');
     this.items.push({ id: 'firewall', label: 'FIREWALL', playable: true, root: firewallRoot });
+    this.loadTankModelInto(firewallRoot).catch((error) => {
+      console.warn('Tank model load failed in class select, using placeholder:', error);
+      this.createCylinderPlaceholder(firewallRoot, new Color3(1.0, 0.45, 0.25), 2.8, 1.2, 'FIREWALL');
+    });
 
     const rogueRoot = new TransformNode('classRogueRoot', this.scene);
-    this.createCylinderPlaceholder(rogueRoot, new Color3(0.6, 0.9, 0.35), 2.4, 0.9, 'ROGUE');
+    this.loadRogueModelInto(rogueRoot).catch((error) => {
+      console.warn('Rogue model load failed in class select, using placeholder:', error);
+      this.createCylinderPlaceholder(rogueRoot, new Color3(0.6, 0.9, 0.35), 2.4, 0.9, 'ROGUE');
+    });
     this.items.push({ id: 'rogue', label: 'ROGUE', playable: true, root: rogueRoot });
   }
 
@@ -268,7 +348,11 @@ export class ClassSelectScene {
     const candidateRoot = result.meshes[0];
     if (candidateRoot) {
       candidateRoot.parent = root;
-      candidateRoot.scaling.scaleInPlace(0.1);
+      const bounds = candidateRoot.getHierarchyBoundingVectors(true);
+      const currentHeight = Math.max(0.001, bounds.max.y - bounds.min.y);
+      const targetHeight = 2.4;
+      const modelScale = targetHeight / currentHeight;
+      candidateRoot.scaling.scaleInPlace(modelScale);
       candidateRoot.position = Vector3.Zero();
       candidateRoot.rotation.y = 0;
     }
@@ -291,6 +375,196 @@ export class ClassSelectScene {
     }
 
     root.position.y = 1.0;
+  }
+
+  private async loadTankModelInto(root: TransformNode): Promise<void> {
+    const result = await SceneLoader.ImportMeshAsync('', '/models/player/', 'tank.glb', this.scene);
+
+    const candidateRoot = result.meshes[0];
+    if (candidateRoot) {
+      candidateRoot.parent = root;
+      candidateRoot.scaling.scaleInPlace(0.1);
+      candidateRoot.position = Vector3.Zero();
+      candidateRoot.rotation.y = 0;
+    }
+
+    for (const mesh of result.meshes) {
+      if (mesh !== candidateRoot && mesh.parent === null) {
+        mesh.parent = root;
+      }
+      mesh.layerMask = SCENE_LAYER;
+    }
+
+    this.tankIdleGroup = result.animationGroups.find((group) => group.name === 'Skyrim') ?? null;
+
+    this.setupTankThrusterParticles(result.meshes as AbstractMesh[]);
+
+    if (this.tankIdleGroup) {
+      this.stopAllTankAnimations();
+      this.tankIdleGroup.loopAnimation = true;
+      this.tankIdleGroup.speedRatio = 1.0;
+      this.tankIdleGroup.play(true);
+    }
+
+    root.position.y = 1.0;
+  }
+
+  private async loadRogueModelInto(root: TransformNode): Promise<void> {
+    const result = await SceneLoader.ImportMeshAsync('', '/models/player/', 'cat.glb', this.scene);
+
+    const modelContainer = new TransformNode('classRogueModelContainer', this.scene);
+    modelContainer.parent = root;
+    this.rogueModelContainer = modelContainer;
+
+    for (const mesh of result.meshes) {
+      if (mesh.parent === null) {
+        mesh.parent = modelContainer;
+      }
+      mesh.layerMask = SCENE_LAYER;
+    }
+
+    const childMeshes = modelContainer.getChildMeshes();
+    if (childMeshes.length > 0) {
+      let minX = Number.POSITIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let minZ = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      let maxZ = Number.NEGATIVE_INFINITY;
+
+      for (const child of childMeshes) {
+        child.computeWorldMatrix(true);
+        const box = child.getBoundingInfo().boundingBox;
+        minX = Math.min(minX, box.minimumWorld.x);
+        minY = Math.min(minY, box.minimumWorld.y);
+        minZ = Math.min(minZ, box.minimumWorld.z);
+        maxX = Math.max(maxX, box.maximumWorld.x);
+        maxY = Math.max(maxY, box.maximumWorld.y);
+        maxZ = Math.max(maxZ, box.maximumWorld.z);
+      }
+
+      this.rogueRawBounds = { minX, minY, minZ, maxX, maxY, maxZ };
+      this.applyRogueModelTuning();
+    } else {
+      modelContainer.scaling.setAll(0.1);
+      modelContainer.position = Vector3.Zero();
+    }
+    modelContainer.rotation = Vector3.Zero();
+
+    this.rogueTake001Group =
+      result.animationGroups.find((group) => group.name === 'Take 001') ??
+      result.animationGroups.find((group) => group.name.toLowerCase() === 'take 001') ??
+      null;
+
+    this.freezeRogueAtFrame1();
+    root.position.y = 1.0;
+  }
+
+  private applyRogueModelTuning(): void {
+    if (!this.rogueModelContainer || !this.rogueRawBounds) return;
+
+    const { minX, minY, minZ, maxX, maxY, maxZ } = this.rogueRawBounds;
+    const sizeX = maxX - minX;
+    const sizeY = maxY - minY;
+    const sizeZ = maxZ - minZ;
+    const currentHeight = Math.max(0.001, sizeY);
+    const currentFootprint = Math.max(0.001, Math.max(sizeX, sizeZ));
+    const modelScale = Math.min(
+      this.roguePreviewTuning.targetHeight / currentHeight,
+      this.roguePreviewTuning.targetFootprint / currentFootprint
+    );
+
+    const centerX = (minX + maxX) * 0.5;
+    const centerZ = (minZ + maxZ) * 0.5;
+
+    this.rogueModelContainer.scaling.setAll(modelScale);
+    this.rogueModelContainer.position = new Vector3(
+      -centerX * modelScale + this.roguePreviewTuning.offsetX,
+      -minY * modelScale,
+      -centerZ * modelScale + this.roguePreviewTuning.offsetZ
+    );
+  }
+
+  private setupTankThrusterParticles(meshes: AbstractMesh[]): void {
+    const anchorSource = this.findTankThrusterAnchor(meshes);
+    if (!anchorSource) return;
+
+    const anchor = new TransformNode('class_select_tank_thruster_anchor', this.scene);
+    anchor.parent = anchorSource;
+    const localRightOffsetX = 0.0;
+    const localBackOffsetZ = 0.34;
+    const verticalOffset = 0.03;
+    anchor.position = new Vector3(localRightOffsetX, verticalOffset, localBackOffsetZ);
+    this.tankThrusterAnchors.push(anchor);
+
+    const particles = new ParticleSystem('class_select_tank_thruster_particles', 900, this.scene);
+    const particleTexture = new DynamicTexture('class_select_tank_thruster_texture', { width: 64, height: 64 }, this.scene, false);
+    const ctx = particleTexture.getContext();
+    const gradient = ctx.createRadialGradient(32, 32, 4, 32, 32, 31);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.55, 'rgba(255,190,80,0.95)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.clearRect(0, 0, 64, 64);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    particleTexture.update();
+
+    particles.particleTexture = particleTexture;
+    particles.emitter = anchor as unknown as AbstractMesh;
+    particles.isLocal = true;
+    particles.layerMask = SCENE_LAYER;
+
+    particles.minEmitBox = new Vector3(-0.035, -0.01, -0.045);
+    particles.maxEmitBox = new Vector3(0.035, 0.01, 0.045);
+
+    particles.color1 = new Color4(1.0, 0.95, 0.75, 0.98);
+    particles.color2 = new Color4(1.0, 0.42, 0.08, 0.9);
+    particles.colorDead = new Color4(0.12, 0.03, 0.0, 0);
+
+    particles.minSize = 0.2;
+    particles.maxSize = 0.52;
+    particles.minLifeTime = 0.07;
+    particles.maxLifeTime = 0.18;
+    particles.emitRate = 980;
+    particles.blendMode = ParticleSystem.BLENDMODE_ONEONE;
+    particles.gravity = Vector3.Zero();
+    particles.direction1 = new Vector3(-0.18, -3.9, -0.38);
+    particles.direction2 = new Vector3(0.25, -5.4, 0.12);
+    particles.minEmitPower = 1.2;
+    particles.maxEmitPower = 3.0;
+    particles.minAngularSpeed = -12;
+    particles.maxAngularSpeed = 12;
+    particles.updateSpeed = 0.01;
+
+    particles.start();
+
+    this.tankThrusterParticles.push(particles);
+    this.tankThrusterTextures.push(particleTexture);
+  }
+
+  private findTankThrusterAnchor(meshes: AbstractMesh[]): AbstractMesh | null {
+    const exactLayer003 = meshes.find((mesh) => (mesh.name ?? '').toLowerCase() === 'layer.003') ?? null;
+    if (exactLayer003) return exactLayer003;
+
+    const keywords = ['thruster', 'reactor', 'engine', 'jet', 'booster', 'propulseur', 'reac', 'flame'];
+    let best: AbstractMesh | null = null;
+    let bestScore = -Infinity;
+
+    for (const mesh of meshes) {
+      const name = (mesh.name ?? '').toLowerCase();
+      const ext = mesh.getBoundingInfo().boundingBox.extendSizeWorld;
+      const approxVolume = Math.max(0.00001, ext.x * ext.y * ext.z);
+      let score = 0;
+      if (keywords.some((keyword) => name.includes(keyword))) score += 8;
+      if (approxVolume < 1) score += 1;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = mesh;
+      }
+    }
+
+    return bestScore >= 1 ? best : (meshes[0] ?? null);
   }
 
   private createCylinderPlaceholder(root: TransformNode, color: Color3, height: number, diameter: number, name: string): void {
@@ -331,10 +605,7 @@ export class ClassSelectScene {
     this.selectedIndex = (this.selectedIndex + direction + count) % count;
     this.targetRotation -= direction * step;
 
-    const selected = this.items[this.selectedIndex];
-    if (selected?.id === 'mage') {
-      this.playMageUltimateThenIdle();
-    }
+    this.playSelectedClassHighlightAnimation();
 
     this.refreshSelectionUi();
   }
@@ -397,10 +668,7 @@ export class ClassSelectScene {
       this.targetRotation = -index * step;
     }
 
-    const selected = this.items[this.selectedIndex];
-    if (selected?.id === 'mage') {
-      this.playMageUltimateThenIdle();
-    }
+    this.playSelectedClassHighlightAnimation();
 
     this.refreshSelectionUi();
   }
@@ -456,11 +724,17 @@ export class ClassSelectScene {
       item.root.position.z = z;
 
       const depthFactor = Scalar.Clamp((z + this.radius) / (2 * this.radius), 0, 1);
-      const scale = 0.8 + depthFactor * 0.45;
+      const baseScale = 0.8 + depthFactor * 0.45;
+      const rogueScaleBoost = item.id === 'rogue' && i === this.selectedIndex ? this.roguePreviewTuning.selectedScaleMultiplier : 1;
+      const scale = baseScale * rogueScaleBoost;
       item.root.scaling.setAll(scale);
 
       item.root.lookAt(new Vector3(0, item.root.position.y, 0));
       item.root.rotation.y += Math.PI / 2;
+      if (item.id === 'firewall') {
+        // Tank model has opposite forward axis in class select; keep a persistent 180° offset here.
+        item.root.rotation.y += Math.PI;
+      }
 
       const alpha = 0.45 + depthFactor * 0.55;
       this.setItemAlpha(item.root, alpha);
@@ -485,6 +759,18 @@ export class ClassSelectScene {
     }
   }
 
+  private stopAllTankAnimations(): void {
+    if (this.tankIdleGroup?.isPlaying) {
+      this.tankIdleGroup.stop();
+    }
+  }
+
+  private stopAllRogueAnimations(): void {
+    if (this.rogueTake001Group?.isPlaying) {
+      this.rogueTake001Group.stop();
+    }
+  }
+
   private playMageUltimateThenIdle(): void {
     if (!this.mageUltimateGroup || !this.mageIdleGroup) {
       return;
@@ -500,5 +786,106 @@ export class ClassSelectScene {
       this.mageIdleGroup.play(true);
     });
     this.mageUltimateGroup.play(false);
+  }
+
+  private playTankIdle(): void {
+    if (!this.tankIdleGroup) {
+      return;
+    }
+
+    this.stopAllTankAnimations();
+    this.tankIdleGroup.loopAnimation = true;
+    this.tankIdleGroup.speedRatio = 1.0;
+    this.tankIdleGroup.play(true);
+  }
+
+  private playSelectedClassHighlightAnimation(): void {
+    const selected = this.items[this.selectedIndex];
+    if (!selected) return;
+
+    if (selected.id === 'mage') {
+      this.clearRogueSelectionTimer();
+      this.playMageUltimateThenIdle();
+      return;
+    }
+
+    if (selected.id === 'firewall') {
+      this.clearRogueSelectionTimer();
+      this.playTankIdle();
+      return;
+    }
+
+    if (selected.id === 'rogue') {
+      this.playRogueSelectionSequence();
+    }
+  }
+
+  private playRogueSelectionSequence(): void {
+    const take001 = this.rogueTake001Group;
+    if (!take001) {
+      return;
+    }
+
+    if (this.rogueSelectSound) {
+      this.rogueSelectSound.stop();
+      this.rogueSelectSound.play();
+    }
+
+    const token = ++this.rogueSelectionPlayToken;
+    this.clearRogueSelectionTimer();
+    this.playRogueWindowFromFrame(token, 100, 1.0, 2000, () => {
+      this.freezeRogueAtFrame1(false);
+
+      this.rogueSelectionTimeoutId = window.setTimeout(() => {
+        if (token !== this.rogueSelectionPlayToken) return;
+
+        this.playRogueWindowFromFrame(token, 100, 0.5, 2000, () => {
+          this.freezeRogueAtFrame1();
+        });
+      }, 1300);
+    });
+  }
+
+  private playRogueWindowFromFrame(
+    token: number,
+    startFrame: number,
+    speedRatio: number,
+    durationMs: number,
+    onComplete: () => void
+  ): void {
+    const take001 = this.rogueTake001Group;
+    if (!take001) return;
+
+    this.stopAllRogueAnimations();
+
+    take001.loopAnimation = true;
+    take001.speedRatio = speedRatio;
+    take001.play(true);
+    take001.goToFrame(startFrame);
+
+    this.rogueSelectionTimeoutId = window.setTimeout(() => {
+      if (token !== this.rogueSelectionPlayToken) return;
+      onComplete();
+    }, durationMs);
+  }
+
+  private clearRogueSelectionTimer(): void {
+    if (this.rogueSelectionTimeoutId !== null) {
+      window.clearTimeout(this.rogueSelectionTimeoutId);
+      this.rogueSelectionTimeoutId = null;
+    }
+  }
+
+  private freezeRogueAtFrame1(clearTimer: boolean = true): void {
+    const take001 = this.rogueTake001Group;
+    if (!take001) return;
+
+    if (clearTimer) {
+      this.clearRogueSelectionTimer();
+    }
+    this.stopAllRogueAnimations();
+    take001.play(false);
+    take001.goToFrame(1);
+    take001.pause();
   }
 }

@@ -434,11 +434,73 @@ const importRoomBtn = document.getElementById("importRoomBtn");
 const importRoomInput = document.getElementById("importRoomInput");
 const exportRoomBtn = document.getElementById("exportRoomBtn");
 const saveRoomBtn = document.getElementById("saveRoomBtn");
+const selectRoomFolderBtn = document.getElementById("selectRoomFolderBtn");
+const roomFolderStatus = document.getElementById("roomFolderStatus");
 const widthInput = document.getElementById("gridWidth");
 const heightInput = document.getElementById("gridHeight");
 const roomNameInput = document.getElementById("roomName");
 const roomIdInput = document.getElementById("roomId");
 const toolButtons = Array.from(document.querySelectorAll(".tool"));
+
+let roomFolderHandle = null;
+
+function setRoomFolderStatus(message, isReady = false) {
+  if (!roomFolderStatus) return;
+  roomFolderStatus.textContent = message;
+  roomFolderStatus.classList.toggle("ready", !!isReady);
+}
+
+async function ensureRoomFolderHandle() {
+  if (typeof window.showDirectoryPicker !== "function") {
+    alert("Direct save is not supported in this browser. Use Export Room JSON and place the file in src/data/rooms.");
+    return null;
+  }
+
+  if (!roomFolderHandle) {
+    roomFolderHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+  }
+
+  if (!roomFolderHandle) return null;
+
+  if (typeof roomFolderHandle.queryPermission === "function") {
+    let permission = await roomFolderHandle.queryPermission({ mode: "readwrite" });
+    if (permission !== "granted" && typeof roomFolderHandle.requestPermission === "function") {
+      permission = await roomFolderHandle.requestPermission({ mode: "readwrite" });
+    }
+
+    if (permission !== "granted") {
+      alert("Write permission denied for selected folder.");
+      return null;
+    }
+  }
+
+  const folderLabel = roomFolderHandle.name || "selected-folder";
+  setRoomFolderStatus(`Selected: ${folderLabel}`, true);
+  return roomFolderHandle;
+}
+
+async function pickRoomFolder() {
+  try {
+    roomFolderHandle = null;
+    const handle = await ensureRoomFolderHandle();
+    if (!handle) return;
+
+    if (handle.name !== "rooms") {
+      const shouldContinue = window.confirm(
+        `Selected folder is '${handle.name}'. Continue anyway?\nRecommended folder: src/data/rooms`
+      );
+      if (!shouldContinue) {
+        roomFolderHandle = null;
+        setRoomFolderStatus("No room folder selected", false);
+      }
+    }
+  } catch (error) {
+    if (error && error.name === "AbortError") return;
+    console.error(error);
+    setRoomFolderStatus("No room folder selected", false);
+    alert("Failed to select room folder.");
+  }
+}
 
 function createDefaultRoomGrid(width, height) {
   const room = new Grid(width, height, "floor");
@@ -751,18 +813,15 @@ function exportRoomJSON() {
 async function saveRoomToFolder() {
   const room = buildRoomJSON();
 
-  if (typeof window.showDirectoryPicker !== "function") {
-    alert("Direct save is not supported in this browser. Use Export Room JSON and place the file in src/data/rooms.");
-    return;
-  }
-
   try {
-    const directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+    const directoryHandle = await ensureRoomFolderHandle();
+    if (!directoryHandle) return;
+
     const fileHandle = await directoryHandle.getFileHandle(`${room.id}.json`, { create: true });
     const writable = await fileHandle.createWritable();
     await writable.write(JSON.stringify(room, null, 2));
     await writable.close();
-    alert(`Saved ${room.id}.json`);
+    alert(`Saved ${room.id}.json in ${directoryHandle.name}`);
   } catch (error) {
     if (error && error.name === "AbortError") return;
     console.error(error);
@@ -1164,6 +1223,7 @@ resizeBtn.addEventListener("click", () => {
 
 exportRoomBtn.addEventListener("click", exportRoomJSON);
 saveRoomBtn.addEventListener("click", saveRoomToFolder);
+selectRoomFolderBtn?.addEventListener("click", pickRoomFolder);
 
 toolButtons.forEach(btn => {
   btn.addEventListener("click", () => setActiveTool(btn.dataset.type));

@@ -91,9 +91,11 @@
       "chargeTime": 30,
       "cooldown": 0,
       "radius": 4.8,
-      "damage": 34,
+      "damage": 12,
       "stunDuration": 3.0,
-      "pullStrength": 0.65
+      "knockbackStrength": 2.4,
+      "tickInterval": 0.6,
+      "duration": 5
     }
   },
   "rogue": {

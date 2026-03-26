@@ -5,6 +5,7 @@
 import { Scene, Mesh, Vector3, StandardMaterial, Color3 } from '@babylonjs/core';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { ConfigLoader } from '../utils/ConfigLoader';
+import { ProceduralDungeonTheme } from './ProceduralDungeonTheme';
 
 export interface RoomConfig {
   id: string;
@@ -31,6 +32,8 @@ export class RoomManager {
   private obstacleBoundsByRoom: Map<string, Array<{ minX: number; maxX: number; minZ: number; maxZ: number }>> = new Map();
   private floorRenderingEnabled: boolean = true;
   private wallsVisible: boolean = true; // Toggle for walls/pillars visibility
+  private renderProfile: 'classic' | 'neoDungeonTest' = 'classic';
+  private themedMaterials: StandardMaterial[] = [];
 
   constructor(scene: Scene, tileSize: number = 1.0) {
     this.scene = scene;
@@ -98,6 +101,10 @@ export class RoomManager {
     this.floorRenderingEnabled = enabled;
   }
 
+  setRenderProfile(profile: 'classic' | 'neoDungeonTest'): void {
+    this.renderProfile = profile;
+  }
+
   private createRoomGeometry(config: RoomConfig, instanceKey: string, origin: Vector3): void {
     // Clear previous instance meshes
     const prevMeshes = this.roomMeshes.get(instanceKey);
@@ -112,6 +119,15 @@ export class RoomManager {
     const layout = config.layout;
     const height = layout.length;
     const width = layout[0].length;
+    const useNeoTheme = this.renderProfile === 'neoDungeonTest' && ProceduralDungeonTheme.isNeoTestRoom(config.id);
+    const wallThemeMaterial = useNeoTheme
+      ? ProceduralDungeonTheme.createWallOrPillarMaterial(this.scene, `${instanceKey}_wall`, 'wall')
+      : null;
+    const pillarThemeMaterial = useNeoTheme
+      ? ProceduralDungeonTheme.createWallOrPillarMaterial(this.scene, `${instanceKey}_pillar`, 'pillar')
+      : null;
+    if (wallThemeMaterial) this.themedMaterials.push(wallThemeMaterial);
+    if (pillarThemeMaterial) this.themedMaterials.push(pillarThemeMaterial);
 
     // Create floor tiles and walls based on layout
     for (let y = 0; y < height; y++) {
@@ -131,6 +147,9 @@ export class RoomManager {
           wall.position = position.add(new Vector3(this.tileSize / 2, 1.0, this.tileSize / 2)); // Center on tile, height 1.0
           wall.scaling = new Vector3(this.tileSize, 2, this.tileSize); // Scale to fill tile, height 2
           wall.isVisible = this.wallsVisible; // Respect visibility setting
+          if (wallThemeMaterial) {
+            wall.material = wallThemeMaterial;
+          }
           this.roomMeshes.get(instanceKey)!.push(wall);
           
           // Add hitbox for wall collision
@@ -185,6 +204,9 @@ export class RoomManager {
       const mesh = VisualPlaceholder.createFloorTile(this.scene, `obstacle_${i}`, true);
       mesh.position = position;
       mesh.scaling = new Vector3(width * this.tileSize, 1, height * this.tileSize);
+      if (pillarThemeMaterial) {
+        mesh.material = pillarThemeMaterial;
+      }
 
       // Add collision bounds for solid obstacles
       this.obstacleBoundsByRoom.get(instanceKey)!.push({
@@ -377,6 +399,8 @@ export class RoomManager {
     this.hazardZonesByRoom.clear();
     this.obstacleBounds = [];
     this.obstacleBoundsByRoom.clear();
+    this.themedMaterials.forEach((material) => material.dispose());
+    this.themedMaterials = [];
   }
 
   dispose(): void {

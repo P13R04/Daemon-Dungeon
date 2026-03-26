@@ -6,6 +6,7 @@ import { Vector3, Scene, PointerEventTypes } from '@babylonjs/core';
 
 export class InputManager {
   private keys: Set<string> = new Set();
+  private keysPressedThisFrame: Set<string> = new Set();
   private mousePosition: Vector3 = Vector3.Zero();
   private mouseClick: boolean = false;
   private mouseClickThisFrame: boolean = false;
@@ -15,6 +16,10 @@ export class InputManager {
   private spacePressedThisFrame: boolean = false;
   private canvas: HTMLCanvasElement | null = null;
   private scene: Scene | null = null;
+  private attackSlotBindings: Record<1 | 2, string[]> = {
+    1: ['a'],
+    2: ['e'],
+  };
 
   constructor(canvas?: HTMLCanvasElement, scene?: Scene) {
     this.canvas = canvas || null;
@@ -32,7 +37,11 @@ export class InputManager {
 
   private setupKeyboardListeners(): void {
     window.addEventListener('keydown', (e) => {
-      this.keys.add(e.key.toLowerCase());
+      const key = e.key.toLowerCase();
+      if (!this.keys.has(key)) {
+        this.keysPressedThisFrame.add(key);
+      }
+      this.keys.add(key);
       
       if (e.key === ' ') {
         e.preventDefault();
@@ -44,7 +53,8 @@ export class InputManager {
     });
 
     window.addEventListener('keyup', (e) => {
-      this.keys.delete(e.key.toLowerCase());
+      const key = e.key.toLowerCase();
+      this.keys.delete(key);
       
       if (e.key === ' ') {
         this.spacePressed = false;
@@ -149,7 +159,7 @@ export class InputManager {
 
     if (this.keys.has('w') || this.keys.has('z')) input.z += 1;
     if (this.keys.has('s')) input.z -= 1;
-    if (this.keys.has('a') || this.keys.has('q')) input.x -= 1;
+     if (this.keys.has('q')) input.x -= 1;  // Left (q only, not 'a' which is for attack)
     if (this.keys.has('d')) input.x += 1;
 
     if (input.length() > 0) {
@@ -216,6 +226,31 @@ export class InputManager {
     return this.keys.has(key.toLowerCase());
   }
 
+  isKeyPressedThisFrame(key: string): boolean {
+    return this.keysPressedThisFrame.has(key.toLowerCase());
+  }
+
+  isAttackSlotHeld(slot: 1 | 2): boolean {
+    const bindings = this.attackSlotBindings[slot] ?? [];
+    return bindings.some((key) => this.keys.has(key));
+  }
+
+  isAttackSlotPressedThisFrame(slot: 1 | 2): boolean {
+    const bindings = this.attackSlotBindings[slot] ?? [];
+    return bindings.some((key) => this.keysPressedThisFrame.has(key));
+  }
+
+  setAttackSlotBindings(bindings: Partial<Record<1 | 2, string[]>>): void {
+    const slot1 = bindings[1];
+    const slot2 = bindings[2];
+    if (Array.isArray(slot1) && slot1.length > 0) {
+      this.attackSlotBindings[1] = slot1.map((key) => key.toLowerCase());
+    }
+    if (Array.isArray(slot2) && slot2.length > 0) {
+      this.attackSlotBindings[2] = slot2.map((key) => key.toLowerCase());
+    }
+  }
+
   /**
    * Reset frame-specific input
    */
@@ -223,5 +258,6 @@ export class InputManager {
     this.mouseClickThisFrame = false;
     this.rightMouseClickThisFrame = false;
     this.spacePressedThisFrame = false;
+    this.keysPressedThisFrame.clear();
   }
 }

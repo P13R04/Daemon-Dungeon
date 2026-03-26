@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Daemon Dungeon - Neo Texture Lab</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dat.gui@0.7.9/build/dat.gui.min.js"></script>
+
+  <style>
+    html,body,#renderCanvas{width:100%;height:100%;margin:0;padding:0;overflow:hidden;background:#000}
+    #hint {
+      position: fixed;
+      left: 14px;
+      top: 14px;
+      z-index: 10;
+      color: #d7e9ff;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      font-size: 13px;
+      background: rgba(8, 18, 28, 0.72);
+      border: 1px solid rgba(109, 191, 255, 0.45);
+      border-radius: 8px;
+      padding: 8px 10px;
+      letter-spacing: 0.2px;
+    }
+  </style>
+</head>
+<body>
+  <div id="hint">Neo Texture Lab - fantasy stone + circuits/glitch, poison shader anime</div>
+  <canvas id="renderCanvas"></canvas>
+  <script type="module" src="./index.js?v=neo62"></script>
+</body>
+</html>

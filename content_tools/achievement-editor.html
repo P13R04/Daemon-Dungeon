@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Achievement Editor</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <div class="title">
+        <h1>Achievement Editor</h1>
+        <p>Design achievements with composable conditions and save one file per entry.</p>
+      </div>
+      <nav class="nav-links">
+        <a href="./index.html">Tools Home</a>
+        <a href="../tiles_mapping/index.html">Room Editor</a>
+        <a href="./bonus-editor.html">Bonus Editor</a>
+      </nav>
+    </header>
+
+    <section class="panel" style="margin-bottom: 14px;">
+      <div class="actions">
+        <button class="btn" id="selectFolderBtn">Select src/data/achievements/entries</button>
+        <button class="btn primary" id="saveBtn">Save Achievement File</button>
+        <button class="btn" id="downloadBtn">Download Achievement File</button>
+        <button class="btn" id="addBatchBtn">Add To Batch</button>
+        <button class="btn" id="downloadAggregateBtn">Download achievements.json Aggregate</button>
+      </div>
+      <div class="status" id="statusBox">No folder selected.</div>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <h2>Achievement Core</h2>
+        <div class="row">
+          <div class="field">
+            <label>Name</label>
+            <input id="name" value="Process Terminator" />
+          </div>
+          <div class="field">
+            <label>ID</label>
+            <input id="id" value="achievement_process_terminator" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Description</label>
+          <textarea id="description">Defeat a high number of enemies while staying efficient.</textarea>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label>Icon / Visual</label>
+            <input id="icon" value="trophy_terminal" />
+          </div>
+          <div class="field">
+            <label>Progress Type</label>
+            <select id="type">
+              <option value="incremental">incremental</option>
+              <option value="oneTime">oneTime</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label>Target</label>
+            <input id="target" type="number" min="1" step="1" value="100" />
+          </div>
+          <div class="field">
+            <label>Condition Logic</label>
+            <select id="conditionLogic">
+              <option value="AND">AND</option>
+              <option value="OR">OR</option>
+            </select>
+          </div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <h2>Conditions</h2>
+        <div class="actions" style="margin-bottom: 8px;">
+          <button class="btn" id="addConditionBtn">Add Condition</button>
+        </div>
+        <div id="conditionsList" class="list"></div>
+
+        <h2>Extra Metadata</h2>
+        <div class="actions" style="margin-bottom: 8px;">
+          <button class="btn" id="addMetaBtn">Add Metadata Field</button>
+        </div>
+        <div id="metaList" class="list"></div>
+      </article>
+
+      <article class="panel" style="grid-column: 1 / -1;">
+        <h2>Batch + Output</h2>
+        <div class="field">
+          <label>Achievements in current batch</label>
+          <textarea id="batchPreview" class="output" readonly></textarea>
+        </div>
+        <div class="field">
+          <label>Current achievement JSON preview</label>
+          <textarea id="jsonPreview" class="output" readonly></textarea>
+        </div>
+      </article>
+    </section>
+  </div>
+
+  <script type="module" src="./achievement-editor.js"></script>
+</body>
+</html>

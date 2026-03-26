@@ -95,6 +95,8 @@ export const GameEvents = {
   // Bonus events
   BONUS_OFFERED: 'bonus:offered',
   BONUS_SELECTED: 'bonus:selected',
+  BONUS_REROLL_REQUESTED: 'bonus:rerollRequested',
+  SHOP_PURCHASE_REQUESTED: 'shop:purchaseRequested',
   
   // Combat events
   ATTACK_PERFORMED: 'combat:attackPerformed',
@@ -107,6 +109,7 @@ export const GameEvents = {
   // Game flow events
   GAME_START_REQUESTED: 'game:startRequested',
   GAME_RESTART_REQUESTED: 'game:restartRequested',
+  CODEX_OPEN_REQUESTED: 'game:codexOpenRequested',
   ROOM_NEXT_REQUESTED: 'room:nextRequested',
   
   // UI events

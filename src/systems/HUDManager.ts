@@ -2,12 +2,13 @@
  * HUDManager - Manages health bars, damage numbers, and UI elements
  */
 
-import { Scene, Vector3, TransformNode, AbstractMesh, Sound } from '@babylonjs/core';
+import { Scene, Engine, Vector3, TransformNode, AbstractMesh, Sound } from '@babylonjs/core';
 import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image } from '@babylonjs/gui';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { VoicelineConfig, AnimationPhase } from '../data/voicelines/VoicelineDefinitions';
 import { DAEMON_ANIMATION_PRESETS, normalizeDaemonPresetName } from '../data/voicelines/DaemonAnimationPresets';
+import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
 
 interface DamageNumber {
   text: TextBlock;
@@ -16,6 +17,14 @@ interface DamageNumber {
   timeElapsed: number;
   duration: number;
   anchor: TransformNode;
+}
+
+export interface HudBonusChoice {
+  id: string;
+  title: string;
+  description?: string;
+  rarity?: 'common' | 'uncommon' | 'rare' | 'epic';
+  stackLabel?: string;
 }
 
 export class HUDManager {
@@ -33,6 +42,7 @@ export class HUDManager {
   private healthBarFill: Rectangle | null = null;
   private healthValueText: TextBlock | null = null;
   private waveText: TextBlock | null = null;
+  private currencyText: TextBlock | null = null;
   private logPanel: Rectangle | null = null;
   private logLines: TextBlock[] = [];
   private logMessages: string[] = [];
@@ -41,8 +51,12 @@ export class HUDManager {
   private secondaryResourceBarFill: Rectangle | null = null;
   private itemStatusText: TextBlock | null = null;
   private daemonContainer: Rectangle | null = null;
+  private daemonGlitchOverlay: Rectangle | null = null;
+  private daemonPopupFlashOverlay: Rectangle | null = null;
   private daemonAvatarImage: Image | null = null;
   private daemonMessageText: TextBlock | null = null;
+  private daemonTypewriterSynth: SciFiTypewriterSynth;
+  private daemonAudioUnlockHandler: (() => void) | null = null;
   private daemonTypingIndex: number = 0;
   private daemonTypingTimer: number = 0;
   private daemonTypingSpeed: number = 55;
@@ -54,6 +68,13 @@ export class HUDManager {
   private daemonHoldTimer: number = 0;
   private daemonHoldDuration: number = 3.5;
   private daemonVisible: boolean = false;
+  private daemonGlitchTimer: number = 0;
+  private daemonGlitchDuration: number = 0;
+  private daemonFlashTimer: number = 0;
+  private daemonFlashDuration: number = 0;
+  private daemonFlashPeakAlpha: number = 0;
+  private daemonBaseTop: number = 80;
+  private daemonBaseLeft: number = 0;
   private avatarFrameTimer: number = 0;
   private avatarFrameIndex: number = 0;
   private avatarFrameDirection: number = 1;
@@ -67,7 +88,7 @@ export class HUDManager {
   private currentPhaseIndex: number = 0;
   private currentPhaseCycleIndex: number = 0;
   private currentPhaseFrameCount: number = 0;
-  private voicelineAudio: Sound | null = null;
+  private activeVoicelineAudios: Set<Sound> = new Set();
   private voicelineStartTime: number = 0;
   private voicelineAudioDuration: number = 0;
   
@@ -84,6 +105,8 @@ export class HUDManager {
   private roomClearScreen: Rectangle | null = null;
   private bonusScreen: Rectangle | null = null;
   private bonusButtons: Button[] = [];
+  private bonusDynamicControls: Control[] = [];
+  private bonusRerollButton: Button | null = null;
   private bossAlertContainer: Rectangle | null = null;
   private bossAlertSubtitle: TextBlock | null = null;
   private bossAlertPulseOverlay: Rectangle | null = null;
@@ -97,6 +120,7 @@ export class HUDManager {
 
   constructor(private scene: Scene) {
     this.eventBus = EventBus.getInstance();
+    this.daemonTypewriterSynth = new SciFiTypewriterSynth(SCI_FI_TYPEWRITER_PRESETS.oldschool_fast);
     
     // Preload all avatar frames in background
     this.preloadAllAvatarFrames().catch(err => {
@@ -120,6 +144,7 @@ export class HUDManager {
     this.setupEventListeners();
     this.createPlayerHUD();
     this.createOverlays();
+    this.setupDaemonTypingAudioUnlock();
     this.applyGuiScaling();
 
     const engine = this.scene.getEngine();
@@ -329,6 +354,20 @@ export class HUDManager {
     this.waveText.left = '-20px'; // 20px from right border
     this.topBar.addControl(this.waveText);
 
+    this.currencyText = new TextBlock('currency_text');
+    this.currencyText.text = 'CREDITS: 000';
+    this.currencyText.fontSize = 16;
+    this.currencyText.fontFamily = fontFamily;
+    this.currencyText.color = '#FFD782';
+    this.currencyText.topInPixels = 32;
+    this.currencyText.width = '220px';
+    this.currencyText.height = '22px';
+    this.currencyText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.currencyText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.currencyText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.currencyText.left = '-20px';
+    this.topBar.addControl(this.currencyText);
+
     // Bottom-left command feed
     this.logPanel = new Rectangle('log_panel');
     this.logPanel.width = '36%';
@@ -448,9 +487,25 @@ export class HUDManager {
     this.daemonContainer.background = 'rgba(20, 0, 6, 0.8)';
     this.daemonContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.daemonContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.daemonContainer.top = 80;
+    this.daemonContainer.top = this.daemonBaseTop;
+    this.daemonContainer.left = this.daemonBaseLeft;
     this.daemonContainer.isVisible = false;
     this.guiClean.addControl(this.daemonContainer);
+
+    this.daemonGlitchOverlay = new Rectangle('daemon_glitch_overlay');
+    this.daemonGlitchOverlay.width = '460px';
+    this.daemonGlitchOverlay.height = '140px';
+    this.daemonGlitchOverlay.thickness = 1;
+    this.daemonGlitchOverlay.color = '#FF5E73';
+    this.daemonGlitchOverlay.background = 'rgba(120, 0, 16, 0.16)';
+    this.daemonGlitchOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.daemonGlitchOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.daemonGlitchOverlay.top = this.daemonBaseTop;
+    this.daemonGlitchOverlay.left = this.daemonBaseLeft;
+    this.daemonGlitchOverlay.alpha = 0;
+    this.daemonGlitchOverlay.isVisible = false;
+    this.daemonGlitchOverlay.isPointerBlocker = false;
+    this.guiFx.addControl(this.daemonGlitchOverlay);
 
     const avatarBox = new Rectangle('daemon_avatar');
     avatarBox.width = '90px';
@@ -499,6 +554,18 @@ export class HUDManager {
     this.bossAlertPulseOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.guiFx.addControl(this.bossAlertPulseOverlay);
 
+    this.daemonPopupFlashOverlay = new Rectangle('daemon_popup_flash_overlay');
+    this.daemonPopupFlashOverlay.width = 1;
+    this.daemonPopupFlashOverlay.height = 1;
+    this.daemonPopupFlashOverlay.thickness = 0;
+    this.daemonPopupFlashOverlay.background = '#FF2A3B';
+    this.daemonPopupFlashOverlay.alpha = 0;
+    this.daemonPopupFlashOverlay.isVisible = false;
+    this.daemonPopupFlashOverlay.isPointerBlocker = false;
+    this.daemonPopupFlashOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.daemonPopupFlashOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.guiFx.addControl(this.daemonPopupFlashOverlay);
+
     this.bossAlertContainer = new Rectangle('boss_alert_container');
     this.bossAlertContainer.width = '540px';
     this.bossAlertContainer.height = '140px';
@@ -532,17 +599,12 @@ export class HUDManager {
   }
 
   private createOverlays(): void {
-    this.startScreen = this.createMainMenuOverlay();
-    this.startScreen.isVisible = false;
-
-    this.classSelectScreen = this.createClassSelectOverlay();
-    this.classSelectScreen.isVisible = false;
-
-    this.codexScreen = this.createCodexOverlay();
-    this.codexScreen.isVisible = false;
-
-    this.settingsScreen = this.createSettingsOverlay();
-    this.settingsScreen.isVisible = false;
+    // Main menu / class select / codex / settings are handled by dedicated scenes.
+    // Keep HUD overlays disabled here to avoid duplicated UI stacks and pointer conflicts.
+    this.startScreen = null;
+    this.classSelectScreen = null;
+    this.codexScreen = null;
+    this.settingsScreen = null;
 
     this.gameOverScreen = this.createOverlay('GAME OVER', 'RESTART', () => {
       this.eventBus.emit(GameEvents.GAME_RESTART_REQUESTED);
@@ -602,6 +664,13 @@ export class HUDManager {
     playBtn.background = '#1D3B3A';
     playBtn.thickness = 2;
     playBtn.top = '-70px';
+    playBtn.hoverCursor = 'pointer';
+    playBtn.onPointerEnterObservable.add(() => {
+      playBtn.background = '#2A5A57';
+    });
+    playBtn.onPointerOutObservable.add(() => {
+      playBtn.background = '#1D3B3A';
+    });
     playBtn.onPointerUpObservable.add(() => {
       this.showClassSelectMenu();
     });
@@ -609,28 +678,33 @@ export class HUDManager {
 
     const codexBtn = Button.CreateSimpleButton('main_menu_codex', 'CODEX');
     codexBtn.width = '220px';
-    codexBtn.height = '40px';
-    codexBtn.color = '#B8FFE6';
+    codexBtn.height = '46px';
+    codexBtn.color = '#FFFFFF';
     codexBtn.cornerRadius = 6;
-    codexBtn.background = 'rgba(20,30,35,0.85)';
-    codexBtn.thickness = 1;
+    codexBtn.background = '#1D3B3A';
+    codexBtn.thickness = 2;
     codexBtn.top = '-10px';
+    codexBtn.hoverCursor = 'pointer';
+    codexBtn.onPointerEnterObservable.add(() => {
+      codexBtn.background = '#2A5A57';
+    });
+    codexBtn.onPointerOutObservable.add(() => {
+      codexBtn.background = '#1D3B3A';
+    });
     codexBtn.onPointerUpObservable.add(() => {
-      this.showCodexMenu();
+      this.eventBus.emit(GameEvents.CODEX_OPEN_REQUESTED);
     });
     panel.addControl(codexBtn);
 
     const settingsBtn = Button.CreateSimpleButton('main_menu_settings', 'SETTINGS');
     settingsBtn.width = '220px';
     settingsBtn.height = '40px';
-    settingsBtn.color = '#B8FFE6';
+    settingsBtn.color = '#6B8A87';
     settingsBtn.cornerRadius = 6;
-    settingsBtn.background = 'rgba(20,30,35,0.85)';
+    settingsBtn.background = 'rgba(20,30,35,0.45)';
     settingsBtn.thickness = 1;
     settingsBtn.top = '40px';
-    settingsBtn.onPointerUpObservable.add(() => {
-      this.showSettingsMenu();
-    });
+    settingsBtn.isEnabled = false;
     panel.addControl(settingsBtn);
 
     const hint = new TextBlock('main_menu_hint');
@@ -1071,6 +1145,17 @@ export class HUDManager {
     }
   }
 
+  updateCurrency(value: number): void {
+    if (!this.currencyText) return;
+    const safeValue = Math.max(0, Math.floor(value));
+    this.currencyText.text = `CREDITS: ${safeValue.toString().padStart(3, '0')}`;
+  }
+
+  updateItemStatus(text: string): void {
+    if (!this.itemStatusText) return;
+    this.itemStatusText.text = `ITEM: ${text}`;
+  }
+
   private updateWaveText(waveNumber: number): void {
     if (this.waveText) {
       this.waveText.text = `WAVE: ${waveNumber.toString().padStart(2, '0')}`;
@@ -1096,6 +1181,24 @@ export class HUDManager {
     for (let i = 0; i < this.logLines.length; i++) {
       this.logLines[i].text = this.logMessages[i] ?? '';
     }
+  }
+
+  private getRarityVisual(rarity: 'common' | 'uncommon' | 'rare' | 'epic'): {
+    border: string;
+    glow: string;
+    glowAlpha: number;
+    thickness: number;
+  } {
+    if (rarity === 'uncommon') {
+      return { border: '#58E4A3', glow: '#1E8C5B', glowAlpha: 0.38, thickness: 3 };
+    }
+    if (rarity === 'rare') {
+      return { border: '#57B9FF', glow: '#1A5D90', glowAlpha: 0.46, thickness: 4 };
+    }
+    if (rarity === 'epic') {
+      return { border: '#FF8FCC', glow: '#8C2A62', glowAlpha: 0.55, thickness: 5 };
+    }
+    return { border: '#C0C8D3', glow: '#4B5666', glowAlpha: 0.28, thickness: 2 };
   }
 
   /**
@@ -1143,6 +1246,8 @@ export class HUDManager {
     this.daemonMessageText.text = '';
     this.daemonVisible = true;
     this.daemonContainer.isVisible = true;
+    this.primeDaemonTypingAudio();
+    this.startDaemonPopupGlitch(1.05);
 
     // Set up animation phases
     this.animationPhases = phases;
@@ -1166,13 +1271,6 @@ export class HUDManager {
 
   private playVoicelineAudio(audioPath: string): void {
     try {
-      // Stop previous voiceline audio if playing
-      if (this.voicelineAudio) {
-        this.voicelineAudio.stop();
-        this.voicelineAudio.dispose();
-        this.voicelineAudio = null;
-      }
-
       const baseUrl = (import.meta as any).env?.BASE_URL ?? '/';
       const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
       const fullPath = `${normalizedBase}${audioPath}`;
@@ -1192,10 +1290,16 @@ export class HUDManager {
         {
           volume: 1.0,
           autoplay: false,
+          loop: false,
+          spatialSound: false,
         }
       );
 
-      this.voicelineAudio = soundInstance;
+      this.activeVoicelineAudios.add(soundInstance);
+      soundInstance.onEndedObservable.add(() => {
+        this.activeVoicelineAudios.delete(soundInstance);
+        soundInstance.dispose();
+      });
     } catch (error) {
       console.warn(`Failed to play voiceline audio: ${audioPath}`, error);
     }
@@ -1224,12 +1328,19 @@ export class HUDManager {
     this.daemonMessageText.text = '';
     this.daemonVisible = true;
     this.daemonContainer.isVisible = true;
+    this.primeDaemonTypingAudio();
+    this.startDaemonPopupGlitch(0.85);
     this.setDaemonAvatarAnimation(message, emotion, options?.sequence, options?.frameInterval);
   }
 
   private updateDaemonPopup(deltaTime: number): void {
     if (!this.daemonContainer || !this.daemonMessageText) return;
-    if (!this.daemonVisible) return;
+    if (!this.daemonVisible) {
+      this.resetDaemonPopupGlitch();
+      return;
+    }
+
+    this.updateDaemonPopupGlitch(deltaTime);
 
     // Initialize voiceline start time on first update
     if (this.voicelineStartTime === 0 && this.voicelineAudioDuration > 0) {
@@ -1271,6 +1382,7 @@ export class HUDManager {
         
         this.daemonTypingIndex += 1;
         this.daemonMessageText.text = this.daemonDisplayText.slice(0, this.daemonTypingIndex);
+        this.daemonTypewriterSynth.triggerForTypedChar();
       }
       return;
     }
@@ -1291,13 +1403,9 @@ export class HUDManager {
     if (shouldHide) {
       this.daemonVisible = false;
       this.daemonContainer.isVisible = false;
+      this.resetDaemonPopupGlitch();
       
-      // Stop and clean up audio
-      if (this.voicelineAudio) {
-        this.voicelineAudio.stop();
-        this.voicelineAudio.dispose();
-        this.voicelineAudio = null;
-      }
+      this.stopAllVoicelineAudio();
       
       // Clear animation phases after voiceline completes
       this.animationPhases = [];
@@ -1306,6 +1414,145 @@ export class HUDManager {
       this.currentPhaseFrameCount = 0;
       this.voicelineStartTime = 0;
       this.voicelineAudioDuration = 0;
+    }
+  }
+
+  private primeDaemonTypingAudio(): void {
+    const audioEngine = this.getAudioEngine();
+    if (!audioEngine) return;
+
+    audioEngine.useCustomUnlockedButton = true;
+    this.daemonTypewriterSynth.attachContext((audioEngine as any).audioContext as AudioContext | undefined);
+  }
+
+  private stopAllVoicelineAudio(): void {
+    for (const sound of this.activeVoicelineAudios) {
+      try {
+        sound.stop();
+      } catch {
+        // Ignore stop errors for already-ended sounds.
+      }
+      sound.dispose();
+    }
+    this.activeVoicelineAudios.clear();
+  }
+
+  private setupDaemonTypingAudioUnlock(): void {
+    const audioEngine = this.getAudioEngine();
+    if (!audioEngine) return;
+
+    audioEngine.useCustomUnlockedButton = true;
+
+    const existingContext = (audioEngine as any).audioContext as AudioContext | undefined;
+    if (audioEngine.unlocked || existingContext?.state === 'running') {
+      this.daemonTypewriterSynth.attachContext(existingContext);
+      return;
+    }
+
+    const tryUnlock = () => {
+      try {
+        audioEngine.unlock();
+      } catch {
+        // Ignore unlock errors and retry on next user gesture.
+      }
+      void this.daemonTypewriterSynth.unlock();
+      this.daemonTypewriterSynth.attachContext((audioEngine as any).audioContext as AudioContext | undefined);
+      if (audioEngine.unlocked && this.daemonAudioUnlockHandler) {
+        window.removeEventListener('pointerdown', this.daemonAudioUnlockHandler);
+        window.removeEventListener('keydown', this.daemonAudioUnlockHandler);
+        this.daemonAudioUnlockHandler = null;
+      }
+    };
+
+    this.daemonAudioUnlockHandler = tryUnlock;
+    window.addEventListener('pointerdown', tryUnlock);
+    window.addEventListener('keydown', tryUnlock);
+  }
+
+  private getAudioEngine(): any {
+    return (this.scene.getEngine() as any).audioEngine ?? (Engine as any).audioEngine;
+  }
+
+  private startDaemonPopupGlitch(strength: number): void {
+    this.daemonGlitchDuration = 0.18 + Math.min(0.22, strength * 0.1);
+    this.daemonGlitchTimer = this.daemonGlitchDuration;
+    this.daemonFlashDuration = 0.2 + Math.min(0.12, strength * 0.06);
+    this.daemonFlashTimer = this.daemonFlashDuration;
+    this.daemonFlashPeakAlpha = Math.min(0.11, 0.06 + strength * 0.025);
+
+    if (this.daemonGlitchOverlay) {
+      this.daemonGlitchOverlay.isVisible = true;
+      this.daemonGlitchOverlay.alpha = 0.2;
+    }
+    if (this.daemonPopupFlashOverlay) {
+      this.daemonPopupFlashOverlay.isVisible = true;
+      this.daemonPopupFlashOverlay.alpha = this.daemonFlashPeakAlpha;
+    }
+  }
+
+  private updateDaemonPopupGlitch(deltaTime: number): void {
+    if (this.daemonGlitchTimer <= 0 || this.daemonGlitchDuration <= 0) {
+      this.resetDaemonPopupGlitch();
+      return;
+    }
+
+    this.daemonGlitchTimer = Math.max(0, this.daemonGlitchTimer - deltaTime);
+    const progress = 1 - this.daemonGlitchTimer / this.daemonGlitchDuration;
+    const decay = 1 - progress;
+    const jitterX = (Math.random() * 2 - 1) * 5 * decay;
+    const jitterY = (Math.random() * 2 - 1) * 2 * decay;
+
+    if (this.daemonContainer) {
+      this.daemonContainer.left = this.daemonBaseLeft + jitterX;
+      this.daemonContainer.top = this.daemonBaseTop + jitterY;
+      this.daemonContainer.alpha = 0.9 + 0.1 * decay;
+      this.daemonContainer.color = decay > 0.35 ? '#FF506D' : '#FF3B5C';
+    }
+
+    if (this.daemonGlitchOverlay) {
+      this.daemonGlitchOverlay.left = this.daemonBaseLeft - jitterX * 0.65;
+      this.daemonGlitchOverlay.top = this.daemonBaseTop - jitterY * 0.35;
+      this.daemonGlitchOverlay.alpha = 0.2 * decay;
+      this.daemonGlitchOverlay.isVisible = this.daemonGlitchOverlay.alpha > 0.01;
+    }
+
+    if (this.daemonFlashTimer > 0 && this.daemonFlashDuration > 0) {
+      this.daemonFlashTimer = Math.max(0, this.daemonFlashTimer - deltaTime);
+      const flashDecay = this.daemonFlashTimer / this.daemonFlashDuration;
+      if (this.daemonPopupFlashOverlay) {
+        this.daemonPopupFlashOverlay.isVisible = true;
+        this.daemonPopupFlashOverlay.alpha = this.daemonFlashPeakAlpha * flashDecay * flashDecay;
+      }
+    } else if (this.daemonPopupFlashOverlay) {
+      this.daemonPopupFlashOverlay.alpha = 0;
+      this.daemonPopupFlashOverlay.isVisible = false;
+    }
+  }
+
+  private resetDaemonPopupGlitch(): void {
+    this.daemonGlitchTimer = 0;
+    this.daemonGlitchDuration = 0;
+    this.daemonFlashTimer = 0;
+    this.daemonFlashDuration = 0;
+    this.daemonFlashPeakAlpha = 0;
+
+    if (this.daemonContainer) {
+      this.daemonContainer.left = this.daemonBaseLeft;
+      this.daemonContainer.top = this.daemonBaseTop;
+      this.daemonContainer.alpha = 1;
+      this.daemonContainer.color = '#FF3B5C';
+    }
+
+    if (this.daemonGlitchOverlay) {
+      this.daemonGlitchOverlay.alpha = 0;
+      this.daemonGlitchOverlay.left = this.daemonBaseLeft;
+      this.daemonGlitchOverlay.top = this.daemonBaseTop;
+      this.daemonGlitchOverlay.isVisible = false;
+    }
+
+    if (this.daemonPopupFlashOverlay) {
+      this.daemonPopupFlashOverlay.alpha = 0;
+      this.daemonPopupFlashOverlay.isVisible = false;
     }
   }
 
@@ -1759,33 +2006,144 @@ export class HUDManager {
     this.setHudVisible(false);
   }
 
-  showBonusChoices(choices: Array<{ id: string; label: string }>): void {
+  showBonusChoices(choices: HudBonusChoice[], currency: number, rerollCost: number): void {
     if (!this.bonusScreen) return;
     this.bonusScreen.isVisible = true;
     this.hideMenuScreens();
     this.setHudVisible(false);
+    if (this.topBar) this.topBar.isVisible = true;
 
-    // Clear previous buttons
+    for (const child of this.bonusScreen.children) {
+      if (child.name === 'CHOOSE BONUS_title') {
+        child.isVisible = false;
+      }
+    }
+
+    // Clear previous dynamic controls
     this.bonusButtons.forEach(btn => btn.dispose());
     this.bonusButtons = [];
+    this.bonusDynamicControls.forEach(ctrl => ctrl.dispose());
+    this.bonusDynamicControls = [];
+    this.bonusRerollButton = null;
 
-    let startY = -20;
-    for (const choice of choices) {
-      const btn = Button.CreateSimpleButton(`bonus_${choice.id}`, choice.label);
-      btn.width = '320px';
-      btn.height = '45px';
-      btn.color = '#FFFFFF';
-      btn.cornerRadius = 6;
-      btn.background = '#1E1E1E';
-      btn.thickness = 2;
-      btn.top = `${startY}px`;
+    const subtitle = new TextBlock('bonus_shop_subtitle');
+    subtitle.text = 'PICK 1 BONUS';
+    subtitle.color = '#FFD782';
+    subtitle.fontSize = 20;
+    subtitle.fontFamily = 'Consolas';
+    subtitle.top = '-210px';
+    subtitle.height = '30px';
+    this.bonusScreen.addControl(subtitle);
+    this.bonusDynamicControls.push(subtitle);
+
+    const cardWidth = 300;
+    const cardHeight = 420;
+    const gap = 24;
+    const safeCount = Math.max(1, choices.length);
+    const totalWidth = (safeCount * cardWidth) + ((safeCount - 1) * gap);
+    const startLeft = -Math.floor(totalWidth / 2) + Math.floor(cardWidth / 2);
+
+    for (let i = 0; i < choices.length; i++) {
+      const choice = choices[i];
+      const rarity = choice.rarity ?? 'common';
+      const rarityStyle = this.getRarityVisual(rarity);
+      const leftPx = startLeft + (i * (cardWidth + gap));
+
+      const btn = Button.CreateSimpleButton(`bonus_${choice.id}`, '');
+      btn.width = `${cardWidth}px`;
+      btn.height = `${cardHeight}px`;
+      btn.color = rarityStyle.border;
+      btn.cornerRadius = 14;
+      btn.background = 'rgba(14, 17, 22, 0.92)';
+      btn.thickness = rarityStyle.thickness;
+      btn.left = `${leftPx}px`;
+      btn.top = '-10px';
       btn.onPointerUpObservable.add(() => {
         this.eventBus.emit(GameEvents.BONUS_SELECTED, { bonusId: choice.id });
       });
       this.bonusScreen.addControl(btn);
       this.bonusButtons.push(btn);
-      startY += 60;
+
+      const title = new TextBlock(`bonus_title_${choice.id}`);
+      title.text = choice.title;
+      title.color = '#F7FBFF';
+      title.fontFamily = 'Consolas';
+      title.fontSize = 24;
+      title.top = '-168px';
+      title.height = '30px';
+      btn.addControl(title);
+
+      const rarityText = new TextBlock(`bonus_rarity_${choice.id}`);
+      rarityText.text = rarity.toUpperCase();
+      rarityText.color = rarityStyle.border;
+      rarityText.fontFamily = 'Consolas';
+      rarityText.fontSize = 16;
+      rarityText.top = '-138px';
+      rarityText.height = '24px';
+      btn.addControl(rarityText);
+
+      const artworkGlow = new Rectangle(`bonus_art_glow_${choice.id}`);
+      artworkGlow.width = '180px';
+      artworkGlow.height = '180px';
+      artworkGlow.thickness = 0;
+      artworkGlow.background = rarityStyle.glow;
+      artworkGlow.alpha = rarityStyle.glowAlpha;
+      artworkGlow.top = '-6px';
+      btn.addControl(artworkGlow);
+
+      const artworkFrame = new Rectangle(`bonus_art_frame_${choice.id}`);
+      artworkFrame.width = '170px';
+      artworkFrame.height = '170px';
+      artworkFrame.thickness = rarityStyle.thickness;
+      artworkFrame.color = rarityStyle.border;
+      artworkFrame.background = 'rgba(10, 12, 16, 0.9)';
+      artworkFrame.top = '-6px';
+      btn.addControl(artworkFrame);
+
+      const artworkText = new TextBlock(`bonus_art_text_${choice.id}`);
+      artworkText.text = 'ARTWORK';
+      artworkText.color = '#B8C9D9';
+      artworkText.fontFamily = 'Consolas';
+      artworkText.fontSize = 15;
+      artworkFrame.addControl(artworkText);
+
+      const description = new TextBlock(`bonus_desc_${choice.id}`);
+      description.text = choice.description ?? '';
+      description.color = '#DDE6EF';
+      description.fontFamily = 'Consolas';
+      description.fontSize = 15;
+      description.textWrapping = true;
+      description.width = '250px';
+      description.height = '76px';
+      description.top = '122px';
+      btn.addControl(description);
+
+      const stackText = new TextBlock(`bonus_stack_${choice.id}`);
+      stackText.text = choice.stackLabel ?? '';
+      stackText.color = '#9FB3C6';
+      stackText.fontFamily = 'Consolas';
+      stackText.fontSize = 12;
+      stackText.top = '176px';
+      stackText.height = '18px';
+      btn.addControl(stackText);
     }
+
+    const rerollButton = Button.CreateSimpleButton('bonus_reroll', `REROLL  -  ${rerollCost} CREDITS`);
+    rerollButton.width = '280px';
+    rerollButton.height = '52px';
+    rerollButton.cornerRadius = 8;
+    rerollButton.thickness = 2;
+    rerollButton.top = '245px';
+    rerollButton.color = '#FFFFFF';
+    rerollButton.fontFamily = 'Consolas';
+    rerollButton.background = currency >= rerollCost ? '#2F3D55' : '#3B2020';
+    rerollButton.isEnabled = currency >= rerollCost;
+    rerollButton.onPointerUpObservable.add(() => {
+      this.eventBus.emit(GameEvents.BONUS_REROLL_REQUESTED, { cost: rerollCost });
+    });
+    this.bonusScreen.addControl(rerollButton);
+    this.bonusDynamicControls.push(rerollButton);
+    this.bonusRerollButton = rerollButton;
   }
 
   hideOverlays(): void {
@@ -1816,12 +2174,13 @@ export class HUDManager {
   }
 
   dispose(): void {
-    // Clean up voiceline audio if playing
-    if (this.voicelineAudio) {
-      this.voicelineAudio.stop();
-      this.voicelineAudio.dispose();
-      this.voicelineAudio = null;
+    this.stopAllVoicelineAudio();
+    if (this.daemonAudioUnlockHandler) {
+      window.removeEventListener('pointerdown', this.daemonAudioUnlockHandler);
+      window.removeEventListener('keydown', this.daemonAudioUnlockHandler);
+      this.daemonAudioUnlockHandler = null;
     }
+    this.daemonTypewriterSynth.dispose();
 
     this.guiFx.dispose();
     this.guiClean.dispose();

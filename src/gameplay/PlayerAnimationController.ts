@@ -1,15 +1,20 @@
 /**
  * PlayerAnimationController - Manages player character animations
- * Handles loading mage.glb and managing animation states with proper prioritization
+ * Handles loading character models (mage, tank) and managing animation states with proper prioritization
  */
 
-import { Scene, Mesh, AnimationGroup, SceneLoader, Vector3, TransformNode } from '@babylonjs/core';
+import { Scene, Mesh, AbstractMesh, AnimationGroup, SceneLoader, Vector3, TransformNode, ParticleSystem, DynamicTexture, Color4 } from '@babylonjs/core';
+import { SCENE_LAYER } from '../ui/uiLayers';
 
 export enum AnimationState {
   IDLE = 'idle',
   WALKING = 'walking',
   ATTACKING = 'attacking',
   ULTIMATE = 'ultimate',
+  SHIELD_BASH = 'shield_bash',
+  SHIELD_ACTIVATE = 'shield_activate',
+  SHIELD_DEACTIVATE = 'shield_deactivate',
+  SHIELD_LOOP = 'shield_loop',
 }
 
 export interface AnimationTransition {
@@ -19,11 +24,14 @@ export interface AnimationTransition {
   useIntro?: boolean;
 }
 
+export type PlayerClass = 'mage' | 'firewall' | 'rogue';
+
 export class PlayerAnimationController {
   private mesh: Mesh | null = null;
   private meshParent: TransformNode | null = null;  // Parent for rotation/position
   private scene: Scene;
   private animationGroups: Map<string, AnimationGroup> = new Map();
+  private playerClass: PlayerClass = 'mage';
 
   // Current animation state
   private currentState: AnimationState = AnimationState.IDLE;
@@ -36,6 +44,7 @@ export class PlayerAnimationController {
   // Rotation system - progressive interpolation
   private targetRotationY: number = 0; // Target angle to rotate towards
   private rotationSpeed: number = 12; // Radians per second - controls rotation smoothness
+  private rotationOffsetY: number = 0; // Permanent rotation offset (e.g., Math.PI for tank 180° flip)
   
   // Height adjustment
   private heightOffset: number = -2; // Adjustable height offset (default -2 for mage)
@@ -53,30 +62,59 @@ export class PlayerAnimationController {
   private readonly FADE_DURATION = 0.1; // seconds
   private readonly ATTACK_SPEED_INTERVAL = 200; // ms between speed changes
 
-  constructor(scene: Scene) {
+  // Tank shield state
+  private isShieldActive: boolean = false;
+  private tankThrusterParticles: ParticleSystem | null = null;
+  private tankThrusterAnchor: TransformNode | null = null;
+  private tankThrusterTexture: DynamicTexture | null = null;
+
+  constructor(scene: Scene, playerClass: PlayerClass = 'mage') {
     this.scene = scene;
+    this.playerClass = playerClass;
+    // Apply rotation offset for tank (firewall) - 180° flip
+    if (playerClass === 'firewall') {
+      this.rotationOffsetY = Math.PI;
+    } else if (playerClass === 'rogue') {
+      // Cat rig has a different origin than mage/tank; keep it above floor.
+      this.heightOffset = 0;
+    }
   }
 
   /**
-   * Load the mage.glb model and extract animation groups
+   * Load character model and extract animation groups
    */
   async loadModel(modelPath: string = '/models/player/'): Promise<Mesh> {
     try {
-      const result = await SceneLoader.ImportMeshAsync('', modelPath, 'mage.glb', this.scene);
+      const modelFile =
+        this.playerClass === 'firewall'
+          ? 'tank.glb'
+          : this.playerClass === 'rogue'
+            ? 'cat.glb'
+            : 'mage.glb';
+      const result = await SceneLoader.ImportMeshAsync('', modelPath, modelFile, this.scene);
 
       this.mesh = result.meshes[0] as Mesh;
-      this.mesh.name = 'player_mage';
+      this.mesh.name = `player_${this.playerClass}`;
 
-      // Scale down model by factor of 10
-      this.mesh.scaling.scaleInPlace(0.1);
+      // Scale model to a class-specific target height for reliable visibility.
+      const bounds = this.mesh.getHierarchyBoundingVectors(true);
+      const currentHeight = Math.max(0.001, bounds.max.y - bounds.min.y);
+      const targetHeight = this.playerClass === 'rogue' ? 1.9 : 2.0;
+      const modelScale = targetHeight / currentHeight;
+      this.mesh.scaling.scaleInPlace(modelScale);
 
       // Create parent TransformNode for rotation and position management
       // This avoids animation keyframes overriding our rotation
-      this.meshParent = new TransformNode('player_mage_parent', this.scene);
+      this.meshParent = new TransformNode(`player_${this.playerClass}_parent`, this.scene);
       this.meshParent.position.y = 1.0 + this.heightOffset;
-      
-      // Set mesh local position to 0 (parent controls world position)
-      this.mesh.parent = this.meshParent;
+
+      // Parent all root meshes so full model follows movement/rotation.
+      result.meshes.forEach((mesh) => {
+        if (mesh.parent === null) {
+          mesh.parent = this.meshParent;
+        }
+        mesh.layerMask = SCENE_LAYER;
+      });
       this.mesh.position = Vector3.Zero();
 
       // Debug: log all meshes loaded
@@ -91,7 +129,11 @@ export class PlayerAnimationController {
         console.log(`✓ Loaded animation: ${group.name}`);
       });
 
-      console.log(`✓ Player model loaded: ${this.mesh.name}, animations: ${this.animationGroups.size}, scale: 0.1`);
+      if (this.playerClass === 'firewall') {
+        this._setupTankThrusterParticles(result.meshes as AbstractMesh[]);
+      }
+
+      console.log(`✓ Player ${this.playerClass} model loaded successfully, animations: ${this.animationGroups.size}, scale: 0.1`);
       console.log(`✓ Parent TransformNode created for rotation management`);
 
       // Initialize with Idle animation
@@ -99,7 +141,7 @@ export class PlayerAnimationController {
 
       return this.mesh;
     } catch (error) {
-      console.error('Failed to load mage model:', error);
+      console.error(`Failed to load ${this.playerClass} model:`, error);
       throw error;
     }
   }
@@ -120,6 +162,75 @@ export class PlayerAnimationController {
       }
     });
 
+    let animationName = '';
+
+    if (this.playerClass === 'mage') {
+      this._playMageAnimation(state, speedMultiplier);
+    } else if (this.playerClass === 'firewall') {
+      this._playTankAnimation(state, speedMultiplier);
+    } else if (this.playerClass === 'rogue') {
+      this._playRogueAnimation(state, speedMultiplier);
+    } else {
+      // Rogue or other classes (not yet implemented)
+      console.warn(`Animation not yet implemented for class: ${this.playerClass}`);
+    }
+  }
+
+  /**
+   * Play rogue (cat placeholder) animations.
+   * Uses Take 001 as a generic loop/one-shot until dedicated rogue clips are provided.
+   */
+  private _playRogueAnimation(state: AnimationState, speedMultiplier: number = 1.0): void {
+    const fallbackClip =
+      this.animationGroups.get('Take 001') ??
+      this.animationGroups.get('take 001') ??
+      this.animationGroups.values().next().value;
+
+    if (!fallbackClip) {
+      console.warn('No rogue animation group found');
+      return;
+    }
+
+    const clipName = fallbackClip.name;
+
+    switch (state) {
+      case AnimationState.ATTACKING:
+      case AnimationState.ULTIMATE:
+        this.currentState = state;
+        this._playAnimationOnce(clipName, () => {
+          if (state === AnimationState.ULTIMATE && this.onUltimateAnimationFinished) {
+            this.onUltimateAnimationFinished();
+            this.onUltimateAnimationFinished = null;
+          }
+          if (this.isWalking) {
+            this.playAnimation(AnimationState.WALKING);
+          } else {
+            this.playAnimation(AnimationState.IDLE);
+          }
+        }, speedMultiplier);
+        return;
+
+      case AnimationState.WALKING:
+        this.currentState = AnimationState.WALKING;
+        this.isWalking = true;
+        this.hasStartedWalking = true;
+        this._playAnimationLoop(clipName, speedMultiplier);
+        return;
+
+      case AnimationState.IDLE:
+      default:
+        this.currentState = AnimationState.IDLE;
+        this.isWalking = false;
+        this.hasStartedWalking = false;
+        this._playAnimationLoop(clipName, speedMultiplier);
+        return;
+    }
+  }
+
+  /**
+   * Play mage animations
+   */
+  private _playMageAnimation(state: AnimationState, speedMultiplier: number = 1.0): void {
     let animationName = '';
 
     switch (state) {
@@ -189,9 +300,181 @@ export class PlayerAnimationController {
           }
         });
         return;
+      
+      default:
+        break;
     }
 
     this._playAnimationLoop(animationName, speedMultiplier);
+  }
+
+  /**
+   * Play tank (firewall) animations
+   */
+  private _playTankAnimation(state: AnimationState, speedMultiplier: number = 1.0): void {
+    let animationName = '';
+
+    switch (state) {
+      case AnimationState.IDLE:
+        animationName = 'Skyrim';
+        this.currentState = AnimationState.IDLE;
+        this.isWalking = false;
+        this.hasStartedWalking = false;
+        this._playAnimationLoop(animationName, speedMultiplier);
+        return;
+
+      case AnimationState.WALKING:
+        // Use Walk_start → Walk transition
+        if (!this.isWalking && !this.hasStartedWalking) {
+          // First time walking: play Walk_start intro
+          animationName = 'Walk_start';
+          this.hasStartedWalking = true;
+          this._playAnimationOnce(animationName, () => {
+            // After intro, play looping walk animation
+            this._playAnimationLoop('Walk', 1.0);
+          });
+          return;
+        } else {
+          // Already walking, just update speed if needed
+          animationName = 'Walk';
+        }
+        this.currentState = AnimationState.WALKING;
+        this.isWalking = true;
+        this._playAnimationLoop(animationName, speedMultiplier);
+        return;
+
+      case AnimationState.ATTACKING:
+        // Alternate between Normal_attack_1 and Normal_attack_2
+        this.lastAttackWasAttack1 = !this.lastAttackWasAttack1;
+        animationName = this.lastAttackWasAttack1 ? 'Normal_attack_1' : 'Normal_attack_2';
+
+        const speedVariation = this.attackSpeedVariation[this.lastAttackSpeedIndex];
+        this.lastAttackSpeedIndex = (this.lastAttackSpeedIndex + 1) % this.attackSpeedVariation.length;
+
+        this.currentState = AnimationState.ATTACKING;
+        this._playAnimationOnce(animationName, () => {
+          // After attack, return to current movement state
+          if (this.isWalking) {
+            this.playAnimation(AnimationState.WALKING);
+          } else {
+            this.playAnimation(AnimationState.IDLE);
+          }
+        }, speedVariation);
+        return;
+
+      case AnimationState.ULTIMATE:
+        // Ultimate sequence: tourbillon_start → tourbillon (loop) → troubillion_end
+        animationName = 'tourbillon_start';
+        this.currentState = AnimationState.ULTIMATE;
+        this._playAnimationOnceWithSpeedRamp(animationName, 2.0, 4.0, () => {
+          // After start, play looping mid animation
+          const midGroup = this.animationGroups.get('tourbillon');
+          if (midGroup) {
+            midGroup.loopAnimation = true;
+            midGroup.speedRatio = 4.0;
+            midGroup.play(true);
+            this.currentAnimation = 'tourbillon';
+          }
+          // Note: The end animation will be triggered by gameplay code (UltimateManager)
+          // This allows the looping animation to continue until the ultimate ends
+        });
+        return;
+
+      case AnimationState.SHIELD_BASH:
+        animationName = 'Shield_BASH';
+        this.currentState = AnimationState.SHIELD_BASH;
+        this._playAnimationOnce(animationName, () => {
+          // After shield bash, return to shield loop (shield is still active)
+          this._playAnimationLoop('Shield', 1.0);
+          this.currentState = AnimationState.SHIELD_LOOP;
+          this.isShieldActive = true; // Shield remains active after bash
+        }, 4.0);
+        return;
+
+      case AnimationState.SHIELD_ACTIVATE:
+        animationName = 'Shield_Up';
+        this.currentState = AnimationState.SHIELD_ACTIVATE;
+        this.isShieldActive = true;
+        this._playAnimationOnce(animationName, () => {
+          // After activation, play looping shield stance
+          this._playAnimationLoop('Shield', 1.0);
+          // Keep state as SHIELD_LOOP to maintain shield active state
+          this.currentState = AnimationState.SHIELD_LOOP;
+        });
+        return;
+
+      case AnimationState.SHIELD_DEACTIVATE:
+        animationName = 'Shoeld_Down';
+        this.currentState = AnimationState.SHIELD_DEACTIVATE;
+        this.isShieldActive = false;
+        this._playAnimationOnce(animationName, () => {
+          // After deactivation, return to idle
+          this.playAnimation(AnimationState.IDLE);
+        });
+        return;
+      
+      default:
+        break;
+    }
+
+    this._playAnimationLoop(animationName, speedMultiplier);
+  }
+
+  /**
+   * Play shield bash animation (tank only)
+   */
+  playShieldBash(): void {
+    if (this.playerClass === 'firewall') {
+      this.playAnimation(AnimationState.SHIELD_BASH);
+    }
+  }
+
+  /**
+   * Activate shield stance (tank only)
+   */
+  activateShield(): void {
+    if (this.playerClass === 'firewall' && !this.isShieldActive) {
+      this.playAnimation(AnimationState.SHIELD_ACTIVATE);
+    }
+  }
+
+  /**
+   * Deactivate shield stance (tank only)
+   */
+  deactivateShield(): void {
+    if (this.playerClass === 'firewall' && this.isShieldActive) {
+      this.isShieldActive = false; // Mark shield as deactivating
+      this.playAnimation(AnimationState.SHIELD_DEACTIVATE);
+    }
+  }
+
+  /**
+   * Play ultimate end animation (tank only)
+   */
+  playUltimateEnd(): void {
+    if (this.playerClass === 'firewall' && this.currentState === AnimationState.ULTIMATE) {
+      // Stop the looping mid animation and play the end animation
+      const midGroup = this.animationGroups.get('tourbillon');
+      if (midGroup?.isPlaying) {
+        midGroup.stop();
+      }
+
+      const endGroup = this.animationGroups.get('troubillion_end');
+      if (endGroup) {
+        this._playAnimationOnceWithSpeedRamp('troubillion_end', 4.0, 2.0, () => {
+          if (this.onUltimateAnimationFinished) {
+            this.onUltimateAnimationFinished();
+            this.onUltimateAnimationFinished = null;
+          }
+          if (this.isWalking) {
+            this.playAnimation(AnimationState.WALKING);
+          } else {
+            this.playAnimation(AnimationState.IDLE);
+          }
+        });
+        this.currentAnimation = 'troubillion_end';
+      }
+    }
   }
 
   /**
@@ -221,9 +504,15 @@ export class PlayerAnimationController {
       return;
     }
 
+    // Keep shield loop running (don't interrupt with attack animations)
+    if (this.currentState === AnimationState.SHIELD_LOOP && this.isAnimationCurrentlyPlaying()) {
+      return;
+    }
+
     // Attack takes priority over movement
+    // BUT: skip attack if shield is active (shield bash is handled separately)
     // BUT: if attack animation is still playing, let it finish
-    if (isFiring && this.currentState !== AnimationState.ATTACKING) {
+    if (isFiring && this.currentState !== AnimationState.ATTACKING && !this.isShieldActive) {
       this.playAnimation(AnimationState.ATTACKING);
       return;
     }
@@ -240,8 +529,8 @@ export class PlayerAnimationController {
       return;
     }
 
-    // Return to idle when not moving/attacking
-    if (!isMoving && this.currentState !== AnimationState.IDLE && this.currentState !== AnimationState.ATTACKING) {
+    // Return to idle when not moving/attacking (but not if shield is active)
+    if (!isMoving && this.currentState !== AnimationState.IDLE && this.currentState !== AnimationState.ATTACKING && !this.isShieldActive) {
       this.playAnimation(AnimationState.IDLE);
       return;
     }
@@ -300,6 +589,19 @@ export class PlayerAnimationController {
    * Dispose of resources
    */
   dispose(): void {
+    if (this.tankThrusterParticles) {
+      this.tankThrusterParticles.stop();
+      this.tankThrusterParticles.dispose();
+      this.tankThrusterParticles = null;
+    }
+    if (this.tankThrusterTexture) {
+      this.tankThrusterTexture.dispose();
+      this.tankThrusterTexture = null;
+    }
+    if (this.tankThrusterAnchor) {
+      this.tankThrusterAnchor.dispose();
+      this.tankThrusterAnchor = null;
+    }
     if (this.mesh) {
       this.mesh.dispose();
     }
@@ -343,6 +645,65 @@ export class PlayerAnimationController {
   }
 
   /**
+   * Play animation once with a linear speed ramp (e.g., x2 -> x4).
+   */
+  private _playAnimationOnceWithSpeedRamp(
+    animationName: string,
+    startSpeed: number,
+    endSpeed: number,
+    onComplete?: () => void
+  ): void {
+    const group = this.animationGroups.get(animationName);
+    if (!group) {
+      console.warn(`Animation group not found: ${animationName}`);
+      return;
+    }
+
+    const firstTarget = group.targetedAnimations?.[0]?.animation;
+    const from = typeof group.from === 'number' ? group.from : 0;
+    const to = typeof group.to === 'number' ? group.to : from + 1;
+    const frameSpan = Math.max(1, to - from);
+    const fps = firstTarget?.framePerSecond ?? 60;
+    const baseDuration = frameSpan / Math.max(1, fps);
+    const averageSpeed = Math.max(0.01, (startSpeed + endSpeed) * 0.5);
+    const rampDurationSeconds = Math.max(0.01, baseDuration / averageSpeed);
+
+    group.loopAnimation = false;
+    group.speedRatio = startSpeed;
+
+    let elapsed = 0;
+    let observer: any = null;
+
+    const cleanup = (): void => {
+      if (observer) {
+        this.scene.onBeforeRenderObservable.remove(observer);
+        observer = null;
+      }
+    };
+
+    observer = this.scene.onBeforeRenderObservable.add(() => {
+      if (!group.isPlaying) {
+        cleanup();
+        return;
+      }
+      const dt = this.scene.getEngine().getDeltaTime() / 1000;
+      elapsed += dt;
+      const t = Math.max(0, Math.min(1, elapsed / rampDurationSeconds));
+      group.speedRatio = startSpeed + (endSpeed - startSpeed) * t;
+    });
+
+    group.onAnimationGroupEndObservable.addOnce(() => {
+      cleanup();
+      if (onComplete) {
+        onComplete();
+      }
+    });
+
+    group.play(false);
+    this.currentAnimation = animationName;
+  }
+
+  /**
    * Play animation in loop
    */
   private _playAnimationLoop(animationName: string, speedMultiplier: number = 1.0): void {
@@ -356,6 +717,113 @@ export class PlayerAnimationController {
     group.loopAnimation = true;
     group.play(true);  // Pass true to enable looping
     this.currentAnimation = animationName;
+  }
+
+  /**
+   * Create a thruster-like flame particle effect under tank model.
+   * The emitter is parented to a child mesh (or fallback anchor), so it follows animations and rotations.
+   */
+  private _setupTankThrusterParticles(meshes: AbstractMesh[]): void {
+    if (!this.mesh) return;
+
+    const anchorSource = this._findTankThrusterAnchor(meshes) ?? this.mesh;
+
+    this.tankThrusterAnchor = new TransformNode('tank_thruster_anchor', this.scene);
+    this.tankThrusterAnchor.parent = anchorSource;
+    this.tankThrusterAnchor.position = Vector3.Zero();
+
+    const isNamedThrusterAnchor = anchorSource.name.toLowerCase() === 'layer.003';
+    const bounds = anchorSource.getBoundingInfo().boundingBox.extendSize;
+    const verticalOffset = isNamedThrusterAnchor ? 0.03 : Math.max(0.022, bounds.y * 0.15);
+
+    const localRightOffsetX = 0.0;
+    const localBackOffsetZ = 0.34;
+    this.tankThrusterAnchor.position = new Vector3(localRightOffsetX, verticalOffset, localBackOffsetZ);
+
+    console.log(`[TankFX] Thruster anchor: ${anchorSource.name}, verticalOffset=${verticalOffset.toFixed(3)}, rightOffsetX=${localRightOffsetX.toFixed(3)}, backZ=${localBackOffsetZ.toFixed(3)}`);
+
+    const particles = new ParticleSystem('tank_thruster_particles', 1400, this.scene);
+    const particleTexture = new DynamicTexture('tank_thruster_particle_texture', { width: 64, height: 64 }, this.scene, false);
+    const ctx = particleTexture.getContext();
+    const gradient = ctx.createRadialGradient(32, 32, 4, 32, 32, 31);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.55, 'rgba(255,190,80,0.95)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.clearRect(0, 0, 64, 64);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    particleTexture.update();
+    particles.particleTexture = particleTexture;
+    this.tankThrusterTexture = particleTexture;
+    particles.emitter = this.tankThrusterAnchor as unknown as AbstractMesh;
+    particles.isLocal = true;
+    particles.layerMask = SCENE_LAYER;
+
+    particles.minEmitBox = new Vector3(-0.035, -0.01, -0.045);
+    particles.maxEmitBox = new Vector3(0.035, 0.01, 0.045);
+
+    // Hot flame core + orange shell.
+    particles.color1 = new Color4(1.0, 0.95, 0.75, 0.98);
+    particles.color2 = new Color4(1.0, 0.42, 0.08, 0.9);
+    particles.colorDead = new Color4(0.12, 0.03, 0.0, 0);
+
+    particles.minSize = 0.2;
+    particles.maxSize = 0.52;
+    particles.minLifeTime = 0.07;
+    particles.maxLifeTime = 0.18;
+    particles.emitRate = 980;
+    particles.blendMode = ParticleSystem.BLENDMODE_ONEONE;
+    // Keep gravity neutral so thrust direction follows emitter local orientation.
+    particles.gravity = Vector3.Zero();
+    // Narrow local cone toward -Y for a propulsion look (follows node angle when isLocal=true).
+    particles.direction1 = new Vector3(-0.18, -3.9, -0.38);
+    particles.direction2 = new Vector3(0.25, -5.4, 0.12);
+    particles.minEmitPower = 1.2;
+    particles.maxEmitPower = 3.0;
+    particles.minAngularSpeed = -12;
+    particles.maxAngularSpeed = 12;
+    particles.updateSpeed = 0.01;
+
+    particles.start();
+    this.tankThrusterParticles = particles;
+  }
+
+  /**
+   * Try to locate the most likely thruster mesh by name + approximate location.
+   */
+  private _findTankThrusterAnchor(meshes: AbstractMesh[]): AbstractMesh | null {
+    const exactLayer003 = meshes.find((mesh) => (mesh.name ?? '').toLowerCase() === 'layer.003') ?? null;
+    if (exactLayer003) {
+      return exactLayer003;
+    }
+
+    const keywords = ['thruster', 'reactor', 'engine', 'jet', 'booster', 'propulseur', 'reac', 'flame'];
+    const bodyY = this.mesh?.getBoundingInfo().boundingBox.centerWorld.y ?? 1;
+
+    let best: AbstractMesh | null = null;
+    let bestScore = -Infinity;
+
+    for (const mesh of meshes) {
+      if (!mesh || mesh === this.meshParent) continue;
+
+      const lowerName = (mesh.name ?? '').toLowerCase();
+      const bounds = mesh.getBoundingInfo().boundingBox;
+      const center = bounds.centerWorld;
+      const ext = bounds.extendSizeWorld;
+      const approxVolume = Math.max(0.00001, ext.x * ext.y * ext.z);
+
+      let score = 0;
+      if (keywords.some((keyword) => lowerName.includes(keyword))) score += 8;
+      if (center.y < bodyY) score += 2;
+      if (approxVolume < 1) score += 1;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = mesh;
+      }
+    }
+
+    return bestScore >= 2 ? best : null;
   }
 
   /**
@@ -384,8 +852,8 @@ export class PlayerAnimationController {
 
     // Calculate target angle from direction vector
     // Front direction convention: positive Z is forward
-    // Apply -90° offset for model orientation
-    this.targetRotationY = Math.atan2(direction.x, direction.z) - Math.PI / 2;
+    // Apply -90° offset for model orientation + permanent rotation offset
+    this.targetRotationY = Math.atan2(direction.x, direction.z) - Math.PI / 2 + this.rotationOffsetY;
   }
 
   /**

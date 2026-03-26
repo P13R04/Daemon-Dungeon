@@ -21,9 +21,15 @@ import { DevConsole } from '../systems/DevConsole';
 import { PostProcessManager } from '../scene/PostProcess';
 import { TileFloorManager } from '../systems/TileFloorManager';
 import { RoomLayoutParser, RoomLayout, TileMappingLayout } from '../systems/RoomLayoutParser';
+import { ProceduralDungeonTheme } from '../systems/ProceduralDungeonTheme';
 import { ClassSelectScene } from '../scene/ClassSelectScene';
 import { MainMenuScene } from '../scene/MainMenuScene';
+import { CodexScene } from '../scene/CodexScene';
+import { BootSequenceScene } from '../scene/BootSequenceScene';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
+import { AchievementDefinition, CodexService } from '../services/CodexService';
+import { getMergedAchievementDefinitions } from '../data/achievements/loadAchievementDefinitions';
+import { BonusChoice, BonusPoolSystem } from '../systems/BonusPoolSystem';
 
 export class GameManager {
   private static instance: GameManager;
@@ -46,8 +52,12 @@ export class GameManager {
   private devConsole!: DevConsole;
   private postProcessManager!: PostProcessManager;
   private tileFloorManager!: TileFloorManager;
+  private bootScene?: BootSequenceScene;
   private mainMenuScene?: MainMenuScene;
   private classSelectScene?: ClassSelectScene;
+  private codexScene?: CodexScene;
+  private codexService: CodexService;
+  private audioUnlockHandler: (() => void) | null = null;
   
   private isRunning: boolean = false;
   private gameplayInitialized: boolean = false;
@@ -76,12 +86,46 @@ export class GameManager {
     timer: number;
     targetedEnemyIds: Set<string>;
   } | null = null;
+  private tankUltimateState: {
+    remaining: number;
+    radius: number;
+    damage: number;
+    stunDuration: number;
+    knockbackStrength: number;
+    tickInterval: number;
+    tickTimer: number;
+  } | null = null;
+  private readonly bonusPool: BonusPoolSystem = new BonusPoolSystem();
+  private currentBonusChoices: BonusChoice[] = [];
+  private currency: number = 0;
+  private currencyCarry: number = 0;
+  private roomElapsedSeconds: number = 0;
+  private bonusRerollCost: number = 40;
+  private consumableDamageStims: number = 0;
+  private consumableShieldPatches: number = 0;
+  private readonly shopCatalog: Array<{ id: string; label: string; cost: number }> = [
+    { id: 'shop_full_heal', label: 'Integrity Reboot', cost: 45 },
+    { id: 'shop_ult_refill', label: 'Ultimate Recompile', cost: 60 },
+    { id: 'shop_damage_stim', label: 'Dmg Stim (+70% / 5s)', cost: 35 },
+    { id: 'shop_shield_patch', label: 'Shield Patch (50% DR / 5s)', cost: 35 },
+  ];
 
   private constructor() {
     this.stateMachine = new StateMachine();
     this.eventBus = EventBus.getInstance();
     this.time = Time.getInstance();
     this.configLoader = ConfigLoader.getInstance();
+    this.codexService = new CodexService();
+
+    const achievementData = getMergedAchievementDefinitions();
+    const definitions: AchievementDefinition[] = Object.entries(achievementData as Record<string, any>).map(([id, value]) => ({
+      id,
+      name: value?.name ?? id,
+      description: value?.description ?? 'No description available.',
+      type: value?.type === 'incremental' ? 'incremental' : 'oneTime',
+      target: Number.isFinite(value?.target) ? value.target : 1,
+    }));
+    this.codexService.initializeAchievements(definitions);
   }
 
   static getInstance(): GameManager {
@@ -96,14 +140,22 @@ export class GameManager {
 
     // Initialize Babylon.js engine
     this.engine = new Engine(canvas, true);
+    this.setupGlobalAudioUnlock();
 
     // Load configurations
     await this.configLoader.loadAllConfigs();
 
+    const gameplayDebug = this.configLoader.getGameplay()?.debug;
+    this.codexService.setDevUnlockCodexEntries(!!gameplayDebug?.enabled);
+
     // Setup event listeners
     this.setupEventListeners();
 
-    await this.openMainMenuScene();
+    if (BootSequenceScene.shouldPlay()) {
+      await this.openBootSequenceScene();
+    } else {
+      await this.openMainMenuScene();
+    }
 
     // Start in menu scene
     this.gameState = 'menu';
@@ -114,10 +166,65 @@ export class GameManager {
     this.isRunning = true;
   }
 
+  private setupGlobalAudioUnlock(): void {
+    const audioEngine = Engine.audioEngine;
+    if (!audioEngine) return;
+
+    // Hide Babylon's default unmute button and handle unlock ourselves.
+    audioEngine.useCustomUnlockedButton = true;
+
+    const tryUnlock = () => {
+      try {
+        audioEngine.unlock();
+      } catch {
+        // Ignore and retry on next gesture.
+      }
+
+      const context = (audioEngine as any).audioContext as AudioContext | undefined;
+      if (context && context.state !== 'running') {
+        void context.resume().catch(() => {
+          // Ignore and retry on next gesture.
+        });
+      }
+
+      const unlocked = audioEngine.unlocked || context?.state === 'running';
+      if (unlocked && this.audioUnlockHandler) {
+        window.removeEventListener('pointerdown', this.audioUnlockHandler);
+        window.removeEventListener('keydown', this.audioUnlockHandler);
+        window.removeEventListener('touchstart', this.audioUnlockHandler);
+        this.audioUnlockHandler = null;
+      }
+    };
+
+    this.audioUnlockHandler = tryUnlock;
+    window.addEventListener('pointerdown', tryUnlock, { passive: true });
+    window.addEventListener('keydown', tryUnlock);
+    window.addEventListener('touchstart', tryUnlock, { passive: true });
+  }
+
+  private async openBootSequenceScene(): Promise<void> {
+    this.bootScene = new BootSequenceScene(this.engine, () => {
+      if (this.bootScene) {
+        this.bootScene.dispose();
+        this.bootScene = undefined;
+      }
+      void this.openMainMenuScene();
+    });
+    this.scene = this.bootScene.getScene();
+  }
+
   private async openMainMenuScene(): Promise<void> {
+    if (this.bootScene) {
+      this.bootScene.dispose();
+      this.bootScene = undefined;
+    }
     if (this.classSelectScene) {
       this.classSelectScene.dispose();
       this.classSelectScene = undefined;
+    }
+    if (this.codexScene) {
+      this.codexScene.dispose();
+      this.codexScene = undefined;
     }
     if (this.mainMenuScene) {
       this.mainMenuScene.dispose();
@@ -126,14 +233,51 @@ export class GameManager {
 
     this.mainMenuScene = new MainMenuScene(this.engine, () => {
       void this.openClassSelectScene();
+    }, () => {
+      void this.openCodexScene();
     });
     this.scene = this.mainMenuScene.getScene();
+  }
+
+  private async openCodexScene(): Promise<void> {
+    if (this.mainMenuScene) {
+      this.mainMenuScene.dispose();
+      this.mainMenuScene = undefined;
+    }
+    if (this.classSelectScene) {
+      this.classSelectScene.dispose();
+      this.classSelectScene = undefined;
+    }
+    if (this.codexScene) {
+      this.codexScene.dispose();
+      this.codexScene = undefined;
+    }
+
+    try {
+      this.codexScene = new CodexScene(
+        this.engine,
+        this.codexService,
+        this.configLoader.getEnemies() ?? {},
+        () => {
+          void this.openMainMenuScene();
+        }
+      );
+      this.scene = this.codexScene.getScene();
+      this.gameState = 'menu';
+    } catch (error) {
+      console.error('[GameManager] Failed to open Codex scene:', error);
+      await this.openMainMenuScene();
+    }
   }
 
   private async openClassSelectScene(): Promise<void> {
     if (this.mainMenuScene) {
       this.mainMenuScene.dispose();
       this.mainMenuScene = undefined;
+    }
+    if (this.codexScene) {
+      this.codexScene.dispose();
+      this.codexScene = undefined;
     }
     if (this.classSelectScene) {
       this.classSelectScene.dispose();
@@ -204,15 +348,23 @@ export class GameManager {
     this.eventListenersBound = true;
 
     this.eventBus.on(GameEvents.GAME_START_REQUESTED, (data) => {
+      this.tryUnlockAudioNow();
       const classId = data?.classId as ('mage' | 'firewall' | 'rogue' | undefined);
       if (classId) {
         this.selectedClassId = classId;
       }
+      this.codexService.startRunTracking();
       void this.startNewGame();
     });
 
     this.eventBus.on(GameEvents.GAME_RESTART_REQUESTED, () => {
+      this.tryUnlockAudioNow();
+      this.codexService.startRunTracking();
       void this.startNewGame();
+    });
+
+    this.eventBus.on(GameEvents.CODEX_OPEN_REQUESTED, () => {
+      void this.openCodexScene();
     });
 
     this.eventBus.on(GameEvents.ROOM_NEXT_REQUESTED, () => {
@@ -251,16 +403,46 @@ export class GameManager {
       if (!this.gameplayInitialized) return;
       const bonusId = data?.bonusId;
       if (bonusId) {
+        const applied = this.bonusPool.applyBonus(bonusId);
+        if (!applied.applied) {
+          this.hudManager.showBonusChoices(this.currentBonusChoices, this.currency, this.bonusRerollCost);
+          return;
+        }
+        void this.codexService.markBonusDiscovered(bonusId);
+        this.codexService.recordBonusCollected();
         this.applyBonus(bonusId);
         const nextIndex = (this.currentRoomIndex + 1) % this.roomOrder.length;
         this.startRoomTransition(nextIndex);
       }
     });
 
+    this.eventBus.on(GameEvents.BONUS_REROLL_REQUESTED, (data) => {
+      if (!this.gameplayInitialized) return;
+      if (this.gameState !== 'bonus') return;
+      const requestedCost = Number.isFinite(data?.cost) ? Number(data.cost) : this.bonusRerollCost;
+      this.tryRerollBonusChoices(requestedCost);
+    });
+
     this.eventBus.on(GameEvents.PLAYER_DIED, () => {
       if (!this.gameplayInitialized) return;
+      this.codexService.endRunTracking();
       this.gameState = 'gameover';
       this.hudManager.showGameOverScreen();
+    });
+
+    this.eventBus.on(GameEvents.ENEMY_SPAWNED, (data) => {
+      const enemyType = data?.enemyType;
+      if (typeof enemyType === 'string' && enemyType.length > 0) {
+        void this.codexService.markEnemyEncountered(enemyType);
+      }
+    });
+
+    this.eventBus.on(GameEvents.ENEMY_DIED, (data) => {
+      this.codexService.recordEnemyKilled();
+      const reward = this.computeEnemyKillReward(data?.enemyType);
+      if (reward > 0) {
+        this.addCurrency(reward);
+      }
     });
 
     this.eventBus.on(GameEvents.ATTACK_PERFORMED, (data) => {
@@ -295,12 +477,35 @@ export class GameManager {
     });
 
     this.eventBus.on(GameEvents.PLAYER_DAMAGED, () => {
+      this.codexService.recordPlayerDamaged();
       this.resetDaemonIdleTimer();
+    });
+
+    this.eventBus.on(GameEvents.ROOM_ENTERED, () => {
+      this.codexService.recordRoomReached(this.currentRoomIndex + 1);
     });
 
     this.eventBus.on(GameEvents.ENEMY_DAMAGED, () => {
       this.resetDaemonIdleTimer();
     });
+  }
+
+  private tryUnlockAudioNow(): void {
+    const audioEngine = Engine.audioEngine;
+    if (!audioEngine) return;
+
+    try {
+      audioEngine.unlock();
+    } catch {
+      // Ignore; global gesture listeners keep retrying.
+    }
+
+    const context = (audioEngine as any).audioContext as AudioContext | undefined;
+    if (context && context.state !== 'running') {
+      void context.resume().catch(() => {
+        // Ignore and let next gesture retry.
+      });
+    }
   }
 
   private registerStates(): void {
@@ -348,6 +553,9 @@ export class GameManager {
       if (this.gameplayInitialized && this.gameState === 'playing') {
         // Update all game systems
         const enemies = this.enemySpawner.getEnemies();
+        this.roomElapsedSeconds += deltaTime;
+        this.applyPassiveIncome(deltaTime);
+        this.updateConsumablesFromInput();
         this.playerController.setGameplayActive(true);
         this.playerController.setEnemiesPresent(enemies.length > 0);
         this.playerController.update(deltaTime);
@@ -432,6 +640,7 @@ export class GameManager {
         }
 
         this.updateRogueUltimate(deltaTime, enemies);
+        this.updateTankUltimate(deltaTime, enemies);
         
         // Update ultimate zones
         this.ultimateManager.update(deltaTime, enemies, this.playerController);
@@ -444,6 +653,8 @@ export class GameManager {
           this.playerController.isSecondaryActive(),
           this.playerController.getSecondaryActivationThreshold()
         );
+        this.hudManager.updateCurrency(this.currency);
+        this.hudManager.updateItemStatus(this.getConsumableStatusLabel());
 
         // Test voicelines (idle daemon taunts)
         this.updateDaemonIdleTest(deltaTime, enemies.length);
@@ -470,7 +681,8 @@ export class GameManager {
             const playerPos = this.playerController.getPosition();
             if (Vector3.Distance(playerPos, doorPos) < 1.2) {
               this.gameState = 'bonus';
-              this.hudManager.showBonusChoices(this.getBonusChoices());
+              this.currentBonusChoices = this.getBonusChoices();
+              this.hudManager.showBonusChoices(this.currentBonusChoices, this.currency, this.bonusRerollCost);
             }
           }
         }
@@ -484,6 +696,8 @@ export class GameManager {
           this.playerController.isSecondaryActive(),
           this.playerController.getSecondaryActivationThreshold()
         );
+        this.hudManager.updateCurrency(this.currency);
+        this.hudManager.updateItemStatus(this.getConsumableStatusLabel());
       }
 
       // Render scene
@@ -647,6 +861,13 @@ export class GameManager {
   }
 
   private dispose(): void {
+    if (this.audioUnlockHandler) {
+      window.removeEventListener('pointerdown', this.audioUnlockHandler);
+      window.removeEventListener('keydown', this.audioUnlockHandler);
+      window.removeEventListener('touchstart', this.audioUnlockHandler);
+      this.audioUnlockHandler = null;
+    }
+
     this.projectileManager?.dispose();
     this.ultimateManager?.dispose();
     this.hudManager?.dispose();
@@ -923,23 +1144,45 @@ export class GameManager {
       radius: number;
       damage: number;
       stunDuration: number;
-      pullStrength: number;
+      knockbackStrength: number;
+      tickInterval: number;
+      duration: number;
     },
     enemies: any[]
   ): void {
+    this.playerController.setTankUltimateActive(true);
+    this.tankUltimateState = {
+      remaining: ultimate.duration,
+      radius: ultimate.radius,
+      damage: ultimate.damage,
+      stunDuration: ultimate.stunDuration,
+      knockbackStrength: ultimate.knockbackStrength,
+      tickInterval: ultimate.tickInterval,
+      tickTimer: 0,
+    };
+
+    // Immediate first hit when ultimate starts.
+    this.applyTankUltimatePulse(enemies);
+  }
+
+  private applyTankUltimatePulse(enemies: any[]): void {
+    if (!this.tankUltimateState) return;
+
+    const center = this.playerController.getPosition();
     for (const enemy of enemies) {
       const enemyPos = enemy.getPosition();
-      const toEnemy = enemyPos.subtract(ultimate.position);
+      const toEnemy = enemyPos.subtract(center);
+      toEnemy.y = 0;
       const distance = toEnemy.length();
-      if (distance > ultimate.radius) continue;
+      if (distance > this.tankUltimateState.radius) continue;
 
-      enemy.takeDamage(ultimate.damage);
-      enemy.applyStun?.(ultimate.stunDuration);
+      enemy.takeDamage(this.tankUltimateState.damage);
+      enemy.applyStun?.(this.tankUltimateState.stunDuration);
 
-      const pullDir = ultimate.position.subtract(enemyPos);
-      if (pullDir.lengthSquared() > 0.0001) {
-        enemy.applyExternalKnockback(pullDir.normalize().scale(ultimate.pullStrength));
-      }
+      const outward = toEnemy.lengthSquared() > 0.0001
+        ? toEnemy.normalize()
+        : new Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
+      enemy.applyExternalKnockback(outward.scale(this.tankUltimateState.knockbackStrength));
     }
   }
 
@@ -1079,6 +1322,28 @@ export class GameManager {
     this.rogueUltimateState.timer = this.rogueUltimateState.teleportInterval;
   }
 
+  private updateTankUltimate(deltaTime: number, enemies: any[]): void {
+    if (!this.tankUltimateState) return;
+    if (this.playerController.getClassId() !== 'firewall') {
+      this.playerController.setTankUltimateActive(false);
+      this.tankUltimateState = null;
+      return;
+    }
+
+    this.tankUltimateState.tickTimer -= deltaTime;
+    if (this.tankUltimateState.tickTimer <= 0) {
+      this.applyTankUltimatePulse(enemies);
+      this.tankUltimateState.tickTimer = this.tankUltimateState.tickInterval;
+    }
+
+    this.tankUltimateState.remaining -= deltaTime;
+    if (this.tankUltimateState.remaining <= 0) {
+      this.playerController.setTankUltimateActive(false);
+      this.playerController.animationController.playUltimateEnd();
+      this.tankUltimateState = null;
+    }
+  }
+
   private async startNewGame(): Promise<void> {
     if (this.gameplayStartInProgress) return;
     this.gameplayStartInProgress = true;
@@ -1090,8 +1355,19 @@ export class GameManager {
       this.currentRoomIndex = 0;
       this.roomCleared = false;
       this.rogueUltimateState = null;
+      this.tankUltimateState = null;
+      this.bonusPool.resetRun();
+      this.currentBonusChoices = [];
+      this.currency = 0;
+      this.currencyCarry = 0;
+      this.roomElapsedSeconds = 0;
+      this.consumableDamageStims = 0;
+      this.consumableShieldPatches = 0;
       this.playerController.setRogueUltimateActive(false);
+      this.playerController.setTankUltimateActive(false);
       this.hudManager.hideOverlays();
+      this.hudManager.updateCurrency(this.currency);
+      this.hudManager.updateItemStatus(this.getConsumableStatusLabel());
       this.gameState = 'playing';
       this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex);
       this.loadRoomByIndex(this.currentRoomIndex);
@@ -1114,8 +1390,11 @@ export class GameManager {
     this.roomOrder = [roomId];
     this.currentRoomIndex = 0;
     this.roomCleared = false;
+    this.roomElapsedSeconds = 0;
     this.rogueUltimateState = null;
+    this.tankUltimateState = null;
     this.playerController.setRogueUltimateActive(false);
+    this.playerController.setTankUltimateActive(false);
     this.hudManager.hideOverlays();
     this.gameState = 'playing';
     this.preloadRoomsAround(0, 0);
@@ -1129,8 +1408,11 @@ export class GameManager {
     this.roomManager.setCurrentRoom(instanceKey);
     this.roomManager.setDoorActive(false);
     this.roomCleared = false;
+    this.roomElapsedSeconds = 0;
     this.rogueUltimateState = null;
+    this.tankUltimateState = null;
     this.playerController.setRogueUltimateActive(false);
+    this.playerController.setTankUltimateActive(false);
 
     const roomBounds = this.roomManager.getRoomBounds();
     if (roomBounds) {
@@ -1180,6 +1462,7 @@ export class GameManager {
       const roomId = this.roomOrder[idx];
       const origin = new Vector3(0, 0, idx * this.roomSpacing);
       const instanceKey = `${roomId}::${idx}`;
+      this.roomManager.setRenderProfile(this.getRenderProfileForRoom(roomId));
       this.roomManager.loadRoomInstance(roomId, instanceKey, origin);
     }
     const currentRoomId = this.roomOrder[activeIndex];
@@ -1240,12 +1523,8 @@ export class GameManager {
     }
   }
 
-  private getBonusChoices(): Array<{ id: string; label: string }> {
-    return [
-      { id: 'bonus_hp', label: 'HP +10%' },
-      { id: 'bonus_ms', label: 'Move Speed +10%' },
-      { id: 'bonus_poison', label: 'Poison: 20% DMG over 2s' },
-    ];
+  private getBonusChoices(): BonusChoice[] {
+    return this.bonusPool.rollChoices(this.selectedClassId, this.bonusPool.getOfferCount());
   }
 
   private applyBonus(bonusId: string): void {
@@ -1259,7 +1538,98 @@ export class GameManager {
       case 'bonus_poison':
         this.playerController.enablePoisonBonus(0.2, 2.0);
         break;
+      case 'bonus_fire_rate':
+        this.playerController.applyFireRateMultiplier(1.12);
+        break;
+      case 'meta_offer_slot':
+      case 'meta_bounty_index':
+      case 'meta_background_miner':
+      case 'meta_lucky_compile':
+        // Meta bonuses are handled dynamically by BonusPoolSystem getters.
+        break;
+      default:
+        // Placeholder class-dependent bonuses are intentionally no-op for now.
+        break;
     }
+  }
+
+  private computeEnemyKillReward(enemyType?: string): number {
+    const enemies = this.configLoader.getEnemies() ?? {};
+    const enemyConfig = typeof enemyType === 'string' ? enemies[enemyType] : null;
+    const hp = Number(enemyConfig?.baseStats?.hp ?? 40);
+    const damage = Number(enemyConfig?.baseStats?.damage ?? 8);
+    const speed = Number(enemyConfig?.baseStats?.speed ?? 2.5);
+    const cooldown = Number(enemyConfig?.baseStats?.attackCooldown ?? 1.0);
+
+    const threatScore = (hp * 0.05) + (damage * 0.18) + (speed * 1.2) + (1 / Math.max(0.2, cooldown));
+    const baseReward = Math.max(1, Math.round(2 + threatScore));
+
+    const decayMultiplier = Math.max(0.35, 1.25 - (this.roomElapsedSeconds * 0.015));
+    const economyMultiplier = this.bonusPool.getCurrencyMultiplier();
+    return Math.max(1, Math.floor(baseReward * decayMultiplier * economyMultiplier));
+  }
+
+  private addCurrency(amount: number): void {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    this.currency += Math.floor(amount);
+    this.hudManager.updateCurrency(this.currency);
+  }
+
+  private addCurrencyFraction(amount: number): void {
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    this.currencyCarry += amount;
+    const gained = Math.floor(this.currencyCarry);
+    if (gained <= 0) return;
+    this.currencyCarry -= gained;
+    this.addCurrency(gained);
+  }
+
+  private applyPassiveIncome(deltaTime: number): void {
+    const passiveIncome = this.bonusPool.getPassiveIncomePerSecond();
+    if (passiveIncome <= 0) return;
+    this.addCurrencyFraction(passiveIncome * deltaTime);
+  }
+
+  private trySpendCurrency(cost: number): boolean {
+    const safeCost = Math.max(0, Math.floor(cost));
+    if (this.currency < safeCost) return false;
+    this.currency -= safeCost;
+    this.hudManager.updateCurrency(this.currency);
+    return true;
+  }
+
+  private tryRerollBonusChoices(cost: number): void {
+    const safeCost = Math.max(0, Math.floor(cost));
+    if (!this.trySpendCurrency(safeCost)) {
+      this.hudManager.showBonusChoices(this.currentBonusChoices, this.currency, this.bonusRerollCost);
+      return;
+    }
+    this.currentBonusChoices = this.getBonusChoices();
+    this.hudManager.showBonusChoices(this.currentBonusChoices, this.currency, this.bonusRerollCost);
+  }
+
+  private updateConsumablesFromInput(): void {
+    if (this.inputManager.isKeyPressedThisFrame('1') && this.consumableDamageStims > 0) {
+      this.consumableDamageStims -= 1;
+      this.playerController.activateDamageBoost(1.7, 5.0);
+    }
+    if (this.inputManager.isKeyPressedThisFrame('2') && this.consumableShieldPatches > 0) {
+      this.consumableShieldPatches -= 1;
+      this.playerController.activateDamageReduction(0.5, 5.0);
+    }
+  }
+
+  private getConsumableStatusLabel(): string {
+    const damage = this.playerController.getDamageBoostState();
+    const shield = this.playerController.getDamageReductionState();
+
+    const charges = `DMGx${this.consumableDamageStims} SHDx${this.consumableShieldPatches}`;
+    const active: string[] = [];
+    if (damage.active) active.push(`DMG ${damage.remaining.toFixed(1)}s`);
+    if (shield.active) active.push(`SHD ${shield.remaining.toFixed(1)}s`);
+
+    if (active.length === 0) return charges;
+    return `${charges} | ${active.join(' | ')}`;
   }
 
   getScene(): Scene {
@@ -1287,6 +1657,8 @@ export class GameManager {
   }
 
   private async loadTilesForRoom(roomId: string): Promise<void> {
+    this.tileFloorManager.setRenderProfile(this.getRenderProfileForRoom(roomId));
+
     const room = this.configLoader.getRoom(roomId);
     if (!room) {
       console.warn(`Room ${roomId} not found in config`);
@@ -1324,8 +1696,13 @@ export class GameManager {
   }
 
   private loadTilesForLayout(layout: RoomLayout, origin: Vector3): void {
+    this.tileFloorManager.setRenderProfile('classic');
     this.tileFloorManager.clearFloor();
     this.tileFloorManager.loadRoomFloor(layout, origin);
+  }
+
+  private getRenderProfileForRoom(roomId: string): 'classic' | 'neoDungeonTest' {
+    return ProceduralDungeonTheme.isNeoTestRoom(roomId) ? 'neoDungeonTest' : 'classic';
   }
 
   public loadRoomFromTileMappingJson(jsonPayload: string): void {
@@ -1370,11 +1747,13 @@ export class GameManager {
     this.roomOrder = [roomId];
     this.currentRoomIndex = 0;
     this.roomCleared = true;
+    this.roomElapsedSeconds = 0;
     this.hudManager.hideOverlays();
     this.gameState = 'playing';
 
     this.roomManager.clearAllRooms();
     this.roomManager.setFloorRenderingEnabled(!this.tilesEnabled);
+    this.roomManager.setRenderProfile(this.getRenderProfileForRoom(roomId));
     const origin = new Vector3(0, 0, 0);
     const instanceKey = `${roomId}::0`;
     this.roomManager.loadRoomFromConfig(roomConfig, instanceKey, origin, true);

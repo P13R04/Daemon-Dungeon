@@ -8,7 +8,8 @@
  * - Supports: floor_base, floor_var1, floor_var2, poison, void, walls (3D only)
  */
 
-import { Scene, StandardMaterial, Texture, Mesh, MeshBuilder, Vector3, Color3 } from '@babylonjs/core';
+import { Scene, StandardMaterial, Texture, Mesh, MeshBuilder, Vector3, Color3, ShaderMaterial } from '@babylonjs/core';
+import { ProceduralDungeonTheme } from './ProceduralDungeonTheme';
 
 export type TileType =
   | 'floor'
@@ -29,6 +30,8 @@ export interface TileData {
     west?: boolean;
   };
 }
+
+export type TileRenderProfile = 'classic' | 'neoDungeonTest';
 
 interface TileRenderData {
   texturePath: string | null;
@@ -62,6 +65,9 @@ export class TileSystem {
   private spikesCycleTimer: number = 1.0;
   private readonly spikesActiveDuration: number = 1.0;
   private readonly spikesInactiveDuration: number = 1.0;
+  private renderProfile: TileRenderProfile = 'classic';
+  private poisonShaderMaterials: Set<ShaderMaterial> = new Set();
+  private poisonShaderTime: number = 0;
 
   constructor(scene: Scene, tileSize: number = 1) {
     this.scene = scene;
@@ -79,6 +85,10 @@ export class TileSystem {
 
   setOrigin(origin: Vector3): void {
     this.origin = origin.clone();
+  }
+
+  setRenderProfile(profile: TileRenderProfile): void {
+    this.renderProfile = profile;
   }
 
   private getAdjacencies(x: number, z: number, grid: Map<string, TileData>) {
@@ -112,6 +122,34 @@ export class TileSystem {
     if (this.isMatch(neighbors.e?.type ?? null, matchType)) mask |= 2;
     if (this.isMatch(neighbors.s?.type ?? null, matchType)) mask |= 4;
     if (this.isMatch(neighbors.w?.type ?? null, matchType)) mask |= 8;
+    return mask;
+  }
+
+  private maskFromTypes(neighbors: ReturnType<typeof this.getAdjacencies>, types: TileType[]): number {
+    let mask = 0;
+    const north = neighbors.n?.type ?? null;
+    const east = neighbors.e?.type ?? null;
+    const south = neighbors.s?.type ?? null;
+    const west = neighbors.w?.type ?? null;
+
+    if (north && types.includes(north)) mask |= 1;
+    if (east && types.includes(east)) mask |= 2;
+    if (south && types.includes(south)) mask |= 4;
+    if (west && types.includes(west)) mask |= 8;
+    return mask;
+  }
+
+  private diagMaskFromTypes(neighbors: ReturnType<typeof this.getAdjacencies>, types: TileType[]): number {
+    let mask = 0;
+    const nw = neighbors.nw?.type ?? null;
+    const ne = neighbors.ne?.type ?? null;
+    const se = neighbors.se?.type ?? null;
+    const sw = neighbors.sw?.type ?? null;
+
+    if (nw && types.includes(nw)) mask |= 1;
+    if (ne && types.includes(ne)) mask |= 2;
+    if (se && types.includes(se)) mask |= 4;
+    if (sw && types.includes(sw)) mask |= 8;
     return mask;
   }
 
@@ -477,7 +515,7 @@ export class TileSystem {
       return this.tileMeshes.get(key)!;
     }
 
-    if (tile.type === 'wall' || tile.type === 'pillar') {
+    if (tile.type === 'wall' || tile.type === 'pillar' || tile.type === 'void') {
       return null;
     }
 
@@ -495,12 +533,34 @@ export class TileSystem {
 
     const renderData = this.getTileRenderData(tile, this.getAdjacencies(tile.x, tile.z, this.tileGrid));
 
-    const resolvedPath = this.resolveTexturePath(renderData.texturePath);
-    if (resolvedPath) {
-      const material = new StandardMaterial('tile_mat_' + key, this.scene);
-      material.diffuseTexture = this.getTexture(resolvedPath);
-      material.emissiveColor.set(0, 0, 0);
-      tileMesh.material = material;
+    const adjacencies = this.getAdjacencies(tile.x, tile.z, this.tileGrid);
+    if (this.renderProfile === 'neoDungeonTest' && tile.type === 'floor') {
+      tileMesh.material = ProceduralDungeonTheme.createFloorMaterial(
+        this.scene,
+        key,
+        tile.x,
+        tile.z,
+        {
+          wallMask: this.maskFromTypes(adjacencies, ['wall', 'pillar']),
+          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall', 'pillar']),
+          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+          voidMask: this.maskFromTypes(adjacencies, ['void']),
+          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+        }
+      );
+    } else if (this.renderProfile === 'neoDungeonTest' && tile.type === 'poison') {
+      const poisonMat = ProceduralDungeonTheme.createPoisonShaderMaterial(this.scene, key);
+      tileMesh.material = poisonMat;
+      this.poisonShaderMaterials.add(poisonMat);
+    } else {
+      const resolvedPath = this.resolveTexturePath(renderData.texturePath);
+      if (resolvedPath) {
+        const material = new StandardMaterial('tile_mat_' + key, this.scene);
+        material.diffuseTexture = this.getTexture(resolvedPath);
+        material.emissiveColor.set(0, 0, 0);
+        tileMesh.material = material;
+      }
     }
 
     if (tile.type === 'spikes') {
@@ -525,11 +585,37 @@ export class TileSystem {
 
     if (!tile || !mesh || !mesh.material) return;
 
-    const renderData = this.getTileRenderData(tile, this.getAdjacencies(x, z, this.tileGrid));
-    const resolvedPath = this.resolveTexturePath(renderData.texturePath);
-    if (!resolvedPath) return;
-    
-    (mesh.material as StandardMaterial).diffuseTexture = this.getTexture(resolvedPath);
+    const adjacencies = this.getAdjacencies(x, z, this.tileGrid);
+    const renderData = this.getTileRenderData(tile, adjacencies);
+
+    if (this.renderProfile === 'neoDungeonTest' && tile.type === 'floor') {
+      mesh.material?.dispose();
+      mesh.material = ProceduralDungeonTheme.createFloorMaterial(
+        this.scene,
+        key,
+        tile.x,
+        tile.z,
+        {
+          wallMask: this.maskFromTypes(adjacencies, ['wall', 'pillar']),
+          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall', 'pillar']),
+          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+          voidMask: this.maskFromTypes(adjacencies, ['void']),
+          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+        }
+      );
+    } else if (this.renderProfile === 'neoDungeonTest' && tile.type === 'poison') {
+      if (!(mesh.material instanceof ShaderMaterial)) {
+        mesh.material?.dispose();
+        const poisonMat = ProceduralDungeonTheme.createPoisonShaderMaterial(this.scene, key);
+        mesh.material = poisonMat;
+        this.poisonShaderMaterials.add(poisonMat);
+      }
+    } else {
+      const resolvedPath = this.resolveTexturePath(renderData.texturePath);
+      if (!resolvedPath) return;
+      (mesh.material as StandardMaterial).diffuseTexture = this.getTexture(resolvedPath);
+    }
     
     const rotationRadians = ((renderData.rotationDegrees + this.rotationOffsetDegrees) * Math.PI) / 180;
     mesh.rotation = new Vector3(0, rotationRadians, 0);
@@ -546,6 +632,7 @@ export class TileSystem {
   clearTiles(): void {
     this.clearSpikeMeshes();
     this.clearPoisonParticles();
+    this.poisonShaderMaterials.clear();
     this.tileMeshes.forEach(mesh => {
       if (mesh) mesh.dispose();
     });
@@ -565,6 +652,13 @@ export class TileSystem {
 
   update(deltaTime: number): void {
     this.updatePoisonParticles(deltaTime);
+
+    if (this.poisonShaderMaterials.size > 0) {
+      this.poisonShaderTime += deltaTime;
+      for (const material of this.poisonShaderMaterials) {
+        material.setFloat('time', this.poisonShaderTime);
+      }
+    }
 
     this.spikesCycleTimer -= deltaTime;
     if (this.spikesCycleTimer > 0) return;
