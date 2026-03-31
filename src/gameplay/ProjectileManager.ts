@@ -16,6 +16,9 @@ interface ProjectileData {
   range: number;
   distanceTraveled: number;
   friendly: boolean;
+  maxBounces: number;
+  remainingBounces: number;
+  bounceDamping: number;
   projectileType?: string;
   splitConfig?: {
     count: number;
@@ -161,6 +164,8 @@ export class ProjectileManager {
         impactDuration?: number;
         finalDuration?: number;
       };
+      maxBounces?: number;
+      bounceDamping?: number;
     }) => {
       if (!payload) return;
       this.spawnProjectile(
@@ -171,7 +176,9 @@ export class ProjectileManager {
         payload.range,
         payload.friendly,
         payload.projectileType,
-        payload.splitConfig
+        payload.splitConfig,
+        payload.maxBounces,
+        payload.bounceDamping
       );
     });
   }
@@ -198,9 +205,12 @@ export class ProjectileManager {
       travelSpeed?: number;
       impactDuration?: number;
       finalDuration?: number;
-    }
+    },
+    maxBounces: number = 0,
+    bounceDamping: number = 1
   ): void {
     const projectile = this.projectilePool.get();
+    const safeBounces = Math.max(0, Math.floor(maxBounces));
     projectile.setData({
       position: position.clone(),
       direction: direction.normalize(),
@@ -208,6 +218,9 @@ export class ProjectileManager {
       speed,
       range,
       friendly,
+      maxBounces: safeBounces,
+      remainingBounces: safeBounces,
+      bounceDamping: Math.max(0.4, Math.min(1, bounceDamping)),
       projectileType,
       splitConfig,
     });
@@ -297,7 +310,7 @@ export class ProjectileManager {
         const hitObstacle = this.segmentHitsObstacle(prevPos, nextPos, obstacles);
         const hitBlockedTile = this.segmentHitsBlockedTile(prevPos, nextPos, roomManager);
 
-        if (hitObstacle || hitBlockedTile || !roomManager.isWalkable(nextPos.x, nextPos.z)) {
+        if (hitObstacle || hitBlockedTile || !this.isProjectileTilePassableAt(nextPos.x, nextPos.z, roomManager)) {
           const blockedPoint = this.findFirstBlockedPointOnSegment(prevPos, nextPos, roomManager, obstacles);
           const impactPos = this.resolveImpactPosition(blockedPoint, toTarget.normalize(), roomManager);
 
@@ -361,8 +374,21 @@ export class ProjectileManager {
         const hitObstacle = this.segmentHitsObstacle(startPos, pos, obstacles);
         const hitBlockedTile = this.segmentHitsBlockedTile(startPos, pos, roomManager);
 
-        if (!roomManager.isWalkable(pos.x, pos.z) || hitObstacle || hitBlockedTile) {
+        if (!this.isProjectileTilePassableAt(pos.x, pos.z, roomManager) || hitObstacle || hitBlockedTile) {
           const blockedPoint = this.findFirstBlockedPointOnSegment(startPos, pos, roomManager, obstacles);
+          if (projectile.data.remainingBounces > 0) {
+            const normal = this.computeBounceNormal(startPos, blockedPoint, projectile.data.direction, roomManager, obstacles);
+            if (normal.lengthSquared() > 0.0001) {
+              projectile.data.remainingBounces -= 1;
+              projectile.data.direction = this.reflectDirection(projectile.data.direction, normal);
+              projectile.data.speed = Math.max(0.1, projectile.data.speed * projectile.data.bounceDamping);
+              projectile.data.position = this.resolveImpactPosition(blockedPoint, projectile.data.direction, roomManager);
+              if (projectile.mesh) {
+                projectile.mesh.position.copyFrom(projectile.data.position);
+              }
+              continue;
+            }
+          }
           const impactPos = this.resolveImpactPosition(blockedPoint, projectile.data.direction, roomManager);
           this.applyImpactAoeToPlayer(projectile, impactPos, player);
           this.handleProjectileImpact(projectile, impactPos.clone(), roomManager);
@@ -566,13 +592,13 @@ export class ProjectileManager {
   }
 
   private resolveImpactPosition(position: Vector3, direction: Vector3, roomManager: RoomManager): Vector3 {
-    if (roomManager.isWalkable(position.x, position.z)) return position.clone();
+    if (this.isProjectileTilePassableAt(position.x, position.z, roomManager)) return position.clone();
 
     const back = direction.normalize().scale(-1);
     const step = 0.06;
     for (let d = step; d <= 1.2; d += step) {
       const candidate = position.add(back.scale(d));
-      if (roomManager.isWalkable(candidate.x, candidate.z)) {
+      if (this.isProjectileTilePassableAt(candidate.x, candidate.z, roomManager)) {
         return candidate;
       }
     }
@@ -588,13 +614,13 @@ export class ProjectileManager {
   private isLineWalkable(start: Vector3, end: Vector3, roomManager: RoomManager): boolean {
     const delta = end.subtract(start);
     const length = delta.length();
-    if (length <= 0.001) return roomManager.isWalkable(start.x, start.z);
+    if (length <= 0.001) return this.isVisionPassableAt(start.x, start.z, roomManager);
     const dir = delta.scale(1 / length);
     const step = 0.08;
     const obstacles = roomManager.getObstacleBounds();
     for (let d = 0; d <= length; d += step) {
       const sample = start.add(dir.scale(d));
-      if (!roomManager.isWalkable(sample.x, sample.z) || this.isInsideObstacle(sample, obstacles)) {
+      if (!this.isVisionPassableAt(sample.x, sample.z, roomManager) || this.isInsideObstacle(sample, obstacles)) {
         return false;
       }
     }
@@ -638,16 +664,16 @@ export class ProjectileManager {
     const delta = target.subtract(origin);
     const length = delta.length();
     if (length <= 0.001) {
-      return roomManager.isWalkable(origin.x, origin.z) ? origin.clone() : null;
+      return this.isProjectileTilePassableAt(origin.x, origin.z, roomManager) ? origin.clone() : null;
     }
 
     const dir = delta.scale(1 / length);
     const step = 0.06;
-    let lastWalkable: Vector3 | null = roomManager.isWalkable(origin.x, origin.z) ? origin.clone() : null;
+    let lastWalkable: Vector3 | null = this.isProjectileTilePassableAt(origin.x, origin.z, roomManager) ? origin.clone() : null;
 
     for (let d = step; d <= length; d += step) {
       const sample = origin.add(dir.scale(d));
-      if (!roomManager.isWalkable(sample.x, sample.z)) {
+      if (!this.isProjectileTilePassableAt(sample.x, sample.z, roomManager)) {
         break;
       }
       lastWalkable = sample;
@@ -671,17 +697,85 @@ export class ProjectileManager {
     return Vector3.Distance(closest, center) <= radius ? closest : null;
   }
 
+  private reflectDirection(direction: Vector3, normal: Vector3): Vector3 {
+    const normalizedDirection = direction.normalize();
+    const normalizedNormal = normal.normalize();
+    const dot = Vector3.Dot(normalizedDirection, normalizedNormal);
+    return normalizedDirection.subtract(normalizedNormal.scale(2 * dot)).normalize();
+  }
+
+  private computeBounceNormal(
+    start: Vector3,
+    impactPoint: Vector3,
+    direction: Vector3,
+    roomManager: RoomManager,
+    obstacles: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }>
+  ): Vector3 {
+    const physicsNormal = roomManager.getPhysicsBounceNormal(start, impactPoint);
+    if (physicsNormal && physicsNormal.lengthSquared() > 0.0001) {
+      return physicsNormal;
+    }
+
+    const obstacleNormal = this.computeObstacleNormal(impactPoint, obstacles);
+    if (obstacleNormal.lengthSquared() > 0.0001) {
+      return obstacleNormal;
+    }
+
+    const sampleStep = 0.12;
+    const leftWalkable = roomManager.isWalkable(impactPoint.x - sampleStep, impactPoint.z);
+    const rightWalkable = roomManager.isWalkable(impactPoint.x + sampleStep, impactPoint.z);
+    const bottomWalkable = roomManager.isWalkable(impactPoint.x, impactPoint.z - sampleStep);
+    const topWalkable = roomManager.isWalkable(impactPoint.x, impactPoint.z + sampleStep);
+
+    if (leftWalkable && !rightWalkable) return new Vector3(-1, 0, 0);
+    if (rightWalkable && !leftWalkable) return new Vector3(1, 0, 0);
+    if (bottomWalkable && !topWalkable) return new Vector3(0, 0, -1);
+    if (topWalkable && !bottomWalkable) return new Vector3(0, 0, 1);
+
+    const travel = impactPoint.subtract(start);
+    if (Math.abs(travel.x) >= Math.abs(travel.z)) {
+      const nx = travel.x >= 0 ? -1 : 1;
+      return new Vector3(nx, 0, 0);
+    }
+    const nz = travel.z >= 0 ? -1 : 1;
+    return new Vector3(0, 0, nz);
+  }
+
+  private computeObstacleNormal(
+    point: Vector3,
+    obstacles: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }>
+  ): Vector3 {
+    for (const obstacle of obstacles) {
+      if (point.x < obstacle.minX || point.x > obstacle.maxX || point.z < obstacle.minZ || point.z > obstacle.maxZ) {
+        continue;
+      }
+
+      const distLeft = Math.abs(point.x - obstacle.minX);
+      const distRight = Math.abs(obstacle.maxX - point.x);
+      const distBottom = Math.abs(point.z - obstacle.minZ);
+      const distTop = Math.abs(obstacle.maxZ - point.z);
+      const min = Math.min(distLeft, distRight, distBottom, distTop);
+
+      if (min === distLeft) return new Vector3(-1, 0, 0);
+      if (min === distRight) return new Vector3(1, 0, 0);
+      if (min === distBottom) return new Vector3(0, 0, -1);
+      return new Vector3(0, 0, 1);
+    }
+
+    return Vector3.Zero();
+  }
+
   private segmentHitsBlockedTile(start: Vector3, end: Vector3, roomManager: RoomManager): boolean {
     const delta = end.subtract(start);
     const length = delta.length();
-    if (length <= 0.001) return !roomManager.isWalkable(end.x, end.z);
+    if (length <= 0.001) return !this.isProjectileTilePassableAt(end.x, end.z, roomManager);
     const dir = delta.scale(1 / length);
     const step = 0.06;
     const startOffset = Math.min(step, Math.max(0.01, length * 0.2));
 
     for (let d = startOffset; d <= length; d += step) {
       const sample = start.add(dir.scale(d));
-      if (!roomManager.isWalkable(sample.x, sample.z)) {
+      if (!this.isProjectileTilePassableAt(sample.x, sample.z, roomManager)) {
         return true;
       }
     }
@@ -720,7 +814,7 @@ export class ProjectileManager {
 
     for (let d = startOffset; d <= length; d += step) {
       const sample = start.add(dir.scale(d));
-      if (!roomManager.isWalkable(sample.x, sample.z) || this.isInsideObstacle(sample, obstacles)) {
+      if (!this.isProjectileTilePassableAt(sample.x, sample.z, roomManager) || this.isInsideObstacle(sample, obstacles)) {
         return sample;
       }
     }
@@ -729,6 +823,15 @@ export class ProjectileManager {
 
   private isInsideObstacle(point: Vector3, obstacles: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }>): boolean {
     return obstacles.some(ob => point.x >= ob.minX && point.x <= ob.maxX && point.z >= ob.minZ && point.z <= ob.maxZ);
+  }
+
+  private isProjectileTilePassableAt(x: number, z: number, roomManager: RoomManager): boolean {
+    const tileType = roomManager.getTileTypeAtWorld(x, z);
+    return tileType !== 'wall' && tileType !== 'out';
+  }
+
+  private isVisionPassableAt(x: number, z: number, roomManager: RoomManager): boolean {
+    return this.isProjectileTilePassableAt(x, z, roomManager);
   }
 
   private isDiscClearAt(

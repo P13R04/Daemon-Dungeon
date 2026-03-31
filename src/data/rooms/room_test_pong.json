@@ -27,14 +27,14 @@
       "y": 7,
       "width": 1,
       "height": 1,
-      "type": "pillar"
+      "type": "wall"
     },
     {
       "x": 8,
       "y": 4,
       "width": 1,
       "height": 1,
-      "type": "pillar"
+      "type": "wall"
     }
   ]
 }

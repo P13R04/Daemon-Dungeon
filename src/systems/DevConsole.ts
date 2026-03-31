@@ -33,6 +33,8 @@ export class DevConsole {
   private voicelineSelectLabel: TextBlock | null = null;
   private gameManager: any;
   private devScrollViewer?: ScrollViewer;
+  private devPanelBackground: Rectangle | null = null;
+  private devPanelContent: StackPanel | null = null;
   private devScrollWheelObserver: any;
   private lastValidDevScrollValue: number = 0;
 
@@ -73,10 +75,21 @@ export class DevConsole {
   private applyGuiScaling(): void {
     const engine = this.scene.getEngine();
     const scaling = engine.getHardwareScalingLevel();
+    const scaledWidth = engine.getRenderWidth(true) * scaling;
     this.gui.renderAtIdealSize = true;
-    this.gui.idealWidth = engine.getRenderWidth(true) * scaling;
+    this.gui.idealWidth = scaledWidth;
     this.gui.idealHeight = engine.getRenderHeight(true) * scaling;
     this.gui.renderScale = 1;
+
+    if (this.devPanelBackground && this.devPanelContent) {
+      const maxPanelWidth = 520;
+      const minPanelWidth = 240;
+      const panelWidth = Math.min(maxPanelWidth, Math.max(minPanelWidth, Math.floor(scaledWidth - 20)));
+      const contentWidth = Math.max(300, panelWidth - 40);
+      this.devPanelBackground.width = `${panelWidth}px`;
+      this.devPanelContent.width = `${contentWidth}px`;
+      this.devPanelBackground.left = '10px';
+    }
   }
 
   setPlayer(player: PlayerController): void {
@@ -98,6 +111,7 @@ export class DevConsole {
     bgPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     bgPanel.zIndex = 1000;
     this.gui.addControl(bgPanel);
+    this.devPanelBackground = bgPanel;
 
     const scroll = new ScrollViewer('devConsoleScroll');
     this.devScrollViewer = scroll;
@@ -164,6 +178,7 @@ export class DevConsole {
     panel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     panel.top = '30px';
     scroll.addControl(panel);
+    this.devPanelContent = panel;
 
     // Title
     const title = new TextBlock('devTitle');
@@ -869,13 +884,56 @@ export class DevConsole {
     tileStatsLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     parent.addControl(tileStatsLabel);
 
+    const renderModeBtn = Button.CreateSimpleButton('renderModeBtn', 'TEXTURE MODE: PROCEDURAL RELIEF');
+    renderModeBtn.width = '410px';
+    renderModeBtn.height = '30px';
+    renderModeBtn.color = '#FFFFFF';
+    renderModeBtn.background = '#1B3D1B';
+    renderModeBtn.thickness = 1;
+    renderModeBtn.top = '4px';
+    renderModeBtn.onPointerUpObservable.add(() => {
+      const currentMode = this.gameManager.getTextureRenderMode?.() ?? 'proceduralRelief';
+      const nextMode = currentMode === 'proceduralRelief' ? 'classic' : 'proceduralRelief';
+      this.gameManager.setTextureRenderMode?.(nextMode);
+      const activeMode = this.gameManager.getTextureRenderMode?.() ?? nextMode;
+      const isProcedural = activeMode === 'proceduralRelief';
+      renderModeBtn.textBlock!.text = `TEXTURE MODE: ${isProcedural ? 'PROCEDURAL RELIEF' : 'CLASSIC'}`;
+      renderModeBtn.background = isProcedural ? '#1B3D1B' : '#3D2A1B';
+    });
+    parent.addControl(renderModeBtn);
+
+    const qualityBtn = Button.CreateSimpleButton('reliefQualityBtn', 'RELIEF QUALITY: LOW');
+    qualityBtn.width = '410px';
+    qualityBtn.height = '30px';
+    qualityBtn.color = '#FFFFFF';
+    qualityBtn.background = '#1B2C3D';
+    qualityBtn.thickness = 1;
+    qualityBtn.top = '4px';
+    qualityBtn.onPointerUpObservable.add(() => {
+      const current = this.gameManager.getProceduralQuality?.() ?? 'low';
+      const next = current === 'low' ? 'medium' : current === 'medium' ? 'high' : 'low';
+      this.gameManager.setProceduralQuality?.(next);
+      const active = this.gameManager.getProceduralQuality?.() ?? next;
+      qualityBtn.textBlock!.text = `RELIEF QUALITY: ${String(active).toUpperCase()}`;
+    });
+    parent.addControl(qualityBtn);
+
     // Update tile stats regularly
     this.scene.onBeforeRenderObservable.add(() => {
+      const activeMode = this.gameManager.getTextureRenderMode?.() ?? 'proceduralRelief';
+      const isProcedural = activeMode === 'proceduralRelief';
+      const activeQuality = this.gameManager.getProceduralQuality?.() ?? 'low';
+      renderModeBtn.textBlock!.text = `TEXTURE MODE: ${isProcedural ? 'PROCEDURAL RELIEF' : 'CLASSIC'}`;
+      renderModeBtn.background = isProcedural ? '#1B3D1B' : '#3D2A1B';
+      qualityBtn.textBlock!.text = `RELIEF QUALITY: ${String(activeQuality).toUpperCase()}`;
+      qualityBtn.isEnabled = isProcedural;
+      qualityBtn.alpha = isProcedural ? 1 : 0.55;
+
       if (this.gameManager.isUsingTiles()) {
         const stats = this.gameManager.getTileStatistics();
-        tileStatsLabel.text = `Tiles: Enabled (${stats.totalTiles} tiles)`;
+        tileStatsLabel.text = `Tiles: Enabled (${stats.totalTiles} tiles) | Mode: ${isProcedural ? 'Procedural Relief' : 'Classic'}`;
       } else {
-        tileStatsLabel.text = 'Tiles: Disabled';
+        tileStatsLabel.text = `Tiles: Disabled | Mode: ${isProcedural ? 'Procedural Relief' : 'Classic'}`;
       }
     });
   }

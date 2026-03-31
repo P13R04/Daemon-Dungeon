@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Daemon Voice Lab</title>
+  <link rel="stylesheet" href="/daemon-voice-lab.bundle.css" />
+</head>
+<body>
+  <div class="lab-shell">
+    <aside class="lab-controls">
+      <header class="lab-header">
+        <h1>Daemon Voice Lab</h1>
+        <p>Standalone testbed for meSpeak voice synthesis, popup animation, and robotic post-FX.</p>
+      </header>
+
+      <section class="control-card">
+        <h2>Message</h2>
+        <div class="field-grid">
+          <label>
+            <span>Language</span>
+            <select id="language">
+              <option value="en" selected>English</option>
+              <option value="fr">French (future-ready)</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Source</span>
+            <select id="sourceType">
+              <option value="custom" selected>Custom text</option>
+              <option value="library">Library line</option>
+              <option value="voiceline">Existing voiceline config</option>
+            </select>
+          </label>
+
+          <label class="span-2" id="libraryLineWrap">
+            <span>Library line</span>
+            <select id="libraryLine"></select>
+          </label>
+
+          <label class="span-2" id="voicelineWrap">
+            <span>Existing voiceline</span>
+            <select id="voicelineId"></select>
+          </label>
+
+          <label class="span-2">
+            <span>Text</span>
+            <textarea id="messageInput" rows="4">You survived by accident. I am impressed and disappointed.</textarea>
+          </label>
+        </div>
+      </section>
+
+      <section class="control-card">
+        <h2>Animation + Popup</h2>
+        <div class="field-grid">
+          <label class="checkbox-row span-2">
+            <input type="checkbox" id="useVoicelineAnimation" checked />
+            <span>Use selected voiceline animation sequence</span>
+          </label>
+
+          <label>
+            <span>Preset emotion</span>
+            <select id="presetName"></select>
+          </label>
+
+          <label>
+            <span>Playback mode</span>
+            <select id="playbackMode">
+              <option value="forward">Forward</option>
+              <option value="pingpong" selected>Pingpong</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Cycles</span>
+            <input id="cycles" type="number" min="1" max="12" step="1" value="2" />
+          </label>
+
+          <label>
+            <span>Frame interval (s)</span>
+            <input id="frameInterval" type="range" min="0.05" max="0.4" step="0.01" value="0.12" data-output="frameIntervalValue" />
+            <output id="frameIntervalValue">0.12</output>
+          </label>
+
+          <label class="span-2">
+            <span>Custom frame order (1-based)</span>
+            <input id="customFrameOrder" type="text" value="1,2,3,4,3,2" />
+          </label>
+
+          <label>
+            <span>Typing speed (chars/s)</span>
+            <input id="typingSpeed" type="range" min="4" max="70" step="1" value="14" data-output="typingSpeedValue" />
+            <output id="typingSpeedValue">14</output>
+          </label>
+
+          <label>
+            <span>Typing delay (s)</span>
+            <input id="typingDelay" type="range" min="0" max="2" step="0.05" value="0.25" data-output="typingDelayValue" />
+            <output id="typingDelayValue">0.25</output>
+          </label>
+
+          <label>
+            <span>Hold after speech (s)</span>
+            <input id="holdDuration" type="range" min="0" max="6" step="0.1" value="1.8" data-output="holdDurationValue" />
+            <output id="holdDurationValue">1.8</output>
+          </label>
+
+          <label>
+            <span>Shake strength</span>
+            <input id="shakeStrength" type="range" min="0" max="14" step="0.5" value="4.5" data-output="shakeStrengthValue" />
+            <output id="shakeStrengthValue">4.5</output>
+          </label>
+
+          <label class="checkbox-row span-2">
+            <input type="checkbox" id="continuousShake" checked />
+            <span>Continuous micro-jitter during playback</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="control-card">
+        <h2>Voice Synthesis</h2>
+        <div class="field-grid">
+          <label>
+            <span>Voice preset</span>
+            <select id="voicePreset">
+              <option value="cold_dual" selected>Cold Dual</option>
+              <option value="cynic_switch">Cynic Switch</option>
+              <option value="demon_glitch">Demon Glitch</option>
+              <option value="flat_operator">Flat Operator</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Synthesis mode</span>
+            <select id="synthesisMode">
+              <option value="dual-overlay" selected>Dual overlay</option>
+              <option value="alternate">Alternate chunks</option>
+              <option value="single-low">Single low</option>
+              <option value="single-high">Single high</option>
+              <option value="glitch-switch">Glitch switch</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Low voice id</span>
+            <select id="lowVoice"></select>
+          </label>
+
+          <label>
+            <span>High voice id</span>
+            <select id="highVoice"></select>
+          </label>
+
+          <label>
+            <span>Low pitch</span>
+            <input id="lowPitch" type="range" min="0" max="99" step="1" value="20" data-output="lowPitchValue" />
+            <output id="lowPitchValue">20</output>
+          </label>
+
+          <label>
+            <span>High pitch</span>
+            <input id="highPitch" type="range" min="0" max="99" step="1" value="70" data-output="highPitchValue" />
+            <output id="highPitchValue">70</output>
+          </label>
+
+          <label>
+            <span>Low speed (wpm)</span>
+            <input id="lowSpeed" type="range" min="90" max="260" step="1" value="165" data-output="lowSpeedValue" />
+            <output id="lowSpeedValue">165</output>
+          </label>
+
+          <label>
+            <span>High speed (wpm)</span>
+            <input id="highSpeed" type="range" min="90" max="260" step="1" value="198" data-output="highSpeedValue" />
+            <output id="highSpeedValue">198</output>
+          </label>
+
+          <label>
+            <span>Low amplitude</span>
+            <input id="lowAmplitude" type="range" min="20" max="200" step="1" value="118" data-output="lowAmplitudeValue" />
+            <output id="lowAmplitudeValue">118</output>
+          </label>
+
+          <label>
+            <span>High amplitude</span>
+            <input id="highAmplitude" type="range" min="20" max="200" step="1" value="96" data-output="highAmplitudeValue" />
+            <output id="highAmplitudeValue">96</output>
+          </label>
+
+          <label>
+            <span>Overlay delay (ms)</span>
+            <input id="overlayDelayMs" type="range" min="0" max="120" step="1" value="18" data-output="overlayDelayMsValue" />
+            <output id="overlayDelayMsValue">18</output>
+          </label>
+
+          <label>
+            <span>Chunk words</span>
+            <input id="chunkWordCount" type="range" min="1" max="9" step="1" value="3" data-output="chunkWordCountValue" />
+            <output id="chunkWordCountValue">3</output>
+          </label>
+
+          <label>
+            <span>Word gap (10ms unit)</span>
+            <input id="wordGap" type="range" min="0" max="9" step="1" value="1" data-output="wordGapValue" />
+            <output id="wordGapValue">1</output>
+          </label>
+
+          <label>
+            <span>Glitch chance</span>
+            <input id="glitchChance" type="range" min="0" max="1" step="0.01" value="0.35" data-output="glitchChanceValue" />
+            <output id="glitchChanceValue">0.35</output>
+          </label>
+
+          <label>
+            <span>Replay words</span>
+            <input id="glitchReplayWords" type="range" min="1" max="6" step="1" value="2" data-output="glitchReplayWordsValue" />
+            <output id="glitchReplayWordsValue">2</output>
+          </label>
+        </div>
+      </section>
+
+      <section class="control-card">
+        <h2>Post-FX</h2>
+        <div class="field-grid">
+          <label>
+            <span>Master gain</span>
+            <input id="masterGain" type="range" min="0" max="2" step="0.01" value="0.92" data-output="masterGainValue" />
+            <output id="masterGainValue">0.92</output>
+          </label>
+
+          <label>
+            <span>Reverb mix</span>
+            <input id="reverbMix" type="range" min="0" max="1" step="0.01" value="0.28" data-output="reverbMixValue" />
+            <output id="reverbMixValue">0.28</output>
+          </label>
+
+          <label>
+            <span>Reverb time (s)</span>
+            <input id="reverbTime" type="range" min="0.1" max="3" step="0.05" value="1.2" data-output="reverbTimeValue" />
+            <output id="reverbTimeValue">1.2</output>
+          </label>
+
+          <label>
+            <span>Compressor threshold</span>
+            <input id="compThreshold" type="range" min="-100" max="0" step="1" value="-24" data-output="compThresholdValue" />
+            <output id="compThresholdValue">-24</output>
+          </label>
+
+          <label>
+            <span>Compressor ratio</span>
+            <input id="compRatio" type="range" min="1" max="20" step="0.1" value="6" data-output="compRatioValue" />
+            <output id="compRatioValue">6</output>
+          </label>
+
+          <label>
+            <span>Compressor attack</span>
+            <input id="compAttack" type="range" min="0" max="1" step="0.001" value="0.01" data-output="compAttackValue" />
+            <output id="compAttackValue">0.01</output>
+          </label>
+
+          <label>
+            <span>Compressor release</span>
+            <input id="compRelease" type="range" min="0" max="1" step="0.001" value="0.18" data-output="compReleaseValue" />
+            <output id="compReleaseValue">0.18</output>
+          </label>
+
+          <label>
+            <span>High-pass (Hz)</span>
+            <input id="highPassHz" type="range" min="20" max="2000" step="1" value="90" data-output="highPassHzValue" />
+            <output id="highPassHzValue">90</output>
+          </label>
+
+          <label>
+            <span>Low-pass (Hz)</span>
+            <input id="lowPassHz" type="range" min="800" max="12000" step="1" value="5200" data-output="lowPassHzValue" />
+            <output id="lowPassHzValue">5200</output>
+          </label>
+
+          <label>
+            <span>Distortion</span>
+            <input id="distortion" type="range" min="0" max="1" step="0.01" value="0.18" data-output="distortionValue" />
+            <output id="distortionValue">0.18</output>
+          </label>
+        </div>
+      </section>
+
+      <section class="control-card actions-card">
+        <div class="action-row">
+          <button id="playBtn" class="btn-primary">Play line</button>
+          <button id="stopBtn" class="btn-ghost">Stop</button>
+          <button id="randomBtn" class="btn-ghost">Randomize a bit</button>
+          <button id="copyBtn" class="btn-ghost">Copy settings JSON</button>
+        </div>
+        <pre id="settingsOutput"></pre>
+      </section>
+    </aside>
+
+    <main class="lab-stage">
+      <div class="daemon-stage-bg"></div>
+      <div id="daemonGhost" class="daemon-popup daemon-popup--ghost" aria-hidden="true"></div>
+      <article id="daemonPopup" class="daemon-popup" role="status" aria-live="polite">
+        <div class="daemon-avatar-box">
+          <img id="daemonAvatar" alt="Daemon avatar" />
+        </div>
+        <div class="daemon-content">
+          <p id="daemonTag">DAEMON CORE // OBSERVER</p>
+          <p id="daemonMessage"></p>
+          <p id="daemonMeta">Idle</p>
+        </div>
+      </article>
+      <div class="lab-help">
+        <p>Tip: this page defaults to English. Keep the French option for later localization tests.</p>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    const originalAddEventListener = window.addEventListener;
+
+    window.addEventListener = function patchedAddEventListener(type, listener, options) {
+      if (type === 'unload') {
+        return;
+      }
+      return originalAddEventListener.call(window, type, listener, options);
+    };
+
+    try {
+      await import('/daemon-voice-lab.bundle.js');
+    } catch (error) {
+      const panel = document.createElement('div');
+      panel.style.position = 'fixed';
+      panel.style.left = '16px';
+      panel.style.right = '16px';
+      panel.style.bottom = '16px';
+      panel.style.padding = '12px 14px';
+      panel.style.background = '#2d0a13';
+      panel.style.border = '1px solid #ff6f8e';
+      panel.style.borderRadius = '8px';
+      panel.style.color = '#ffdce4';
+      panel.style.fontFamily = 'monospace';
+      panel.style.zIndex = '99999';
+      panel.textContent = 'Daemon Voice Lab: failed to load /daemon-voice-lab.bundle.js';
+      document.body.appendChild(panel);
+      console.error('Daemon Voice Lab bootstrap failed.', error);
+    } finally {
+      window.addEventListener = originalAddEventListener;
+    }
+  </script>
+</body>
+</html>

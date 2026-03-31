@@ -42,6 +42,11 @@ export class RoomLayoutParser {
     }
 
     const layout = layoutData as Array<string | string[]>;
+    const layoutWidth = layout.reduce((max, row) => {
+      if (!row) return max;
+      const rowData = typeof row === 'string' ? row : row.join('');
+      return Math.max(max, rowData.length);
+    }, 0);
 
     for (let y = 0; y < layout.length; y++) {
       const row = layout[y];
@@ -49,8 +54,9 @@ export class RoomLayoutParser {
 
       const rowData = typeof row === 'string' ? row : row.join('');
 
-      for (let x = 0; x < rowData.length; x++) {
-        const cell = rowData[x];
+      for (let x = 0; x < layoutWidth; x++) {
+        // Missing cells are treated as walls to avoid holes in malformed rows.
+        const cell = rowData[x] ?? '#';
         // Invert Z axis: first line (y=0) should have largest Z (far/top), last line should have smallest Z (near/bottom)
         const z = layout.length - 1 - y;
         const tileData = this.cellToTile(cell, x, z);
@@ -64,7 +70,14 @@ export class RoomLayoutParser {
     // Add obstacles as pillar tiles
     if (roomLayout.obstacles) {
       for (const obstacle of roomLayout.obstacles) {
-        const key = `${obstacle.x},${obstacle.z}`;
+        const obstacleZ = Number.isFinite(obstacle.z)
+          ? obstacle.z
+          : (Number.isFinite(obstacle.y) ? obstacle.y : undefined);
+        if (!Number.isFinite(obstacle.x) || !Number.isFinite(obstacleZ)) {
+          continue;
+        }
+
+        const key = `${obstacle.x},${obstacleZ}`;
         // Remove existing tile if present
         const existingIndex = tiles.findIndex(
           t => `${t.x},${t.z}` === key
@@ -73,11 +86,11 @@ export class RoomLayoutParser {
           tiles.splice(existingIndex, 1);
         }
 
-        // Add pillar tile
+        // Obstacles are rendered as walls for consistent room readability.
         tiles.push({
-          type: 'pillar',
+          type: 'wall',
           x: obstacle.x,
-          z: obstacle.z,
+          z: obstacleZ,
         });
       }
     }
@@ -108,7 +121,7 @@ export class RoomLayoutParser {
         type = 'spikes';
         break;
       case 'O':
-        type = 'floor'; // Obstacles are added separately
+        type = 'wall';
         break;
       case 'M':
       case 'R':
@@ -180,8 +193,9 @@ export class RoomLayoutParser {
     // Extract from layout grid
     for (let y = 0; y < layout.length; y++) {
       const row = layout[y];
-      for (let x = 0; x < row.length; x++) {
-        const cell = row[x];
+      const rowData = typeof row === 'string' ? row : row.join('');
+      for (let x = 0; x < rowData.length; x++) {
+        const cell = rowData[x];
         if (['M', 'R', 'S', 'E'].includes(cell)) {
           // Invert Z axis to match camera view
           const z = layout.length - 1 - y;

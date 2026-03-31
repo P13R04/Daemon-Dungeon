@@ -3,7 +3,7 @@
  * Manages game state, systems, and core loops
  */
 
-import { Scene, Engine, Vector3, ArcRotateCamera } from '@babylonjs/core';
+import { Scene, Engine, Vector3, ArcRotateCamera, Mesh, MeshBuilder, StandardMaterial, Color3, VertexData } from '@babylonjs/core';
 import { SceneBootstrap } from '../scene/SceneBootstrap';
 import { StateMachine, GameState } from './StateMachine';
 import { EventBus, GameEvents } from './EventBus';
@@ -22,6 +22,8 @@ import { PostProcessManager } from '../scene/PostProcess';
 import { TileFloorManager } from '../systems/TileFloorManager';
 import { RoomLayoutParser, RoomLayout, TileMappingLayout } from '../systems/RoomLayoutParser';
 import { ProceduralDungeonTheme } from '../systems/ProceduralDungeonTheme';
+import { ProceduralReliefTheme } from '../systems/ProceduralReliefTheme';
+import type { ProceduralReliefQuality } from '../systems/ProceduralReliefTheme';
 import { ClassSelectScene } from '../scene/ClassSelectScene';
 import { MainMenuScene } from '../scene/MainMenuScene';
 import { CodexScene } from '../scene/CodexScene';
@@ -30,6 +32,8 @@ import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { AchievementDefinition, CodexService } from '../services/CodexService';
 import { getMergedAchievementDefinitions } from '../data/achievements/loadAchievementDefinitions';
 import { BonusChoice, BonusPoolSystem } from '../systems/BonusPoolSystem';
+
+type TextureRenderMode = 'classic' | 'proceduralRelief';
 
 export class GameManager {
   private static instance: GameManager;
@@ -65,6 +69,12 @@ export class GameManager {
   private eventListenersBound: boolean = false;
   private selectedClassId: 'mage' | 'firewall' | 'rogue' = 'mage';
   private tilesEnabled: boolean = true;
+  private textureRenderMode: TextureRenderMode = 'proceduralRelief';
+  private roomLayoutCache: Map<string, RoomLayout> = new Map();
+  private proceduralPrewarmPromise: Promise<void> | null = null;
+  private proceduralWarmCacheReady: boolean = false;
+  private pendingProceduralPrewarmRoomIds: string[] = [];
+  private proceduralPrewarmTimer: number | null = null;
   private gameState: 'menu' | 'playing' | 'roomclear' | 'bonus' | 'transition' | 'gameover' = 'menu';
   private roomOrder: string[] = [];
   private currentRoomIndex: number = 0;
@@ -100,6 +110,13 @@ export class GameManager {
   private currency: number = 0;
   private currencyCarry: number = 0;
   private roomElapsedSeconds: number = 0;
+  private playerVoidFallState: {
+    timer: number;
+    duration: number;
+    respawn: Vector3;
+  } | null = null;
+  private readonly playerVoidFallDuration: number = 0.72;
+  private playerVoidFxTimer: number = 0;
   private bonusRerollCost: number = 40;
   private consumableDamageStims: number = 0;
   private consumableShieldPatches: number = 0;
@@ -305,7 +322,7 @@ export class GameManager {
       this.classSelectScene = undefined;
     }
 
-    this.scene = SceneBootstrap.createScene(this.engine, this.canvas);
+    this.scene = await SceneBootstrap.createScene(this.engine, this.canvas);
 
     const camera = (this.scene as any).mainCamera as ArcRotateCamera;
     if (!camera) throw new Error('Main camera not found in scene');
@@ -324,15 +341,34 @@ export class GameManager {
     this.ultimateManager = new UltimateManager(this.scene);
     this.hudManager = new HUDManager(this.scene);
     this.tileFloorManager = new TileFloorManager(this.scene, 1.2);
+    if (this.textureRenderMode === 'proceduralRelief') {
+      ProceduralReliefTheme.setQuality('medium');
+      ProceduralReliefTheme.prewarm(this.scene);
+    }
     this.roomManager.setFloorRenderingEnabled(!this.tilesEnabled);
+    this.tileFloorManager.setRenderProfile(this.getRenderProfileForRoom(''));
     this.devConsole = new DevConsole(this.scene, this);
 
     this.inputManager.attachMouseListeners();
 
     const rooms = this.configLoader.getRooms();
-    this.roomOrder = Array.isArray(rooms) ? rooms.map((r: any) => r.id) : [];
+    const playableRooms = Array.isArray(rooms)
+      ? rooms.filter((room: any) => this.shouldIncludeInRunOrder(room))
+      : [];
+    this.roomOrder = playableRooms.map((r: any) => r.id);
     if (this.roomOrder.length === 0) {
       this.roomOrder = ['room_test_dummies'];
+    }
+
+    if (Array.isArray(rooms)) {
+      this.roomLayoutCache.clear();
+      for (const room of rooms) {
+        if (!room?.id) continue;
+        const layout = this.buildRoomLayoutForTiles(room);
+        if (layout) {
+          this.roomLayoutCache.set(room.id, layout);
+        }
+      }
     }
 
     const playerConfig = this.configLoader.getPlayer();
@@ -341,6 +377,26 @@ export class GameManager {
     this.devConsole.setPlayer(this.playerController);
 
     this.gameplayInitialized = true;
+
+    if (this.textureRenderMode === 'proceduralRelief') {
+      await this.prewarmAllProceduralLayoutsAsync(true);
+    }
+
+    // Prebuild current + adjacent room geometry and tile floors upfront.
+    this.preloadRoomsAround(0, 0, true);
+  }
+
+  private async waitForNextPaint(frames: number = 1): Promise<void> {
+    const safeFrames = Math.max(1, Math.floor(frames));
+    for (let i = 0; i < safeFrames; i++) {
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() => resolve());
+      });
+    }
+  }
+
+  private async waitForMs(ms: number): Promise<void> {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, Math.max(0, ms)));
   }
 
   private setupEventListeners(): void {
@@ -423,8 +479,11 @@ export class GameManager {
       this.tryRerollBonusChoices(requestedCost);
     });
 
-    this.eventBus.on(GameEvents.PLAYER_DIED, () => {
+    this.eventBus.on(GameEvents.PLAYER_DIED, (payload?: { reason?: string }) => {
       if (!this.gameplayInitialized) return;
+      // If a legacy damage path still triggers during the void-fall sequence,
+      // ignore it and let the dedicated void-fall death complete visually.
+      if (this.playerVoidFallState && payload?.reason !== 'void_fall') return;
       this.codexService.endRunTracking();
       this.gameState = 'gameover';
       this.hudManager.showGameOverScreen();
@@ -545,6 +604,11 @@ export class GameManager {
             this.cameraMove = null;
             this.currentRoomIndex = nextIndex;
             this.loadRoomByIndex(nextIndex);
+            this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, false, {
+              backwardRange: 1,
+              forwardRange: 2,
+              allowUnload: true,
+            });
             this.gameState = 'playing';
           }
         }
@@ -559,6 +623,25 @@ export class GameManager {
         this.playerController.setGameplayActive(true);
         this.playerController.setEnemiesPresent(enemies.length > 0);
         this.playerController.update(deltaTime);
+
+        this.detectAndStartPlayerVoidFall();
+        const playerFalling = this.updatePlayerVoidFall(deltaTime);
+        if (playerFalling) {
+          if (this.tilesEnabled) {
+            this.tileFloorManager.update(deltaTime);
+          }
+          this.hudManager.update(deltaTime);
+          this.hudManager.updateSecondaryResource(
+            this.playerController.getSecondaryResourceCurrent(),
+            this.playerController.getSecondaryResourceMax(),
+            this.playerController.isSecondaryActive(),
+            this.playerController.getSecondaryActivationThreshold()
+          );
+          this.hudManager.updateCurrency(this.currency);
+          this.hudManager.updateItemStatus(this.getConsumableStatusLabel());
+          this.scene.render();
+          return;
+        }
 
         const secondaryActive = this.playerController.isSecondaryActive();
         const secondaryRadius = this.playerController.getSecondaryZoneRadius();
@@ -591,8 +674,10 @@ export class GameManager {
           this.applySecondaryEnemySlow(enemies, playerPosForSecondary, secondaryRadius, secondarySlow);
         }
 
+        this.roomManager.updateDynamicHazards(deltaTime);
+
         // Resolve collisions between entities (player/enemies)
-        this.resolveEntityCollisions(enemies);
+        this.resolveEntityCollisions(enemies, deltaTime);
 
         if (this.tilesEnabled) {
           this.tileFloorManager.update(deltaTime);
@@ -861,6 +946,13 @@ export class GameManager {
   }
 
   private dispose(): void {
+    if (this.proceduralPrewarmTimer !== null) {
+      window.clearTimeout(this.proceduralPrewarmTimer);
+      this.proceduralPrewarmTimer = null;
+    }
+    this.pendingProceduralPrewarmRoomIds = [];
+    this.proceduralPrewarmPromise = null;
+
     if (this.audioUnlockHandler) {
       window.removeEventListener('pointerdown', this.audioUnlockHandler);
       window.removeEventListener('keydown', this.audioUnlockHandler);
@@ -888,7 +980,7 @@ export class GameManager {
     this.engine?.dispose();
   }
 
-  private resolveEntityCollisions(enemies: any[]): void {
+  private resolveEntityCollisions(enemies: any[], deltaTime: number): void {
     const playerRadius = 0.35;
     let playerPos = this.playerController.getPosition();
 
@@ -905,9 +997,16 @@ export class GameManager {
           this.playerController.applyKnockback(knockback);
         }
         const push = delta.normalize().scale(minDistance - distance);
-        const half = push.scale(0.5);
-        playerPos = playerPos.subtract(half);
-        enemy.setPosition(enemyPos.add(half));
+        const isPong = enemy.getBehavior?.() === 'pong';
+
+        if (isPong) {
+          // Keep pong trajectory stable when player body-checks it.
+          playerPos = playerPos.subtract(push);
+        } else {
+          const half = push.scale(0.5);
+          playerPos = playerPos.subtract(half);
+          enemy.setPosition(enemyPos.add(half));
+        }
       }
     }
 
@@ -929,6 +1028,13 @@ export class GameManager {
         }
       }
     }
+
+    playerPos = this.roomManager.resolvePlayerAgainstPushables(
+      playerPos,
+      playerRadius,
+      this.playerController.getVelocity(),
+      deltaTime,
+    );
 
     // Player vs obstacles
     const obstacles = this.roomManager.getObstacleBounds();
@@ -997,6 +1103,10 @@ export class GameManager {
   }
 
   private applyHazardDamage(deltaTime: number): void {
+    if (this.playerVoidFallState) {
+      return;
+    }
+
     const zones = this.roomManager.getHazardZones();
     const playerPos = this.playerController.getPosition();
 
@@ -1013,6 +1123,15 @@ export class GameManager {
       }
     }
 
+    for (const hazard of this.roomManager.getCurrentMobileHazards()) {
+      const dx = playerPos.x - hazard.position.x;
+      const dz = playerPos.z - hazard.position.z;
+      const contactRadius = hazard.radius + 0.35;
+      if ((dx * dx + dz * dz) <= (contactRadius * contactRadius)) {
+        this.playerController.applyDamage(hazard.damagePerSecond * deltaTime);
+      }
+    }
+
     if (this.tilesEnabled) {
       const gameplayConfig = this.configLoader.getGameplay();
       const tileHazards = gameplayConfig?.tileHazards ?? {};
@@ -1020,9 +1139,6 @@ export class GameManager {
       const spikesDps = tileHazards.spikesDps ?? 0;
 
       const tile = this.tileFloorManager.getTileAtWorld(playerPos.x, playerPos.z);
-      if (tile?.type === 'void' && this.gameState === 'playing') {
-        this.eventBus.emit(GameEvents.PLAYER_DIED, { reason: 'void' });
-      }
       if (tile?.type === 'poison' && poisonDps > 0) {
         this.playerController.applyDamage(poisonDps * deltaTime);
       }
@@ -1100,6 +1216,8 @@ export class GameManager {
     const dir = sweep.direction.lengthSquared() > 0.0001 ? sweep.direction.normalize() : new Vector3(1, 0, 0);
     const maxAngle = (sweep.coneAngleDeg * Math.PI) / 180;
 
+    this.spawnTankSweepVisual(sweep.origin, dir, sweep.range, sweep.coneAngleDeg);
+
     for (const enemy of enemies) {
       const toEnemy = enemy.getPosition().subtract(sweep.origin);
       toEnemy.y = 0;
@@ -1113,6 +1231,76 @@ export class GameManager {
       enemy.takeDamage(sweep.damage);
       enemy.applyExternalKnockback(toEnemy.normalize().scale(sweep.knockback));
     }
+  }
+
+  private spawnTankSweepVisual(origin: Vector3, direction: Vector3, range: number, coneAngleDeg: number): void {
+    const dir = new Vector3(direction.x, 0, direction.z);
+    if (dir.lengthSquared() <= 0.0001) {
+      dir.set(1, 0, 0);
+    } else {
+      dir.normalize();
+    }
+
+    const radius = Math.max(0.6, range);
+    const halfAngle = (Math.max(18, Math.min(220, coneAngleDeg)) * Math.PI) / 360;
+    const segments = 28;
+    const positions: number[] = [0, 0, 0];
+    const uvs: number[] = [0.5, 0.5];
+    const indices: number[] = [];
+
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments;
+      const angle = -halfAngle + (2 * halfAngle * t);
+      const ca = Math.cos(angle);
+      const sa = Math.sin(angle);
+      const rx = (dir.x * ca) - (dir.z * sa);
+      const rz = (dir.x * sa) + (dir.z * ca);
+
+      positions.push(rx * radius, 0, rz * radius);
+      uvs.push(0.5 + rx * 0.5, 0.5 + rz * 0.5);
+
+      if (i < segments) {
+        indices.push(0, i + 1, i + 2);
+      }
+    }
+
+    const normals = new Array(positions.length).fill(0);
+    VertexData.ComputeNormals(positions, indices, normals);
+    const sweep = new Mesh(`tank_sweep_${Date.now()}`, this.scene);
+    const vertexData = new VertexData();
+    vertexData.positions = positions;
+    vertexData.indices = indices;
+    vertexData.normals = normals;
+    vertexData.uvs = uvs;
+    vertexData.applyToMesh(sweep);
+    sweep.position = origin.add(new Vector3(0, 0.03, 0));
+
+    const mat = new StandardMaterial(`tank_sweep_mat_${Date.now()}`, this.scene);
+    mat.diffuseColor = new Color3(0.95, 0.66, 0.22);
+    mat.emissiveColor = new Color3(0.78, 0.32, 0.06);
+    mat.alpha = 0.46;
+    mat.backFaceCulling = false;
+    sweep.material = mat;
+
+    const startTime = performance.now();
+    const ttlMs = 170;
+    const tick = window.setInterval(() => {
+      if (sweep.isDisposed()) {
+        window.clearInterval(tick);
+        return;
+      }
+
+      const t = Math.min(1, (performance.now() - startTime) / ttlMs);
+      const pulse = 1 + (0.28 * t);
+      sweep.scaling.setAll(pulse);
+      mat.alpha = Math.max(0, 0.46 * (1 - t));
+
+      if (t >= 1) {
+        window.clearInterval(tick);
+        sweep.dispose();
+        mat.dispose();
+      }
+    }, 16);
   }
 
   private resolveTankShieldBash(
@@ -1348,9 +1536,15 @@ export class GameManager {
     if (this.gameplayStartInProgress) return;
     this.gameplayStartInProgress = true;
     try {
+      this.setLoadingOverlay(true, 'INITIALIZING RUN...', '0%');
+      await this.waitForNextPaint(2);
+
       if (!this.gameplayInitialized) {
         await this.initializeGameplayScene();
       }
+
+      this.setLoadingOverlay(true, 'PRELOADING DUNGEON CELLS...', '78%');
+      await this.waitForNextPaint(1);
 
       this.currentRoomIndex = 0;
       this.roomCleared = false;
@@ -1361,6 +1555,7 @@ export class GameManager {
       this.currency = 0;
       this.currencyCarry = 0;
       this.roomElapsedSeconds = 0;
+      this.resetPlayerVoidFallState();
       this.consumableDamageStims = 0;
       this.consumableShieldPatches = 0;
       this.playerController.setRogueUltimateActive(false);
@@ -1368,10 +1563,16 @@ export class GameManager {
       this.hudManager.hideOverlays();
       this.hudManager.updateCurrency(this.currency);
       this.hudManager.updateItemStatus(this.getConsumableStatusLabel());
-      this.gameState = 'playing';
-      this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex);
+      this.gameState = 'transition';
+      this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, false);
       this.loadRoomByIndex(this.currentRoomIndex);
+      this.setLoadingOverlay(true, 'HANDSHAKE WITH DAEMON CORE...', '100%');
+      await this.waitForNextPaint(1);
+      await this.waitForMs(1000);
+      this.gameState = 'playing';
+      this.setLoadingOverlay(false);
     } finally {
+      this.setLoadingOverlay(false);
       this.gameplayStartInProgress = false;
     }
   }
@@ -1391,13 +1592,14 @@ export class GameManager {
     this.currentRoomIndex = 0;
     this.roomCleared = false;
     this.roomElapsedSeconds = 0;
+    this.resetPlayerVoidFallState();
     this.rogueUltimateState = null;
     this.tankUltimateState = null;
     this.playerController.setRogueUltimateActive(false);
     this.playerController.setTankUltimateActive(false);
     this.hudManager.hideOverlays();
     this.gameState = 'playing';
-    this.preloadRoomsAround(0, 0);
+    this.preloadRoomsAround(0, 0, true);
     this.loadRoomByIndex(0);
   }
 
@@ -1409,6 +1611,7 @@ export class GameManager {
     this.roomManager.setDoorActive(false);
     this.roomCleared = false;
     this.roomElapsedSeconds = 0;
+    this.resetPlayerVoidFallState();
     this.rogueUltimateState = null;
     this.tankUltimateState = null;
     this.playerController.setRogueUltimateActive(false);
@@ -1441,7 +1644,11 @@ export class GameManager {
     this.enemySpawner.spawnEnemiesForRoom(roomId);
 
     if (this.tilesEnabled) {
-      this.loadTilesForRoom(roomId);
+      const currentFloorKey = `${roomId}::${index}`;
+      this.tileFloorManager.setCurrentRoomInstance(currentFloorKey);
+      if (!this.tileFloorManager.hasRoomInstance(currentFloorKey)) {
+        this.loadTilesForRoom(roomId);
+      }
     }
 
     const currentRoomConfig = this.roomManager.getCurrentRoom();
@@ -1452,22 +1659,69 @@ export class GameManager {
     });
   }
 
-  private preloadRoomsAround(preloadIndex: number, activeIndex: number): void {
+  private preloadRoomsAround(
+    preloadIndex: number,
+    activeIndex: number,
+    forceRebuild: boolean = false,
+    options?: {
+      backwardRange?: number;
+      forwardRange?: number;
+      allowUnload?: boolean;
+    }
+  ): void {
     if (!this.gameplayInitialized) return;
-    this.roomManager.clearAllRooms();
+    const backwardRange = Math.max(0, options?.backwardRange ?? 1);
+    const forwardRange = Math.max(0, options?.forwardRange ?? 2);
+    const allowUnload = options?.allowUnload ?? true;
 
-    const indices = [preloadIndex - 2, preloadIndex - 1, preloadIndex, preloadIndex + 1];
+    if (forceRebuild) {
+      this.roomManager.clearAllRooms();
+      if (this.tilesEnabled) {
+        this.tileFloorManager.clearAllRoomInstances();
+      }
+    }
+
+    const indices: number[] = [];
+    for (let idx = preloadIndex - backwardRange; idx <= preloadIndex + forwardRange; idx++) {
+      indices.push(idx);
+    }
+
+    const desiredKeys = new Set<string>();
     for (const idx of indices) {
       if (idx < 0 || idx >= this.roomOrder.length) continue;
       const roomId = this.roomOrder[idx];
       const origin = new Vector3(0, 0, idx * this.roomSpacing);
       const instanceKey = `${roomId}::${idx}`;
-      this.roomManager.setRenderProfile(this.getRenderProfileForRoom(roomId));
-      this.roomManager.loadRoomInstance(roomId, instanceKey, origin);
+      desiredKeys.add(instanceKey);
+      if (!this.roomManager.hasRoomInstance(instanceKey)) {
+        this.roomManager.setRenderProfile(this.getRenderProfileForRoom(roomId));
+        this.roomManager.loadRoomInstance(roomId, instanceKey, origin);
+      }
+      if (this.tilesEnabled) {
+        this.preloadTileFloorInstance(roomId, instanceKey, origin);
+      }
+    }
+
+    if (allowUnload) {
+      for (const loadedKey of this.roomManager.getLoadedRoomKeys()) {
+        if (!desiredKeys.has(loadedKey)) {
+          this.roomManager.unloadRoomInstance(loadedKey);
+        }
+      }
+      if (this.tilesEnabled) {
+        for (const loadedFloorKey of this.tileFloorManager.getLoadedRoomKeys()) {
+          if (!desiredKeys.has(loadedFloorKey)) {
+            this.tileFloorManager.unloadRoomFloorInstance(loadedFloorKey);
+          }
+        }
+      }
     }
     const currentRoomId = this.roomOrder[activeIndex];
     const currentKey = `${currentRoomId}::${activeIndex}`;
     this.roomManager.setCurrentRoom(currentKey);
+    if (this.tilesEnabled) {
+      this.tileFloorManager.setCurrentRoomInstance(currentKey);
+    }
 
     const bounds = this.roomManager.getRoomBoundsForInstance(currentKey);
     if (bounds) {
@@ -1489,7 +1743,11 @@ export class GameManager {
     this.hudManager.hideOverlays();
     this.gameState = 'transition';
 
-    this.preloadRoomsAround(nextIndex, this.currentRoomIndex);
+    this.preloadRoomsAround(nextIndex, this.currentRoomIndex, false, {
+      backwardRange: 2,
+      forwardRange: 2,
+      allowUnload: false,
+    });
 
     const nextRoomId = this.roomOrder[nextIndex];
     const nextKey = `${nextRoomId}::${nextIndex}`;
@@ -1497,6 +1755,11 @@ export class GameManager {
     if (!roomBounds) {
       this.currentRoomIndex = nextIndex;
       this.loadRoomByIndex(nextIndex);
+      this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, false, {
+        backwardRange: 1,
+        forwardRange: 2,
+        allowUnload: true,
+      });
       this.gameState = 'playing';
       return;
     }
@@ -1519,6 +1782,11 @@ export class GameManager {
     } else {
       this.currentRoomIndex = nextIndex;
       this.loadRoomByIndex(nextIndex);
+      this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, false, {
+        backwardRange: 1,
+        forwardRange: 2,
+        allowUnload: true,
+      });
       this.gameState = 'playing';
     }
   }
@@ -1656,53 +1924,380 @@ export class GameManager {
     return this.projectileManager;
   }
 
-  private async loadTilesForRoom(roomId: string): Promise<void> {
-    this.tileFloorManager.setRenderProfile(this.getRenderProfileForRoom(roomId));
+  private resetPlayerVoidFallState(): void {
+    this.playerVoidFallState = null;
+    this.playerVoidFxTimer = 0;
+    if (this.playerController) {
+      this.playerController.setExternalVerticalOffset(0);
+      this.playerController.setRenderVisibility(1);
+    }
+  }
 
-    const room = this.configLoader.getRoom(roomId);
-    if (!room) {
-      console.warn(`Room ${roomId} not found in config`);
-      return;
+  private detectAndStartPlayerVoidFall(): void {
+    if (this.playerVoidFallState) return;
+    const pos = this.playerController.getPosition();
+    const tileType = this.roomManager.getTileTypeAtWorld(pos.x, pos.z);
+    if (tileType !== 'void') return;
+
+    const currentRoomId = this.roomOrder[this.currentRoomIndex] ?? this.roomManager.getCurrentRoom()?.id;
+    const respawn = this.roomManager.getPlayerSpawnPoint(currentRoomId) ?? pos.clone();
+
+    this.playerVoidFallState = {
+      timer: this.playerVoidFallDuration,
+      duration: this.playerVoidFallDuration,
+      respawn,
+    };
+    this.playerVoidFxTimer = 0;
+    this.spawnPlayerVoidBurst(pos, 10);
+  }
+
+  private updatePlayerVoidFall(deltaTime: number): boolean {
+    if (!this.playerVoidFallState) return false;
+
+    this.playerVoidFallState.timer = Math.max(0, this.playerVoidFallState.timer - deltaTime);
+    const progress = 1 - (this.playerVoidFallState.timer / Math.max(0.0001, this.playerVoidFallState.duration));
+    const eased = Math.pow(progress, 2.45);
+    this.playerController.setExternalVerticalOffset(-7.2 * eased);
+    this.playerController.setRenderVisibility(Math.max(0.02, 1 - eased * 0.98));
+
+    this.playerVoidFxTimer -= deltaTime;
+    if (this.playerVoidFxTimer <= 0) {
+      this.playerVoidFxTimer = 0.05;
+      const p = this.playerController.getPosition();
+      this.spawnPlayerVoidBurst(p.add(new Vector3(0, -3.4 * eased, 0)), 5);
     }
 
-    if (!room.layout || !Array.isArray(room.layout)) {
+    if (this.playerVoidFallState.timer <= 0) {
+      this.playerController.setExternalVerticalOffset(0);
+      this.playerController.setRenderVisibility(1);
+      this.eventBus.emit(GameEvents.PLAYER_DIED, { reason: 'void_fall' });
+      this.playerVoidFallState = null;
+      this.playerVoidFxTimer = 0;
+    }
+
+    return true;
+  }
+
+  private spawnPlayerVoidBurst(origin: Vector3, count: number): void {
+    const particleCount = Math.max(1, Math.floor(count));
+    for (let i = 0; i < particleCount; i++) {
+      const shard = MeshBuilder.CreateBox(`void_player_shard_${Date.now()}_${i}`, {
+        size: 0.08 + Math.random() * 0.07,
+      }, this.scene);
+      shard.position = origin.add(new Vector3(
+        (Math.random() - 0.5) * 0.55,
+        Math.random() * 0.5,
+        (Math.random() - 0.5) * 0.55,
+      ));
+
+      const mat = new StandardMaterial(`void_player_shard_mat_${Date.now()}_${i}`, this.scene);
+      mat.diffuseColor = new Color3(0.1, 0.92, 0.7);
+      mat.emissiveColor = new Color3(0.05, 0.62, 0.42);
+      mat.alpha = 0.9;
+      shard.material = mat;
+
+      const velocity = new Vector3(
+        (Math.random() - 0.5) * 2.4,
+        0.5 + Math.random() * 1.2,
+        (Math.random() - 0.5) * 2.4,
+      );
+      const gravity = 6.8;
+      const bornAt = Date.now();
+      const ttlMs = 260 + Math.random() * 200;
+
+      const tick = window.setInterval(() => {
+        if (shard.isDisposed()) {
+          window.clearInterval(tick);
+          return;
+        }
+
+        const elapsed = Date.now() - bornAt;
+        const t = Math.min(1, elapsed / ttlMs);
+        const dt = 1 / 60;
+        velocity.y -= gravity * dt;
+        shard.position.addInPlace(velocity.scale(dt));
+        shard.scaling.scaleInPlace(0.95);
+        mat.alpha = Math.max(0, 0.9 * (1 - t));
+
+        if (t >= 1) {
+          window.clearInterval(tick);
+          shard.dispose();
+          mat.dispose();
+        }
+      }, 16);
+    }
+  }
+
+  private async loadTilesForRoom(roomId: string): Promise<void> {
+    const profile = this.getRenderProfileForRoom(roomId);
+
+    const layout = this.getOrBuildRoomLayout(roomId);
+    if (!layout) {
       console.warn(`Room ${roomId} has no layout array`);
       return;
     }
 
+    const activeKey = `${roomId}::${this.currentRoomIndex}`;
+    const origin = this.roomManager.getCurrentRoomOrigin();
+    this.tileFloorManager.loadRoomFloorInstance(activeKey, layout, origin, profile);
+    this.tileFloorManager.setCurrentRoomInstance(activeKey);
+    console.log(`✓ Tiles loaded for room ${roomId} (${layout.layout.length} rows)`);
+  }
+
+  private preloadTileFloorInstance(roomId: string, instanceKey: string, origin: Vector3): void {
+    const layout = this.getOrBuildRoomLayout(roomId);
+    if (!layout) return;
+    const profile = this.getRenderProfileForRoom(roomId);
+    this.tileFloorManager.loadRoomFloorInstance(instanceKey, layout, origin, profile);
+  }
+
+  private buildRoomLayoutForTiles(room: any): RoomLayout | null {
+    if (!room?.layout || !Array.isArray(room.layout)) return null;
+
+    const layoutWidth = room.layout.reduce((max: number, row: any) => {
+      const rowData = typeof row === 'string' ? row : String(row ?? '');
+      return Math.max(max, rowData.length);
+    }, 0);
+
+    const layoutHeight = room.layout.length;
+    const shouldTreatVoidAsWall = layoutWidth <= 16 && layoutHeight <= 12;
+
+    const normalizedLayout = room.layout.map((row: any) => {
+      const rowData = typeof row === 'string' ? row : String(row ?? '');
+      const padded = rowData.padEnd(layoutWidth, '#').replace(/O/g, '#');
+      return shouldTreatVoidAsWall ? padded.replace(/V/g, '#') : padded;
+    });
+
     const obstacles = Array.isArray(room.obstacles)
       ? room.obstacles.flatMap((ob: any) => {
           if (ob.type === 'hazard') return [];
+          const obstacleZ = Number.isFinite(ob?.y)
+            ? ob.y
+            : (Number.isFinite(ob?.z) ? ob.z : undefined);
+          if (!Number.isFinite(ob?.x) || !Number.isFinite(obstacleZ)) return [];
           const width = Math.max(1, ob.width || 1);
           const height = Math.max(1, ob.height || 1);
           const tiles = [] as Array<{ x: number; z: number; type: string }>;
           for (let dx = 0; dx < width; dx++) {
             for (let dz = 0; dz < height; dz++) {
-              tiles.push({ x: ob.x + dx, z: ob.y + dz, type: ob.type ?? 'pillar' });
+              tiles.push({ x: ob.x + dx, z: obstacleZ + dz, type: 'wall' });
             }
           }
           return tiles;
         })
       : [];
 
-    const layout: RoomLayout = {
-      layout: room.layout,
+    return {
+      layout: normalizedLayout,
       obstacles,
     };
+  }
 
-    const origin = this.roomManager.getCurrentRoomOrigin();
-    this.loadTilesForLayout(layout, origin);
-    console.log(`✓ Tiles loaded for room ${roomId} (${room.layout.length} rows)`);
+  private shouldIncludeInRunOrder(room: any): boolean {
+    if (!room?.id || !Array.isArray(room.layout)) return false;
+
+    const layoutWidth = room.layout.reduce((max: number, row: any) => {
+      const rowData = typeof row === 'string' ? row : String(row ?? '');
+      return Math.max(max, rowData.length);
+    }, 0);
+    const layoutHeight = room.layout.length;
+    const tileBudget = layoutWidth * layoutHeight;
+
+    // Keep oversized test/stress rooms available for isolated loading, but out of normal wave loop.
+    if (/^room_test_/i.test(room.id) && tileBudget > 220) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private getOrBuildRoomLayout(roomId: string): RoomLayout | null {
+    const cached = this.roomLayoutCache.get(roomId);
+    if (cached) return cached;
+
+    const room = this.configLoader.getRoom(roomId);
+    if (!room) {
+      console.warn(`Room ${roomId} not found in config`);
+      return null;
+    }
+
+    const layout = this.buildRoomLayoutForTiles(room);
+    if (layout) {
+      this.roomLayoutCache.set(roomId, layout);
+    }
+    return layout;
+  }
+
+  private setLoadingOverlay(visible: boolean, label?: string, progress?: string): void {
+    const loading = document.getElementById('loading');
+    if (!loading) return;
+    loading.classList.toggle('hidden', !visible);
+
+    const canvas = document.getElementById('renderCanvas') as HTMLCanvasElement | null;
+    if (canvas) {
+      canvas.style.visibility = visible ? 'hidden' : 'visible';
+    }
+
+    if (label) {
+      const labelEl = document.getElementById('loadingLabel');
+      if (labelEl) {
+        labelEl.textContent = label;
+      } else {
+        const title = loading.querySelector('p');
+        if (title) title.textContent = label;
+      }
+    }
+
+    if (progress) {
+      const progressEl = document.getElementById('loadingProgress');
+      if (progressEl) progressEl.textContent = progress;
+
+      const fillEl = document.getElementById('loadingBarFill');
+      if (fillEl) {
+        const numeric = Number.parseInt(progress.replace('%', ''), 10);
+        if (Number.isFinite(numeric)) {
+          const clamped = Math.max(0, Math.min(100, numeric));
+          (fillEl as HTMLDivElement).style.width = `${clamped}%`;
+        }
+      }
+    }
+  }
+
+  private async prewarmAllProceduralLayoutsAsync(showOverlay: boolean): Promise<void> {
+    if (!this.gameplayInitialized) return;
+    if (this.textureRenderMode !== 'proceduralRelief') return;
+    if (this.proceduralWarmCacheReady) {
+      if (showOverlay) {
+        this.setLoadingOverlay(true, 'OPTIMIZING DUNGEON...', '100%');
+        await this.waitForNextPaint(1);
+        this.setLoadingOverlay(false);
+      }
+      return;
+    }
+    if (this.proceduralPrewarmPromise) {
+      await this.proceduralPrewarmPromise;
+      return;
+    }
+
+    const roomIds = this.roomOrder.length > 0
+      ? this.roomOrder
+      : Array.from(this.roomLayoutCache.keys());
+
+    this.proceduralPrewarmPromise = (async () => {
+      if (showOverlay) {
+        this.setLoadingOverlay(true, 'OPTIMIZING DUNGEON...', '0%');
+      }
+
+      try {
+        const total = Math.max(1, roomIds.length);
+        for (let i = 0; i < roomIds.length; i++) {
+          const roomId = roomIds[i];
+          const layout = this.getOrBuildRoomLayout(roomId);
+          if (layout) {
+            this.tileFloorManager.prewarmRoomLayout(layout);
+          }
+
+          if (showOverlay) {
+            const pct = Math.floor(((i + 1) / total) * 100);
+            this.setLoadingOverlay(true, 'OPTIMIZING DUNGEON...', `${pct}%`);
+          }
+
+          // Yield to the browser between rooms to avoid long main-thread stalls.
+          await this.waitForNextPaint(1);
+        }
+        this.proceduralWarmCacheReady = true;
+      } finally {
+        this.pendingProceduralPrewarmRoomIds = [];
+        if (this.proceduralPrewarmTimer !== null) {
+          window.clearTimeout(this.proceduralPrewarmTimer);
+          this.proceduralPrewarmTimer = null;
+        }
+        if (showOverlay) {
+          this.setLoadingOverlay(false);
+        }
+        this.proceduralPrewarmPromise = null;
+      }
+    })();
+
+    await this.proceduralPrewarmPromise;
+  }
+
+  private runProceduralPrewarmQueue(): void {
+    // Keep compatibility with existing callers.
+    void this.prewarmAllProceduralLayoutsAsync(false);
   }
 
   private loadTilesForLayout(layout: RoomLayout, origin: Vector3): void {
-    this.tileFloorManager.setRenderProfile('classic');
-    this.tileFloorManager.clearFloor();
-    this.tileFloorManager.loadRoomFloor(layout, origin);
+    const profile = this.getRenderProfileForRoom('');
+    this.tileFloorManager.loadRoomFloor(layout, origin, profile);
   }
 
-  private getRenderProfileForRoom(roomId: string): 'classic' | 'neoDungeonTest' {
+  private getRenderProfileForRoom(roomId: string): 'classic' | 'neoDungeonTest' | 'proceduralRelief' {
+    if (this.textureRenderMode === 'proceduralRelief') {
+      return 'proceduralRelief';
+    }
     return ProceduralDungeonTheme.isNeoTestRoom(roomId) ? 'neoDungeonTest' : 'classic';
+  }
+
+  public getTextureRenderMode(): TextureRenderMode {
+    return this.textureRenderMode;
+  }
+
+  public getProceduralQuality(): ProceduralReliefQuality {
+    return ProceduralReliefTheme.getQuality();
+  }
+
+  public setProceduralQuality(quality: ProceduralReliefQuality): void {
+    ProceduralReliefTheme.setQuality(quality);
+    this.proceduralWarmCacheReady = false;
+    if (!this.gameplayInitialized || this.textureRenderMode !== 'proceduralRelief') return;
+
+    const rooms = this.configLoader.getRooms();
+    if (Array.isArray(rooms)) {
+      void this.prewarmAllProceduralLayoutsAsync(false);
+    }
+
+    const currentRoomId = this.roomOrder[this.currentRoomIndex] ?? '';
+    if (currentRoomId) {
+      this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, true);
+      if (this.tilesEnabled) {
+        this.loadTilesForRoom(currentRoomId);
+      }
+    }
+  }
+
+  public setTextureRenderMode(mode: TextureRenderMode): void {
+    if (this.textureRenderMode === mode) return;
+    this.textureRenderMode = mode;
+
+    if (!this.gameplayInitialized) return;
+
+    if (mode === 'proceduralRelief') {
+      ProceduralReliefTheme.setQuality('medium');
+      this.proceduralWarmCacheReady = false;
+      ProceduralReliefTheme.prewarm(this.scene);
+      void this.prewarmAllProceduralLayoutsAsync(false);
+    } else {
+      this.proceduralWarmCacheReady = false;
+      this.pendingProceduralPrewarmRoomIds = [];
+      if (this.proceduralPrewarmTimer !== null) {
+        window.clearTimeout(this.proceduralPrewarmTimer);
+        this.proceduralPrewarmTimer = null;
+      }
+    }
+
+    const currentRoomId = this.roomOrder[this.currentRoomIndex] ?? '';
+    const profile = this.getRenderProfileForRoom(currentRoomId);
+    this.tileFloorManager.setRenderProfile(profile);
+    this.roomManager.setRenderProfile(profile);
+
+    if (currentRoomId) {
+      // Refresh current/preloaded room geometry so walls and pillars switch materials immediately.
+      this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, true);
+      if (this.tilesEnabled) {
+        this.loadTilesForRoom(currentRoomId);
+      }
+    }
   }
 
   public loadRoomFromTileMappingJson(jsonPayload: string): void {
@@ -1814,10 +2409,26 @@ export class GameManager {
   }
 
   public setTilesEnabled(enabled: boolean): void {
+    if (this.tilesEnabled === enabled) return;
     this.tilesEnabled = enabled;
     this.roomManager.setFloorRenderingEnabled(!enabled);
+
+    if (!this.gameplayInitialized) {
+      if (!enabled) {
+        this.tileFloorManager.clearAllRoomInstances();
+      }
+      return;
+    }
+
     if (!enabled) {
-      this.tileFloorManager.clearFloor();
+      this.tileFloorManager.clearAllRoomInstances();
+    }
+
+    // Rebuild current/preloaded room geometry so floor/walls always match tile mode.
+    this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, true);
+    const currentRoomId = this.roomOrder[this.currentRoomIndex];
+    if (enabled && currentRoomId) {
+      void this.loadTilesForRoom(currentRoomId);
     }
   }
 

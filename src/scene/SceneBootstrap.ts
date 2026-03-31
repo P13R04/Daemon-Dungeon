@@ -2,12 +2,13 @@
  * SceneBootstrap - Initializes the Babylon.js scene with base settings
  */
 
-import { Scene, Engine, ArcRotateCamera, Vector3, HemisphericLight, FreeCamera, Color4 } from '@babylonjs/core';
+import { Scene, Engine, ArcRotateCamera, Vector3, HemisphericLight, DirectionalLight, FreeCamera, Color3 } from '@babylonjs/core';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
+import { PhysicsBootstrap } from './PhysicsBootstrap';
 
 export class SceneBootstrap {
-  static createScene(engine: Engine, canvas: HTMLCanvasElement): Scene {
+  static async createScene(engine: Engine, canvas: HTMLCanvasElement): Promise<Scene> {
     const scene = new Scene(engine);
 
     // Ensure 3D meshes only render on the main scene layer.
@@ -36,9 +37,14 @@ export class SceneBootstrap {
     // The UI layer will be transparent through layerMask
     (uiCamera as any).clear = false;
     
-    // Basic lighting
-    const light = new HemisphericLight('light', new Vector3(0, 1, 0), scene);
-    light.intensity = 0.55;
+    // Brighter gameplay lighting closer to the reference texture lab setup.
+    const hemi = new HemisphericLight('light', new Vector3(0.2, 1, 0), scene);
+    hemi.intensity = 1.0;
+    hemi.diffuse = new Color3(1.0, 1.0, 1.0);
+    hemi.groundColor = new Color3(0.28, 0.31, 0.36);
+    const dir = new DirectionalLight('dir', new Vector3(-0.4, -1.0, 0.45), scene);
+    dir.position = new Vector3(12, 18, -8);
+    dir.intensity = 0.95;
     
     // Scene settings
     scene.clearColor = scene.clearColor.set(0.02, 0.02, 0.06, 1);
@@ -49,6 +55,8 @@ export class SceneBootstrap {
     (scene as any).uiCamera = uiCamera;
     scene.activeCameras = [camera, uiCamera];
     scene.activeCamera = camera;
+
+    await PhysicsBootstrap.enableHavok(scene);
     
     return scene;
   }

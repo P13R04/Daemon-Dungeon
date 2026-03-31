@@ -28,13 +28,73 @@
         }
 
         #loading {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #BFFFE2;
+        }
+
+        #loading::before {
+            content: '';
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: #0f0;
-            font-size: 24px;
-            text-align: center;
+            inset: 0;
+            background:
+                radial-gradient(circle at 20% 20%, rgba(45, 82, 70, 0.25), transparent 45%),
+                radial-gradient(circle at 80% 65%, rgba(39, 65, 55, 0.22), transparent 48%),
+                linear-gradient(180deg, rgba(2, 12, 10, 0.98), rgba(0, 0, 0, 0.99));
+        }
+
+        #loadingPanel {
+            position: relative;
+            width: min(620px, 92vw);
+            padding: 28px 26px 24px;
+            border: 1px solid rgba(115, 206, 171, 0.5);
+            box-shadow: 0 0 30px rgba(0, 255, 170, 0.14), inset 0 0 24px rgba(18, 67, 54, 0.45);
+            background: rgba(6, 20, 17, 0.85);
+            backdrop-filter: blur(2px);
+            text-align: left;
+        }
+
+        #loadingTitle {
+            color: #DAFFE9;
+            font-size: 20px;
+            letter-spacing: 0.12em;
+            margin-bottom: 8px;
+        }
+
+        #loadingLabel {
+            color: #8DE8C4;
+            font-size: 14px;
+            letter-spacing: 0.06em;
+            margin-bottom: 12px;
+            min-height: 18px;
+        }
+
+        #loadingBarTrack {
+            width: 100%;
+            height: 12px;
+            border: 1px solid rgba(120, 214, 180, 0.45);
+            background: rgba(8, 31, 26, 0.8);
+            overflow: hidden;
+        }
+
+        #loadingBarFill {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #4de7b0, #7bffd0);
+            box-shadow: 0 0 18px rgba(96, 255, 196, 0.5);
+            transition: width 160ms linear;
+        }
+
+        #loadingProgress {
+            margin-top: 10px;
+            color: #D6FFF0;
+            font-size: 13px;
+            letter-spacing: 0.12em;
+            text-align: right;
         }
 
         .hidden {
@@ -45,8 +105,14 @@
 <body>
     <canvas id="renderCanvas"></canvas>
     <div id="loading">
-        <p>LOADING SYSTEM...</p>
-        <p id="loadingProgress">0%</p>
+        <div id="loadingPanel">
+            <h2 id="loadingTitle">DAEMON DUNGEON // BOOT</h2>
+            <p id="loadingLabel">LOADING SYSTEM...</p>
+            <div id="loadingBarTrack">
+                <div id="loadingBarFill"></div>
+            </div>
+            <p id="loadingProgress">0%</p>
+        </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
 </body>

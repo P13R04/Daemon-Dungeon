@@ -10,6 +10,7 @@
       "attackCooldown": 1.0
     },
     "behavior": "chase",
+    "behaviorPreset": "aggressive-melee",
     "behaviorConfig": {
       "useCrowd": true,
       "separationRadius": 1.1,
@@ -20,6 +21,32 @@
     "lootTable": [
       { "itemId": "health_potion_small", "dropChance": 0.3, "amount": 1 }
     ],
+    "appearance": {
+      "size": 0.8,
+      "color": { "r": 0.5, "g": 1.0, "b": 0.5 }
+    }
+  },
+  "zombie_basic_void": {
+    "name": "Zombie (Voidwalker)",
+    "description": "Zombie de test qui peut tomber dans le vide.",
+    "baseStats": {
+      "hp": 42,
+      "damage": 8,
+      "speed": 2.45,
+      "attackRange": 0.7,
+      "attackCooldown": 1.0
+    },
+    "behavior": "chase",
+    "behaviorConfig": {
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "avoidObstacles": true,
+      "avoidDistance": 0.9,
+      "avoidVoid": false,
+      "canFallIntoVoid": true
+    },
+    "lootTable": [],
     "appearance": {
       "size": 0.8,
       "color": { "r": 0.5, "g": 1.0, "b": 0.5 }
@@ -81,7 +108,9 @@
     },
     "behavior": "pong",
     "behaviorConfig": {
-      "initialAngleDeg": 45
+      "initialAngleDeg": 45,
+      "contactDamageRatio": 0.4,
+      "contactKnockback": 0.7
     },
     "lootTable": [],
     "appearance": {
@@ -117,7 +146,7 @@
   },
   "fuyard": {
     "name": "Fuyard",
-    "description": "Se rapproche puis garde ses distances.",
+    "description": "Harcèle à distance: s'approche de loin mais fuit quand le joueur est trop proche.",
     "baseStats": {
       "hp": 35,
       "damage": 6,
@@ -126,15 +155,21 @@
       "attackCooldown": 1.0
     },
     "behavior": "fuyard",
+    "behaviorPreset": "panic-kiter",
     "behaviorConfig": {
-      "kiteMinRange": 1.4,
-      "kiteMaxRange": 4.0,
-      "orbitStrength": 0.6,
+      "kiteMinRange": 2.2,
+      "kiteMaxRange": 5.2,
+      "panicTriggerRange": 1.85,
+      "panicDuration": 1.3,
+      "panicChaosJitter": 0.95,
+      "strafeStrength": 0.5,
       "useCrowd": true,
       "separationRadius": 1.1,
       "separationStrength": 1.0,
+      "crowdMinDistance": 0.65,
       "avoidObstacles": true,
-      "avoidDistance": 0.9
+      "avoidDistance": 1.1,
+      "navRepathInterval": 0.22
     },
     "lootTable": [],
     "appearance": {
@@ -159,12 +194,87 @@
       "separationRadius": 1.1,
       "separationStrength": 1.0,
       "avoidObstacles": true,
-      "avoidDistance": 0.9
+      "avoidDistance": 0.9,
+      "avoidVoid": true,
+      "canFallIntoVoid": false
     },
     "lootTable": [],
     "appearance": {
       "size": 0.85,
       "color": { "r": 0.5, "g": 0.9, "b": 0.9 }
+    }
+  },
+  "swarm_coordinator": {
+    "name": "Swarm Coordinator",
+    "description": "Orchestre les déplacements de groupe et force l'encerclement.",
+    "baseStats": {
+      "hp": 72,
+      "damage": 8,
+      "speed": 2.35,
+      "attackRange": 0.8,
+      "attackCooldown": 1.0
+    },
+    "behavior": "swarm_coordinator",
+    "behaviorPreset": "swarm-coordinator",
+    "behaviorConfig": {
+      "rangedMinRange": 3.2,
+      "rangedMaxRange": 6.6,
+      "rangedCooldown": 1.35,
+      "projectileSpeed": 6.2,
+      "projectileRange": 12.5,
+      "leadTime": 0.28,
+      "swarmCommandInterval": 1.35,
+      "swarmCommandRange": 9.4,
+      "swarmCommandDuration": 1.45,
+      "swarmCommandWeight": 0.66,
+      "swarmFormationRadius": 3.0,
+      "useCrowd": true,
+      "separationRadius": 1.2,
+      "separationStrength": 1.15,
+      "avoidObstacles": true,
+      "avoidDistance": 1.0
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.95,
+      "color": { "r": 0.95, "g": 0.45, "b": 0.15 }
+    }
+  },
+  "prefire_sentinel": {
+    "name": "Prefire Sentinel",
+    "description": "Verrouille une trajectoire anticipée puis tire avec délai de préfire.",
+    "baseStats": {
+      "hp": 66,
+      "damage": 12,
+      "speed": 2.15,
+      "attackRange": 0.7,
+      "attackCooldown": 1.0
+    },
+    "behavior": "prefire_sentinel",
+    "behaviorPreset": "predictive-prefire",
+    "behaviorConfig": {
+      "rangedMinRange": 3.7,
+      "rangedMaxRange": 7.3,
+      "rangedCooldown": 1.55,
+      "projectileSpeed": 7.2,
+      "projectileRange": 13.8,
+      "projectileBounces": 1,
+      "projectileBounceDamping": 0.9,
+      "prefireWindup": 0.5,
+      "prefireLeadBonus": 0.32,
+      "leadTime": 0.3,
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "avoidObstacles": true,
+      "avoidDistance": 0.95,
+      "avoidVoid": true,
+      "canFallIntoVoid": false
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 0.95, "g": 0.75, "b": 0.2 }
     }
   },
   "sentinel": {
@@ -184,6 +294,8 @@
       "rangedCooldown": 1.2,
       "projectileSpeed": 6.5,
       "projectileRange": 12.0,
+      "projectileBounces": 1,
+      "projectileBounceDamping": 0.92,
       "leadTime": 0.2,
       "useCrowd": true,
       "separationRadius": 1.1,

@@ -486,6 +486,8 @@ export class PlayerAnimationController {
     isFiring: boolean,
     isUltimateActive: boolean
   ): void {
+    void isFiring;
+
     // If ultimate becomes active, trigger animation (allow retrigger each time)
     if (isUltimateActive && !this.isUltimateActive) {
       this.playAnimation(AnimationState.ULTIMATE);
@@ -506,14 +508,6 @@ export class PlayerAnimationController {
 
     // Keep shield loop running (don't interrupt with attack animations)
     if (this.currentState === AnimationState.SHIELD_LOOP && this.isAnimationCurrentlyPlaying()) {
-      return;
-    }
-
-    // Attack takes priority over movement
-    // BUT: skip attack if shield is active (shield bash is handled separately)
-    // BUT: if attack animation is still playing, let it finish
-    if (isFiring && this.currentState !== AnimationState.ATTACKING && !this.isShieldActive) {
-      this.playAnimation(AnimationState.ATTACKING);
       return;
     }
 
@@ -563,7 +557,24 @@ export class PlayerAnimationController {
   setPosition(position: Vector3): void {
     if (this.meshParent) {
       this.meshParent.position.copyFrom(position);
-      this.meshParent.position.y = 1.0 + this.heightOffset; // Ensure correct height with offset
+      // Preserve caller-provided world Y (used by void-fall offset),
+      // then apply class-specific rig offset.
+      this.meshParent.position.y = position.y + this.heightOffset;
+    }
+  }
+
+  setVisibility(visibility: number): void {
+    const clamped = Math.max(0, Math.min(1, Number.isFinite(visibility) ? visibility : 1));
+
+    if (this.mesh) {
+      this.mesh.visibility = clamped;
+    }
+
+    if (this.meshParent) {
+      const childMeshes = this.meshParent.getChildMeshes(false);
+      for (const child of childMeshes) {
+        child.visibility = clamped;
+      }
     }
   }
 

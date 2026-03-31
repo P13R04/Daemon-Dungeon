@@ -10,6 +10,7 @@
 
 import { Scene, StandardMaterial, Texture, Mesh, MeshBuilder, Vector3, Color3, ShaderMaterial } from '@babylonjs/core';
 import { ProceduralDungeonTheme } from './ProceduralDungeonTheme';
+import { ProceduralReliefTheme } from './ProceduralReliefTheme';
 
 export type TileType =
   | 'floor'
@@ -31,7 +32,7 @@ export interface TileData {
   };
 }
 
-export type TileRenderProfile = 'classic' | 'neoDungeonTest';
+export type TileRenderProfile = 'classic' | 'neoDungeonTest' | 'proceduralRelief';
 
 interface TileRenderData {
   texturePath: string | null;
@@ -89,6 +90,34 @@ export class TileSystem {
 
   setRenderProfile(profile: TileRenderProfile): void {
     this.renderProfile = profile;
+  }
+
+  prewarmProceduralMaterials(tiles: TileData[]): void {
+    if (!this.isProceduralReliefProfile()) return;
+
+    const grid = new Map<string, TileData>();
+    for (const tile of tiles) {
+      grid.set(this.getTileKey(tile.x, tile.z), tile);
+    }
+
+    for (const tile of tiles) {
+      if (tile.type !== 'floor') continue;
+      const adjacencies = this.getAdjacencies(tile.x, tile.z, grid);
+      ProceduralReliefTheme.createFloorMaterial(this.scene, tile.x, tile.z, {
+        wallMask: this.maskFromTypes(adjacencies, ['wall']),
+        wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
+        pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
+        pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
+        poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+        poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+        voidMask: this.maskFromTypes(adjacencies, ['void']),
+        voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+      });
+    }
+  }
+
+  private isProceduralReliefProfile(): boolean {
+    return this.renderProfile === 'proceduralRelief';
   }
 
   private getAdjacencies(x: number, z: number, grid: Map<string, TileData>) {
@@ -519,9 +548,12 @@ export class TileSystem {
       return null;
     }
 
+    const useRelief = this.isProceduralReliefProfile();
     const tileMesh = MeshBuilder.CreateGround('tile_' + key, {
       width: this.tileSize,
       height: this.tileSize,
+      subdivisions: useRelief && tile.type !== 'poison' ? 14 : 1,
+      updatable: useRelief && tile.type !== 'poison',
     }, this.scene);
 
     // Center the ground tile on its grid position (CreateGround has centered pivot)
@@ -534,7 +566,24 @@ export class TileSystem {
     const renderData = this.getTileRenderData(tile, this.getAdjacencies(tile.x, tile.z, this.tileGrid));
 
     const adjacencies = this.getAdjacencies(tile.x, tile.z, this.tileGrid);
-    if (this.renderProfile === 'neoDungeonTest' && tile.type === 'floor') {
+    if (this.isProceduralReliefProfile() && tile.type === 'floor') {
+      ProceduralReliefTheme.applyFloorDisplacement(tileMesh, tile.x, tile.z, this.tileSize);
+      tileMesh.material = ProceduralReliefTheme.createFloorMaterial(
+        this.scene,
+        tile.x,
+        tile.z,
+        {
+          wallMask: this.maskFromTypes(adjacencies, ['wall']),
+          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
+          pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
+          pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
+          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+          voidMask: this.maskFromTypes(adjacencies, ['void']),
+          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+        }
+      );
+    } else if (this.renderProfile === 'neoDungeonTest' && tile.type === 'floor') {
       tileMesh.material = ProceduralDungeonTheme.createFloorMaterial(
         this.scene,
         key,
@@ -549,6 +598,10 @@ export class TileSystem {
           voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
         }
       );
+    } else if (this.isProceduralReliefProfile() && tile.type === 'poison') {
+      const poisonMat = ProceduralReliefTheme.createPoisonMaterial(this.scene, key);
+      tileMesh.material = poisonMat;
+      this.poisonShaderMaterials.add(poisonMat);
     } else if (this.renderProfile === 'neoDungeonTest' && tile.type === 'poison') {
       const poisonMat = ProceduralDungeonTheme.createPoisonShaderMaterial(this.scene, key);
       tileMesh.material = poisonMat;
@@ -571,7 +624,8 @@ export class TileSystem {
       this.setupPoisonTileParticles(key, tile);
     }
 
-    const rotationRadians = ((renderData.rotationDegrees + this.rotationOffsetDegrees) * Math.PI) / 180;
+    const rotationDegrees = this.isProceduralReliefProfile() ? 0 : renderData.rotationDegrees;
+    const rotationRadians = ((rotationDegrees + this.rotationOffsetDegrees) * Math.PI) / 180;
     tileMesh.rotation = new Vector3(0, rotationRadians, 0);
 
     this.tileMeshes.set(key, tileMesh);
@@ -588,7 +642,23 @@ export class TileSystem {
     const adjacencies = this.getAdjacencies(x, z, this.tileGrid);
     const renderData = this.getTileRenderData(tile, adjacencies);
 
-    if (this.renderProfile === 'neoDungeonTest' && tile.type === 'floor') {
+    if (this.isProceduralReliefProfile() && tile.type === 'floor') {
+      mesh.material = ProceduralReliefTheme.createFloorMaterial(
+        this.scene,
+        tile.x,
+        tile.z,
+        {
+          wallMask: this.maskFromTypes(adjacencies, ['wall']),
+          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
+          pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
+          pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
+          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+          voidMask: this.maskFromTypes(adjacencies, ['void']),
+          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+        }
+      );
+    } else if (this.renderProfile === 'neoDungeonTest' && tile.type === 'floor') {
       mesh.material?.dispose();
       mesh.material = ProceduralDungeonTheme.createFloorMaterial(
         this.scene,
@@ -604,6 +674,13 @@ export class TileSystem {
           voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
         }
       );
+    } else if (this.isProceduralReliefProfile() && tile.type === 'poison') {
+      if (!(mesh.material instanceof ShaderMaterial)) {
+        mesh.material?.dispose();
+        const poisonMat = ProceduralReliefTheme.createPoisonMaterial(this.scene, key);
+        mesh.material = poisonMat;
+        this.poisonShaderMaterials.add(poisonMat);
+      }
     } else if (this.renderProfile === 'neoDungeonTest' && tile.type === 'poison') {
       if (!(mesh.material instanceof ShaderMaterial)) {
         mesh.material?.dispose();
@@ -617,7 +694,8 @@ export class TileSystem {
       (mesh.material as StandardMaterial).diffuseTexture = this.getTexture(resolvedPath);
     }
     
-    const rotationRadians = ((renderData.rotationDegrees + this.rotationOffsetDegrees) * Math.PI) / 180;
+    const rotationDegrees = this.isProceduralReliefProfile() ? 0 : renderData.rotationDegrees;
+    const rotationRadians = ((rotationDegrees + this.rotationOffsetDegrees) * Math.PI) / 180;
     mesh.rotation = new Vector3(0, rotationRadians, 0);
   }
 
@@ -632,6 +710,9 @@ export class TileSystem {
   clearTiles(): void {
     this.clearSpikeMeshes();
     this.clearPoisonParticles();
+    for (const material of this.poisonShaderMaterials) {
+      material.dispose();
+    }
     this.poisonShaderMaterials.clear();
     this.tileMeshes.forEach(mesh => {
       if (mesh) mesh.dispose();

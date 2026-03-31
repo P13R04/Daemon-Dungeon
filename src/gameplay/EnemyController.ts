@@ -10,7 +10,7 @@ import { EventBus, GameEvents } from '../core/EventBus';
 import { Time } from '../core/Time';
 import { MathUtils } from '../utils/Math';
 import { ConfigLoader } from '../utils/ConfigLoader';
-import type { RoomManager } from '../systems/RoomManager';
+import type { NavigationCapabilities, RoomManager } from '../systems/RoomManager';
 
 interface BeamSegment {
   start: Vector3;
@@ -59,8 +59,25 @@ export class EnemyController {
   private useCrowdSteering: boolean = false;
   private separationRadius: number = 1.1;
   private separationStrength: number = 1.0;
+  private crowdMinDistance: number = 0.45;
   private avoidObstacles: boolean = false;
   private avoidDistance: number = 0.9;
+  private canFly: boolean = false;
+  private avoidVoid: boolean = true;
+  private canFallIntoVoid: boolean = false;
+  private navPath: Vector3[] = [];
+  private navPathCursor: number = 0;
+  private navRepathTimer: number = 0;
+  private navRepathInterval: number = 0.35;
+  private navTargetSnapshot: Vector3 | null = null;
+  private commandTarget: Vector3 | null = null;
+  private commandRemaining: number = 0;
+  private commandWeight: number = 0;
+  private falling: boolean = false;
+  private fallSpeed: number = 0;
+  private fallOffset: number = 0;
+  private fallDeathDepth: number = 4.2;
+  private fallFxTimer: number = 0;
   private stuckTimer: number = 0;
   private lastPosition: Vector3 = Vector3.Zero();
   private stuckThreshold: number = 0.02;
@@ -69,6 +86,8 @@ export class EnemyController {
   private pongInitialized: boolean = false;
   private pongInitialAngleDeg: number | null = null;
   private pongRadius: number = 0.35;
+  private pongContactDamageRatio: number = 0.5;
+  private pongContactKnockback: number = 0.55;
   private jumperState: 'chase' | 'aim' | 'jump' | 'cooldown' = 'chase';
   private jumperTimer: number = 0;
   private jumperLockedDirection: Vector3 = new Vector3(1, 0, 0);
@@ -85,6 +104,13 @@ export class EnemyController {
   private jumperShockwaveDamage: number = 0;
   private kiteMinRange: number = 2.5;
   private kiteMaxRange: number = 4.5;
+  private fuyardPanicTriggerRange: number = 1.9;
+  private fuyardPanicDuration: number = 1.25;
+  private fuyardPanicTimer: number = 0;
+  private fuyardChaosDirection: Vector3 = new Vector3(1, 0, 0);
+  private fuyardChaosTimer: number = 0;
+  private fuyardChaosJitter: number = 0.9;
+  private fuyardStrafeStrength: number = 0.52;
   private orbitStrength: number = 0.4;
   private orbitSign: number = 1;
   private orbitFlipCooldown: number = 0.6;
@@ -95,7 +121,20 @@ export class EnemyController {
   private rangedCooldown: number = 1.2;
   private rangedProjectileSpeed: number = 6.0;
   private rangedProjectileRange: number = 12.0;
+  private rangedProjectileBounces: number = 0;
+  private rangedProjectileBounceDamping: number = 0.9;
   private rangedWindup: number = 0;
+  private prefireState: 'idle' | 'windup' = 'idle';
+  private prefireTimer: number = 0;
+  private prefireWindup: number = 0.55;
+  private prefireLockedDirection: Vector3 = new Vector3(1, 0, 0);
+  private prefireLeadBonus: number = 0.15;
+  private swarmCommandInterval: number = 1.4;
+  private swarmCommandTimer: number = 0.55;
+  private swarmCommandRange: number = 9.0;
+  private swarmCommandDuration: number = 1.35;
+  private swarmCommandWeight: number = 0.64;
+  private swarmFormationRadius: number = 3.0;
   private healerRange: number = 4.0;
   private healerAmount: number = 6.0;
   private healerCooldown: number = 1.5;
@@ -183,6 +222,13 @@ export class EnemyController {
     this.knockbackStrength = config.knockbackStrength ?? 0;
     this.selfKnockbackStrength = config.selfKnockbackStrength ?? 0;
 
+    const behaviorPreset = typeof config.behaviorPreset === 'string'
+      ? config.behaviorPreset
+      : (typeof config.behaviorConfig?.preset === 'string' ? config.behaviorConfig.preset : null);
+    if (behaviorPreset) {
+      this.applyBehaviorPreset(behaviorPreset);
+    }
+
     if (config.behaviorConfig) {
       this.bullTriggerRange = config.behaviorConfig.triggerRange ?? this.bullTriggerRange;
       this.bullAimDuration = config.behaviorConfig.aimDuration ?? this.bullAimDuration;
@@ -195,9 +241,16 @@ export class EnemyController {
       this.useCrowdSteering = config.behaviorConfig.useCrowd ?? this.useCrowdSteering;
       this.separationRadius = config.behaviorConfig.separationRadius ?? this.separationRadius;
       this.separationStrength = config.behaviorConfig.separationStrength ?? this.separationStrength;
+      this.crowdMinDistance = config.behaviorConfig.crowdMinDistance ?? this.crowdMinDistance;
       this.avoidObstacles = config.behaviorConfig.avoidObstacles ?? this.avoidObstacles;
       this.avoidDistance = config.behaviorConfig.avoidDistance ?? this.avoidDistance;
+      this.canFly = config.behaviorConfig.canFly ?? this.canFly;
+      this.avoidVoid = config.behaviorConfig.avoidVoid ?? this.avoidVoid;
+      this.canFallIntoVoid = config.behaviorConfig.canFallIntoVoid ?? this.canFallIntoVoid;
+      this.navRepathInterval = config.behaviorConfig.navRepathInterval ?? this.navRepathInterval;
       this.pongInitialAngleDeg = config.behaviorConfig.initialAngleDeg ?? this.pongInitialAngleDeg;
+      this.pongContactDamageRatio = config.behaviorConfig.contactDamageRatio ?? this.pongContactDamageRatio;
+      this.pongContactKnockback = config.behaviorConfig.contactKnockback ?? this.pongContactKnockback;
       this.jumperTriggerRange = config.behaviorConfig.triggerRange ?? this.jumperTriggerRange;
       this.jumperAimDuration = config.behaviorConfig.aimDuration ?? this.jumperAimDuration;
       this.jumperJumpDuration = config.behaviorConfig.jumpDuration ?? this.jumperJumpDuration;
@@ -212,6 +265,10 @@ export class EnemyController {
       this.pongRadius = config.behaviorConfig.pongRadius ?? this.pongRadius;
       this.kiteMinRange = config.behaviorConfig.kiteMinRange ?? this.kiteMinRange;
       this.kiteMaxRange = config.behaviorConfig.kiteMaxRange ?? this.kiteMaxRange;
+      this.fuyardPanicTriggerRange = config.behaviorConfig.panicTriggerRange ?? this.fuyardPanicTriggerRange;
+      this.fuyardPanicDuration = config.behaviorConfig.panicDuration ?? this.fuyardPanicDuration;
+      this.fuyardChaosJitter = config.behaviorConfig.panicChaosJitter ?? this.fuyardChaosJitter;
+      this.fuyardStrafeStrength = config.behaviorConfig.strafeStrength ?? this.fuyardStrafeStrength;
       this.orbitStrength = config.behaviorConfig.orbitStrength ?? this.orbitStrength;
       this.leadTime = config.behaviorConfig.leadTime ?? this.leadTime;
       this.rangedMinRange = config.behaviorConfig.rangedMinRange ?? this.rangedMinRange;
@@ -219,7 +276,16 @@ export class EnemyController {
       this.rangedCooldown = config.behaviorConfig.rangedCooldown ?? this.rangedCooldown;
       this.rangedProjectileSpeed = config.behaviorConfig.projectileSpeed ?? this.rangedProjectileSpeed;
       this.rangedProjectileRange = config.behaviorConfig.projectileRange ?? this.rangedProjectileRange;
+      this.rangedProjectileBounces = config.behaviorConfig.projectileBounces ?? this.rangedProjectileBounces;
+      this.rangedProjectileBounceDamping = config.behaviorConfig.projectileBounceDamping ?? this.rangedProjectileBounceDamping;
       this.rangedWindup = config.behaviorConfig.rangedWindup ?? this.rangedWindup;
+      this.prefireWindup = config.behaviorConfig.prefireWindup ?? this.prefireWindup;
+      this.prefireLeadBonus = config.behaviorConfig.prefireLeadBonus ?? this.prefireLeadBonus;
+      this.swarmCommandInterval = config.behaviorConfig.swarmCommandInterval ?? this.swarmCommandInterval;
+      this.swarmCommandRange = config.behaviorConfig.swarmCommandRange ?? this.swarmCommandRange;
+      this.swarmCommandDuration = config.behaviorConfig.swarmCommandDuration ?? this.swarmCommandDuration;
+      this.swarmCommandWeight = config.behaviorConfig.swarmCommandWeight ?? this.swarmCommandWeight;
+      this.swarmFormationRadius = config.behaviorConfig.swarmFormationRadius ?? this.swarmFormationRadius;
       this.healerRange = config.behaviorConfig.healRange ?? this.healerRange;
       this.healerAmount = config.behaviorConfig.healAmount ?? this.healerAmount;
       this.healerCooldown = config.behaviorConfig.healCooldown ?? this.healerCooldown;
@@ -317,6 +383,19 @@ export class EnemyController {
   ): void {
     if (!this.isAlive || !this.mesh) return;
 
+    if (this.commandRemaining > 0) {
+      this.commandRemaining = Math.max(0, this.commandRemaining - deltaTime);
+      if (this.commandRemaining <= 0) {
+        this.commandTarget = null;
+        this.commandWeight = 0;
+      }
+    }
+
+    if (this.falling) {
+      this.updateFalling(deltaTime);
+      return;
+    }
+
     // Check if enemies are frozen via debug flag
     const configLoader = ConfigLoader.getInstance();
     const gameplayConfig = configLoader.getGameplay();
@@ -348,6 +427,7 @@ export class EnemyController {
       if (this.attackCooldown > 0) {
         this.attackCooldown -= deltaTime;
       }
+      this.checkVoidFallCandidate(roomManager);
       return;
     }
 
@@ -360,6 +440,7 @@ export class EnemyController {
       if (this.attackCooldown > 0) {
         this.attackCooldown -= deltaTime;
       }
+      this.checkVoidFallCandidate(roomManager);
       return;
     }
 
@@ -375,6 +456,10 @@ export class EnemyController {
       this.updateFuyard(deltaTime, playerPosition, allEnemies, roomManager);
     } else if (this.behavior === 'strategist') {
       this.updateStrategist(deltaTime, playerPosition, playerVelocity, allEnemies, roomManager);
+    } else if (this.behavior === 'swarm_coordinator') {
+      this.updateSwarmCoordinator(deltaTime, playerPosition, playerVelocity, allEnemies, roomManager);
+    } else if (this.behavior === 'prefire_sentinel') {
+      this.updatePrefireSentinel(deltaTime, playerPosition, playerVelocity, allEnemies, roomManager);
     } else if (this.behavior === 'sentinel') {
       this.updateRanged(deltaTime, playerPosition, playerVelocity, allEnemies, roomManager, false);
     } else if (this.behavior === 'necromancer') {
@@ -409,6 +494,8 @@ export class EnemyController {
         this.attackCooldown -= deltaTime;
       }
     }
+
+    this.checkVoidFallCandidate(roomManager);
   }
 
   private updateHealer(
@@ -591,6 +678,8 @@ export class EnemyController {
         speed: this.rangedProjectileSpeed,
         range: this.rangedProjectileRange,
         friendly: false,
+        maxBounces: this.rangedProjectileBounces,
+        bounceDamping: this.rangedProjectileBounceDamping,
       });
     }
   }
@@ -642,7 +731,7 @@ export class EnemyController {
     if (roomManager) {
       const radius = this.getRadius();
       const hitsObstacle = this.collidesObstacle(candidate, roomManager, radius);
-      const hitsWall = !roomManager.isWalkable(candidate.x, candidate.z);
+      const hitsWall = this.isVisionBlockedAtXZ(candidate.x, candidate.z, roomManager);
       const sweptHit = this.pathBlockedWithRadius(this.position, candidate, roomManager, radius);
       if (hitsWall || hitsObstacle || sweptHit) {
         this.explodeMissile(playerPosition, candidate, roomManager);
@@ -680,7 +769,7 @@ export class EnemyController {
     for (let i = 1; i <= steps; i++) {
       const t = i / steps;
       const sample = start.add(delta.scale(t));
-      if (!roomManager.isWalkable(sample.x, sample.z)) {
+      if (this.isVisionBlockedAt(sample, roomManager)) {
         return true;
       }
       if (this.collidesObstacle(sample, roomManager, radius)) {
@@ -717,7 +806,7 @@ export class EnemyController {
 
       while (distance <= desired) {
         const sample = center.add(dir.scale(distance));
-        if (!roomManager.isWalkable(sample.x, sample.z)) {
+        if (this.isVisionBlockedAt(sample, roomManager)) {
           break;
         }
         lastWalkable = distance;
@@ -740,48 +829,86 @@ export class EnemyController {
     toPlayer.y = 0;
     const distance = toPlayer.length();
 
-    let desired = Vector3.Zero();
-    if (distance < this.kiteMinRange) {
-      desired = toPlayer.scale(-1);
-    } else if (distance > this.kiteMaxRange) {
-      desired = toPlayer;
-    } else {
-      desired = new Vector3(-toPlayer.z, 0, toPlayer.x)
-        .scale(this.orbitStrength * this.orbitSign);
+    if (distance <= this.fuyardPanicTriggerRange && this.fuyardPanicTimer <= 0) {
+      this.fuyardPanicTimer = this.fuyardPanicDuration;
+      this.fuyardChaosTimer = 0;
     }
 
-    if (desired.lengthSquared() > 0.0001) {
-      desired = desired.normalize();
+    const panicActive = this.fuyardPanicTimer > 0;
+    if (panicActive) {
+      this.fuyardPanicTimer = Math.max(0, this.fuyardPanicTimer - deltaTime);
+      this.fuyardChaosTimer -= deltaTime;
+    }
+
+    let desired = Vector3.Zero();
+    if (panicActive) {
+      const away = this.position.subtract(playerPosition);
+      away.y = 0;
+      if (away.lengthSquared() > 0.0001) {
+        desired = away.normalize();
+      }
+
+      if (this.fuyardChaosTimer <= 0) {
+        const jitterAngle = (Math.random() - 0.5) * Math.PI * 1.1;
+        this.fuyardChaosDirection = this.rotate2D(desired.lengthSquared() > 0.0001 ? desired : new Vector3(1, 0, 0), jitterAngle).normalize();
+        this.fuyardChaosTimer = 0.12 + Math.random() * 0.18;
+      }
+
+      desired = desired.scale(1.0).add(this.fuyardChaosDirection.scale(this.fuyardChaosJitter));
+    } else {
+      if (distance > this.kiteMaxRange) {
+        desired = toPlayer;
+      } else {
+        const radialSign = distance < this.kiteMinRange ? -1 : 0.2;
+        const radial = toPlayer.lengthSquared() > 0.0001 ? toPlayer.normalize().scale(radialSign) : Vector3.Zero();
+        this.orbitFlipTimer -= deltaTime;
+        if (this.orbitFlipTimer <= 0) {
+          this.orbitSign = Math.random() < 0.5 ? -1 : 1;
+          this.orbitFlipTimer = this.orbitFlipCooldown;
+        }
+        const tangentSource = toPlayer.lengthSquared() > 0.0001 ? toPlayer.normalize() : new Vector3(1, 0, 0);
+        const tangent = this.rotate2D(tangentSource, this.orbitSign * Math.PI * 0.5).scale(this.fuyardStrafeStrength);
+        desired = radial.add(tangent);
+      }
+    }
+
+    if (desired.lengthSquared() <= 0.0001) {
+      const fallback = toPlayer.lengthSquared() > 0.0001
+        ? this.rotate2D(toPlayer.normalize(), this.orbitSign * Math.PI * 0.5)
+        : this.rotate2D(new Vector3(1, 0, 0), deltaTime * 3.3);
+      desired = fallback;
+    }
+
+    if (this.avoidObstacles && roomManager && desired.lengthSquared() > 0.0001) {
+      const virtualTarget = this.position.add(desired.normalize().scale(3));
+      const pathDirection = this.computePathDirection(virtualTarget, roomManager, deltaTime);
+      if (pathDirection.lengthSquared() > 0.0001) {
+        desired = pathDirection;
+      }
     }
 
     if (this.useCrowdSteering && allEnemies.length > 0) {
       const separation = this.computeSeparation(allEnemies);
       if (separation.lengthSquared() > 0.0001) {
-        desired = desired.add(separation).normalize();
+        desired = desired.add(separation);
       }
     }
 
-    if (this.avoidObstacles && roomManager) {
+    desired = this.applyCommandInfluence(desired);
+
+    if (desired.lengthSquared() > 0.0001) {
+      desired = desired.normalize();
+    }
+
+    if (this.avoidObstacles && roomManager && desired.lengthSquared() > 0.0001) {
       desired = this.avoidWalls(desired, roomManager);
       desired = this.applyStuckNudge(desired, deltaTime, roomManager);
     }
 
-    // Flip orbit if too close or stuck (with cooldown)
-    if (this.orbitFlipTimer > 0) {
-      this.orbitFlipTimer -= deltaTime;
-    }
-    if (this.orbitFlipTimer <= 0) {
-      if (distance < this.kiteMinRange * 0.8) {
-        this.orbitSign *= -1;
-        this.orbitFlipTimer = this.orbitFlipCooldown;
-      } else if (this.stuckTimer >= this.stuckTimeToNudge) {
-        this.orbitSign *= -1;
-        this.orbitFlipTimer = this.orbitFlipCooldown;
-        this.stuckTimer = 0;
-      }
-    }
-
-    this.velocity = desired.scale(this.speed);
+    const panicSpeedMultiplier = panicActive ? 1.25 : 1;
+    this.velocity = desired.lengthSquared() > 0.0001
+      ? desired.scale(this.speed * panicSpeedMultiplier)
+      : Vector3.Zero();
 
     this.previousPosition = this.position.clone();
     const knock = this.knockback.update(deltaTime);
@@ -807,6 +934,125 @@ export class EnemyController {
 
     if (this.attackCooldown > 0) {
       this.attackCooldown -= deltaTime;
+    }
+  }
+
+  private updateSwarmCoordinator(
+    deltaTime: number,
+    playerPosition: Vector3,
+    playerVelocity: Vector3,
+    allEnemies: EnemyController[] = [],
+    roomManager?: RoomManager
+  ): void {
+    this.updateRanged(deltaTime, playerPosition, playerVelocity, allEnemies, roomManager, false);
+
+    this.swarmCommandTimer -= deltaTime;
+    if (this.swarmCommandTimer > 0) {
+      return;
+    }
+
+    const allies = allEnemies.filter((enemy) => {
+      if (enemy === this || !enemy.isActive()) return false;
+      if (enemy.getBehavior() === 'missile') return false;
+      return Vector3.DistanceSquared(enemy.getPosition(), this.position) <= this.swarmCommandRange * this.swarmCommandRange;
+    });
+
+    if (allies.length === 0) {
+      this.swarmCommandTimer = this.swarmCommandInterval;
+      return;
+    }
+
+    const predictedCenter = playerPosition.add(playerVelocity.scale(this.leadTime * 0.8));
+    const baseAngle = Math.atan2(this.position.z - predictedCenter.z, this.position.x - predictedCenter.x);
+
+    for (let i = 0; i < allies.length; i++) {
+      const ally = allies[i];
+      const angle = baseAngle + (Math.PI * 2 * i) / Math.max(1, allies.length) + (Math.random() - 0.5) * 0.35;
+      const radiusJitter = this.swarmFormationRadius * (0.82 + Math.random() * 0.36);
+      const target = new Vector3(
+        predictedCenter.x + Math.cos(angle) * radiusJitter,
+        ally.getPosition().y,
+        predictedCenter.z + Math.sin(angle) * radiusJitter,
+      );
+
+      ally.applySwarmCommand(target, this.swarmCommandDuration, this.swarmCommandWeight);
+    }
+
+    this.swarmCommandTimer = this.swarmCommandInterval;
+  }
+
+  private updatePrefireSentinel(
+    deltaTime: number,
+    playerPosition: Vector3,
+    playerVelocity: Vector3,
+    allEnemies: EnemyController[] = [],
+    roomManager?: RoomManager
+  ): void {
+    const toPlayer = playerPosition.subtract(this.position);
+    toPlayer.y = 0;
+    const distance = toPlayer.length();
+
+    let desired = Vector3.Zero();
+    if (distance < this.rangedMinRange) {
+      desired = toPlayer.scale(-1);
+    } else if (distance > this.rangedMaxRange) {
+      desired = toPlayer;
+    } else if (toPlayer.lengthSquared() > 0.0001) {
+      desired = this.rotate2D(toPlayer.normalize(), this.orbitSign * Math.PI * 0.5).scale(0.24);
+    }
+
+    if (desired.lengthSquared() > 0.0001) {
+      desired = desired.normalize();
+    }
+
+    if (this.useCrowdSteering && allEnemies.length > 0) {
+      const separation = this.computeSeparation(allEnemies);
+      if (separation.lengthSquared() > 0.0001) {
+        desired = desired.add(separation).normalize();
+      }
+    }
+
+    desired = this.applyCommandInfluence(desired);
+
+    if (this.avoidObstacles && roomManager) {
+      desired = this.avoidWalls(desired, roomManager);
+      desired = this.applyStuckNudge(desired, deltaTime, roomManager);
+    }
+
+    this.velocity = desired.scale(this.speed);
+    this.previousPosition = this.position.clone();
+    const knock = this.knockback.update(deltaTime);
+    this.position = this.position.add(this.velocity.scale(deltaTime)).add(knock);
+    this.applyMeshPosition();
+
+    if (this.attackCooldown > 0) {
+      this.attackCooldown -= deltaTime;
+    }
+
+    if (this.prefireState === 'windup') {
+      this.prefireTimer -= deltaTime;
+      this.rotateToward(this.prefireLockedDirection, deltaTime, 8);
+      if (this.prefireTimer <= 0) {
+        this.fireProjectileInDirection(this.prefireLockedDirection);
+        this.prefireState = 'idle';
+      }
+      return;
+    }
+
+    if (distance <= this.rangedMaxRange && this.attackCooldown <= 0) {
+      const predictiveDirection = this.computePredictiveDirection(
+        this.position,
+        playerPosition,
+        playerVelocity,
+        this.rangedProjectileSpeed,
+        this.leadTime + this.prefireLeadBonus,
+      );
+      if (predictiveDirection.lengthSquared() > 0.0001) {
+        this.prefireLockedDirection = predictiveDirection;
+        this.prefireTimer = this.prefireWindup;
+        this.prefireState = 'windup';
+        this.attackCooldown = this.prefireWindup;
+      }
     }
   }
 
@@ -840,6 +1086,8 @@ export class EnemyController {
           desired = desired.add(separation).normalize();
         }
       }
+
+      desired = this.applyCommandInfluence(desired);
 
       if (this.avoidObstacles && roomManager) {
         desired = this.avoidWalls(desired, roomManager);
@@ -1198,7 +1446,7 @@ export class EnemyController {
 
     for (let d = step; d <= maxDistance; d += step) {
       const sample = origin.add(direction.scale(d));
-      if (!roomManager.isWalkable(sample.x, sample.z)) {
+      if (this.isVisionBlockedAt(sample, roomManager)) {
         return lastWalkable;
       }
       lastWalkable = sample;
@@ -1267,7 +1515,7 @@ export class EnemyController {
     for (let i = 0; i <= steps; i++) {
       const t = i / steps;
       const sample = segment.start.add(delta.scale(t));
-      const walkable = roomManager.isWalkable(sample.x, sample.z);
+      const walkable = !this.isVisionBlockedAt(sample, roomManager);
 
       if (walkable && !openStart) {
         openStart = sample.clone();
@@ -1436,13 +1684,24 @@ export class EnemyController {
     dir.y = 0;
     if (dir.lengthSquared() <= 0.0001) return;
 
+    this.fireProjectileInDirection(dir.normalize());
+  }
+
+  private fireProjectileInDirection(direction: Vector3): void {
+    const dir = direction.lengthSquared() > 0.0001 ? direction.normalize() : Vector3.Zero();
+    if (dir.lengthSquared() <= 0.0001) {
+      return;
+    }
+
     this.eventBus.emit(GameEvents.PROJECTILE_SPAWNED, {
       position: this.position.clone(),
-      direction: dir.normalize(),
+      direction: dir,
       damage: this.damage,
       speed: this.rangedProjectileSpeed,
       range: this.rangedProjectileRange,
       friendly: false,
+      maxBounces: this.rangedProjectileBounces,
+      bounceDamping: this.rangedProjectileBounceDamping,
     });
 
     this.attackCooldown = this.rangedCooldown;
@@ -1547,26 +1806,39 @@ export class EnemyController {
 
     let dir = this.pongDirection.clone();
     const knock = this.knockback.update(deltaTime);
-
-    const dx = dir.x * this.speed * deltaTime;
-    const dz = dir.z * this.speed * deltaTime;
+    const movement = dir.scale(this.speed * deltaTime).add(knock);
 
     this.previousPosition = this.position.clone();
+    let candidate = this.position.add(movement);
 
-    // Move X axis
-    let nextX = new Vector3(this.position.x + dx, this.position.y, this.position.z).add(knock);
-    if (this.isPongBlocked(nextX, playerPosition, allEnemies, roomManager)) {
-      dir = new Vector3(-dir.x, 0, dir.z);
-    } else {
-      this.position.x = nextX.x;
+    const bounceAxis = this.getPongBounceAxis(candidate, movement, roomManager);
+
+    const hitsPlayer = this.isPongTouchingPlayer(candidate, playerPosition);
+    if (hitsPlayer && this.attackCooldown <= 0) {
+      this.applyPongContactDamage();
     }
 
-    // Move Z axis
-    let nextZ = new Vector3(this.position.x, this.position.y, this.position.z + dz).add(knock);
-    if (this.isPongBlocked(nextZ, playerPosition, allEnemies, roomManager)) {
+    let finalAxis = bounceAxis;
+    if (!finalAxis && hitsPlayer) {
+      finalAxis = this.getPongPlayerBounceAxis(candidate, playerPosition, movement);
+    }
+
+    if (finalAxis === 'x') {
+      dir = new Vector3(-dir.x, 0, dir.z);
+    } else if (finalAxis === 'z') {
       dir = new Vector3(dir.x, 0, -dir.z);
-    } else {
-      this.position.z = nextZ.z;
+    }
+
+    if (finalAxis) {
+      candidate = this.position.add(dir.scale(this.speed * deltaTime)).add(knock);
+      if (this.isPongTouchingPlayer(candidate, playerPosition) || this.isPongBlockedByEnvironment(candidate, roomManager)) {
+        dir = dir.scale(-1);
+        candidate = this.position.add(dir.scale(this.speed * deltaTime)).add(knock);
+      }
+    }
+
+    if (!this.isPongBlockedByEnvironment(candidate, roomManager) && !this.isPongTouchingEnemy(candidate, allEnemies)) {
+      this.position.copyFrom(candidate);
     }
 
     this.pongDirection = dir.normalize();
@@ -1739,6 +2011,16 @@ export class EnemyController {
       return null;
     }
 
+    if (this.behavior === 'pong') {
+      this.applyPongContactDamage();
+      const knock = playerPosition.subtract(this.position);
+      knock.y = 0;
+      if (knock.lengthSquared() > 0.0001) {
+        return knock.normalize().scale(this.pongContactKnockback);
+      }
+      return null;
+    }
+
     this.attackPlayer();
     if (this.selfKnockbackStrength > 0) {
       const recoil = this.position.subtract(playerPosition);
@@ -1839,6 +2121,13 @@ export class EnemyController {
       desired = desired.normalize();
     }
 
+    if (this.avoidObstacles && roomManager) {
+      const pathDirection = this.computePathDirection(playerPosition, roomManager, deltaTime);
+      if (pathDirection.lengthSquared() > 0.0001) {
+        desired = pathDirection;
+      }
+    }
+
     if (this.useCrowdSteering && allEnemies.length > 0) {
       const separation = this.computeSeparation(allEnemies);
       if (separation.lengthSquared() > 0.0001) {
@@ -1846,11 +2135,50 @@ export class EnemyController {
       }
     }
 
+    desired = this.applyCommandInfluence(desired);
+
     if (this.avoidObstacles && roomManager) {
       desired = this.avoidWalls(desired, roomManager);
     }
 
     this.velocity = desired.scale(this.speed);
+  }
+
+  private computePathDirection(target: Vector3, roomManager: RoomManager, deltaTime: number): Vector3 {
+    this.navRepathTimer -= deltaTime;
+    const targetMoved = !this.navTargetSnapshot || Vector3.DistanceSquared(this.navTargetSnapshot, target) > 0.64;
+
+    if (this.navRepathTimer <= 0 || targetMoved || this.navPath.length === 0) {
+      const path = roomManager.findPath(this.position, target, this.getNavigationCapabilities());
+      this.navPath = path;
+      this.navPathCursor = path.length > 1 ? 1 : 0;
+      this.navTargetSnapshot = target.clone();
+      this.navRepathTimer = this.navRepathInterval;
+    }
+
+    if (this.navPath.length === 0) {
+      const direct = target.subtract(this.position);
+      direct.y = 0;
+      return direct.lengthSquared() > 0.0001 ? direct.normalize() : Vector3.Zero();
+    }
+
+    while (this.navPathCursor < this.navPath.length - 1) {
+      const waypoint = this.navPath[this.navPathCursor];
+      if (Vector3.DistanceSquared(this.position, waypoint) > 0.09) {
+        break;
+      }
+      this.navPathCursor++;
+    }
+
+    const nextWaypoint = this.navPath[this.navPathCursor] ?? target;
+    const dir = nextWaypoint.subtract(this.position);
+    dir.y = 0;
+    if (dir.lengthSquared() <= 0.0001) {
+      const direct = target.subtract(this.position);
+      direct.y = 0;
+      return direct.lengthSquared() > 0.0001 ? direct.normalize() : Vector3.Zero();
+    }
+    return dir.normalize();
   }
 
   private computeSeparation(allEnemies: EnemyController[]): Vector3 {
@@ -1862,7 +2190,7 @@ export class EnemyController {
       const otherPos = other.getPosition();
       const delta = this.position.subtract(otherPos);
       const distSq = delta.lengthSquared();
-      const range = this.separationRadius + other.getRadius();
+      const range = Math.max(this.separationRadius + other.getRadius(), this.crowdMinDistance + other.getRadius());
       if (distSq > 0.0001 && distSq < range * range) {
         const dist = Math.sqrt(distSq);
         const away = delta.scale(1 / dist);
@@ -1941,16 +2269,141 @@ export class EnemyController {
     return new Vector3(dir.x * cos - dir.z * sin, 0, dir.x * sin + dir.z * cos);
   }
 
-  private isWalkable(position: Vector3, roomManager: RoomManager): boolean {
-    if (!roomManager.isWalkable(position.x, position.z)) return false;
-    const obstacles = roomManager.getObstacleBounds();
-    for (const ob of obstacles) {
-      const inside =
-        position.x >= ob.minX && position.x <= ob.maxX &&
-        position.z >= ob.minZ && position.z <= ob.maxZ;
-      if (inside) return false;
+  applySwarmCommand(target: Vector3, duration: number, weight: number): void {
+    if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.z)) {
+      return;
     }
-    return true;
+
+    this.commandTarget = target.clone();
+    this.commandRemaining = Math.max(this.commandRemaining, Math.max(0.05, duration));
+    this.commandWeight = Math.max(0, Math.min(1, weight));
+  }
+
+  private applyCommandInfluence(baseDesired: Vector3): Vector3 {
+    if (!this.commandTarget || this.commandRemaining <= 0) {
+      return baseDesired;
+    }
+
+    const towardCommand = this.commandTarget.subtract(this.position);
+    towardCommand.y = 0;
+    if (towardCommand.lengthSquared() <= 0.0001) {
+      return baseDesired;
+    }
+
+    const commandDirection = towardCommand.normalize();
+    if (baseDesired.lengthSquared() <= 0.0001) {
+      return commandDirection;
+    }
+
+    return baseDesired.scale(1 - this.commandWeight).add(commandDirection.scale(this.commandWeight));
+  }
+
+  private computePredictiveDirection(
+    shooterPosition: Vector3,
+    targetPosition: Vector3,
+    targetVelocity: Vector3,
+    projectileSpeed: number,
+    fallbackLead: number
+  ): Vector3 {
+    const toTarget = targetPosition.subtract(shooterPosition);
+    toTarget.y = 0;
+    const targetVel2D = new Vector3(targetVelocity.x, 0, targetVelocity.z);
+    const speedSq = Math.max(0.0001, projectileSpeed * projectileSpeed);
+
+    const a = targetVel2D.lengthSquared() - speedSq;
+    const b = 2 * Vector3.Dot(toTarget, targetVel2D);
+    const c = toTarget.lengthSquared();
+
+    let time: number | null = null;
+    if (Math.abs(a) < 0.0001) {
+      if (Math.abs(b) > 0.0001) {
+        const t = -c / b;
+        if (t > 0) {
+          time = t;
+        }
+      }
+    } else {
+      const discriminant = b * b - 4 * a * c;
+      if (discriminant >= 0) {
+        const sqrtDisc = Math.sqrt(discriminant);
+        const t1 = (-b - sqrtDisc) / (2 * a);
+        const t2 = (-b + sqrtDisc) / (2 * a);
+        const candidates = [t1, t2].filter((t) => t > 0);
+        if (candidates.length > 0) {
+          time = Math.min(...candidates);
+        }
+      }
+    }
+
+    const leadTime = time != null ? time : Math.max(0, fallbackLead);
+    const intercept = targetPosition.add(targetVel2D.scale(leadTime));
+    const direction = intercept.subtract(shooterPosition);
+    direction.y = 0;
+    return direction.lengthSquared() > 0.0001 ? direction.normalize() : Vector3.Zero();
+  }
+
+  private applyBehaviorPreset(preset: string): void {
+    switch (preset) {
+      case 'aggressive-melee':
+        this.useCrowdSteering = true;
+        this.avoidObstacles = true;
+        this.navRepathInterval = 0.3;
+        this.separationRadius = 1.05;
+        this.separationStrength = 1.0;
+        this.avoidVoid = true;
+        this.canFallIntoVoid = false;
+        break;
+      case 'panic-kiter':
+        this.useCrowdSteering = true;
+        this.avoidObstacles = true;
+        this.navRepathInterval = 0.2;
+        this.kiteMinRange = 2.0;
+        this.kiteMaxRange = 5.0;
+        this.fuyardPanicTriggerRange = 1.8;
+        this.fuyardPanicDuration = 1.3;
+        this.fuyardChaosJitter = 1.0;
+        this.fuyardStrafeStrength = 0.55;
+        this.canFallIntoVoid = false;
+        this.avoidVoid = true;
+        break;
+      case 'swarm-coordinator':
+        this.useCrowdSteering = true;
+        this.avoidObstacles = true;
+        this.rangedMinRange = 3.2;
+        this.rangedMaxRange = 6.2;
+        this.rangedCooldown = 1.35;
+        this.swarmCommandInterval = 1.35;
+        this.swarmCommandRange = 9.5;
+        this.swarmCommandDuration = 1.5;
+        this.swarmCommandWeight = 0.66;
+        this.swarmFormationRadius = 3.1;
+        break;
+      case 'predictive-prefire':
+        this.useCrowdSteering = true;
+        this.avoidObstacles = true;
+        this.rangedMinRange = 3.6;
+        this.rangedMaxRange = 7.4;
+        this.rangedCooldown = 1.5;
+        this.prefireWindup = 0.52;
+        this.prefireLeadBonus = 0.28;
+        this.leadTime = Math.max(this.leadTime, 0.35);
+        break;
+      default:
+        break;
+    }
+  }
+
+  private isWalkable(position: Vector3, roomManager: RoomManager): boolean {
+    return roomManager.isWalkableFor(position.x, position.z, this.getNavigationCapabilities());
+  }
+
+  private isVisionBlockedAt(position: Vector3, roomManager: RoomManager): boolean {
+    return this.isVisionBlockedAtXZ(position.x, position.z, roomManager);
+  }
+
+  private isVisionBlockedAtXZ(x: number, z: number, roomManager: RoomManager): boolean {
+    const tileType = roomManager.getTileTypeAtWorld(x, z);
+    return tileType === 'wall' || tileType === 'out';
   }
 
   private attackPlayerWithDamage(damage: number): void {
@@ -2006,6 +2459,9 @@ export class EnemyController {
   setPosition(position: Vector3): void {
     this.position = position.clone();
     this.position.y = 1.0 + EnemyController.globalHeightOffset;
+    if (!this.falling && this.mesh) {
+      this.mesh.visibility = 1;
+    }
     this.applyMeshPosition();
   }
 
@@ -2044,6 +2500,10 @@ export class EnemyController {
     return this.id;
   }
 
+  getBehavior(): string {
+    return this.behavior;
+  }
+
   dispose(): void {
     this.clearLaserPatternVisuals();
     this.clearSpikeZoneVisuals();
@@ -2064,7 +2524,107 @@ export class EnemyController {
   private applyMeshPosition(): void {
     if (!this.mesh) return;
     this.mesh.position = this.position.clone();
-    this.mesh.position.y = 1.0 + this.verticalOffset + EnemyController.globalHeightOffset;
+    this.mesh.position.y = 1.0 + this.verticalOffset + this.fallOffset + EnemyController.globalHeightOffset;
+  }
+
+  private getNavigationCapabilities(): NavigationCapabilities {
+    return {
+      canFly: this.canFly,
+      avoidVoid: this.avoidVoid,
+      canFallIntoVoid: this.canFallIntoVoid,
+    };
+  }
+
+  private checkVoidFallCandidate(roomManager?: RoomManager): void {
+    if (!roomManager) return;
+    if (this.falling || this.canFly || !this.canFallIntoVoid || !this.isAlive) return;
+    const tileType = roomManager.getTileTypeAtWorld(this.position.x, this.position.z);
+    if (tileType === 'void') {
+      this.beginFall();
+    }
+  }
+
+  private beginFall(): void {
+    if (this.falling) return;
+    this.falling = true;
+    this.velocity = Vector3.Zero();
+    this.fallSpeed = 0;
+    this.fallOffset = 0;
+    this.fallFxTimer = 0;
+    this.navPath = [];
+    this.navPathCursor = 0;
+    this.navTargetSnapshot = null;
+    this.spawnVoidDisintegrationBurst(this.position, 6);
+  }
+
+  private updateFalling(deltaTime: number): void {
+    this.fallSpeed += 20 * deltaTime;
+    this.fallOffset -= this.fallSpeed * deltaTime;
+    const progress = Math.min(1, Math.abs(this.fallOffset) / this.fallDeathDepth);
+    if (this.mesh) {
+      this.mesh.visibility = Math.max(0.04, 1 - progress * 0.96);
+    }
+
+    this.fallFxTimer -= deltaTime;
+    if (this.fallFxTimer <= 0) {
+      this.spawnVoidDisintegrationBurst(this.position.add(new Vector3(0, this.fallOffset * 0.15, 0)), 2);
+      this.fallFxTimer = 0.09;
+    }
+
+    this.applyMeshPosition();
+    if (this.fallOffset <= -this.fallDeathDepth) {
+      this.die();
+    }
+  }
+
+  private spawnVoidDisintegrationBurst(origin: Vector3, count: number): void {
+    const particleCount = Math.max(1, Math.floor(count));
+    for (let i = 0; i < particleCount; i++) {
+      const shard = MeshBuilder.CreateBox(`void_enemy_shard_${this.id}_${Date.now()}_${i}`, {
+        size: 0.06 + Math.random() * 0.08,
+      }, this.scene);
+      shard.position = origin.add(new Vector3(
+        (Math.random() - 0.5) * 0.35,
+        0.05 + Math.random() * 0.35,
+        (Math.random() - 0.5) * 0.35,
+      ));
+
+      const shardMat = new StandardMaterial(`void_enemy_shard_mat_${this.id}_${Date.now()}_${i}`, this.scene);
+      shardMat.diffuseColor = new Color3(0.08, 0.95, 0.55);
+      shardMat.emissiveColor = new Color3(0.06, 0.6, 0.32);
+      shardMat.alpha = 0.85;
+      shard.material = shardMat;
+
+      const velocity = new Vector3(
+        (Math.random() - 0.5) * 2.1,
+        0.4 + Math.random() * 1.4,
+        (Math.random() - 0.5) * 2.1,
+      );
+      const gravity = 6.5;
+      const bornAt = Date.now();
+      const ttlMs = 220 + Math.random() * 190;
+
+      const tick = window.setInterval(() => {
+        if (shard.isDisposed()) {
+          window.clearInterval(tick);
+          return;
+        }
+
+        const elapsedMs = Date.now() - bornAt;
+        const t = Math.min(1, elapsedMs / ttlMs);
+        const dt = 1 / 60;
+        velocity.y -= gravity * dt;
+        shard.position.addInPlace(velocity.scale(dt));
+        shard.scaling.scaleInPlace(0.95);
+        shardMat.alpha = Math.max(0, 0.85 * (1 - t));
+
+        if (t >= 1) {
+          window.clearInterval(tick);
+          shard.dispose();
+          shardMat.dispose();
+        }
+      }, 16);
+    }
   }
 
   private rotateToward(direction: Vector3, deltaTime: number, turnSpeed: number): void {
@@ -2307,5 +2867,140 @@ export class EnemyController {
     }
 
     return false;
+  }
+
+  private applyPongContactDamage(): void {
+    const damage = Math.max(1, this.damage * this.pongContactDamageRatio);
+    this.attackPlayerWithDamage(damage);
+  }
+
+  private isPongBlockedByEnvironment(position: Vector3, roomManager?: RoomManager): boolean {
+    if (!roomManager) return false;
+    if (!roomManager.isWalkable(position.x, position.z)) return true;
+
+    const bounds = roomManager.getRoomBounds();
+    if (bounds) {
+      const minX = bounds.minX + this.pongRadius;
+      const maxX = bounds.maxX - this.pongRadius;
+      const minZ = bounds.minZ + this.pongRadius;
+      const maxZ = bounds.maxZ - this.pongRadius;
+      if (position.x < minX || position.x > maxX || position.z < minZ || position.z > maxZ) {
+        return true;
+      }
+    }
+
+    for (const ob of roomManager.getObstacleBounds()) {
+      const expanded = {
+        minX: ob.minX - this.pongRadius,
+        maxX: ob.maxX + this.pongRadius,
+        minZ: ob.minZ - this.pongRadius,
+        maxZ: ob.maxZ + this.pongRadius,
+      };
+      if (
+        position.x >= expanded.minX && position.x <= expanded.maxX &&
+        position.z >= expanded.minZ && position.z <= expanded.maxZ
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private isPongTouchingPlayer(position: Vector3, playerPosition: Vector3): boolean {
+    const minDistance = this.pongRadius + 0.35;
+    return Vector3.DistanceSquared(position, playerPosition) <= minDistance * minDistance;
+  }
+
+  private isPongTouchingEnemy(position: Vector3, allEnemies: EnemyController[]): boolean {
+    for (const other of allEnemies) {
+      if (other === this || !other.isActive()) continue;
+      const otherPos = other.getPosition();
+      const minDistance = this.pongRadius + other.getRadius();
+      if (Vector3.DistanceSquared(position, otherPos) <= minDistance * minDistance) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private getPongPlayerBounceAxis(candidate: Vector3, playerPosition: Vector3, movement: Vector3): 'x' | 'z' {
+    const delta = candidate.subtract(playerPosition);
+    delta.y = 0;
+    const horizontalDominant = Math.abs(delta.x) >= Math.abs(delta.z);
+    if (horizontalDominant) {
+      return 'x';
+    }
+    if (Math.abs(movement.x) > Math.abs(movement.z)) {
+      return 'x';
+    }
+    return 'z';
+  }
+
+  private getPongBounceAxis(candidate: Vector3, movement: Vector3, roomManager?: RoomManager): 'x' | 'z' | null {
+    if (!roomManager) return null;
+
+    const physicalNormal = roomManager.getPhysicsBounceNormal(this.position, candidate);
+    if (physicalNormal && physicalNormal.lengthSquared() > 0.0001) {
+      return Math.abs(physicalNormal.x) >= Math.abs(physicalNormal.z) ? 'x' : 'z';
+    }
+
+    let axis: 'x' | 'z' | null = null;
+    let penetration = Number.POSITIVE_INFINITY;
+
+    const consider = (candidateAxis: 'x' | 'z', candidatePenetration: number) => {
+      if (candidatePenetration < penetration) {
+        penetration = candidatePenetration;
+        axis = candidateAxis;
+      }
+    };
+
+    const bounds = roomManager.getRoomBounds();
+    if (bounds) {
+      const minX = bounds.minX + this.pongRadius;
+      const maxX = bounds.maxX - this.pongRadius;
+      const minZ = bounds.minZ + this.pongRadius;
+      const maxZ = bounds.maxZ - this.pongRadius;
+      if (candidate.x < minX) consider('x', minX - candidate.x);
+      if (candidate.x > maxX) consider('x', candidate.x - maxX);
+      if (candidate.z < minZ) consider('z', minZ - candidate.z);
+      if (candidate.z > maxZ) consider('z', candidate.z - maxZ);
+    }
+
+    for (const obstacle of roomManager.getObstacleBounds()) {
+      const expanded = {
+        minX: obstacle.minX - this.pongRadius,
+        maxX: obstacle.maxX + this.pongRadius,
+        minZ: obstacle.minZ - this.pongRadius,
+        maxZ: obstacle.maxZ + this.pongRadius,
+      };
+      const inside =
+        candidate.x >= expanded.minX && candidate.x <= expanded.maxX &&
+        candidate.z >= expanded.minZ && candidate.z <= expanded.maxZ;
+      if (!inside) continue;
+
+      const distLeft = Math.abs(candidate.x - expanded.minX);
+      const distRight = Math.abs(expanded.maxX - candidate.x);
+      const distBottom = Math.abs(candidate.z - expanded.minZ);
+      const distTop = Math.abs(expanded.maxZ - candidate.z);
+      const minX = Math.min(distLeft, distRight);
+      const minZ = Math.min(distBottom, distTop);
+      if (minX <= minZ) {
+        consider('x', minX);
+      } else {
+        consider('z', minZ);
+      }
+    }
+
+    if (!axis && !roomManager.isWalkable(candidate.x, candidate.z)) {
+      const xBlocked = !roomManager.isWalkable(candidate.x, this.position.z);
+      const zBlocked = !roomManager.isWalkable(this.position.x, candidate.z);
+      if (xBlocked && !zBlocked) return 'x';
+      if (zBlocked && !xBlocked) return 'z';
+      if (Math.abs(movement.x) >= Math.abs(movement.z)) return 'x';
+      return 'z';
+    }
+
+    return axis;
   }
 }

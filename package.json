@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:voice-lab": "esbuild src/tools/daemonVoiceLab/main.ts --bundle --platform=browser --format=esm --outfile=daemon-voice-lab.bundle.js",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,json}\""
@@ -13,7 +14,9 @@
   "dependencies": {
     "@babylonjs/core": "^6.0.0",
     "@babylonjs/gui": "^6.0.0",
-    "@babylonjs/loaders": "^6.0.0"
+    "@babylonjs/havok": "^1.3.12",
+    "@babylonjs/loaders": "^6.0.0",
+    "mespeak": "^2.0.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

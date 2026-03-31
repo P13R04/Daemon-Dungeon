@@ -4,6 +4,9 @@ import { resolve } from 'path';
 export default defineConfig({
   root: '.',
   publicDir: './assets',
+  optimizeDeps: {
+    exclude: ['@babylonjs/havok'],
+  },
   build: {
     outDir: './dist',
     emptyOutDir: true,

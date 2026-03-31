@@ -4,7 +4,7 @@ const MAP = [
     '#....P....V..#',
     '#.##.P.##.V..#',
     '#....P....#..#',
-    '#.O..P.^..#O.#',
+    '#.#..P.^..##.#',
     '#....P....#..#',
     '#.##.PPP..##.#',
     '#....P.......#',
@@ -31,8 +31,9 @@ function hash2(x, y, seed = 0.0) {
 }
 
 function mossBlobAt(gx, gy) {
-    const sx = gx * 4.8;
-    const sy = gy * 4.8;
+    // Lower frequency gives larger clumps that read as actual volume on displaced mesh.
+    const sx = gx * 2.2;
+    const sy = gy * 2.2;
     const ix = Math.floor(sx);
     const iy = Math.floor(sy);
 
@@ -86,10 +87,13 @@ function smoothstep(a, b, x) {
 
 const ELEVATION_STRENGTH = 0.09;
 const ELEVATION_JITTER = 0.0;
-const WALL_ELEVATION_STRENGTH = 0.082;
+const WALL_ELEVATION_STRENGTH = 0.14;
 const WALL_BRICKS_X = 3.0;
 const WALL_BRICKS_Y = 6.0;
 const WALL_MORTAR_W = 0.08;
+const WALL_BASE_HEIGHT = 0.12;
+const WALL_MOSS_COLOR_STRENGTH = 0.22;
+const WALL_MOSS_HEIGHT_STRENGTH = 1.8;
 
 function floorHeightAt(gx, gy) {
     const stoneX = 2.35;
@@ -112,16 +116,16 @@ function floorHeightAt(gx, gy) {
     return Math.max(0, Math.min(1, base));
 }
 
-function wallHeightAt(gu, gv) {
+function wallHeightAt(gu, gv, bricksY = WALL_BRICKS_Y) {
 
-    const row = Math.floor(gv * WALL_BRICKS_Y);
+    const row = Math.floor(gv * bricksY);
     const stagger = (row % 2) * 0.5;
     const cellX = (gu * WALL_BRICKS_X + stagger) % 1;
-    const cellY = (gv * WALL_BRICKS_Y) % 1;
+    const cellY = (gv * bricksY) % 1;
     const border = Math.min(Math.min(cellX, 1 - cellX), Math.min(cellY, 1 - cellY));
 
     const brickIdX = Math.floor(gu * WALL_BRICKS_X + stagger);
-    const brickIdY = Math.floor(gv * WALL_BRICKS_Y);
+    const brickIdY = Math.floor(gv * bricksY);
     // Slightly soften the mortar->brick edge to reduce temporal aliasing when camera moves.
     const brickMask = smoothstep(WALL_MORTAR_W * 0.82, WALL_MORTAR_W * 1.22, border);
     const mortarMask = 1.0 - brickMask;
@@ -130,13 +134,19 @@ function wallHeightAt(gu, gv) {
     const rawBrick = hash2(brickIdX * 1.23, brickIdY * 1.31, 0.37);
     const steppedBrick = Math.floor(rawBrick * 5.0) / 5.0;
 
+    // Subtle volumetric moss clumps in global space, sparsified per-brick.
+    const mossBlob = mossBlobAt(gu, gv);
+    const mossGate = smoothstep(0.56, 0.9, hash2(brickIdX * 0.77, brickIdY * 0.91, 0.63));
+    const mossMask = smoothstep(0.2, 0.74, mossBlob) * brickMask * mossGate;
+    const mossThickness = (0.015 + mossBlob * 0.12) * mossMask * WALL_MOSS_HEIGHT_STRENGTH;
+
     const brickRelief = (0.44 + steppedBrick * 0.5) * brickMask;
-    const mortarBase = 0.0 * mortarMask;
-    const base = mortarBase + brickRelief;
+    const mortarBase = WALL_BASE_HEIGHT * mortarMask;
+    const base = mortarBase + brickRelief + mossThickness;
     return Math.max(0, Math.min(1, base));
 }
 
-function applyWallFaceDisplacement(mesh, faceWidth, faceHeight, hOffset, axisSeed = 0, flipU = false) {
+function applyWallFaceDisplacement(mesh, faceWidth, faceHeight, hOffset, axisSeed = 0, flipU = false, bricksY = WALL_BRICKS_Y, joinEdgeCorners = false, cornerCapMask = 0, uScale = 1.0, depthScale = 1.0) {
     const positions = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
     const indices = mesh.getIndices();
     if (!positions || !indices) return;
@@ -147,51 +157,319 @@ function applyWallFaceDisplacement(mesh, faceWidth, faceHeight, hOffset, axisSee
         const uRaw = lx / faceWidth + 0.5;
         const u = flipU ? (1.0 - uRaw) : uRaw;
         const v = lz / faceHeight + 0.5;
-        const h = wallHeightAt(hOffset + u + axisSeed * 1000.0, v);
+        let h = wallHeightAt(hOffset + u * uScale + axisSeed * 1000.0, v, bricksY);
+        // On side walls, only enforce aggressive edge closure for truly open corners.
+        if (joinEdgeCorners && cornerCapMask !== 0) {
+            const edgeU = Math.min(uRaw, 1.0 - uRaw);
+            const edgeJoin = 1.0 - smoothstep(0.0, 0.15, edgeU);  // (was 0.08) — wider closure band
+            const minEdgeHeight = WALL_BASE_HEIGHT + 0.12;  // (was 0.06) — taller minimum
+            h = h * (1.0 - edgeJoin) + Math.max(h, minEdgeHeight) * edgeJoin;
+
+            // Keep a shared base level across faces for cleaner corner junctions at the wall foot.
+            const baseBand = 1.0 - smoothstep(0.0, 0.015, v);
+            const baseHeight = WALL_BASE_HEIGHT;
+            h = h * (1.0 - baseBand) + Math.max(h, baseHeight) * baseBand;
+        }
+        // End-of-wall corner caps: close both half and full bricks on open convex corners.
+        if (cornerCapMask !== 0) {
+            const edgeL = (cornerCapMask & 1) ? (1.0 - smoothstep(0.0, 0.08, uRaw)) : 0.0;
+            const edgeR = (cornerCapMask & 2) ? (1.0 - smoothstep(0.0, 0.08, 1.0 - uRaw)) : 0.0;
+            if (edgeL > 0.0 || edgeR > 0.0) {
+                // Expand corner band to wider coverage for better visual closure.
+                const cornerBand = 0.20;  // (was 0.12) — wider band to reach further into corner
+                const edgeBlend = Math.max(
+                    (cornerCapMask & 1) ? (1.0 - smoothstep(0.0, cornerBand, uRaw)) : 0.0,
+                    (cornerCapMask & 2) ? (1.0 - smoothstep(0.0, cornerBand, 1.0 - uRaw)) : 0.0
+                );
+                if (edgeBlend > 0.0) {
+                    let uRefRaw = uRaw;
+                    if ((cornerCapMask & 1) && uRaw < cornerBand) uRefRaw = cornerBand + (cornerBand - uRaw);
+                    if ((cornerCapMask & 2) && (1.0 - uRaw) < cornerBand) uRefRaw = (1.0 - cornerBand) - (cornerBand - (1.0 - uRaw));
+                    uRefRaw = Math.max(0.0, Math.min(1.0, uRefRaw));
+                    const uRef = flipU ? (1.0 - uRefRaw) : uRefRaw;
+                    const hRefCorner = wallHeightAt(hOffset + uRef * uScale + axisSeed * 1000.0, v, bricksY);
+                    h = h * (1.0 - edgeBlend) + hRefCorner * edgeBlend;
+                }
+
+                const fracY = (v * bricksY) % 1.0;
+                const diagL = 1.0 - smoothstep(0.0, 0.24, Math.abs(fracY - uRaw * 0.62));
+                const diagR = 1.0 - smoothstep(0.0, 0.24, Math.abs(fracY - (1.0 - uRaw) * 0.62));
+                const cap = Math.max(edgeL * diagL, edgeR * diagR);
+                const capHeight = WALL_BASE_HEIGHT + 0.28;  // (was 0.18) — taller corner cap
+                h = h * (1.0 - cap) + Math.max(h, capHeight) * cap;
+
+                // Fill residual pits between two facing half-bricks with a soft solid bridge.
+                const bridge = Math.max(edgeL, edgeR) * (1.0 - smoothstep(0.0, 0.44, Math.abs(fracY - 0.5)));
+                h = h * (1.0 - bridge) + Math.max(h, WALL_BASE_HEIGHT + 0.22) * bridge;  // (was 0.14) — taller bridge
+
+                // Ensure unfinished half-bricks near corners are sealed and re-leveled with wall base.
+                const cornerHalfSeal = Math.max(edgeL, edgeR) * (1.0 - smoothstep(0.0, 0.22, Math.min(fracY, 1.0 - fracY)));
+                h = h * (1.0 - cornerHalfSeal) + Math.max(h, WALL_BASE_HEIGHT + 0.14) * cornerHalfSeal;  // (was 0.06) — taller seal
+            }
+        }
         // Keep displacement continuous across block boundaries.
-        positions[i + 1] = h * WALL_ELEVATION_STRENGTH;
+        positions[i + 1] = h * WALL_ELEVATION_STRENGTH * depthScale;
     }
 
     mesh.updateVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
 }
 
-function buildReliefWallBlock(scene, name, px, py, pz, baseSize, heightScale, seedX, seedZ, parent, getFaceMaterial) {
+function stabilizeTopOpenEdgeHalfBricks(mesh, faceWidth, faceHeight, hOffset, axisSeed, flipU, exposedMask, bricksY = 3.0) {
+    const positions = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+    const indices = mesh.getIndices();
+    if (!positions || !indices) return;
+
+    const edgeBand = 0.8;
+    for (let i = 0; i < positions.length; i += 3) {
+        const lx = positions[i];
+        const lz = positions[i + 2];
+        const uRaw = lx / faceWidth + 0.5;
+        const u = flipU ? (1.0 - uRaw) : uRaw;
+        const v = lz / faceHeight + 0.5;
+
+        let exposedEdge = 0.0;
+        if (exposedMask & N) exposedEdge = Math.max(exposedEdge, smoothstep(edgeBand, 1.0, v));
+        if (exposedMask & S) exposedEdge = Math.max(exposedEdge, smoothstep(edgeBand, 1.0, 1.0 - v));
+        if (exposedMask & E) exposedEdge = Math.max(exposedEdge, smoothstep(edgeBand, 1.0, uRaw));
+        if (exposedMask & W) exposedEdge = Math.max(exposedEdge, smoothstep(edgeBand, 1.0, 1.0 - uRaw));
+        if (exposedEdge <= 0.0001) continue;
+
+        // Mirror the interior profile near exposed borders to keep half-bricks volumetrically continuous.
+        let uRef = u;
+        let vRef = v;
+        if ((exposedMask & N) && v > edgeBand) vRef = Math.max(0.0, edgeBand - (v - edgeBand));
+        if ((exposedMask & S) && v < (1.0 - edgeBand)) vRef = Math.min(1.0, (1.0 - edgeBand) + ((1.0 - edgeBand) - v));
+        if ((exposedMask & E) && uRaw > edgeBand) {
+            const uRawRef = Math.max(0.0, edgeBand - (uRaw - edgeBand));
+            uRef = flipU ? (1.0 - uRawRef) : uRawRef;
+        }
+        if ((exposedMask & W) && uRaw < (1.0 - edgeBand)) {
+            const uRawRef = Math.min(1.0, (1.0 - edgeBand) + ((1.0 - edgeBand) - uRaw));
+            uRef = flipU ? (1.0 - uRawRef) : uRawRef;
+        }
+
+        const hRef = wallHeightAt(hOffset + uRef + axisSeed * 1000.0, vRef, bricksY) * WALL_ELEVATION_STRENGTH;
+
+        const gu = hOffset + u + axisSeed * 1000.0;
+        const row = Math.floor(v * bricksY);
+        const stagger = (row % 2) * 0.5;
+        const cellX = (gu * WALL_BRICKS_X + stagger) % 1;
+        const cellY = (v * bricksY) % 1;
+        const border = Math.min(Math.min(cellX, 1 - cellX), Math.min(cellY, 1 - cellY));
+        const brickMask = smoothstep(WALL_MORTAR_W * 0.82, WALL_MORTAR_W * 1.22, border);
+        const halfBrickZone = 1.0 - smoothstep(0.78, 0.98, brickMask);
+        const blend = exposedEdge * halfBrickZone;
+
+        // Keep slight lowering at the very edge while avoiding open cracks between half-bricks.
+        const loweredRef = Math.max(0.0, hRef - blend * WALL_ELEVATION_STRENGTH * 0.08);
+        let outY = positions[i + 1] * (1.0 - blend) + loweredRef * blend;
+
+        // On exposed wall ends, force top/bottom completion of cut bricks on the top panel only.
+        const exposedV = Math.max(
+            (exposedMask & N) ? smoothstep(edgeBand, 1.0, v) : 0.0,
+            (exposedMask & S) ? smoothstep(edgeBand, 1.0, 1.0 - v) : 0.0
+        );
+        if (exposedV > 0.0) {
+            const finishMask = exposedV * halfBrickZone;
+            outY = Math.max(0.0, outY - finishMask * WALL_ELEVATION_STRENGTH * 0.22);
+        }
+
+        // Also finish exposed E/W ends of wall tops, and hard-cap the extreme edge to remove unfinished half-bricks.
+        const exposedU = Math.max(
+            (exposedMask & E) ? smoothstep(edgeBand, 1.0, uRaw) : 0.0,
+            (exposedMask & W) ? smoothstep(edgeBand, 1.0, 1.0 - uRaw) : 0.0
+        );
+        const finishV = exposedV * halfBrickZone;
+        const finishU = exposedU * (0.38 + 0.62 * halfBrickZone);
+        const finishAll = Math.max(finishV, finishU);
+        if (finishAll > 0.0) {
+            outY = Math.max(0.0, outY - finishAll * WALL_ELEVATION_STRENGTH * 0.34);
+            // Hard cap near the very left/right extremity of exposed top ends.
+            if (exposedU > 0.92) {
+                outY = Math.min(outY, WALL_ELEVATION_STRENGTH * 0.008);
+            }
+        }
+
+        positions[i + 1] = outY;
+    }
+
+    const normals = new Array(positions.length).fill(0);
+    BABYLON.VertexData.ComputeNormals(positions, indices, normals);
+    mesh.updateVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+    mesh.updateVerticesData(BABYLON.VertexBuffer.NormalKind, normals);
+}
+
+// Stabilize vertical corner edges of side faces by mirroring half-brick profiles horizontally.
+function stabilizeCornerVerticalEdges(mesh, faceWidth, faceHeight, hOffset, axisSeed, flipU, bricksY, isLeftEdge = true, uScale = 1.0, depthScale = 1.0) {
+    const positions = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+    const indices = mesh.getIndices();
+    if (!positions || !indices) return;
+
+    const cornerBand = 0.12;
+    for (let i = 0; i < positions.length; i += 3) {
+        const lx = positions[i];
+        const lz = positions[i + 2];
+        const uRaw = lx / faceWidth + 0.5;
+        const u = flipU ? (1.0 - uRaw) : uRaw;
+        const v = lz / faceHeight + 0.5;
+
+        // Only apply to left or right edge based on parameter.
+        let cornerEdge = 0.0;
+        if (isLeftEdge) {
+            cornerEdge = 1.0 - smoothstep(0.0, cornerBand, uRaw);
+        } else {
+            cornerEdge = 1.0 - smoothstep(0.0, cornerBand, 1.0 - uRaw);
+        }
+        if (cornerEdge <= 0.0001) continue;
+
+        // Mirror the interior profile horizontally (via U-mirroring) for volumetric continuity.
+        let uMirror = u;
+        if (isLeftEdge && uRaw < cornerBand) {
+            const uRawMirror = cornerBand + (cornerBand - uRaw);
+            uMirror = flipU ? (1.0 - uRawMirror) : uRawMirror;
+        } else if (!isLeftEdge && uRaw > (1.0 - cornerBand)) {
+            const uRawMirror = (1.0 - cornerBand) - (uRaw - (1.0 - cornerBand));
+            uMirror = flipU ? (1.0 - uRawMirror) : uRawMirror;
+        }
+
+        const hRef = wallHeightAt(hOffset + uMirror * uScale + axisSeed * 1000.0, v, bricksY) * WALL_ELEVATION_STRENGTH * depthScale;
+
+        // Detect half-bricks at the corner edge.
+        const gu = hOffset + u * uScale + axisSeed * 1000.0;
+        const row = Math.floor(v * bricksY);
+        const stagger = (row % 2) * 0.5;
+        const cellX = (gu * WALL_BRICKS_X + stagger) % 1;
+        const cellY = (v * bricksY) % 1;
+        const border = Math.min(Math.min(cellX, 1 - cellX), Math.min(cellY, 1 - cellY));
+        const brickMask = smoothstep(WALL_MORTAR_W * 0.82, WALL_MORTAR_W * 1.22, border);
+        const halfBrickZone = 1.0 - smoothstep(0.78, 0.98, brickMask);
+        const blend = cornerEdge * halfBrickZone;
+
+        // Blend the mirrored profile into the corner edge to close half-bricks.
+        const currentY = positions[i + 1];
+        const blendedRef = Math.max(0.0, hRef - blend * WALL_ELEVATION_STRENGTH * depthScale * 0.06);
+        positions[i + 1] = currentY * (1.0 - blend) + blendedRef * blend;
+    }
+
+    const normals = new Array(positions.length).fill(0);
+    BABYLON.VertexData.ComputeNormals(positions, indices, normals);
+    mesh.updateVerticesData(BABYLON.VertexBuffer.PositionKind, positions);
+    mesh.updateVerticesData(BABYLON.VertexBuffer.NormalKind, normals);
+}
+
+function buildReliefWallBlock(scene, name, px, py, pz, baseSize, heightScale, seedX, seedZ, parent, getFaceMaterial, coreMaterial = null, wallNeighborMask = 0) {
     const block = new BABYLON.TransformNode(name, scene);
     block.position.set(px, py, pz);
     block.parent = parent;
 
     const wallHeight = baseSize * heightScale;
-    // Slightly shrink core so displaced faces never z-fight with box side planes.
-    const inset = baseSize * 0.96;
+    // Keep a tiny gap between core and displaced faces to prevent depth conflicts on fine motifs.
+    const inset = baseSize * 0.996;
+    // Slight inward embed keeps relief readable while minimizing corner slits.
+    const facePlaneInset = baseSize * 0.003;
 
     const core = BABYLON.MeshBuilder.CreateBox(`${name}_core`, {
         width: inset,
         depth: inset,
         height: wallHeight,
     }, scene);
-    core.material = getFaceMaterial('core', seedX, 0);
+    core.material = coreMaterial || getFaceMaterial('core', seedX, 0);
     core.parent = block;
 
-    const makeFace = (faceName, ry, ox, oy, oz, hOffset, axisSeed, flipU = false) => {
+    const makeFace = (faceName, ry, ox, oy, oz, hOffset, axisSeed, flipU = false, faceWidth = baseSize, faceHeight = wallHeight, bricksY = WALL_BRICKS_Y, joinEdgeCorners = false, cornerCapMask = 0, allowPartialEdgeHighlights = false, doubleSided = false, uScale = 1.0, depthScale = 1.0) => {
         const face = BABYLON.MeshBuilder.CreateGround(`${name}_${faceName}`, {
-            width: baseSize,
-            height: wallHeight,
-            subdivisions: 40,
+            width: faceWidth,
+            height: faceHeight,
+            subdivisions: 96,
+            sideOrientation: doubleSided ? BABYLON.Mesh.DOUBLESIDE : BABYLON.Mesh.FRONTSIDE,
             updatable: true,
         }, scene);
-        applyWallFaceDisplacement(face, baseSize, wallHeight, hOffset, axisSeed, flipU);
+        applyWallFaceDisplacement(face, faceWidth, faceHeight, hOffset, axisSeed, flipU, bricksY, joinEdgeCorners, cornerCapMask, uScale, depthScale);
         // Use a consistent transform so local Z (height map V axis) always maps to world Y.
         face.rotation.set(Math.PI / 2, ry, 0);
         face.position.set(ox, oy, oz);
-        face.material = getFaceMaterial(faceName, hOffset, axisSeed, flipU);
+        face.material = getFaceMaterial(faceName, hOffset, axisSeed, flipU, bricksY, allowPartialEdgeHighlights, uScale);
         face.parent = block;
+        return face;  // Return mesh for corner stabilization
     };
 
-    // Axis-based offsets keep adjacent panels continuous; flipped faces need reversed U.
-    makeFace('north', 0, 0, 0, baseSize * 0.5, seedX, 0, false);
-    makeFace('south', Math.PI, 0, 0, -baseSize * 0.5, seedX, 0, true);
-    makeFace('east', Math.PI / 2, baseSize * 0.5, 0, 0, seedZ, 0, true);
-    makeFace('west', -Math.PI / 2, -baseSize * 0.5, 0, 0, seedZ, 0, false);
+    const makeCornerFace = (faceName, ry, ox, oz, hOffset, flipU = false) => {
+        const cornerWidth = baseSize * 0.150;
+        const cornerUScale = 0.5 / WALL_BRICKS_X;
+        const cornerDepthScale = 0.52;
+        return makeFace(
+            faceName,
+            ry,
+            ox,
+            0,
+            oz,
+            hOffset,
+            0,
+            flipU,
+            cornerWidth,
+            wallHeight,
+            WALL_BRICKS_Y,
+            false,
+            0,
+            false,
+            true,
+            cornerUScale,
+            cornerDepthScale
+        );
+    };
+
+    // Side faces: keep world-axis mapping for inter-panel continuity.
+    const openN = (wallNeighborMask & N) === 0;
+    const openE = (wallNeighborMask & E) === 0;
+    const openS = (wallNeighborMask & S) === 0;
+    const openW = (wallNeighborMask & W) === 0;
+    // cornerCapMask bits: 1=left edge, 2=right edge in face-local U space
+    const northCornerCap = (openN && openW ? 1 : 0) | (openN && openE ? 2 : 0);
+    const southCornerCap = (openS && openE ? 1 : 0) | (openS && openW ? 2 : 0);
+    const eastCornerCap = (openE && openN ? 1 : 0) | (openE && openS ? 2 : 0);
+    const westCornerCap = (openW && openS ? 1 : 0) | (openW && openN ? 2 : 0);
+
+    const northFace = makeFace('north', 0, 0, 0, baseSize * 0.5 - facePlaneInset, seedX, 0, false, baseSize, wallHeight, WALL_BRICKS_Y, true, northCornerCap, false);
+    const southFace = makeFace('south', Math.PI, 0, 0, -baseSize * 0.5 + facePlaneInset, seedX, 0, true, baseSize, wallHeight, WALL_BRICKS_Y, true, southCornerCap, false);
+    const eastFace = makeFace('east', Math.PI / 2, baseSize * 0.5 - facePlaneInset, 0, 0, seedZ, 0, true, baseSize, wallHeight, WALL_BRICKS_Y, true, eastCornerCap, false);
+    const westFace = makeFace('west', -Math.PI / 2, -baseSize * 0.5 + facePlaneInset, 0, 0, seedZ, 0, false, baseSize, wallHeight, WALL_BRICKS_Y, true, westCornerCap, false);
+
+    // Stabilize corner edges with half-brick mirroring for smooth closure.
+    if (openN && openW) stabilizeCornerVerticalEdges(northFace, baseSize, wallHeight, seedX, 0, false, WALL_BRICKS_Y, true);
+    if (openN && openE) stabilizeCornerVerticalEdges(northFace, baseSize, wallHeight, seedX, 0, false, WALL_BRICKS_Y, false);
+    if (openS && openE) stabilizeCornerVerticalEdges(southFace, baseSize, wallHeight, seedX, 0, true, WALL_BRICKS_Y, true);
+    if (openS && openW) stabilizeCornerVerticalEdges(southFace, baseSize, wallHeight, seedX, 0, true, WALL_BRICKS_Y, false);
+    if (openE && openN) stabilizeCornerVerticalEdges(eastFace, baseSize, wallHeight, seedZ, 0, true, WALL_BRICKS_Y, true);
+    if (openE && openS) stabilizeCornerVerticalEdges(eastFace, baseSize, wallHeight, seedZ, 0, true, WALL_BRICKS_Y, false);
+    if (openW && openS) stabilizeCornerVerticalEdges(westFace, baseSize, wallHeight, seedZ, 0, false, WALL_BRICKS_Y, true);
+    if (openW && openN) stabilizeCornerVerticalEdges(westFace, baseSize, wallHeight, seedZ, 0, false, WALL_BRICKS_Y, false);
+
+    // Add textured chamfer faces on open convex corners to provide real geometric closure.
+    const cornerPos = baseSize * 0.5 + baseSize * 0.005;
+    const cornerOffsetSeed = (seedX + seedZ) * 0.5;
+    if (openN && openW) makeCornerFace('corner_nw', -Math.PI * 0.25, -cornerPos, cornerPos, cornerOffsetSeed, false);
+    if (openN && openE) makeCornerFace('corner_ne', Math.PI * 0.25, cornerPos, cornerPos, cornerOffsetSeed, true);
+    if (openS && openE) makeCornerFace('corner_se', Math.PI * 0.75, cornerPos, -cornerPos, cornerOffsetSeed, false);
+    if (openS && openW) makeCornerFace('corner_sw', -Math.PI * 0.75, -cornerPos, -cornerPos, cornerOffsetSeed, true);
+
+    // Flat top bricks on each wall tile (no mini stacked side walls).
+    const topSize = baseSize;
+    const topY = wallHeight * 0.5 + 0.001;
+    const top = BABYLON.MeshBuilder.CreateGround(`${name}_top_flat`, {
+        width: topSize,
+        height: topSize,
+        subdivisions: 96,
+        updatable: true,
+    }, scene);
+    // Use a shared top offset so the top pattern stays coherent with side brick style.
+    const topOffset = seedX;
+    const topAxisSeed = seedZ / 1000.0;
+    const exposedTopMask = (~wallNeighborMask) & (N | E | S | W);
+    applyWallFaceDisplacement(top, topSize, topSize, topOffset, topAxisSeed, false, 3.0, false);
+    stabilizeTopOpenEdgeHalfBricks(top, topSize, topSize, topOffset, topAxisSeed, false, exposedTopMask, 3.0);
+    top.position.set(0, topY, 0);
+    top.material = getFaceMaterial('top_flat', topOffset, topAxisSeed, false, 3.0, true);
+    top.parent = block;
 
     return block;
 }
@@ -263,9 +541,9 @@ function drawCircuit(ctx, size, mask, colorA, colorB, offset = 0) {
     ctx.restore();
 }
 
-function drawWallBrickHighlights(ctx, size, hOffset, axisSeed = 0, flipU = false) {
+function drawWallBrickHighlights(ctx, size, hOffset, axisSeed = 0, flipU = false, bricksY = WALL_BRICKS_Y, allowPartialEdgeHighlights = false, uScale = 1.0) {
     const brickW = size / WALL_BRICKS_X;
-    const brickH = size / WALL_BRICKS_Y;
+    const brickH = size / bricksY;
     const lineW = Math.max(2, Math.floor(size * 0.012));
 
     ctx.save();
@@ -276,13 +554,13 @@ function drawWallBrickHighlights(ctx, size, hOffset, axisSeed = 0, flipU = false
     const uMin = 0.0;
     const uMax = 1.0;
     const gBase = hOffset + axisSeed * 1000.0;
-    const gxMin = gBase + uMin;
-    const gxMax = gBase + uMax;
+    const gxMin = gBase + uMin * uScale;
+    const gxMax = gBase + uMax * uScale;
     const brickIdXMin = Math.floor(gxMin * WALL_BRICKS_X) - 1;
     const brickIdXMax = Math.ceil(gxMax * WALL_BRICKS_X);
 
     // For each row and each global brick in range
-    for (let row = 0; row < WALL_BRICKS_Y; row++) {
+    for (let row = 0; row < bricksY; row++) {
         const stagger = (row % 2) * 0.5;
         const y0 = Math.floor(row * brickH);
         const y1 = Math.floor((row + 1) * brickH);
@@ -293,8 +571,8 @@ function drawWallBrickHighlights(ctx, size, hOffset, axisSeed = 0, flipU = false
             const gxEnd = (brickIdX + 1.0 - stagger) / WALL_BRICKS_X;
             
             // Convert to texture pixels
-            const u0 = flipU ? (gBase + 1.0 - gxStart) : (gxStart - gBase);
-            const u1 = flipU ? (gBase + 1.0 - gxEnd) : (gxEnd - gBase);
+            const u0 = flipU ? ((gBase + uScale - gxStart) / Math.max(0.0001, uScale)) : ((gxStart - gBase) / Math.max(0.0001, uScale));
+            const u1 = flipU ? ((gBase + uScale - gxEnd) / Math.max(0.0001, uScale)) : ((gxEnd - gBase) / Math.max(0.0001, uScale));
             const x0f = Math.min(u0, u1) * size;
             const x1f = Math.max(u0, u1) * size;
             
@@ -310,7 +588,7 @@ function drawWallBrickHighlights(ctx, size, hOffset, axisSeed = 0, flipU = false
             const pick = hash2(brickIdX * 1.31, row * 2.17 + axisSeed * 19.0, 0.41);
             if (pick < 0.76) continue;
 
-            const accent = 0.58 + hash2(brickIdX * 2.37, row * 1.73 + axisSeed * 7.0, 0.22) * 0.18;
+            const accent = 0.78 + hash2(brickIdX * 2.37, row * 1.73 + axisSeed * 7.0, 0.22) * 0.18;
             
             const rx = x0;
             const ry = y0;
@@ -320,23 +598,30 @@ function drawWallBrickHighlights(ctx, size, hOffset, axisSeed = 0, flipU = false
             // Only highlight full bricks; partial edge bricks cause visible half-highlights.
             const edgeTol = 0.15;
             const isFullBrick = (x0f >= -edgeTol && x1f <= size + edgeTol);
-            if (!isFullBrick) continue;
+            if (!isFullBrick && !allowPartialEdgeHighlights) continue;
             
             // Draw border bands
-            const b = lineW + 1;
+            const b = lineW;
+            const drawVerticalBorders = isFullBrick;
             ctx.fillStyle = 'rgb(10, 12, 16)';
             ctx.fillRect(rx, ry, rw, b);           // top
             ctx.fillRect(rx, ry + rh - b, rw, b); // bottom
-            ctx.fillRect(rx, ry, b, rh);       // left
-            ctx.fillRect(rx + rw - b, ry, b, rh); // right
+            if (drawVerticalBorders) {
+                ctx.fillRect(rx, ry, b, rh);       // left
+                ctx.fillRect(rx + rw - b, ry, b, rh); // right
+            }
 
             // Draw highlight bands
-            const f = lineW;
-            ctx.fillStyle = `rgba(116, 207, 255, ${accent.toFixed(3)})`;
+            const f = lineW + 1;
+            ctx.globalCompositeOperation = 'screen';
+            ctx.fillStyle = `rgba(142, 224, 255, ${accent.toFixed(3)})`;
             ctx.fillRect(rx, ry, rw, f);           // top
             ctx.fillRect(rx, ry + rh - f, rw, f); // bottom
-            ctx.fillRect(rx, ry, f, rh);       // left
-            ctx.fillRect(rx + rw - f, ry, f, rh); // right
+            if (drawVerticalBorders) {
+                ctx.fillRect(rx, ry, f, rh);       // left
+                ctx.fillRect(rx + rw - f, ry, f, rh); // right
+            }
+            ctx.globalCompositeOperation = 'source-over';
 
         }
     }
@@ -672,10 +957,11 @@ function makeFloorMaterial(
     mat.bumpTexture.level = 1.9;
     mat.specularColor = new BABYLON.Color3(0.08, 0.08, 0.1);
     mat.emissiveColor = new BABYLON.Color3(0.055, 0.065, 0.085);
+    mat.freeze();
     return mat;
 }
 
-function makeWallMaterial(scene, key, hOffset = 0, axisSeed = 0, flipU = false) {
+function makeWallMaterial(scene, key, hOffset = 0, axisSeed = 0, flipU = false, bricksY = WALL_BRICKS_Y, allowPartialEdgeHighlights = false, uScale = 1.0) {
     const size = 256;
     const invSize = 1 / Math.max(1, size - 1);
     const tex = new BABYLON.DynamicTexture(`w_tex_${key}`, { width: size, height: size }, scene, true);
@@ -688,32 +974,46 @@ function makeWallMaterial(scene, key, hOffset = 0, axisSeed = 0, flipU = false) 
             const uRaw = x * invSize;
             const u = flipU ? (1.0 - uRaw) : uRaw;
             const v = y * invSize;
-            const gx = hOffset + u + axisSeed * 1000.0;
+            const gx = hOffset + u * uScale + axisSeed * 1000.0;
             const gy = v;
-            const row = Math.floor(gy * WALL_BRICKS_Y);
+            const row = Math.floor(gy * bricksY);
             const stagger = (row % 2) * 0.5;
             const cellX = (gx * WALL_BRICKS_X + stagger) % 1;
-            const cellY = (gy * WALL_BRICKS_Y) % 1;
+            const cellY = (gy * bricksY) % 1;
             const md = Math.min(Math.min(cellX, 1 - cellX), Math.min(cellY, 1 - cellY));
             const mortar = 1.0 - smoothstep(0, WALL_MORTAR_W, md);
 
             const brickIdX = Math.floor(gx * WALL_BRICKS_X + stagger);
-            const brickIdY = Math.floor(gy * WALL_BRICKS_Y);
+            const brickIdY = Math.floor(gy * bricksY);
             const rawBrick = hash2(brickIdX * 1.23, brickIdY * 1.31, 0.37);
             const brickHeight = Math.floor(rawBrick * 5.0) / 5.0;
             const n = hash2(gx * 17.0, gy * 15.0, 0.62) * 0.7 + hash2(gx * 43.0, gy * 39.0, 0.18) * 0.3;
             const centerDist = Math.max(Math.abs(cellX - 0.5), Math.abs(cellY - 0.5));
             const bevel = 1.0 - smoothstep(0.32, 0.5, centerDist);
-            const c = 64 + n * 20 + bevel * 16 + brickHeight * 20;
+            const c = 45 + n * 18 + bevel * 14 + brickHeight * 18;
             const mortarShade = 74;
             let r = c * (1 - mortar) + mortarShade * mortar;
             let g = (c + 4) * (1 - mortar) + (mortarShade + 3) * mortar;
             let b = (c + 13) * (1 - mortar) + (mortarShade + 8) * mortar;
 
+            // Calculate moss field once for both diffuse and bump
+            const brickMask = smoothstep(WALL_MORTAR_W * 0.82, WALL_MORTAR_W * 1.22, md);
+            const mossBlob = mossBlobAt(gx, gy);
+            const mossGate = smoothstep(0.56, 0.9, hash2(brickIdX * 0.77, brickIdY * 0.91, 0.63));
+
+            // Subtle moss tint for diffuse
+            const moss = smoothstep(0.2, 0.74, mossBlob) * (1.0 - mortar) * mossGate;
+            r = r * (1 - moss * WALL_MOSS_COLOR_STRENGTH) + 86 * (moss * WALL_MOSS_COLOR_STRENGTH);
+            g = g * (1 - moss * WALL_MOSS_COLOR_STRENGTH * 1.35) + 132 * (moss * WALL_MOSS_COLOR_STRENGTH * 1.35);
+            b = b * (1 - moss * WALL_MOSS_COLOR_STRENGTH * 0.85) + 92 * (moss * WALL_MOSS_COLOR_STRENGTH * 0.85);
+
             ctx.fillStyle = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
             ctx.fillRect(x, y, 1, 1);
 
-            const h = Math.max(0, Math.min(255, Math.floor(112 + brickHeight * 78 + n * 34 + bevel * 60 - mortar * 36)));
+            // Add moss relief to bump texture for visible 3D elevation
+            const mossMask = smoothstep(0.2, 0.74, mossBlob) * brickMask * mossGate;
+            const mossBump = (0.015 + mossBlob * 0.12) * mossMask * WALL_MOSS_HEIGHT_STRENGTH;
+            const h = Math.max(0, Math.min(255, Math.floor(112 + brickHeight * 78 + n * 34 + bevel * 60 - mortar * 36 + mossBump * 180)));
             bctx.fillStyle = `rgb(${h}, ${h}, ${h})`;
             bctx.fillRect(x, y, 1, 1);
         }
@@ -721,7 +1021,7 @@ function makeWallMaterial(scene, key, hOffset = 0, axisSeed = 0, flipU = false) 
 
     // Removed per-tile random moss overlays to avoid visible tile-level gray shifts.
 
-    drawWallBrickHighlights(ctx, size, hOffset, axisSeed, flipU);
+    drawWallBrickHighlights(ctx, size, hOffset, axisSeed, flipU, bricksY, allowPartialEdgeHighlights, uScale);
 
     tex.update(false);
     bump.update(false);
@@ -739,9 +1039,10 @@ function makeWallMaterial(scene, key, hOffset = 0, axisSeed = 0, flipU = false) 
     mat.bumpTexture = bump;
     mat.useParallax = false;
     mat.useParallaxOcclusion = false;
-    mat.bumpTexture.level = 0.52;
+    mat.bumpTexture.level = 1.4;
     mat.emissiveColor = new BABYLON.Color3(0.04, 0.04, 0.07);
     mat.specularColor = new BABYLON.Color3(0.015, 0.015, 0.015);
+    mat.freeze();
     return mat;
 }
 
@@ -848,12 +1149,18 @@ function createScene() {
 
     const root = new BABYLON.TransformNode('root', scene);
     const poisonMats = [];
+    const wallCoreMat = new BABYLON.StandardMaterial('wall_core_mat', scene);
+    wallCoreMat.diffuseColor = new BABYLON.Color3(0.16, 0.18, 0.22);
+    wallCoreMat.specularColor = new BABYLON.Color3(0.0, 0.0, 0.0);
+    wallCoreMat.emissiveColor = new BABYLON.Color3(0.01, 0.01, 0.015);
+    wallCoreMat.freeze();
+
     const wallMatCache = new Map();
-    const getWallFaceMat = (_faceName, hOffset, axisSeed, flipU = false) => {
+    const getWallFaceMat = (_faceName, hOffset, axisSeed, flipU = false, bricksY = WALL_BRICKS_Y, allowPartialEdgeHighlights = false, uScale = 1.0) => {
         // Only axis + horizontal offset define wall pattern continuity.
-        const k = `${axisSeed}_${hOffset.toFixed(4)}_${flipU ? 1 : 0}`;
+        const k = `${axisSeed}_${hOffset.toFixed(4)}_${flipU ? 1 : 0}_${bricksY.toFixed(2)}_${allowPartialEdgeHighlights ? 1 : 0}_${uScale.toFixed(4)}`;
         if (!wallMatCache.has(k)) {
-            wallMatCache.set(k, makeWallMaterial(scene, `wall_${k}`, hOffset, axisSeed, flipU));
+            wallMatCache.set(k, makeWallMaterial(scene, `wall_${k}`, hOffset, axisSeed, flipU, bricksY, allowPartialEdgeHighlights, uScale));
         }
         return wallMatCache.get(k);
     };
@@ -866,7 +1173,8 @@ function createScene() {
 
             if (c === 'V') continue;
 
-            if (c === '#') {
+            if (c === '#' || c === 'O') {
+                const wallNeighborMask = maskFrom(MAP, col, row, ['#']);
                 buildReliefWallBlock(
                     scene,
                     `w_${x}_${z}`,
@@ -878,25 +1186,11 @@ function createScene() {
                     x,
                     z,
                     root,
-                    getWallFaceMat
+                    getWallFaceMat,
+                    wallCoreMat,
+                    wallNeighborMask
                 );
                 continue;
-            }
-
-            if (c === 'O') {
-                buildReliefWallBlock(
-                    scene,
-                    `o_${x}_${z}`,
-                    x * TILE + TILE * 0.5,
-                    TILE * 0.64,
-                    z * TILE + TILE * 0.5,
-                    TILE * 0.85,
-                    1.4,
-                    x + 0.17,
-                    z + 0.11,
-                    root,
-                    getWallFaceMat
-                );
             }
 
             const tile = BABYLON.MeshBuilder.CreateGround(

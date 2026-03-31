@@ -16,6 +16,8 @@ import { ConfigLoader } from '../utils/ConfigLoader';
 type PlayerClassId = 'mage' | 'firewall' | 'rogue';
 
 export class PlayerController {
+  private static readonly MODEL_VERTICAL_TILE_FIX = 1.8;
+
   private mesh!: Mesh;
   private health!: Health;
   private inputManager: InputManager;
@@ -28,6 +30,8 @@ export class PlayerController {
   private classId: PlayerClassId;
   private position: Vector3 = Vector3.Zero();
   private velocity: Vector3 = Vector3.Zero();
+  private externalVerticalOffset: number = 0;
+  private renderVisibility: number = 1;
   private knockback: Knockback = new Knockback(10);
   private speed: number = 5.5;
   
@@ -453,11 +457,46 @@ export class PlayerController {
   setPosition(position: Vector3): void {
     this.position = position.clone();
     this.position.y = 1.0; // Keep player at floor level
+    this.syncVisualPosition();
+  }
+
+  setExternalVerticalOffset(offset: number): void {
+    this.externalVerticalOffset = Number.isFinite(offset) ? offset : 0;
+    this.syncVisualPosition();
+  }
+
+  getExternalVerticalOffset(): number {
+    return this.externalVerticalOffset;
+  }
+
+  setRenderVisibility(visibility: number): void {
+    this.renderVisibility = Math.max(0, Math.min(1, Number.isFinite(visibility) ? visibility : 1));
+    this.syncVisualPosition();
+  }
+
+  getRenderVisibility(): number {
+    return this.renderVisibility;
+  }
+
+  private syncVisualPosition(): void {
+    const renderPosition = this.position.clone();
+    const animHeightOffset = this.animationController ? this.animationController.getHeightOffset() : 0;
+    renderPosition.y = 1.0 + this.externalVerticalOffset - animHeightOffset + this.getClassModelVisualOffsetY();
     if (this.animationController) {
-      this.animationController.setPosition(this.position);
+      this.animationController.setPosition(renderPosition);
+      this.animationController.setVisibility(this.renderVisibility);
     } else if (this.mesh) {
-      this.mesh.position.copyFrom(this.position);
+      this.mesh.position.copyFrom(renderPosition);
+      this.mesh.visibility = this.renderVisibility;
     }
+  }
+
+  private getClassModelVisualOffsetY(): number {
+    // Mage and firewall rigs sit visually too high in isometric view; lower by one tile.
+    if (this.classId === 'mage' || this.classId === 'firewall') {
+      return -PlayerController.MODEL_VERTICAL_TILE_FIX;
+    }
+    return 0;
   }
 
   update(deltaTime: number): void {
@@ -523,13 +562,9 @@ export class PlayerController {
     
     this.position = newPosition;
     this.position.y = 1.0; // Keep at floor level
-    
+
     // Update parent position using animation controller (handles height offset)
-    if (this.animationController) {
-      this.animationController.setPosition(this.position);
-    } else {
-      this.mesh.position.copyFrom(this.position);
-    }
+    this.syncVisualPosition();
 
     // Update attack cooldown
     this.timeSinceLastAttack += deltaTime;
@@ -743,6 +778,7 @@ export class PlayerController {
           knockback: this.tankPrimaryKnockback,
         };
         this.timeSinceLastAttack = 0;
+        this.animationController.playAnimation(AnimationState.ATTACKING);
       }
     } else if (this.classId === 'rogue') {
       if (this.rogueStealthLockUntilRightRelease && !slot2Held) {
@@ -789,6 +825,7 @@ export class PlayerController {
           knockback: this.roguePrimaryKnockback,
         };
         this.timeSinceLastAttack = 0;
+        this.animationController.playAnimation(AnimationState.ATTACKING);
         this.eventBus.emit(GameEvents.ATTACK_PERFORMED, {
           attacker: 'player',
           type: 'melee',
@@ -986,6 +1023,10 @@ export class PlayerController {
     const classConfig = this.config[this.classId] ?? this.config.mage;
     const attackConfig = classConfig.attack;
     const damage = this.applyDamageModifiers(classConfig.baseStats.damage);
+
+    if (this.animationController) {
+      this.animationController.playAnimation(AnimationState.ATTACKING);
+    }
 
     // Rotate model to face attack direction at moment of firing
     console.log(`🎯 Attack fired, rotating to: x=${this.attackDirection.x.toFixed(2)}, z=${this.attackDirection.z.toFixed(2)}`);

@@ -82,8 +82,8 @@ export class PostProcessManager {
     if (!this.pipeline) return;
 
     this.pipeline.imageProcessingEnabled = true;
-    this.pipeline.imageProcessing.contrast = 1.15;
-    this.pipeline.imageProcessing.exposure = 1.0;
+    this.pipeline.imageProcessing.contrast = 1.08;
+    this.pipeline.imageProcessing.exposure = 1.08;
     this.pipeline.imageProcessing.vignetteEnabled = this.config.vignetteEnabled;
     this.pipeline.imageProcessing.vignetteWeight = this.config.vignetteWeight;
     const [r, g, b, a] = this.config.vignetteColor;
