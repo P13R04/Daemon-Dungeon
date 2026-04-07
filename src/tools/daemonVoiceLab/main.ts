@@ -11,6 +11,11 @@ import frVoice from 'mespeak/voices/fr.json';
 
 import { AnimationPhase, VoicelineConfig, VOICELINES } from '../../data/voicelines/VoicelineDefinitions';
 import { DAEMON_ANIMATION_PRESETS, normalizeDaemonPresetName } from '../../data/voicelines/DaemonAnimationPresets';
+import {
+  SCI_FI_TYPEWRITER_PRESETS,
+  SciFiTypewriterPreset,
+  SciFiTypewriterSynth,
+} from '../../audio/SciFiTypewriterSynth';
 
 type Language = 'en' | 'fr';
 type SourceType = 'custom' | 'library' | 'voiceline';
@@ -61,9 +66,23 @@ interface LayerPlan {
   delaySeconds: number;
 }
 
-interface SynthesisPart {
+interface AlternationPlan {
+  segmentCount: number;
+  crossfadeSeconds: number;
+}
+
+interface GlitchPlan {
+  eventCount: number;
+  sliceSeconds: number;
+  repeats: number;
+  repeatGapSeconds: number;
+  gain: number;
+}
+
+interface SynthesisPlan {
   layers: LayerPlan[];
-  gapAfterSeconds: number;
+  alternation?: AlternationPlan;
+  glitch?: GlitchPlan;
 }
 
 interface FxChain {
@@ -129,8 +148,8 @@ const VOICE_PRESETS: Record<string, VoicePreset> = {
     synthesisMode: 'dual-overlay',
     lowPitch: 20,
     highPitch: 70,
-    lowSpeed: 165,
-    highSpeed: 198,
+    lowSpeed: 170,
+    highSpeed: 170,
     lowAmplitude: 118,
     highAmplitude: 96,
     overlayDelayMs: 18,
@@ -145,8 +164,8 @@ const VOICE_PRESETS: Record<string, VoicePreset> = {
     synthesisMode: 'alternate',
     lowPitch: 32,
     highPitch: 76,
-    lowSpeed: 150,
-    highSpeed: 210,
+    lowSpeed: 176,
+    highSpeed: 176,
     lowAmplitude: 110,
     highAmplitude: 90,
     overlayDelayMs: 0,
@@ -161,8 +180,8 @@ const VOICE_PRESETS: Record<string, VoicePreset> = {
     synthesisMode: 'glitch-switch',
     lowPitch: 14,
     highPitch: 84,
-    lowSpeed: 154,
-    highSpeed: 220,
+    lowSpeed: 168,
+    highSpeed: 168,
     lowAmplitude: 132,
     highAmplitude: 104,
     overlayDelayMs: 12,
@@ -230,6 +249,9 @@ const cyclesInput = byId<HTMLInputElement>('cycles');
 const frameIntervalInput = byId<HTMLInputElement>('frameInterval');
 const typingSpeedInput = byId<HTMLInputElement>('typingSpeed');
 const typingDelayInput = byId<HTMLInputElement>('typingDelay');
+const autoTypingSyncInput = byId<HTMLInputElement>('autoTypingSync');
+const enableTypewriterSynthInput = byId<HTMLInputElement>('enableTypewriterSynth');
+const typewriterPresetSelect = byId<HTMLSelectElement>('typewriterPreset');
 const holdDurationInput = byId<HTMLInputElement>('holdDuration');
 const shakeStrengthInput = byId<HTMLInputElement>('shakeStrength');
 const continuousShakeInput = byId<HTMLInputElement>('continuousShake');
@@ -242,6 +264,7 @@ const lowPitchInput = byId<HTMLInputElement>('lowPitch');
 const highPitchInput = byId<HTMLInputElement>('highPitch');
 const lowSpeedInput = byId<HTMLInputElement>('lowSpeed');
 const highSpeedInput = byId<HTMLInputElement>('highSpeed');
+const syncSpeedInput = byId<HTMLInputElement>('syncSpeed');
 const lowAmplitudeInput = byId<HTMLInputElement>('lowAmplitude');
 const highAmplitudeInput = byId<HTMLInputElement>('highAmplitude');
 const overlayDelayInput = byId<HTMLInputElement>('overlayDelayMs');
@@ -285,10 +308,16 @@ let activePlayback: ActivePlayback | null = null;
 let playbackIdCounter = 0;
 let rafHandle = 0;
 let previousTickSeconds = 0;
+let typewriterSynth: SciFiTypewriterSynth | null = null;
+let activeTypingSpeedCps = numberValue(typingSpeedInput, 14);
+
+const TYPEWRITER_GAIN_BOOST = 2.8;
+const TYPEWRITER_MAX_GAIN = 0.16;
 
 initialize();
 
 function initialize(): void {
+  populateTypewriterPresetOptions();
   populatePresetOptions();
   populateVoicelineOptions();
   populateLibraryLines();
@@ -296,6 +325,7 @@ function initialize(): void {
   refreshVoiceOptions();
   applyVoicePreset(voicePresetSelect.value);
   bindRangeOutputs();
+  applySpeedSyncFrom('low');
   refreshSettingsPreview();
 
   sourceTypeSelect.addEventListener('change', () => {
@@ -329,6 +359,36 @@ function initialize(): void {
     applyVoicePreset(voicePresetSelect.value);
     refreshSettingsPreview();
   });
+
+  lowSpeedInput.addEventListener('input', () => {
+    applySpeedSyncFrom('low');
+    refreshSettingsPreview();
+  });
+
+  highSpeedInput.addEventListener('input', () => {
+    applySpeedSyncFrom('high');
+    refreshSettingsPreview();
+  });
+
+  syncSpeedInput.addEventListener('change', () => {
+    applySpeedSyncFrom('low');
+    refreshSettingsPreview();
+  });
+
+  typewriterPresetSelect.addEventListener('change', () => {
+    resetTypewriterSynth();
+    refreshSettingsPreview();
+  });
+
+  enableTypewriterSynthInput.addEventListener('change', () => {
+    if (!enableTypewriterSynthInput.checked) {
+      typewriterSynth?.dispose();
+      typewriterSynth = null;
+    }
+    refreshSettingsPreview();
+  });
+
+  autoTypingSyncInput.addEventListener('change', refreshSettingsPreview);
 
   playBtn.addEventListener('click', () => {
     void playCurrentLine();
@@ -385,6 +445,95 @@ function bindRangeOutputs(): void {
 
     range.addEventListener('input', update);
     update();
+  });
+}
+
+function updateRangeOutput(input: HTMLInputElement): void {
+  const outputId = input.dataset.output;
+  if (!outputId) return;
+  const output = document.getElementById(outputId) as HTMLOutputElement | null;
+  if (!output) return;
+  output.value = input.value;
+  output.textContent = input.value;
+}
+
+function applySpeedSyncFrom(source: 'low' | 'high'): void {
+  if (!syncSpeedInput.checked) return;
+  if (source === 'low') {
+    highSpeedInput.value = lowSpeedInput.value;
+    updateRangeOutput(highSpeedInput);
+  } else {
+    lowSpeedInput.value = highSpeedInput.value;
+    updateRangeOutput(lowSpeedInput);
+  }
+}
+
+function populateTypewriterPresetOptions(): void {
+  typewriterPresetSelect.innerHTML = '';
+  const presetIds = Object.keys(SCI_FI_TYPEWRITER_PRESETS) as SciFiTypewriterPreset[];
+  presetIds.forEach((presetId) => {
+    const option = document.createElement('option');
+    option.value = presetId;
+    option.textContent = presetId;
+    typewriterPresetSelect.appendChild(option);
+  });
+
+  if (presetIds.includes('oldschool_fast')) {
+    typewriterPresetSelect.value = 'oldschool_fast';
+  }
+}
+
+function estimateTypingSpeedFromVoice(textWithPauses: string): number {
+  const text = stripPauseMarkers(textWithPauses);
+  const words = Math.max(1, countWords(text));
+  const chars = Math.max(1, text.length);
+  const mode = synthesisModeSelect.value as SynthesisMode;
+
+  const lowWpm = numberValue(lowSpeedInput, 170);
+  const highWpm = syncSpeedInput.checked ? lowWpm : numberValue(highSpeedInput, lowWpm);
+
+  let effectiveWpm = lowWpm;
+  if (mode === 'single-high') {
+    effectiveWpm = highWpm;
+  } else if (mode === 'dual-overlay' || mode === 'alternate' || mode === 'glitch-switch') {
+    effectiveWpm = (lowWpm + highWpm) * 0.5;
+  }
+
+  const estimatedSpeechSeconds = words / Math.max(1e-3, effectiveWpm / 60);
+  const estimatedCps = (chars / Math.max(0.2, estimatedSpeechSeconds)) * 0.88;
+  return Math.max(4, Math.min(70, estimatedCps));
+}
+
+function resolveTypingSpeed(textWithPauses: string, voiceline?: VoicelineConfig): number {
+  if (autoTypingSyncInput.checked) {
+    return estimateTypingSpeedFromVoice(textWithPauses);
+  }
+  return voiceline?.typingSpeed ?? numberValue(typingSpeedInput, 14);
+}
+
+function resetTypewriterSynth(charsPerSecond?: number): void {
+  typewriterSynth?.dispose();
+  typewriterSynth = null;
+
+  if (!enableTypewriterSynthInput.checked) return;
+
+  const preset = typewriterPresetSelect.value as SciFiTypewriterPreset;
+  const presetOptions = SCI_FI_TYPEWRITER_PRESETS[preset] ?? SCI_FI_TYPEWRITER_PRESETS.oldschool_fast;
+  const cps = Math.max(1, charsPerSecond ?? activeTypingSpeedCps);
+  const intervalMs = Math.max(20, Math.round(1000 / cps));
+  const boostedBaseGain = Math.min(
+    TYPEWRITER_MAX_GAIN,
+    (presetOptions.baseGain ?? 0.04) * TYPEWRITER_GAIN_BOOST
+  );
+
+  typewriterSynth = new SciFiTypewriterSynth({
+    ...presetOptions,
+    baseGain: boostedBaseGain,
+    durationMs: Math.max(20, Math.round((presetOptions.durationMs ?? 24) * 1.35)),
+    intervalMs,
+    minIntervalMs: Math.max(16, Math.round(intervalMs * 0.75)),
+    maxIntervalMs: Math.max(intervalMs + 8, Math.round(intervalMs * 1.4)),
+    intervalJitterMs: 0,
   });
 }
 
@@ -521,6 +670,7 @@ function applyVoicePreset(presetId: string): void {
   reverbMixInput.value = String(preset.reverbMix);
   distortionInput.value = String(preset.distortion);
 
+  applySpeedSyncFrom('low');
   bindRangeOutputs();
 }
 
@@ -538,6 +688,9 @@ function collectSettingsForPreview(): Record<string, unknown> {
       cycles: numberValue(cyclesInput, 2),
       frameInterval: numberValue(frameIntervalInput, 0.12),
       typingSpeed: numberValue(typingSpeedInput, 14),
+      autoTypingSync: autoTypingSyncInput.checked,
+      enableTypewriterSynth: enableTypewriterSynthInput.checked,
+      typewriterPreset: typewriterPresetSelect.value,
       typingDelay: numberValue(typingDelayInput, 0.25),
       holdDuration: numberValue(holdDurationInput, 1.8),
       shakeStrength: numberValue(shakeStrengthInput, 4.5),
@@ -552,13 +705,14 @@ function collectSettingsForPreview(): Record<string, unknown> {
       highPitch: numberValue(highPitchInput, 70),
       lowSpeed: numberValue(lowSpeedInput, 165),
       highSpeed: numberValue(highSpeedInput, 198),
+      syncSpeed: syncSpeedInput.checked,
       lowAmplitude: numberValue(lowAmplitudeInput, 118),
       highAmplitude: numberValue(highAmplitudeInput, 96),
-      overlayDelayMs: numberValue(overlayDelayInput, 18),
+      fixedVoiceDelayMs: numberValue(overlayDelayInput, 18),
       chunkWordCount: numberValue(chunkWordCountInput, 3),
       wordGap: numberValue(wordGapInput, 1),
       glitchChance: numberValue(glitchChanceInput, 0.35),
-      glitchReplayWords: numberValue(glitchReplayWordsInput, 2),
+      glitchReplaySliceSize: numberValue(glitchReplayWordsInput, 2),
     },
     fx: {
       masterGain: numberValue(masterGainInput, 0.92),
@@ -736,46 +890,29 @@ function getPauseAtDisplayIndex(fullText: string, displayIndex: number): { durat
   return null;
 }
 
-function splitIntoWordChunks(text: string, wordsPerChunk: number): string[] {
-  const chunks: string[] = [];
-  const tokens = text
+function countWords(text: string): number {
+  return text
     .trim()
     .split(/\s+/)
-    .filter((token) => token.length > 0);
-
-  if (tokens.length === 0) {
-    return [''];
-  }
-
-  const size = Math.max(1, Math.floor(wordsPerChunk));
-  for (let i = 0; i < tokens.length; i += size) {
-    chunks.push(tokens.slice(i, i + size).join(' '));
-  }
-
-  return chunks;
+    .filter((token) => token.length > 0).length;
 }
 
-function buildGlitchSnippet(text: string, wordsCount: number): string {
-  const words = text
-    .split(/\s+/)
-    .filter((word) => word.length > 0);
-
-  if (words.length === 0) return text;
-
-  const span = Math.max(1, Math.min(words.length, Math.floor(wordsCount)));
-  const start = Math.max(0, Math.floor(Math.random() * Math.max(1, words.length - span + 1)));
-
-  return words.slice(start, start + span).join(' ');
-}
-
-function buildSynthesisPlan(text: string): SynthesisPart[] {
+function buildSynthesisPlan(text: string): SynthesisPlan {
   const mode = synthesisModeSelect.value as SynthesisMode;
   const lowVoice = lowVoiceSelect.value;
   const highVoice = highVoiceSelect.value;
   const lowPitch = numberValue(lowPitchInput, 20);
   const highPitch = numberValue(highPitchInput, 70);
   const lowSpeed = numberValue(lowSpeedInput, 165);
-  const highSpeed = numberValue(highSpeedInput, 198);
+  let highSpeed = numberValue(highSpeedInput, 198);
+  if (syncSpeedInput.checked) {
+    highSpeed = lowSpeed;
+    if (highSpeedInput.value !== String(lowSpeed)) {
+      highSpeedInput.value = String(lowSpeed);
+      updateRangeOutput(highSpeedInput);
+    }
+  }
+
   const lowAmplitude = numberValue(lowAmplitudeInput, 118);
   const highAmplitude = numberValue(highAmplitudeInput, 96);
   const overlayDelaySeconds = numberValue(overlayDelayInput, 18) / 1000;
@@ -783,6 +920,8 @@ function buildSynthesisPlan(text: string): SynthesisPart[] {
   const glitchChance = numberValue(glitchChanceInput, 0.35);
   const glitchReplayWords = numberValue(glitchReplayWordsInput, 2);
   const wordGap = numberValue(wordGapInput, 1);
+  const wordCount = Math.max(1, countWords(text));
+  const segmentCount = Math.max(2, Math.ceil(wordCount / Math.max(1, Math.floor(chunkWordCount))));
 
   const lowLayer = (line: string): LayerPlan => ({
     text: line,
@@ -792,7 +931,7 @@ function buildSynthesisPlan(text: string): SynthesisPart[] {
     amplitude: lowAmplitude,
     wordgap: wordGap,
     delaySeconds: 0,
-    gain: 0.88,
+    gain: 0.86,
   });
 
   const highLayer = (line: string): LayerPlan => ({
@@ -803,69 +942,55 @@ function buildSynthesisPlan(text: string): SynthesisPart[] {
     amplitude: highAmplitude,
     wordgap: wordGap,
     delaySeconds: overlayDelaySeconds,
-    gain: 0.74,
+    gain: 0.86,
   });
 
   if (mode === 'single-low') {
-    return [{ layers: [lowLayer(text)], gapAfterSeconds: 0 }];
+    return { layers: [lowLayer(text)] };
   }
 
   if (mode === 'single-high') {
-    return [{ layers: [highLayer(text)], gapAfterSeconds: 0 }];
+    return { layers: [highLayer(text)] };
   }
 
   if (mode === 'dual-overlay') {
-    return [{ layers: [lowLayer(text), highLayer(text)], gapAfterSeconds: 0 }];
+    return { layers: [lowLayer(text), { ...highLayer(text), gain: 0.74 }] };
   }
 
-  const chunks = splitIntoWordChunks(text, chunkWordCount);
-  const sequence: SynthesisPart[] = chunks.map((chunk, index) => {
-    const even = index % 2 === 0;
+  if (mode === 'alternate') {
     return {
-      layers: [even ? lowLayer(chunk) : highLayer(chunk)],
-      gapAfterSeconds: 0.025,
+      layers: [
+        { ...lowLayer(text), gain: 0.82 },
+        { ...highLayer(text), gain: 0.82 },
+      ],
+      alternation: {
+        segmentCount,
+        crossfadeSeconds: 0.018,
+      },
     };
-  });
-
-  if (mode === 'glitch-switch') {
-    if (Math.random() <= glitchChance) {
-      const snippet = buildGlitchSnippet(text, glitchReplayWords);
-      sequence.push({
-        layers: [
-          {
-            ...highLayer(snippet),
-            delaySeconds: 0,
-            gain: 0.82,
-            speed: highSpeed + 12,
-          },
-          {
-            ...lowLayer(snippet),
-            delaySeconds: 0.015,
-            gain: 0.58,
-            pitch: Math.max(0, lowPitch - 5),
-          },
-        ],
-        gapAfterSeconds: 0.02,
-      });
-    }
-
-    if (Math.random() <= glitchChance * 0.6) {
-      const snippet = buildGlitchSnippet(text, Math.max(1, glitchReplayWords - 1));
-      sequence.splice(Math.max(1, Math.floor(sequence.length / 2)), 0, {
-        layers: [
-          {
-            ...highLayer(snippet),
-            delaySeconds: 0,
-            speed: highSpeed + 25,
-            gain: 0.66,
-          },
-        ],
-        gapAfterSeconds: 0.01,
-      });
-    }
   }
 
-  return sequence;
+  const glitchSliceSeconds = Math.max(0.03, Math.min(0.22, 0.022 + glitchReplayWords * 0.028));
+  const glitchEventCount = Math.max(1, Math.min(10, Math.round(glitchChance * 7 + wordCount / 20)));
+  const glitchRepeats = Math.max(2, Math.min(6, 1 + Math.floor(glitchReplayWords)));
+
+  return {
+    layers: [
+      { ...lowLayer(text), gain: 0.8 },
+      { ...highLayer(text), gain: 0.8 },
+    ],
+    alternation: {
+      segmentCount: Math.max(3, Math.floor(segmentCount * 1.3)),
+      crossfadeSeconds: 0.012,
+    },
+    glitch: {
+      eventCount: glitchEventCount,
+      sliceSeconds: glitchSliceSeconds,
+      repeats: glitchRepeats,
+      repeatGapSeconds: Math.max(0.012, glitchSliceSeconds * 0.4),
+      gain: Math.min(0.82, 0.34 + glitchChance * 0.34),
+    },
+  };
 }
 
 function createImpulseResponse(context: AudioContext, seconds: number): AudioBuffer {
@@ -1028,6 +1153,92 @@ async function synthesizeLayerBuffer(context: AudioContext, layer: LayerPlan): P
   return context.decodeAudioData(wavData.slice(0));
 }
 
+function scheduleAlternation(
+  lowGain: GainNode,
+  highGain: GainNode,
+  lowBaseGain: number,
+  highBaseGain: number,
+  startTime: number,
+  endTime: number,
+  segmentCount: number,
+  crossfadeSeconds: number
+): void {
+  if (endTime <= startTime || segmentCount < 2) return;
+
+  const low = lowGain.gain;
+  const high = highGain.gain;
+  const total = endTime - startTime;
+  const segmentDuration = total / segmentCount;
+  const fade = Math.min(Math.max(0.004, crossfadeSeconds), segmentDuration * 0.45);
+
+  low.cancelScheduledValues(startTime);
+  high.cancelScheduledValues(startTime);
+  low.setValueAtTime(lowBaseGain, startTime);
+  high.setValueAtTime(0, startTime);
+
+  for (let i = 1; i < segmentCount; i += 1) {
+    const boundary = startTime + i * segmentDuration;
+    const fadeEnd = Math.min(boundary + fade, endTime);
+    const switchToHigh = i % 2 === 1;
+
+    if (switchToHigh) {
+      low.setValueAtTime(lowBaseGain, boundary);
+      low.linearRampToValueAtTime(0, fadeEnd);
+      high.setValueAtTime(0, boundary);
+      high.linearRampToValueAtTime(highBaseGain, fadeEnd);
+    } else {
+      high.setValueAtTime(highBaseGain, boundary);
+      high.linearRampToValueAtTime(0, fadeEnd);
+      low.setValueAtTime(0, boundary);
+      low.linearRampToValueAtTime(lowBaseGain, fadeEnd);
+    }
+  }
+}
+
+function scheduleMicroGlitches(
+  context: AudioContext,
+  fxInput: GainNode,
+  sourceBuffer: AudioBuffer,
+  windowStart: number,
+  windowEnd: number,
+  glitch: GlitchPlan,
+  allNodes: AudioNode[],
+  sources: AudioBufferSourceNode[]
+): void {
+  const usableStart = windowStart + 0.08;
+  const usableEnd = windowEnd - glitch.sliceSeconds - 0.08;
+  if (usableEnd <= usableStart) return;
+
+  const offsetMin = Math.max(0, sourceBuffer.duration * 0.45);
+  const offsetMax = Math.max(offsetMin, sourceBuffer.duration * 0.96 - glitch.sliceSeconds);
+
+  for (let i = 0; i < glitch.eventCount; i += 1) {
+    if (Math.random() > numberValue(glitchChanceInput, 0.35)) continue;
+
+    const eventStart = usableStart + Math.random() * (usableEnd - usableStart);
+    const segmentOffset = offsetMin + Math.random() * Math.max(0.0001, offsetMax - offsetMin);
+
+    for (let repeat = 0; repeat < glitch.repeats; repeat += 1) {
+      const when = eventStart + repeat * glitch.repeatGapSeconds;
+      if (when + glitch.sliceSeconds >= windowEnd) break;
+
+      const source = context.createBufferSource();
+      source.buffer = sourceBuffer;
+
+      const gain = context.createGain();
+      const decay = 1 - repeat / Math.max(1, glitch.repeats + 1);
+      gain.gain.value = glitch.gain * (0.65 + decay * 0.35);
+
+      source.connect(gain);
+      gain.connect(fxInput);
+      source.start(when, segmentOffset, glitch.sliceSeconds);
+
+      allNodes.push(source, gain);
+      sources.push(source);
+    }
+  }
+}
+
 async function playSynthesisText(text: string): Promise<{ endTime: number; playback: ActivePlayback }> {
   const context = await ensureAudioContext();
   ensureMeSpeakConfig();
@@ -1040,43 +1251,82 @@ async function playSynthesisText(text: string): Promise<{ endTime: number; playb
 
   const sources: AudioBufferSourceNode[] = [];
   const allNodes: AudioNode[] = [...fx.nodes];
-
-  let cursor = 0;
   const startAt = context.currentTime + 0.05;
 
-  for (const part of plan) {
-    const renderedLayers = await Promise.all(
-      part.layers.map(async (layer) => ({
-        layer,
-        buffer: await synthesizeLayerBuffer(context, layer),
-      }))
+  const renderedLayers = await Promise.all(
+    plan.layers.map(async (layer) => ({
+      layer,
+      buffer: await synthesizeLayerBuffer(context, layer),
+    }))
+  );
+
+  const scheduledLayers = renderedLayers.map(({ layer, buffer }) => {
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+
+    const gainNode = context.createGain();
+    gainNode.gain.value = layer.gain;
+
+    source.connect(gainNode);
+    gainNode.connect(fx.input);
+
+    const startTime = startAt + layer.delaySeconds;
+    source.start(startTime);
+
+    allNodes.push(source, gainNode);
+    sources.push(source);
+
+    return {
+      layer,
+      buffer,
+      source,
+      gainNode,
+      startTime,
+      endTime: startTime + buffer.duration,
+    };
+  });
+
+  const endTime = scheduledLayers.reduce((max, entry) => Math.max(max, entry.endTime), startAt);
+
+  const lowEntry = plan.layers[0]
+    ? scheduledLayers.find((entry) => entry.layer === plan.layers[0])
+    : undefined;
+  const highEntry = plan.layers[1]
+    ? scheduledLayers.find((entry) => entry.layer === plan.layers[1])
+    : undefined;
+
+  if (plan.alternation && lowEntry && highEntry) {
+    const alternationStart = Math.max(lowEntry.startTime, highEntry.startTime);
+    const alternationEnd = Math.min(lowEntry.endTime, highEntry.endTime);
+
+    scheduleAlternation(
+      lowEntry.gainNode,
+      highEntry.gainNode,
+      lowEntry.layer.gain,
+      highEntry.layer.gain,
+      alternationStart,
+      alternationEnd,
+      plan.alternation.segmentCount,
+      plan.alternation.crossfadeSeconds
     );
-
-    let partDuration = 0;
-
-    renderedLayers.forEach(({ layer, buffer }) => {
-      const source = context.createBufferSource();
-      source.buffer = buffer;
-
-      const gain = context.createGain();
-      gain.gain.value = layer.gain;
-
-      source.connect(gain);
-      gain.connect(fx.input);
-
-      const startTime = startAt + cursor + layer.delaySeconds;
-      source.start(startTime);
-
-      partDuration = Math.max(partDuration, layer.delaySeconds + buffer.duration);
-
-      sources.push(source);
-      allNodes.push(gain, source);
-    });
-
-    cursor += partDuration + part.gapAfterSeconds;
   }
 
-  const endTime = startAt + cursor;
+  if (plan.glitch) {
+    const preferred = highEntry ?? lowEntry ?? scheduledLayers[0];
+    if (preferred) {
+      scheduleMicroGlitches(
+        context,
+        fx.input,
+        preferred.buffer,
+        preferred.startTime,
+        preferred.endTime,
+        plan.glitch,
+        allNodes,
+        sources
+      );
+    }
+  }
+
   const playback: ActivePlayback = {
     id: ++playbackIdCounter,
     sources,
@@ -1262,6 +1512,11 @@ function advancePopupTyping(nowSeconds: number, deltaSeconds: number): void {
 
       popupState.typingIndex += 1;
       daemonMessage.textContent = popupState.displayText.slice(0, popupState.typingIndex);
+
+      const lastChar = popupState.displayText.charAt(popupState.typingIndex - 1);
+      if (lastChar) {
+        typewriterSynth?.triggerForTypedChar();
+      }
     }
 
     return;
@@ -1374,13 +1629,33 @@ async function playCurrentLine(): Promise<void> {
 
   stopPlayback();
 
+  const resolvedTypingSpeed = resolveTypingSpeed(text, resolved.voiceline);
+  activeTypingSpeedCps = resolvedTypingSpeed;
+  if (autoTypingSyncInput.checked) {
+    typingSpeedInput.value = String(Math.round(resolvedTypingSpeed));
+    updateRangeOutput(typingSpeedInput);
+  }
+
   const phases = buildAnimationPhases(resolved.voiceline);
   const allFrames = phases.flatMap((phase) => phase.frameSequence);
   await preloadAvatarFrames(allFrames);
 
   startPopupFromText(text, phases);
-  popupState.typingSpeed = resolved.voiceline?.typingSpeed ?? numberValue(typingSpeedInput, 14);
+  popupState.typingSpeed = resolvedTypingSpeed;
   popupState.holdDuration = resolved.voiceline?.holdDuration ?? numberValue(holdDurationInput, 1.8);
+
+  if (enableTypewriterSynthInput.checked) {
+    resetTypewriterSynth(resolvedTypingSpeed);
+    const context = await ensureAudioContext();
+    typewriterSynth?.attachContext(context);
+    await typewriterSynth?.unlock();
+
+    // Short preview chirp so the user can immediately confirm synth audibility.
+    typewriterSynth?.triggerForTypedChar();
+    setTimeout(() => typewriterSynth?.triggerForTypedChar(), 34);
+  } else {
+    resetTypewriterSynth();
+  }
 
   daemonMeta.textContent = 'Rendering meSpeak layers and applying FX...';
 
@@ -1411,7 +1686,11 @@ function randomizeSlightly(): void {
   randomRange(lowPitchInput, 0, 99);
   randomRange(highPitchInput, 0, 99);
   randomRange(lowSpeedInput, 90, 260);
-  randomRange(highSpeedInput, 90, 260);
+  if (syncSpeedInput.checked) {
+    applySpeedSyncFrom('low');
+  } else {
+    randomRange(highSpeedInput, 90, 260);
+  }
   randomRange(overlayDelayInput, 0, 120);
   randomRange(glitchChanceInput, 0, 1);
   randomRange(reverbMixInput, 0, 1);

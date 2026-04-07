@@ -1,0 +1,50 @@
+{
+  "id": "room_custom",
+  "name": "Custom Room",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.##.......##.#",
+    "#.##.PP....##.#",
+    "#....PP.......#",
+    "#.PPPPP.......#",
+    "#.PPPPPPP.....#",
+    "#...PPPPP.....#",
+    "#...PP..P.....#",
+    "#.#.PP..P.....#",
+    "#.#.PPPPP.....#",
+    "#.#...........#",
+    "#.#...........#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 6.5,
+      "y": 5.5,
+      "enemyType": "turret"
+    },
+    {
+      "x": 7.7,
+      "y": 10.7,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 9.7,
+      "y": 10.9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 8.4,
+      "y": 11.9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 8.4,
+      "y": 10.1,
+      "enemyType": "zombie_basic"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

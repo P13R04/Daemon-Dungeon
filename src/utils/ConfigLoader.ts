@@ -40,6 +40,12 @@ export interface GameplayConfig {
     damagePerRoom: number;
     speedPerRoom: number;
   };
+  tankVisuals?: {
+    height: number;
+    lateral: number;
+    depth: number;
+    size: number;
+  };
   [key: string]: any;
 }
 

@@ -12,6 +12,7 @@ import { Health } from '../components/Health';
 import { Knockback } from '../components/Knockback';
 import { MathUtils } from '../utils/Math';
 import { ConfigLoader } from '../utils/ConfigLoader';
+import { GameSettings, GameSettingsStore } from '../settings/GameSettings';
 
 type PlayerClassId = 'mage' | 'firewall' | 'rogue';
 
@@ -116,24 +117,40 @@ export class PlayerController {
   private tankShieldBashHitRadius: number = 1.5;
   private tankShieldBashKnockback: number = 3.2;
   private tankShieldBashStunDuration: number = 1.0;
+  private tankShieldBashGroupDistance: number = 1.5;
+  private tankShieldBashGroupWidth: number = 1.1;
+  private tankShieldBashPullStrength: number = 4.2;
+  private tankShieldBashForwardPush: number = 2.0;
   private tankShieldBashCooldown: number = 0.9;
   private tankShieldBashCooldownTimer: number = 0;
   private tankShieldBashRemaining: number = 0;
+  private tankShieldBashRecoveryDuration: number = 0.14;
+  private tankShieldBashRecoveryTimer: number = 0;
   private tankShieldBashDirection: Vector3 = new Vector3(1, 0, 0);
   private pendingTankSweep: {
     origin: Vector3;
     direction: Vector3;
+    swingDirection: 'left' | 'right';
     range: number;
     coneAngleDeg: number;
     damage: number;
     knockback: number;
   } | null = null;
+  private tankComboSecondSwingPending: boolean = false;
+  private tankComboSecondSwingTimer: number = 0;
+  private tankComboDirection: Vector3 = new Vector3(1, 0, 0);
   private pendingTankShieldBash: {
     origin: Vector3;
+    direction: Vector3;
     radius: number;
     damage: number;
     knockback: number;
     stunDuration: number;
+    groupDistance: number;
+    groupWidth: number;
+    pullStrength: number;
+    forwardPush: number;
+    isFinisher: boolean;
   } | null = null;
   private pendingTankUltimate: {
     position: Vector3;
@@ -172,6 +189,10 @@ export class PlayerController {
   private rogueDashDistanceRemaining: number = 0;
   private rogueDashDirection: Vector3 = new Vector3(1, 0, 0);
   private rogueDashStartPosition: Vector3 = Vector3.Zero();
+  private rogueOpeningStrikeMultiplier: number = 1.8;
+  private rogueOpeningStrikeWindow: number = 2.2;
+  private rogueOpeningStrikeTimer: number = 0;
+  private rogueOpeningStrikeReady: boolean = false;
   private rogueUltimateDuration: number = 6;
   private rogueUltimateZoneRadius: number = 5.5;
   private rogueUltimateHitDamage: number = 22;
@@ -205,6 +226,9 @@ export class PlayerController {
   private damageBoostMultiplier: number = 1;
   private damageReductionTimer: number = 0;
   private damageReductionRatio: number = 0;
+  private keyboardOnlyMode: boolean = false;
+  private autoAimTowardMovement: boolean = true;
+  private unsubscribeSettings: (() => void) | null = null;
 
   constructor(scene: Scene, inputManager: InputManager, config: any, classId: PlayerClassId = 'mage') {
     this.scene = scene;
@@ -213,6 +237,10 @@ export class PlayerController {
     this.classId = classId;
     this.eventBus = EventBus.getInstance();
     this.time = Time.getInstance();
+    this.applySettings(GameSettingsStore.get());
+    this.unsubscribeSettings = GameSettingsStore.subscribe((settings) => {
+      this.applySettings(settings);
+    });
 
     this.initialize();
   }
@@ -340,6 +368,10 @@ export class PlayerController {
     this.tankShieldBashHitRadius = this.readPositiveNumber(bash.hitRadius, this.tankShieldBashHitRadius);
     this.tankShieldBashKnockback = this.readPositiveNumber(bash.knockback, this.tankShieldBashKnockback);
     this.tankShieldBashStunDuration = this.readPositiveNumber(bash.stunDuration, this.tankShieldBashStunDuration);
+    this.tankShieldBashGroupDistance = this.readPositiveNumber(bash.groupDistance, this.tankShieldBashGroupDistance);
+    this.tankShieldBashGroupWidth = this.readPositiveNumber(bash.groupWidth, this.tankShieldBashGroupWidth);
+    this.tankShieldBashPullStrength = this.readPositiveNumber(bash.pullStrength, this.tankShieldBashPullStrength);
+    this.tankShieldBashForwardPush = this.readPositiveNumber(bash.forwardPush, this.tankShieldBashForwardPush);
     this.tankShieldBashCooldown = this.readPositiveNumber(bash.cooldown, this.tankShieldBashCooldown);
     this.tankShieldBashCost = this.readClampedNumber(
       bash.cost,
@@ -414,6 +446,8 @@ export class PlayerController {
     this.rogueDashDamage = this.readPositiveNumber(dash.damage, this.rogueDashDamage);
     this.rogueDashKnockback = this.readPositiveNumber(dash.knockback, this.rogueDashKnockback);
     this.rogueDashCooldown = this.readPositiveNumber(dash.cooldown, this.rogueDashCooldown);
+    this.rogueOpeningStrikeMultiplier = this.readPositiveNumber(dash.openingStrikeMultiplier, this.rogueOpeningStrikeMultiplier);
+    this.rogueOpeningStrikeWindow = this.readPositiveNumber(dash.openingStrikeWindow, this.rogueOpeningStrikeWindow);
 
     this.rogueCritChance = this.readClampedNumber(passive.critChance, this.rogueCritChance, 0, 1);
     this.rogueCritMultiplier = this.readPositiveNumber(passive.critMultiplier, this.rogueCritMultiplier);
@@ -425,6 +459,8 @@ export class PlayerController {
     this.rogueUltimateTeleportOffset = this.readPositiveNumber(ultimate.teleportOffset, this.rogueUltimateTeleportOffset);
 
     this.rogueStealthResource = this.rogueStealthResourceMax;
+    this.rogueOpeningStrikeReady = false;
+    this.rogueOpeningStrikeTimer = 0;
   }
 
   private readPositiveNumber(value: unknown, fallback: number): number {
@@ -518,8 +554,34 @@ export class PlayerController {
     if (this.tankShieldBashCooldownTimer > 0) {
       this.tankShieldBashCooldownTimer = Math.max(0, this.tankShieldBashCooldownTimer - deltaTime);
     }
+    if (this.tankShieldBashRecoveryTimer > 0) {
+      this.tankShieldBashRecoveryTimer = Math.max(0, this.tankShieldBashRecoveryTimer - deltaTime);
+    }
+    if (this.classId === 'firewall' && this.tankComboSecondSwingPending) {
+      this.tankComboSecondSwingTimer = Math.max(0, this.tankComboSecondSwingTimer - deltaTime);
+      if (this.tankShieldBashRemaining > 0) {
+        this.tankComboSecondSwingPending = false;
+      } else if (this.tankComboSecondSwingTimer <= 0) {
+        this.pendingTankSweep = {
+          origin: this.position.clone(),
+          direction: this.attackDirection.clone(),
+          swingDirection: 'right',
+          range: this.tankPrimaryRange,
+          coneAngleDeg: this.tankPrimaryConeAngleDeg,
+          damage: this.applyDamageModifiers(this.tankPrimaryDamage),
+          knockback: this.tankPrimaryKnockback,
+        };
+        this.tankComboSecondSwingPending = false;
+      }
+    }
     if (this.rogueDashCooldownTimer > 0) {
       this.rogueDashCooldownTimer = Math.max(0, this.rogueDashCooldownTimer - deltaTime);
+    }
+    if (this.rogueOpeningStrikeTimer > 0) {
+      this.rogueOpeningStrikeTimer = Math.max(0, this.rogueOpeningStrikeTimer - deltaTime);
+      if (this.rogueOpeningStrikeTimer <= 0) {
+        this.rogueOpeningStrikeReady = false;
+      }
     }
 
     // Update movement
@@ -528,13 +590,33 @@ export class PlayerController {
     if (this.classId === 'firewall' && this.tankShieldBashRemaining > 0) {
       this.velocity = this.tankShieldBashDirection.scale(this.tankShieldBashDashSpeed);
       this.tankShieldBashRemaining = Math.max(0, this.tankShieldBashRemaining - deltaTime);
+      this.pendingTankShieldBash = {
+        origin: this.position.clone(),
+        direction: this.tankShieldBashDirection.clone(),
+        radius: this.tankShieldBashHitRadius,
+        damage: 0,
+        knockback: this.tankShieldBashKnockback,
+        stunDuration: 0,
+        groupDistance: this.tankShieldBashGroupDistance,
+        groupWidth: this.tankShieldBashGroupWidth,
+        pullStrength: this.tankShieldBashPullStrength,
+        forwardPush: this.tankShieldBashForwardPush,
+        isFinisher: false,
+      };
       if (this.tankShieldBashRemaining <= 0) {
+        this.tankShieldBashRecoveryTimer = this.tankShieldBashRecoveryDuration;
         this.pendingTankShieldBash = {
           origin: this.position.clone(),
+          direction: this.tankShieldBashDirection.clone(),
           radius: this.tankShieldBashHitRadius,
           damage: this.tankShieldBashDamage,
           knockback: this.tankShieldBashKnockback,
           stunDuration: this.tankShieldBashStunDuration,
+          groupDistance: this.tankShieldBashGroupDistance,
+          groupWidth: this.tankShieldBashGroupWidth,
+          pullStrength: this.tankShieldBashPullStrength,
+          forwardPush: this.tankShieldBashForwardPush,
+          isFinisher: true,
         };
       }
     }
@@ -544,13 +626,6 @@ export class PlayerController {
       this.rogueDashDistanceRemaining = Math.max(0, this.rogueDashDistanceRemaining - dashStep);
       this.rogueDashRemaining = Math.max(0, this.rogueDashRemaining - deltaTime);
       if (this.rogueDashRemaining <= 0 || this.rogueDashDistanceRemaining <= 0) {
-        this.pendingRogueDashAttack = {
-          from: this.rogueDashStartPosition.clone(),
-          to: this.position.clone(),
-          radius: this.rogueDashHitRadius,
-          damage: this.computeRogueDamage(this.applyDamageModifiers(this.rogueDashDamage)),
-          knockback: this.rogueDashKnockback,
-        };
         this.rogueDashRemaining = 0;
         this.rogueDashDistanceRemaining = 0;
       }
@@ -620,6 +695,11 @@ export class PlayerController {
     if (this.animationController && !(this.classId === 'firewall' && this.tankUltimateActive)) {
       this.animationController.updateRotation(deltaTime);
     }
+
+    if (this.classId === 'firewall' && this.animationController) {
+      this.animationController.updateTankThrusterState(this.isMoving, this.tankShieldBashRemaining > 0);
+      this.animationController.updateTankThrusterVelocity(this.velocity);
+    }
   }
 
   private updateMovement(deltaTime: number): void {
@@ -651,6 +731,11 @@ export class PlayerController {
   }
 
   private updateAimDirection(): void {
+    if (this.keyboardOnlyMode && this.autoAimTowardMovement) {
+      this.updateAimDirectionFromMovement();
+      return;
+    }
+
     const camera = (this.scene as any).mainCamera ?? this.scene.activeCamera;
     if (!camera) return;
 
@@ -677,6 +762,39 @@ export class PlayerController {
         }
       }
     }
+  }
+
+  private updateAimDirectionFromMovement(): void {
+    let sourceDirection = this.lastMovementDirection;
+    if (sourceDirection.lengthSquared() < 0.0001) {
+      sourceDirection = this.lastAttackDirection;
+    }
+    if (sourceDirection.lengthSquared() < 0.0001) {
+      sourceDirection = new Vector3(0, 0, 1);
+    }
+
+    const snappedDirection = this.quantizeToEightDirections(sourceDirection);
+    this.attackDirection = snappedDirection;
+    this.lastAttackDirection = snappedDirection.clone();
+    this.attackTargetPoint = this.position.add(snappedDirection.scale(8));
+  }
+
+  private quantizeToEightDirections(direction: Vector3): Vector3 {
+    const flat = new Vector3(direction.x, 0, direction.z);
+    if (flat.lengthSquared() < 0.0001) {
+      return new Vector3(0, 0, 1);
+    }
+
+    const angle = Math.atan2(flat.x, flat.z);
+    const step = Math.PI / 4;
+    const snappedAngle = Math.round(angle / step) * step;
+    const snapped = new Vector3(Math.sin(snappedAngle), 0, Math.cos(snappedAngle));
+    return snapped.normalize();
+  }
+
+  private applySettings(settings: GameSettings): void {
+    this.keyboardOnlyMode = !!settings.controls.keyboardOnlyMode;
+    this.autoAimTowardMovement = !!settings.controls.autoAimTowardMovement;
   }
 
   private updateFocusFire(deltaTime: number): void {
@@ -763,22 +881,34 @@ export class PlayerController {
       if (this.tankShieldActive && slot1Pressed && this.tankShieldBashCooldownTimer <= 0 && this.tankShieldBashRemaining <= 0 && this.tankStanceResource >= this.tankShieldBashCost) {
         this.tankShieldBashDirection = this.attackDirection.clone();
         this.tankShieldBashRemaining = this.tankShieldBashDuration;
+        this.tankComboSecondSwingPending = false;
         this.tankShieldBashCooldownTimer = this.tankShieldBashCooldown;
         this.tankStanceResource = Math.max(0, this.tankStanceResource - this.tankShieldBashCost);
         this.tankShieldActive = false;
         this.tankShieldLockUntilRightRelease = true;
         this.animationController.playShieldBash();
-      } else if (!this.tankShieldActive && this.timeSinceLastAttack >= this.fireRate && slot1Held) {
+      } else if (
+        !this.tankShieldActive &&
+        this.tankShieldBashRemaining <= 0 &&
+        this.tankShieldBashRecoveryTimer <= 0 &&
+        !this.tankComboSecondSwingPending &&
+        this.timeSinceLastAttack >= this.fireRate &&
+        slot1Held
+      ) {
         this.pendingTankSweep = {
           origin: this.position.clone(),
           direction: this.attackDirection.clone(),
+          swingDirection: 'left',
           range: this.tankPrimaryRange,
           coneAngleDeg: this.tankPrimaryConeAngleDeg,
           damage: this.applyDamageModifiers(this.tankPrimaryDamage),
           knockback: this.tankPrimaryKnockback,
         };
+        this.tankComboDirection = this.attackDirection.clone();
+        this.tankComboSecondSwingPending = true;
+        this.tankComboSecondSwingTimer = this.fireRate * 0.5;
         this.timeSinceLastAttack = 0;
-        this.animationController.playAnimation(AnimationState.ATTACKING);
+        this.animationController.playTankPrimaryCombo(this.fireRate);
       }
     } else if (this.classId === 'rogue') {
       if (this.rogueStealthLockUntilRightRelease && !slot2Held) {
@@ -809,19 +939,19 @@ export class PlayerController {
         this.rogueDashRemaining = actualDistance / this.rogueDashSpeed;
         this.rogueDashCooldownTimer = this.rogueDashCooldown;
         this.rogueStealthResource = Math.max(0, this.rogueStealthResource - this.rogueDashCost);
+        this.rogueOpeningStrikeReady = true;
+        this.rogueOpeningStrikeTimer = this.rogueOpeningStrikeWindow;
         this.rogueStealthActive = false;
         this.rogueStealthLockUntilRightRelease = true;
-        this.eventBus.emit(GameEvents.ATTACK_PERFORMED, {
-          attacker: 'player',
-          type: 'melee',
-        });
       } else if (!this.rogueStealthActive && this.rogueDashRemaining <= 0 && this.timeSinceLastAttack >= this.fireRate && slot1Held) {
         this.pendingRogueStrike = {
           origin: this.position.clone(),
           direction: this.attackDirection.clone(),
           range: this.roguePrimaryRange,
           coneAngleDeg: this.roguePrimaryConeAngleDeg,
-          damage: this.computeRogueDamage(this.applyDamageModifiers(this.roguePrimaryDamage)),
+          damage: this.consumeRogueOpeningStrike(
+            this.computeRogueDamage(this.applyDamageModifiers(this.roguePrimaryDamage))
+          ),
           knockback: this.roguePrimaryKnockback,
         };
         this.timeSinceLastAttack = 0;
@@ -854,7 +984,9 @@ export class PlayerController {
 
     // Apply rotation based on state
     if (this.animationController && !(this.classId === 'firewall' && this.tankUltimateActive)) {
-      if (this.isFiring) {
+      if (this.classId === 'firewall' && this.tankShieldActive) {
+        this.animationController.rotateTowardDirection(this.attackDirection);
+      } else if (this.isFiring) {
         this.animationController.rotateTowardDirection(this.attackDirection);
       } else if (!this.isMoving) {
         if (this.wasJustAttacking) {
@@ -1006,6 +1138,16 @@ export class PlayerController {
     if (this.classId !== 'rogue') return baseDamage;
     const isCrit = Math.random() < this.rogueCritChance;
     return isCrit ? baseDamage * this.rogueCritMultiplier : baseDamage;
+  }
+
+  private consumeRogueOpeningStrike(baseDamage: number): number {
+    if (this.classId !== 'rogue' || !this.rogueOpeningStrikeReady || this.rogueOpeningStrikeTimer <= 0) {
+      return baseDamage;
+    }
+
+    this.rogueOpeningStrikeReady = false;
+    this.rogueOpeningStrikeTimer = 0;
+    return baseDamage * this.rogueOpeningStrikeMultiplier;
   }
 
   private triggerSecondaryBurst(): void {
@@ -1282,6 +1424,7 @@ export class PlayerController {
   consumePendingTankSweep(): {
     origin: Vector3;
     direction: Vector3;
+    swingDirection: 'left' | 'right';
     range: number;
     coneAngleDeg: number;
     damage: number;
@@ -1294,10 +1437,16 @@ export class PlayerController {
 
   consumePendingTankShieldBash(): {
     origin: Vector3;
+    direction: Vector3;
     radius: number;
     damage: number;
     knockback: number;
     stunDuration: number;
+    groupDistance: number;
+    groupWidth: number;
+    pullStrength: number;
+    forwardPush: number;
+    isFinisher: boolean;
   } | null {
     const payload = this.pendingTankShieldBash;
     this.pendingTankShieldBash = null;
@@ -1484,6 +1633,10 @@ export class PlayerController {
   }
 
   dispose(): void {
+    if (this.unsubscribeSettings) {
+      this.unsubscribeSettings();
+      this.unsubscribeSettings = null;
+    }
     if (this.secondaryZoneMesh) {
       this.secondaryZoneMesh.dispose();
       this.secondaryZoneMesh = null;

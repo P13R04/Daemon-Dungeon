@@ -1,5 +1,5 @@
 import { ArcRotateCamera, Scene } from '@babylonjs/core';
-import { AdvancedDynamicTexture, Button, Checkbox, Control, Rectangle, Slider, StackPanel, TextBlock } from '@babylonjs/gui';
+import { AdvancedDynamicTexture, Button, Checkbox, Control, Rectangle, ScrollViewer, Slider, StackPanel, TextBlock } from '@babylonjs/gui';
 import { PostProcessManager, PostProcessingConfig } from './PostProcess';
 
 export class ClassSelectDevConsole {
@@ -35,7 +35,7 @@ export class ClassSelectDevConsole {
   private createPanel(): Rectangle {
     const panel = new Rectangle('classSelectDevPanel');
     panel.width = '400px';
-    panel.height = '620px';
+    panel.height = '760px';
     panel.background = 'rgba(15, 15, 35, 0.98)';
     panel.thickness = 2;
     panel.cornerRadius = 8;
@@ -45,11 +45,23 @@ export class ClassSelectDevConsole {
     panel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     panel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
 
+    const scrollViewer = new ScrollViewer('classSelectDevScrollViewer');
+    scrollViewer.width = '100%';
+    scrollViewer.height = '100%';
+    scrollViewer.thickness = 0;
+    scrollViewer.barColor = '#66FFCC';
+    scrollViewer.barSize = 8;
+    scrollViewer.wheelPrecision = 45;
+    scrollViewer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    scrollViewer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    panel.addControl(scrollViewer);
+
     const content = new StackPanel('classSelectDevContent');
     content.width = '360px';
     content.top = '16px';
+    content.paddingBottom = '20px';
     content.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    panel.addControl(content);
+    scrollViewer.addControl(content);
 
     const title = new TextBlock('classSelectDevTitle');
     title.text = '>>> DEV CONSOLE (SELECT) <<<';

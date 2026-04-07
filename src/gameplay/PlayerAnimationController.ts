@@ -5,6 +5,7 @@
 
 import { Scene, Mesh, AbstractMesh, AnimationGroup, SceneLoader, Vector3, TransformNode, ParticleSystem, DynamicTexture, Color4 } from '@babylonjs/core';
 import { SCENE_LAYER } from '../ui/uiLayers';
+import { ConfigLoader } from '../utils/ConfigLoader';
 
 export enum AnimationState {
   IDLE = 'idle',
@@ -67,6 +68,14 @@ export class PlayerAnimationController {
   private tankThrusterParticles: ParticleSystem | null = null;
   private tankThrusterAnchor: TransformNode | null = null;
   private tankThrusterTexture: DynamicTexture | null = null;
+  private tankThrusterIdleOffset: Vector3 = new Vector3(-0.07, 1.6, -0.13);
+  private tankThrusterMoveOffset: Vector3 = new Vector3(-0.07, 1.6, -0.03);
+  private tankThrusterBashOffset: Vector3 = new Vector3(-0.07, 1.6, 0.11);
+  private tankThrusterSizeMultiplier: number = 1;
+  private tankThrusterSceneScale: number = 1;
+  private lastTankThrusterMoving: boolean = false;
+  private lastTankThrusterBashing: boolean = false;
+  private lastPlayerVelocity: Vector3 = Vector3.Zero();
 
   constructor(scene: Scene, playerClass: PlayerClass = 'mage') {
     this.scene = scene;
@@ -122,8 +131,6 @@ export class PlayerAnimationController {
       result.meshes.forEach((m, idx) => {
         console.log(`   [${idx}] ${m.name} (children: ${m.getChildren().length})`);
       });
-
-      // Extract all animation groups
       result.animationGroups.forEach((group) => {
         this.animationGroups.set(group.name, group);
         console.log(`✓ Loaded animation: ${group.name}`);
@@ -131,6 +138,8 @@ export class PlayerAnimationController {
 
       if (this.playerClass === 'firewall') {
         this._setupTankThrusterParticles(result.meshes as AbstractMesh[]);
+        this.applyTankThrusterTuning(this.loadTankThrusterTuningFromConfig());
+        this.updateTankThrusterSceneScale();
       }
 
       console.log(`✓ Player ${this.playerClass} model loaded successfully, animations: ${this.animationGroups.size}, scale: 0.1`);
@@ -404,7 +413,7 @@ export class PlayerAnimationController {
         return;
 
       case AnimationState.SHIELD_DEACTIVATE:
-        animationName = 'Shoeld_Down';
+        animationName = 'Shield_Down';
         this.currentState = AnimationState.SHIELD_DEACTIVATE;
         this.isShieldActive = false;
         this._playAnimationOnce(animationName, () => {
@@ -427,6 +436,34 @@ export class PlayerAnimationController {
     if (this.playerClass === 'firewall') {
       this.playAnimation(AnimationState.SHIELD_BASH);
     }
+  }
+
+  playTankPrimaryCombo(totalDurationSeconds: number): void {
+    if (this.playerClass !== 'firewall') {
+      this.playAnimation(AnimationState.ATTACKING);
+      return;
+    }
+
+    const clipA = 'Normal_attack_1';
+    const clipB = 'Normal_attack_2';
+    const fullDuration = Math.max(0.1, totalDurationSeconds);
+    const halfDuration = fullDuration * 0.5;
+
+    const baseA = this.getAnimationBaseDuration(clipA);
+    const baseB = this.getAnimationBaseDuration(clipB);
+    const speedA = Math.max(0.35, Math.min(4.5, baseA / halfDuration));
+    const speedB = Math.max(0.35, Math.min(4.5, baseB / halfDuration));
+
+    this.currentState = AnimationState.ATTACKING;
+    this._playAnimationOnce(clipA, () => {
+      this._playAnimationOnce(clipB, () => {
+        if (this.isWalking) {
+          this.playAnimation(AnimationState.WALKING);
+        } else {
+          this.playAnimation(AnimationState.IDLE);
+        }
+      }, speedB);
+    }, speedA);
   }
 
   /**
@@ -523,8 +560,9 @@ export class PlayerAnimationController {
       return;
     }
 
-    // Return to idle when not moving/attacking (but not if shield is active)
     if (!isMoving && this.currentState !== AnimationState.IDLE && this.currentState !== AnimationState.ATTACKING && !this.isShieldActive) {
+        this.updateTankThrusterSceneScale();
+        this.applyTankThrusterTuning(this.loadTankThrusterTuningFromConfig());
       this.playAnimation(AnimationState.IDLE);
       return;
     }
@@ -730,28 +768,33 @@ export class PlayerAnimationController {
     this.currentAnimation = animationName;
   }
 
+  private getAnimationBaseDuration(animationName: string): number {
+    const group = this.animationGroups.get(animationName);
+    if (!group) {
+      return 0.5;
+    }
+
+    const firstTarget = group.targetedAnimations?.[0]?.animation;
+    const from = typeof group.from === 'number' ? group.from : 0;
+    const to = typeof group.to === 'number' ? group.to : from + 1;
+    const frameSpan = Math.max(1, to - from);
+    const fps = firstTarget?.framePerSecond ?? 60;
+    return frameSpan / Math.max(1, fps);
+  }
+
   /**
    * Create a thruster-like flame particle effect under tank model.
    * The emitter is parented to a child mesh (or fallback anchor), so it follows animations and rotations.
    */
   private _setupTankThrusterParticles(meshes: AbstractMesh[]): void {
-    if (!this.mesh) return;
-
-    const anchorSource = this._findTankThrusterAnchor(meshes) ?? this.mesh;
+    if (!this.mesh || !this.meshParent) return;
 
     this.tankThrusterAnchor = new TransformNode('tank_thruster_anchor', this.scene);
-    this.tankThrusterAnchor.parent = anchorSource;
+    this.tankThrusterAnchor.parent = this.meshParent;
     this.tankThrusterAnchor.position = Vector3.Zero();
+    this.tankThrusterAnchor.position.copyFrom(this.tankThrusterIdleOffset);
 
-    const isNamedThrusterAnchor = anchorSource.name.toLowerCase() === 'layer.003';
-    const bounds = anchorSource.getBoundingInfo().boundingBox.extendSize;
-    const verticalOffset = isNamedThrusterAnchor ? 0.03 : Math.max(0.022, bounds.y * 0.15);
-
-    const localRightOffsetX = 0.0;
-    const localBackOffsetZ = 0.34;
-    this.tankThrusterAnchor.position = new Vector3(localRightOffsetX, verticalOffset, localBackOffsetZ);
-
-    console.log(`[TankFX] Thruster anchor: ${anchorSource.name}, verticalOffset=${verticalOffset.toFixed(3)}, rightOffsetX=${localRightOffsetX.toFixed(3)}, backZ=${localBackOffsetZ.toFixed(3)}`);
+    void meshes;
 
     const particles = new ParticleSystem('tank_thruster_particles', 1400, this.scene);
     const particleTexture = new DynamicTexture('tank_thruster_particle_texture', { width: 64, height: 64 }, this.scene, false);
@@ -767,6 +810,7 @@ export class PlayerAnimationController {
     particles.particleTexture = particleTexture;
     this.tankThrusterTexture = particleTexture;
     particles.emitter = this.tankThrusterAnchor as unknown as AbstractMesh;
+    // Local-space emission keeps the trail aligned to the tank orientation and removes world-axis bias.
     particles.isLocal = true;
     particles.layerMask = SCENE_LAYER;
 
@@ -780,15 +824,14 @@ export class PlayerAnimationController {
 
     particles.minSize = 0.2;
     particles.maxSize = 0.52;
-    particles.minLifeTime = 0.07;
-    particles.maxLifeTime = 0.18;
+    particles.minLifeTime = 0.02;  // Shortened from 0.07
+    particles.maxLifeTime = 0.08;  // Shortened from 0.18
     particles.emitRate = 980;
     particles.blendMode = ParticleSystem.BLENDMODE_ONEONE;
-    // Keep gravity neutral so thrust direction follows emitter local orientation.
-    particles.gravity = Vector3.Zero();
-    // Narrow local cone toward -Y for a propulsion look (follows node angle when isLocal=true).
-    particles.direction1 = new Vector3(-0.18, -3.9, -0.38);
-    particles.direction2 = new Vector3(0.25, -5.4, 0.12);
+    // Mild downward gravity, with local emission vectors adjusted from movement speed.
+    particles.gravity = new Vector3(0, -0.8, 0);
+    particles.direction1 = new Vector3(-0.08, 0.06, -0.35);
+    particles.direction2 = new Vector3(0.08, 0.22, -0.68);
     particles.minEmitPower = 1.2;
     particles.maxEmitPower = 3.0;
     particles.minAngularSpeed = -12;
@@ -797,6 +840,122 @@ export class PlayerAnimationController {
 
     particles.start();
     this.tankThrusterParticles = particles;
+  }
+
+  applyTankThrusterTuning(tuning: { height: number; lateral: number; depth: number; size: number }): void {
+    this.updateTankThrusterSceneScale();
+    const scale = this.getTankThrusterRelativeScale();
+    this.tankThrusterIdleOffset = new Vector3(tuning.lateral * scale, tuning.height * scale, tuning.depth * scale);
+    this.tankThrusterMoveOffset = new Vector3(tuning.lateral * scale, tuning.height * scale, (tuning.depth + 0.10) * scale);
+    this.tankThrusterBashOffset = new Vector3(tuning.lateral * scale, tuning.height * scale, (tuning.depth + 0.24) * scale);
+    this.tankThrusterSizeMultiplier = Math.max(0.1, tuning.size);
+
+    this.updateTankThrusterState(this.lastTankThrusterMoving, this.lastTankThrusterBashing);
+  }
+
+  private getTankThrusterRelativeScale(): number {
+    return this.tankThrusterSceneScale;
+  }
+
+  private updateTankThrusterSceneScale(): void {
+    if (!this.mesh) {
+      this.tankThrusterSceneScale = 1;
+      return;
+    }
+
+    const bounds = this.mesh.getHierarchyBoundingVectors(true);
+    const visibleHeight = Math.max(0.001, bounds.max.y - bounds.min.y);
+    this.tankThrusterSceneScale = Math.max(0.45, Math.min(1, visibleHeight / 3.0));
+  }
+
+  private loadTankThrusterTuningFromConfig(): { height: number; lateral: number; depth: number; size: number } {
+    const gameplayConfig = ConfigLoader.getInstance().getGameplay();
+    const tuning = gameplayConfig?.tankVisuals;
+    return {
+      height: tuning?.height ?? this.tankThrusterIdleOffset.y,
+      lateral: tuning?.lateral ?? this.tankThrusterIdleOffset.x,
+      depth: tuning?.depth ?? this.tankThrusterIdleOffset.z,
+      size: tuning?.size ?? 1,
+    };
+  }
+
+  updateTankThrusterState(isMoving: boolean, isBashing: boolean): void {
+    if (this.playerClass !== 'firewall' || !this.tankThrusterParticles || !this.tankThrusterAnchor) {
+      return;
+    }
+
+    this.lastTankThrusterMoving = isMoving;
+    this.lastTankThrusterBashing = isBashing;
+
+    const sizeScale = this.tankThrusterSizeMultiplier * this.getTankThrusterRelativeScale();
+
+    if (isBashing) {
+      this.tankThrusterAnchor.position.copyFrom(this.tankThrusterBashOffset);
+      this.tankThrusterParticles.emitRate = 1550;
+      this.tankThrusterParticles.minEmitPower = 2.4;
+      this.tankThrusterParticles.maxEmitPower = 4.8;
+      this.tankThrusterParticles.minSize = 0.24 * sizeScale;
+      this.tankThrusterParticles.maxSize = 0.62 * sizeScale;
+      return;
+    }
+
+    if (isMoving) {
+      this.tankThrusterAnchor.position.copyFrom(this.tankThrusterMoveOffset);
+      this.tankThrusterParticles.emitRate = 1150;
+      this.tankThrusterParticles.minEmitPower = 1.45;
+      this.tankThrusterParticles.maxEmitPower = 3.2;
+      this.tankThrusterParticles.minSize = 0.2 * sizeScale;
+      this.tankThrusterParticles.maxSize = 0.56 * sizeScale;
+      return;
+    }
+
+    this.tankThrusterAnchor.position.copyFrom(this.tankThrusterIdleOffset);
+    this.tankThrusterParticles.emitRate = 760;
+    this.tankThrusterParticles.minEmitPower = 0.9;
+    this.tankThrusterParticles.maxEmitPower = 2.2;
+    this.tankThrusterParticles.minSize = 0.16 * sizeScale;
+    this.tankThrusterParticles.maxSize = 0.44 * sizeScale;
+  }
+
+  /**
+   * Update particle direction based on player velocity
+   * Makes the flame trail follow backwards movement
+   */
+  updateTankThrusterVelocity(playerVelocity: Vector3): void {
+    if (this.playerClass !== 'firewall' || !this.tankThrusterParticles) {
+      return;
+    }
+
+    this.lastPlayerVelocity.copyFrom(playerVelocity);
+
+    // Only use speed to modulate the trail; the particle direction stays local to the tank.
+    const horizontalVelocity = new Vector3(playerVelocity.x, 0, playerVelocity.z);
+    const velocityMagnitude = horizontalVelocity.length();
+    
+    if (velocityMagnitude > 0.1) {
+      const speedFactor = Math.min(1.4, velocityMagnitude / 5.0);
+      const backward = 0.95 + speedFactor * 1.1;
+      const spread = 0.08 + speedFactor * 0.05;
+      const rotateCounterClockwise = (vector: Vector3): Vector3 => new Vector3(-vector.z, vector.y, vector.x);
+
+      // Rotate the plume 90° counter-clockwise when viewed from above.
+      this.tankThrusterParticles.direction1 = rotateCounterClockwise(new Vector3(-spread, 0.05, -backward));
+      this.tankThrusterParticles.direction2 = rotateCounterClockwise(new Vector3(spread, 0.24, -(backward + 0.28)));
+
+      this.tankThrusterParticles.minEmitPower = 0.8 + speedFactor * 0.9;
+      this.tankThrusterParticles.maxEmitPower = 1.8 + speedFactor * 1.7;
+      this.tankThrusterParticles.minLifeTime = 0.02 + speedFactor * 0.015;
+      this.tankThrusterParticles.maxLifeTime = 0.08 + speedFactor * 0.03;
+    } else {
+      // Idle: compact plume slightly backward, not into floor.
+      const rotateCounterClockwise = (vector: Vector3): Vector3 => new Vector3(-vector.z, vector.y, vector.x);
+      this.tankThrusterParticles.direction1 = rotateCounterClockwise(new Vector3(-0.05, 0.08, -0.35));
+      this.tankThrusterParticles.direction2 = rotateCounterClockwise(new Vector3(0.05, 0.18, -0.58));
+      this.tankThrusterParticles.minEmitPower = 0.8;
+      this.tankThrusterParticles.maxEmitPower = 1.8;
+      this.tankThrusterParticles.minLifeTime = 0.02;
+      this.tankThrusterParticles.maxLifeTime = 0.08;
+    }
   }
 
   /**

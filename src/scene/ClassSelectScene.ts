@@ -26,6 +26,7 @@ import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { PostProcessManager, PostProcessingConfig } from './PostProcess';
 import { ClassSelectDevConsole } from './ClassSelectDevConsole';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
+import { GameSettingsStore } from '../settings/GameSettings';
 
 interface ClassCarouselItem {
   id: 'mage' | 'firewall' | 'rogue';
@@ -40,6 +41,13 @@ interface RoguePreviewTuning {
   targetHeight: number;
   targetFootprint: number;
   selectedScaleMultiplier: number;
+}
+
+interface TankVisualTuning {
+  height: number;
+  lateral: number;
+  depth: number;
+  size: number;
 }
 
 export class ClassSelectScene {
@@ -66,6 +74,12 @@ export class ClassSelectScene {
   private tankThrusterParticles: ParticleSystem[] = [];
   private tankThrusterTextures: DynamicTexture[] = [];
   private tankThrusterAnchors: TransformNode[] = [];
+  private tankVisualTuning: TankVisualTuning = {
+    height: 0.57,
+    lateral: 0.13,
+    depth: -1.48,
+    size: 0.7,
+  };
   private rogueModelContainer: TransformNode | null = null;
   private rogueRawBounds: {
     minX: number;
@@ -86,6 +100,7 @@ export class ClassSelectScene {
   private devConsole: ClassSelectDevConsole;
   private postProcessConfig: PostProcessingConfig;
   private isNavigatingBack: boolean = false;
+  private unsubscribeSettings: (() => void) | null = null;
 
   constructor(
     private engine: Engine,
@@ -119,6 +134,10 @@ export class ClassSelectScene {
 
     this.createEnvironment();
     this.loadRogueSelectionSound();
+    this.applyAudioSettingsFromStore();
+    this.unsubscribeSettings = GameSettingsStore.subscribe(() => {
+      this.applyAudioSettingsFromStore();
+    });
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('ClassSelectUI', true, this.scene);
     if (this.gui.layer) {
@@ -155,6 +174,10 @@ export class ClassSelectScene {
   }
 
   dispose(): void {
+    if (this.unsubscribeSettings) {
+      this.unsubscribeSettings();
+      this.unsubscribeSettings = null;
+    }
     window.removeEventListener('keydown', this.keyHandler);
     this.clearRogueSelectionTimer();
     if (this.rogueSelectSound) {
@@ -219,9 +242,15 @@ export class ClassSelectScene {
       {
         autoplay: false,
         loop: false,
-        volume: 0.9,
+        volume: 0.9 * GameSettingsStore.getEffectiveVolume('sfx'),
       }
     );
+  }
+
+  private applyAudioSettingsFromStore(): void {
+    if (this.rogueSelectSound) {
+      this.rogueSelectSound.setVolume(0.9 * GameSettingsStore.getEffectiveVolume('sfx'));
+    }
   }
 
   private createUi(): { infoText: TextBlock; startButton: Button } {
@@ -398,6 +427,7 @@ export class ClassSelectScene {
     this.tankIdleGroup = result.animationGroups.find((group) => group.name === 'Skyrim') ?? null;
 
     this.setupTankThrusterParticles(result.meshes as AbstractMesh[]);
+    this.applyTankThrusterVisuals();
 
     if (this.tankIdleGroup) {
       this.stopAllTankAnimations();
@@ -491,10 +521,6 @@ export class ClassSelectScene {
 
     const anchor = new TransformNode('class_select_tank_thruster_anchor', this.scene);
     anchor.parent = anchorSource;
-    const localRightOffsetX = 0.0;
-    const localBackOffsetZ = 0.34;
-    const verticalOffset = 0.03;
-    anchor.position = new Vector3(localRightOffsetX, verticalOffset, localBackOffsetZ);
     this.tankThrusterAnchors.push(anchor);
 
     const particles = new ParticleSystem('class_select_tank_thruster_particles', 900, this.scene);
@@ -528,8 +554,8 @@ export class ClassSelectScene {
     particles.emitRate = 980;
     particles.blendMode = ParticleSystem.BLENDMODE_ONEONE;
     particles.gravity = Vector3.Zero();
-    particles.direction1 = new Vector3(-0.18, -3.9, -0.38);
-    particles.direction2 = new Vector3(0.25, -5.4, 0.12);
+    particles.direction1 = new Vector3(-0.05, -5.4, 0.02);
+    particles.direction2 = new Vector3(0.05, -7.1, 0.14);
     particles.minEmitPower = 1.2;
     particles.maxEmitPower = 3.0;
     particles.minAngularSpeed = -12;
@@ -540,6 +566,24 @@ export class ClassSelectScene {
 
     this.tankThrusterParticles.push(particles);
     this.tankThrusterTextures.push(particleTexture);
+    this.applyTankThrusterVisuals();
+  }
+
+  private applyTankThrusterVisuals(): void {
+    const anchor = this.tankThrusterAnchors[0] ?? null;
+    if (anchor) {
+      anchor.position = new Vector3(
+        this.tankVisualTuning.lateral,
+        this.tankVisualTuning.height,
+        this.tankVisualTuning.depth
+      );
+    }
+
+    const sizeScale = Math.max(0.1, this.tankVisualTuning.size);
+    for (const particles of this.tankThrusterParticles) {
+      particles.minSize = 0.2 * sizeScale;
+      particles.maxSize = 0.52 * sizeScale;
+    }
   }
 
   private findTankThrusterAnchor(meshes: AbstractMesh[]): AbstractMesh | null {
@@ -739,6 +783,8 @@ export class ClassSelectScene {
       const alpha = 0.45 + depthFactor * 0.55;
       this.setItemAlpha(item.root, alpha);
     }
+
+    this.applyTankThrusterVisuals();
   }
 
   private setItemAlpha(root: TransformNode, alpha: number): void {

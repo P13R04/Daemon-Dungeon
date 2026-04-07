@@ -95,6 +95,21 @@
             <output id="typingSpeedValue">14</output>
           </label>
 
+          <label class="checkbox-row">
+            <input type="checkbox" id="autoTypingSync" checked />
+            <span>Auto sync typing to voice WPM</span>
+          </label>
+
+          <label class="checkbox-row">
+            <input type="checkbox" id="enableTypewriterSynth" checked />
+            <span>Play SciFi typewriter synth while typing</span>
+          </label>
+
+          <label>
+            <span>Typewriter synth preset</span>
+            <select id="typewriterPreset"></select>
+          </label>
+
           <label>
             <span>Typing delay (s)</span>
             <input id="typingDelay" type="range" min="0" max="2" step="0.05" value="0.25" data-output="typingDelayValue" />
@@ -172,6 +187,11 @@
             <output id="lowSpeedValue">165</output>
           </label>
 
+          <label class="checkbox-row">
+            <input type="checkbox" id="syncSpeed" checked />
+            <span>Sync low/high speed</span>
+          </label>
+
           <label>
             <span>High speed (wpm)</span>
             <input id="highSpeed" type="range" min="90" max="260" step="1" value="198" data-output="highSpeedValue" />
@@ -191,7 +211,7 @@
           </label>
 
           <label>
-            <span>Overlay delay (ms)</span>
+            <span>Fixed voice delay (ms)</span>
             <input id="overlayDelayMs" type="range" min="0" max="120" step="1" value="18" data-output="overlayDelayMsValue" />
             <output id="overlayDelayMsValue">18</output>
           </label>
@@ -215,7 +235,7 @@
           </label>
 
           <label>
-            <span>Replay words</span>
+            <span>Replay slice size</span>
             <input id="glitchReplayWords" type="range" min="1" max="6" step="1" value="2" data-output="glitchReplayWordsValue" />
             <output id="glitchReplayWordsValue">2</output>
           </label>
@@ -313,6 +333,7 @@
       </article>
       <div class="lab-help">
         <p>Tip: this page defaults to English. Keep the French option for later localization tests.</p>
+        <p><a href="/DAEMON_VOICE_LAB_PARAMETER_GUIDE.md" target="_blank" rel="noreferrer">Open parameter guide</a></p>
       </div>
     </main>
   </div>

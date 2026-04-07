@@ -68,6 +68,7 @@ export class SciFiTypewriterSynth {
   private internalContext: AudioContext | null = null;
   private minGapMs = 0;
   private nextAllowedTimeMs = 0;
+  private volumeMultiplier: number = 1;
 
   constructor(options?: Partial<SciFiTypewriterSynthOptions>) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -142,6 +143,10 @@ export class SciFiTypewriterSynth {
     this.nextAllowedTimeMs = 0;
   }
 
+  setVolumeMultiplier(volume: number): void {
+    this.volumeMultiplier = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 1));
+  }
+
   private computeNextGapMs(): number {
     if (typeof this.options.intervalMs === 'number') {
       const jitter = this.options.intervalJitterMs > 0
@@ -170,8 +175,9 @@ export class SciFiTypewriterSynth {
     filter.frequency.value = this.options.pitchHz * 1.25;
     filter.Q.value = 5;
 
+    const gain = this.options.baseGain * this.volumeMultiplier;
     master.gain.setValueAtTime(0.0001, now);
-    master.gain.linearRampToValueAtTime(this.options.baseGain, now + 0.0015);
+    master.gain.linearRampToValueAtTime(gain, now + 0.0015);
     master.gain.exponentialRampToValueAtTime(0.0001, now + duration);
 
     const oscA = ctx.createOscillator();

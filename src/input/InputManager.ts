@@ -3,6 +3,13 @@
  */
 
 import { Vector3, Scene, PointerEventTypes } from '@babylonjs/core';
+import {
+  GameSettings,
+  GameSettingsStore,
+  KeybindingAction,
+  Keybindings,
+  normalizeInputKey,
+} from '../settings/GameSettings';
 
 export class InputManager {
   private keys: Set<string> = new Set();
@@ -12,20 +19,28 @@ export class InputManager {
   private mouseClickThisFrame: boolean = false;
   private rightMouseClick: boolean = false;
   private rightMouseClickThisFrame: boolean = false;
-  private spacePressed: boolean = false;
-  private spacePressedThisFrame: boolean = false;
   private canvas: HTMLCanvasElement | null = null;
   private scene: Scene | null = null;
-  private attackSlotBindings: Record<1 | 2, string[]> = {
-    1: ['a'],
-    2: ['e'],
-  };
+  private keybindings: Keybindings = GameSettingsStore.get().controls.keybindings;
+  private keyboardOnlyMode: boolean = GameSettingsStore.get().controls.keyboardOnlyMode;
+  private unsubscribeSettings: (() => void) | null = null;
 
   constructor(canvas?: HTMLCanvasElement, scene?: Scene) {
     this.canvas = canvas || null;
     this.scene = scene || null;
+    this.applySettings(GameSettingsStore.get());
+    this.unsubscribeSettings = GameSettingsStore.subscribe((settings) => {
+      this.applySettings(settings);
+    });
     this.setupKeyboardListeners();
     // Mouse listeners will be attached later via attachMouseListeners()
+  }
+
+  dispose(): void {
+    if (this.unsubscribeSettings) {
+      this.unsubscribeSettings();
+      this.unsubscribeSettings = null;
+    }
   }
 
   /**
@@ -37,28 +52,23 @@ export class InputManager {
 
   private setupKeyboardListeners(): void {
     window.addEventListener('keydown', (e) => {
-      const key = e.key.toLowerCase();
+      const key = normalizeInputKey(e.key);
+      if (!key) return;
+
       if (!this.keys.has(key)) {
         this.keysPressedThisFrame.add(key);
       }
       this.keys.add(key);
-      
-      if (e.key === ' ') {
+
+      if (this.shouldPreventBrowserDefault(key)) {
         e.preventDefault();
-        if (!this.spacePressed) {
-          this.spacePressedThisFrame = true;
-          this.spacePressed = true;
-        }
       }
     });
 
     window.addEventListener('keyup', (e) => {
-      const key = e.key.toLowerCase();
+      const key = normalizeInputKey(e.key);
+      if (!key) return;
       this.keys.delete(key);
-      
-      if (e.key === ' ') {
-        this.spacePressed = false;
-      }
     });
   }
 
@@ -157,10 +167,10 @@ export class InputManager {
   getMovementInput(): Vector3 {
     const input = new Vector3();
 
-    if (this.keys.has('w') || this.keys.has('z')) input.z += 1;
-    if (this.keys.has('s')) input.z -= 1;
-     if (this.keys.has('q')) input.x -= 1;  // Left (q only, not 'a' which is for attack)
-    if (this.keys.has('d')) input.x += 1;
+    if (this.isActionHeld('moveUp')) input.z += 1;
+    if (this.isActionHeld('moveDown')) input.z -= 1;
+    if (this.isActionHeld('moveLeft')) input.x -= 1;
+    if (this.isActionHeld('moveRight')) input.x += 1;
 
     if (input.length() > 0) {
       return input.normalize();
@@ -180,6 +190,7 @@ export class InputManager {
    * Check if mouse button is held down
    */
   isMouseDown(): boolean {
+    if (this.keyboardOnlyMode) return false;
     return this.mouseClick;
   }
 
@@ -187,16 +198,25 @@ export class InputManager {
    * Check if mouse button was clicked this frame
    */
   isMouseClickedThisFrame(): boolean {
+    if (this.keyboardOnlyMode) {
+      this.mouseClickThisFrame = false;
+      return false;
+    }
     const result = this.mouseClickThisFrame;
     this.mouseClickThisFrame = false;
     return result;
   }
 
   isRightMouseDown(): boolean {
+    if (this.keyboardOnlyMode) return false;
     return this.rightMouseClick;
   }
 
   isRightMouseClickedThisFrame(): boolean {
+    if (this.keyboardOnlyMode) {
+      this.rightMouseClickThisFrame = false;
+      return false;
+    }
     const result = this.rightMouseClickThisFrame;
     this.rightMouseClickThisFrame = false;
     return result;
@@ -206,9 +226,7 @@ export class InputManager {
    * Check if space was pressed this frame (one-shot, resets after read)
    */
   isSpacePressed(): boolean {
-    const result = this.spacePressedThisFrame;
-    this.spacePressedThisFrame = false;
-    return result;
+    return this.isActionPressedThisFrame('ultimate');
   }
 
   /**
@@ -216,39 +234,49 @@ export class InputManager {
    * Use this for checking ongoing input states like Ultimate charge
    */
   isSpaceHeld(): boolean {
-    return this.spacePressed;
+    return this.isActionHeld('ultimate');
   }
 
   /**
    * Check if a key is currently held
    */
   isKeyDown(key: string): boolean {
-    return this.keys.has(key.toLowerCase());
+    return this.keys.has(normalizeInputKey(key));
   }
 
   isKeyPressedThisFrame(key: string): boolean {
-    return this.keysPressedThisFrame.has(key.toLowerCase());
+    return this.keysPressedThisFrame.has(normalizeInputKey(key));
   }
 
   isAttackSlotHeld(slot: 1 | 2): boolean {
-    const bindings = this.attackSlotBindings[slot] ?? [];
-    return bindings.some((key) => this.keys.has(key));
+    return slot === 1 ? this.isActionHeld('shoot') : this.isActionHeld('posture');
   }
 
   isAttackSlotPressedThisFrame(slot: 1 | 2): boolean {
-    const bindings = this.attackSlotBindings[slot] ?? [];
-    return bindings.some((key) => this.keysPressedThisFrame.has(key));
+    return slot === 1 ? this.isActionPressedThisFrame('shoot') : this.isActionPressedThisFrame('posture');
+  }
+
+  isItemHeld(slot: 1 | 2): boolean {
+    return slot === 1 ? this.isActionHeld('item1') : this.isActionHeld('item2');
+  }
+
+  isItemPressedThisFrame(slot: 1 | 2): boolean {
+    return slot === 1 ? this.isActionPressedThisFrame('item1') : this.isActionPressedThisFrame('item2');
   }
 
   setAttackSlotBindings(bindings: Partial<Record<1 | 2, string[]>>): void {
     const slot1 = bindings[1];
     const slot2 = bindings[2];
     if (Array.isArray(slot1) && slot1.length > 0) {
-      this.attackSlotBindings[1] = slot1.map((key) => key.toLowerCase());
+      this.keybindings.shoot = normalizeInputKey(slot1[0]);
     }
     if (Array.isArray(slot2) && slot2.length > 0) {
-      this.attackSlotBindings[2] = slot2.map((key) => key.toLowerCase());
+      this.keybindings.posture = normalizeInputKey(slot2[0]);
     }
+  }
+
+  isKeyboardOnlyMode(): boolean {
+    return this.keyboardOnlyMode;
   }
 
   /**
@@ -257,7 +285,61 @@ export class InputManager {
   updateFrame(): void {
     this.mouseClickThisFrame = false;
     this.rightMouseClickThisFrame = false;
-    this.spacePressedThisFrame = false;
     this.keysPressedThisFrame.clear();
+  }
+
+  private applySettings(settings: GameSettings): void {
+    this.keybindings = {
+      ...settings.controls.keybindings,
+    };
+    this.keyboardOnlyMode = !!settings.controls.keyboardOnlyMode;
+  }
+
+  private shouldPreventBrowserDefault(key: string): boolean {
+    if (key === 'space') return true;
+    if (key === 'arrowup' || key === 'arrowdown' || key === 'arrowleft' || key === 'arrowright') return true;
+
+    const actions: KeybindingAction[] = ['moveUp', 'moveDown', 'moveLeft', 'moveRight', 'shoot', 'posture', 'ultimate', 'item1', 'item2'];
+    return actions.some((action) => this.keybindings[action] === key);
+  }
+
+  private isActionHeld(action: KeybindingAction): boolean {
+    const key = this.keybindings[action];
+    return this.isPhysicalBindingHeld(key);
+  }
+
+  private isActionPressedThisFrame(action: KeybindingAction): boolean {
+    const key = this.keybindings[action];
+    return this.isPhysicalBindingPressedThisFrame(key);
+  }
+
+  private isPhysicalBindingHeld(key: string): boolean {
+    const normalized = normalizeInputKey(key);
+    if (normalized === 'mouse0') return this.keyboardOnlyMode ? false : this.mouseClick;
+    if (normalized === 'mouse2') return this.keyboardOnlyMode ? false : this.rightMouseClick;
+    return this.keys.has(normalized);
+  }
+
+  private isPhysicalBindingPressedThisFrame(key: string): boolean {
+    const normalized = normalizeInputKey(key);
+    if (normalized === 'mouse0') {
+      if (this.keyboardOnlyMode) {
+        this.mouseClickThisFrame = false;
+        return false;
+      }
+      const value = this.mouseClickThisFrame;
+      this.mouseClickThisFrame = false;
+      return value;
+    }
+    if (normalized === 'mouse2') {
+      if (this.keyboardOnlyMode) {
+        this.rightMouseClickThisFrame = false;
+        return false;
+      }
+      const value = this.rightMouseClickThisFrame;
+      this.rightMouseClickThisFrame = false;
+      return value;
+    }
+    return this.keysPressedThisFrame.has(normalized);
   }
 }

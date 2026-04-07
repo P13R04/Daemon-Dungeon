@@ -59,5 +59,11 @@
     "hpPerRoom": 1.15,
     "damagePerRoom": 1.10,
     "speedPerRoom": 1.05
+  },
+  "tankVisuals": {
+    "height": 1.6,
+    "lateral": -0.07,
+    "depth": -0.13,
+    "size": 0.7
   }
 }

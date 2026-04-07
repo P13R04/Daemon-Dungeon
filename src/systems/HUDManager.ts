@@ -9,6 +9,7 @@ import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { VoicelineConfig, AnimationPhase } from '../data/voicelines/VoicelineDefinitions';
 import { DAEMON_ANIMATION_PRESETS, normalizeDaemonPresetName } from '../data/voicelines/DaemonAnimationPresets';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
+import { GameSettingsStore } from '../settings/GameSettings';
 
 interface DamageNumber {
   text: TextBlock;
@@ -56,6 +57,9 @@ export class HUDManager {
   private daemonAvatarImage: Image | null = null;
   private daemonMessageText: TextBlock | null = null;
   private daemonTypewriterSynth: SciFiTypewriterSynth;
+  private uiVolumeMultiplier: number = GameSettingsStore.getEffectiveVolume('ui');
+  private voicelineVolumeMultiplier: number = GameSettingsStore.getEffectiveVolume('voice');
+  private unsubscribeSettings: (() => void) | null = null;
   private daemonAudioUnlockHandler: (() => void) | null = null;
   private daemonTypingIndex: number = 0;
   private daemonTypingTimer: number = 0;
@@ -121,6 +125,10 @@ export class HUDManager {
   constructor(private scene: Scene) {
     this.eventBus = EventBus.getInstance();
     this.daemonTypewriterSynth = new SciFiTypewriterSynth(SCI_FI_TYPEWRITER_PRESETS.oldschool_fast);
+    this.applyAudioSettingsFromStore();
+    this.unsubscribeSettings = GameSettingsStore.subscribe(() => {
+      this.applyAudioSettingsFromStore();
+    });
     
     // Preload all avatar frames in background
     this.preloadAllAvatarFrames().catch(err => {
@@ -1288,7 +1296,7 @@ export class HUDManager {
           }
         },
         {
-          volume: 1.0,
+          volume: this.voicelineVolumeMultiplier,
           autoplay: false,
           loop: false,
           spatialSound: false,
@@ -2174,6 +2182,10 @@ export class HUDManager {
   }
 
   dispose(): void {
+    if (this.unsubscribeSettings) {
+      this.unsubscribeSettings();
+      this.unsubscribeSettings = null;
+    }
     this.stopAllVoicelineAudio();
     if (this.daemonAudioUnlockHandler) {
       window.removeEventListener('pointerdown', this.daemonAudioUnlockHandler);
@@ -2194,5 +2206,15 @@ export class HUDManager {
       bar.label.dispose();
     }
     this.enemyHealthBars.clear();
+  }
+
+  private applyAudioSettingsFromStore(): void {
+    this.uiVolumeMultiplier = GameSettingsStore.getEffectiveVolume('ui');
+    this.voicelineVolumeMultiplier = GameSettingsStore.getEffectiveVolume('voice');
+    this.daemonTypewriterSynth.setVolumeMultiplier(this.uiVolumeMultiplier);
+
+    for (const audio of this.activeVoicelineAudios) {
+      audio.setVolume(this.voicelineVolumeMultiplier);
+    }
   }
 }

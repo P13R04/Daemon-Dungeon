@@ -77,9 +77,13 @@
       "damage": 26,
       "dashSpeed": 14,
       "dashDuration": 0.25,
-      "hitRadius": 1.1,
+      "hitRadius": 1.45,
       "knockback": 3.2,
       "stunDuration": 1.0,
+      "groupDistance": 1.55,
+      "groupWidth": 2.2,
+      "pullStrength": 4.6,
+      "forwardPush": 2.3,
       "cooldown": 0.9,
       "cost": 25
     },
@@ -123,12 +127,14 @@
     },
     "dashAttack": {
       "cost": 28,
-      "dashSpeed": 18,
-      "dashDuration": 0.32,
+      "dashSpeed": 19,
+      "dashDuration": 0.45,
       "hitRadius": 1.05,
       "damage": 28,
       "knockback": 1.6,
-      "cooldown": 0.7
+      "cooldown": 0.7,
+      "openingStrikeMultiplier": 1.85,
+      "openingStrikeWindow": 2.4
     },
     "passive": {
       "critChance": 0.22,
