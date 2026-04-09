@@ -14,7 +14,7 @@ export enum AIBehaviorType {
 
 export class AIController implements IComponent {
   private currentBehavior: AIBehaviorType = AIBehaviorType.IDLE;
-  private target?: any; // Target entity (usually player)
+  private target: unknown = null;
 
   constructor() {}
 
@@ -22,7 +22,7 @@ export class AIController implements IComponent {
     this.currentBehavior = behavior;
   }
 
-  setTarget(target: any): void {
+  setTarget(target: unknown): void {
     this.target = target;
   }
 

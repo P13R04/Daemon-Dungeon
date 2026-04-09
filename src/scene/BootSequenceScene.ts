@@ -444,7 +444,8 @@ export class BootSequenceScene {
         // Ignore unlock errors; next gesture can retry.
       }
       void this.synthBeep.unlock();
-      this.synthBeep.attachContext((audioEngine as any).audioContext as AudioContext | undefined);
+      const audioContext = (audioEngine as { audioContext?: AudioContext }).audioContext;
+      this.synthBeep.attachContext(audioContext);
       if (audioEngine.unlocked && this._audioUnlockHandler) {
         window.removeEventListener('pointerdown', this._audioUnlockHandler);
         window.removeEventListener('keydown', this._audioUnlockHandler);
@@ -455,7 +456,8 @@ export class BootSequenceScene {
     this._audioUnlockHandler = tryUnlock;
     window.addEventListener('pointerdown', tryUnlock);
     window.addEventListener('keydown', tryUnlock);
-    this.synthBeep.attachContext((audioEngine as any).audioContext as AudioContext | undefined);
+    const audioContext = (audioEngine as { audioContext?: AudioContext }).audioContext;
+    this.synthBeep.attachContext(audioContext);
   }
 
   private playBeep(): void {

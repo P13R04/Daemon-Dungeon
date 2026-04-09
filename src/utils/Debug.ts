@@ -13,19 +13,19 @@ export class Debug {
     this.enabled = false;
   }
 
-  static log(...args: any[]): void {
+  static log(...args: unknown[]): void {
     if (this.enabled) {
       console.log('[DEBUG]', ...args);
     }
   }
 
-  static warn(...args: any[]): void {
+  static warn(...args: unknown[]): void {
     if (this.enabled) {
       console.warn('[DEBUG]', ...args);
     }
   }
 
-  static error(...args: any[]): void {
+  static error(...args: unknown[]): void {
     if (this.enabled) {
       console.error('[DEBUG]', ...args);
     }

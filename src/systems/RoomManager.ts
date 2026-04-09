@@ -20,9 +20,9 @@ export interface RoomConfig {
   name: string;
   roomType?: string;
   layout: string[];
-  spawnPoints: Array<{ x: number; y: number; enemyType: string }>;
-  playerSpawnPoint: { x: number; y: number };
-  obstacles: Array<{ x: number; y: number; width: number; height: number; type: string; damage?: number }>;
+  spawnPoints: Array<{ x: number; y?: number; z?: number; enemyType?: string }>;
+  playerSpawnPoint?: { x: number; y: number };
+  obstacles: Array<{ x: number; y?: number; z?: number; width: number; height: number; type: string; damage?: number }>;
   pushables?: Array<{ x: number; y: number; size?: number }>;
   mobileHazards?: Array<{
     type: 'spinning_blade';
@@ -61,6 +61,17 @@ type MobileHazard = {
 };
 
 export type RoomTileType = 'floor' | 'wall' | 'void' | 'out';
+
+function isRoomConfig(value: unknown): value is RoomConfig {
+  if (!value || typeof value !== 'object') return false;
+  const maybe = value as Partial<RoomConfig>;
+  return (
+    typeof maybe.id === 'string'
+    && Array.isArray(maybe.layout)
+    && Array.isArray(maybe.spawnPoints)
+    && Array.isArray(maybe.obstacles)
+  );
+}
 
 export class RoomManager {
   private scene: Scene;
@@ -113,13 +124,13 @@ export class RoomManager {
   }
 
   loadRoomInstance(roomId: string, instanceKey: string, origin: Vector3): RoomConfig | null {
-    const roomsData = this.configLoader.getRooms();
+    const roomsData = this.configLoader.getRoomsConfig();
     if (!roomsData || !Array.isArray(roomsData)) {
       console.error('No rooms data loaded');
       return null;
     }
 
-    const roomConfig = roomsData.find((r: any) => r.id === roomId) as RoomConfig | undefined;
+    const roomConfig = roomsData.find((r: RoomConfig) => r.id === roomId);
     if (!roomConfig) {
       console.error(`Room ${roomId} not found`);
       return null;
@@ -133,9 +144,9 @@ export class RoomManager {
   setCurrentRoom(instanceKey: string): void {
     this.currentRoomKey = instanceKey;
     const roomId = instanceKey.split('::')[0];
-    const roomsData = this.configLoader.getRooms();
+    const roomsData = this.configLoader.getRoomsConfig();
     if (Array.isArray(roomsData)) {
-      this.currentRoom = roomsData.find((r: any) => r.id === roomId) as RoomConfig | null;
+      this.currentRoom = (roomsData as RoomConfig[]).find((r) => r.id === roomId) ?? null;
     }
     this.hazardZones = this.hazardZonesByRoom.get(instanceKey) || [];
     this.obstacleBounds = this.obstacleBoundsByRoom.get(instanceKey) || [];
@@ -316,24 +327,25 @@ export class RoomManager {
       const width = Math.max(1, obstacle.width || 1);
       const height = Math.max(1, obstacle.height || 1);
       
-      const obstacleZ = Number.isFinite((obstacle as any).y)
-        ? (obstacle as any).y
-        : (Number.isFinite((obstacle as any).z) ? (obstacle as any).z : undefined);
+      const obstacleZ = Number.isFinite(obstacle.y)
+        ? obstacle.y
+        : (Number.isFinite(obstacle.z) ? obstacle.z : undefined);
       if (!Number.isFinite(obstacle.x) || !Number.isFinite(obstacleZ)) {
         return;
       }
+      const obstacleZValue = Number(obstacleZ);
 
       const position = new Vector3(
         origin.x + obstacle.x * this.tileSize + (width * this.tileSize) / 2,
         0.4,
-        origin.z + obstacleZ * this.tileSize + (height * this.tileSize) / 2
+        origin.z + obstacleZValue * this.tileSize + (height * this.tileSize) / 2
       );
 
       if (useReliefTheme) {
         for (let ox = 0; ox < width; ox++) {
           for (let oz = 0; oz < height; oz++) {
             const gx = obstacle.x + ox;
-            const gz = obstacleZ + oz;
+            const gz = obstacleZValue + oz;
             const reliefRoot = ProceduralReliefTheme.createReliefWallBlock({
               scene: this.scene,
               name: `o_${instanceKey}_${i}_${gx}_${gz}`,
@@ -369,8 +381,8 @@ export class RoomManager {
       this.obstacleBoundsByRoom.get(instanceKey)!.push({
         minX: origin.x + obstacle.x * this.tileSize,
         maxX: origin.x + obstacle.x * this.tileSize + width * this.tileSize,
-        minZ: origin.z + obstacleZ * this.tileSize,
-        maxZ: origin.z + obstacleZ * this.tileSize + height * this.tileSize,
+        minZ: origin.z + obstacleZValue * this.tileSize,
+        maxZ: origin.z + obstacleZValue * this.tileSize + height * this.tileSize,
       });
 
     });
@@ -591,7 +603,9 @@ export class RoomManager {
   }
 
   getPlayerSpawnPoint(roomId?: string): Vector3 | null {
-    const room = roomId ? (this.configLoader.getRooms() as any[]).find(r => r.id === roomId) : this.currentRoom;
+    const roomsData = this.configLoader.getRoomsConfig();
+    const roomList = Array.isArray(roomsData) ? roomsData.filter(isRoomConfig) : [];
+    const room = roomId ? roomList.find((r) => r.id === roomId) : this.currentRoom;
     if (!room) return null;
 
     const origin = this.currentRoomKey ? this.roomOrigins.get(this.currentRoomKey) : new Vector3(0, 0, 0);
@@ -611,7 +625,9 @@ export class RoomManager {
   }
 
   getSpawnPoints(roomId?: string): Vector3[] {
-    const room = roomId ? (this.configLoader.getRooms() as any[]).find((r: any) => r.id === roomId) : this.currentRoom;
+    const roomsData = this.configLoader.getRoomsConfig();
+    const roomList = Array.isArray(roomsData) ? roomsData.filter(isRoomConfig) : [];
+    const room = roomId ? roomList.find((r) => r.id === roomId) : this.currentRoom;
     if (!room) {
       return [];
     }
@@ -620,18 +636,8 @@ export class RoomManager {
     const layoutHeight = room.layout.length;
 
     const points = room.spawnPoints
-    .filter((point: any) => Number.isFinite(point.x) && (Number.isFinite(point.y) || Number.isFinite(point.z)))
-    .map((point: any) => {
-      const pointY = Number.isFinite(point.y) ? point.y : point.z;
-      // Invert Y coordinate to match Z axis inversion
-      const invertedY = layoutHeight - 1 - pointY;
-      const pos = new Vector3(
-        (origin?.x ?? 0) + point.x * this.tileSize + this.tileSize / 2,
-        1.0,
-        (origin?.z ?? 0) + invertedY * this.tileSize + this.tileSize / 2
-      );
-      return pos;
-    });
+    .filter((point) => this.isValidSpawnPoint(point))
+    .map((point) => this.mapSpawnPointToWorld(point, layoutHeight, origin, 1.0));
     return points;
   }
 
@@ -642,16 +648,11 @@ export class RoomManager {
     const layoutHeight = this.currentRoom.layout.length;
     
     return this.currentRoom.spawnPoints
-    .filter((point: any) => Number.isFinite(point.x) && (Number.isFinite(point.y) || Number.isFinite(point.z)))
-    .map((point: any) => {
-      const pointY = Number.isFinite(point.y) ? point.y : point.z;
+    .filter((point) => this.isValidSpawnPoint(point))
+    .map((point) => {
       return ({
-      position: new Vector3(
-        (origin?.x ?? 0) + point.x * this.tileSize + this.tileSize / 2,
-        1.0,
-        (origin?.z ?? 0) + (layoutHeight - 1 - pointY) * this.tileSize + this.tileSize / 2
-      ),
-      enemyType: point.enemyType,
+      position: this.mapSpawnPointToWorld(point, layoutHeight, origin, 1.0),
+      enemyType: point.enemyType ?? 'zombie_basic',
     });
     });
   }
@@ -663,18 +664,33 @@ export class RoomManager {
     const layoutHeight = this.currentRoom.layout.length;
 
     return this.currentRoom.spawnPoints
-    .filter((point: any) => Number.isFinite(point.x) && (Number.isFinite(point.y) || Number.isFinite(point.z)))
-    .map((point: any) => {
-      const pointY = Number.isFinite(point.y) ? point.y : point.z;
+    .filter((point) => this.isValidSpawnPoint(point))
+    .map((point) => {
       return ({
-      position: new Vector3(
-        (origin?.x ?? 0) + point.x * this.tileSize + this.tileSize / 2,
-        0.5,
-        (origin?.z ?? 0) + (layoutHeight - 1 - pointY) * this.tileSize + this.tileSize / 2
-      ),
-      enemyType: point.enemyType,
+      position: this.mapSpawnPointToWorld(point, layoutHeight, origin, 0.5),
+      enemyType: point.enemyType ?? 'zombie_basic',
     });
     });
+  }
+
+  private isValidSpawnPoint(point: RoomConfig['spawnPoints'][number]): boolean {
+    return Number.isFinite(point.x) && (Number.isFinite(point.y) || Number.isFinite(point.z));
+  }
+
+  private mapSpawnPointToWorld(
+    point: RoomConfig['spawnPoints'][number],
+    layoutHeight: number,
+    origin: Vector3 | undefined,
+    yHeight: number
+  ): Vector3 {
+    const pointY = Number.isFinite(point.y) ? Number(point.y) : Number(point.z);
+    const invertedY = layoutHeight - 1 - pointY;
+
+    return new Vector3(
+      (origin?.x ?? 0) + point.x * this.tileSize + this.tileSize / 2,
+      yHeight,
+      (origin?.z ?? 0) + invertedY * this.tileSize + this.tileSize / 2
+    );
   }
 
   isWalkable(x: number, z: number): boolean {
@@ -806,9 +822,9 @@ export class RoomManager {
 
   getRoomBoundsForInstance(instanceKey: string): { minX: number; maxX: number; minZ: number; maxZ: number } | null {
     const roomId = instanceKey.split('::')[0];
-    const roomsData = this.configLoader.getRooms();
+    const roomsData = this.configLoader.getRoomsConfig();
     if (!Array.isArray(roomsData)) return null;
-    const room = roomsData.find((r: any) => r.id === roomId) as RoomConfig | undefined;
+    const room = roomsData.filter(isRoomConfig).find((r) => r.id === roomId);
     if (!room) return null;
 
     const origin = this.roomOrigins.get(instanceKey) ?? new Vector3(0, 0, 0);
@@ -958,7 +974,8 @@ export class RoomManager {
         if (mesh.name.includes('wall_')) {
           mesh.isVisible = visible;
         }
-        if ((mesh.metadata as any)?.isRoomWall === true) {
+        const metadata = mesh.metadata as { isRoomWall?: boolean } | undefined;
+        if (metadata?.isRoomWall === true) {
           mesh.isVisible = visible;
         }
       }

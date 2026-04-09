@@ -20,6 +20,7 @@ import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { BONUS_CODEX_ENTRIES, BonusCodexEntry } from '../data/codex/bonuses';
 import { AchievementProgress, CodexService } from '../services/CodexService';
+import type { EnemyConfigEntry } from '../types/config';
 
 type CodexSection = 'bestiary' | 'bonuses' | 'achievements';
 type BestiaryGroup = 'normal' | 'boss';
@@ -35,6 +36,19 @@ interface EnemyCodexEntry {
   damage: number;
   attackSpeed: number;
   color: Color3;
+}
+
+interface CodexEnemyConfig extends EnemyConfigEntry {
+  name?: string;
+  description?: string;
+  behavior?: string;
+  appearance?: {
+    color?: {
+      r?: number;
+      g?: number;
+      b?: number;
+    };
+  };
 }
 
 interface BestiaryCarouselItem {
@@ -112,7 +126,7 @@ export class CodexScene {
   constructor(
     private engine: Engine,
     private codexService: CodexService,
-    private enemyConfigs: Record<string, any>,
+    private enemyConfigs: Record<string, CodexEnemyConfig>,
     private onBackToMenu: () => void
   ) {
     // Swap preset key to test variants: oldschool_fast | oldschool_arcade | oldschool_crt
@@ -407,7 +421,8 @@ export class CodexScene {
         // Ignore unlock errors; next gesture can retry.
       }
       void this.synthBeep.unlock();
-      this.synthBeep.attachContext((audioEngine as any).audioContext as AudioContext | undefined);
+      const audioContext = (audioEngine as { audioContext?: AudioContext }).audioContext;
+      this.synthBeep.attachContext(audioContext);
       if (audioEngine.unlocked && this.audioUnlockHandler) {
         window.removeEventListener('pointerdown', this.audioUnlockHandler);
         window.removeEventListener('keydown', this.audioUnlockHandler);
@@ -418,7 +433,8 @@ export class CodexScene {
     this.audioUnlockHandler = tryUnlock;
     window.addEventListener('pointerdown', tryUnlock);
     window.addEventListener('keydown', tryUnlock);
-    this.synthBeep.attachContext((audioEngine as any).audioContext as AudioContext | undefined);
+    const audioContext = (audioEngine as { audioContext?: AudioContext }).audioContext;
+    this.synthBeep.attachContext(audioContext);
   }
 
   private getDevLabel(): string {

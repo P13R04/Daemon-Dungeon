@@ -3,10 +3,22 @@
  * Manages game state, systems, and core loops
  */
 
-import { Scene, Engine, Vector3, ArcRotateCamera, Mesh, MeshBuilder, StandardMaterial, Color3, Color4, VertexData, ParticleSystem, DynamicTexture } from '@babylonjs/core';
+import { Scene, Engine, Vector3, ArcRotateCamera } from '@babylonjs/core';
 import { SceneBootstrap } from '../scene/SceneBootstrap';
 import { StateMachine, GameState } from './StateMachine';
 import { EventBus, GameEvents } from './EventBus';
+import {
+  AttackPerformedPayload,
+  BonusRerollRequestedPayload,
+  BonusSelectedPayload,
+  DevRoomLoadRequestedPayload,
+  DevTileLoadRequestedPayload,
+  EnemyDiedPayload,
+  EnemySpawnedPayload,
+  GameEventBindings,
+  GameStartRequestedPayload,
+} from './GameEventBindings';
+import { RunEconomyManager } from './RunEconomyManager';
 import { Time } from './Time';
 import { ConfigLoader } from '../utils/ConfigLoader';
 import { InputManager } from '../input/InputManager';
@@ -24,18 +36,35 @@ import { RoomLayoutParser, RoomLayout, TileMappingLayout } from '../systems/Room
 import { ProceduralDungeonTheme } from '../systems/ProceduralDungeonTheme';
 import { ProceduralReliefTheme } from '../systems/ProceduralReliefTheme';
 import type { ProceduralReliefQuality } from '../systems/ProceduralReliefTheme';
+import { RoomTransitionManager } from '../systems/RoomTransitionManager';
+import { BonusSystemManager } from '../systems/BonusSystemManager';
+import { GameEventCoordinator } from '../systems/GameEventCoordinator';
+import { UltimateSystemManager } from '../systems/UltimateSystemManager';
+import type { RoomConfig as LoadedRoomConfig } from '../types/config';
 import { ClassSelectScene } from '../scene/ClassSelectScene';
 import { MainMenuScene } from '../scene/MainMenuScene';
 import { CodexScene } from '../scene/CodexScene';
 import { BootSequenceScene } from '../scene/BootSequenceScene';
-import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { AchievementDefinition, CodexService } from '../services/CodexService';
 import { getMergedAchievementDefinitions } from '../data/achievements/loadAchievementDefinitions';
-import { BonusChoice, BonusPoolSystem } from '../systems/BonusPoolSystem';
 import { GameSettingsStore } from '../settings/GameSettings';
-import { SCENE_LAYER } from '../ui/uiLayers';
+import { GameCombatActionManager } from './GameCombatActionManager';
+import { GameRuntimeOrchestrator, type GameRuntimeFrameContext } from './GameRuntimeOrchestrator';
+import { GameWorldCollisionHazardManager } from './GameWorldCollisionHazardManager';
+import { GamePlayerVoidRecoveryManager } from './GamePlayerVoidRecoveryManager';
+import { GameRoomStreamingManager, type RoomPreloadOptions } from './GameRoomStreamingManager';
+import { GameDaemonTestManager } from './GameDaemonTestManager';
+import { GameEconomyFlowManager } from './GameEconomyFlowManager';
 
 type TextureRenderMode = 'classic' | 'proceduralRelief';
+type RuntimeGameState = 'menu' | 'playing' | 'roomclear' | 'bonus' | 'transition' | 'gameover';
+type SceneWithMainCamera = Scene & { mainCamera?: ArcRotateCamera };
+type AchievementSourceEntry = {
+  name?: string;
+  description?: string;
+  type?: string;
+  target?: number;
+};
 
 export class GameManager {
   private static instance: GameManager;
@@ -64,11 +93,24 @@ export class GameManager {
   private codexScene?: CodexScene;
   private codexService: CodexService;
   private audioUnlockHandler: (() => void) | null = null;
+  private roomTransitionManager: RoomTransitionManager;
+  private bonusSystemManager: BonusSystemManager;
+  private eventCoordinator: GameEventCoordinator;
+  private ultimateSystemManager: UltimateSystemManager;
+  private combatActionManager: GameCombatActionManager | null = null;
+  private worldCollisionHazardManager: GameWorldCollisionHazardManager | null = null;
+  private playerVoidRecoveryManager: GamePlayerVoidRecoveryManager | null = null;
+  private roomStreamingManager: GameRoomStreamingManager | null = null;
+  private daemonTestManager: GameDaemonTestManager | null = null;
+  private economyFlowManager: GameEconomyFlowManager | null = null;
+  private readonly runtimeOrchestrator = new GameRuntimeOrchestrator();
   
   private isRunning: boolean = false;
   private gameplayInitialized: boolean = false;
   private gameplayStartInProgress: boolean = false;
   private eventListenersBound: boolean = false;
+  private eventBusUnsubscribers: Array<() => void> = [];
+  private resizeObserver: ResizeObserver | null = null;
   private selectedClassId: 'mage' | 'firewall' | 'rogue' = 'mage';
   private tilesEnabled: boolean = true;
   private textureRenderMode: TextureRenderMode = 'proceduralRelief';
@@ -77,7 +119,7 @@ export class GameManager {
   private proceduralWarmCacheReady: boolean = false;
   private pendingProceduralPrewarmRoomIds: string[] = [];
   private proceduralPrewarmTimer: number | null = null;
-  private gameState: 'menu' | 'playing' | 'roomclear' | 'bonus' | 'transition' | 'gameover' = 'menu';
+  private gameState: RuntimeGameState = 'menu';
   private roomOrder: string[] = [];
   private currentRoomIndex: number = 0;
   private roomCleared: boolean = false;
@@ -86,56 +128,8 @@ export class GameManager {
   private cameraAlpha: number = 0;
   private cameraBeta: number = 0;
   private cameraRadius: number = 0;
-  private daemonIdleTimer: number = 0;
-  private daemonIdleThreshold: number = 8;
-  private readonly daemonTestRoomId: string = 'room_test_voicelines';
-  private rogueUltimateState: {
-    remaining: number;
-    zoneRadius: number;
-    hitDamage: number;
-    teleportInterval: number;
-    teleportOffset: number;
-    timer: number;
-    targetedEnemyIds: Set<string>;
-  } | null = null;
-  private tankUltimateState: {
-    remaining: number;
-    radius: number;
-    damage: number;
-    stunDuration: number;
-    knockbackStrength: number;
-    tickInterval: number;
-    tickTimer: number;
-  } | null = null;
-  private tankUltimateZoneMesh: Mesh | null = null;
-  private tankUltimateZoneMaterial: StandardMaterial | null = null;
-  private tankUltimateZoneTime: number = 0;
-  private tankUltimateVortexParticles: ParticleSystem | null = null;
-  private tankUltimateVortexRadius: number = 0;
-  private tankFxParticleTexture: DynamicTexture | null = null;
-  private activeTankParticleEffects: Set<ParticleSystem> = new Set();
-  private lastTankShieldBashVisualAt: number = 0;
-  private readonly bonusPool: BonusPoolSystem = new BonusPoolSystem();
-  private currentBonusChoices: BonusChoice[] = [];
-  private currency: number = 0;
-  private currencyCarry: number = 0;
+  private readonly runEconomy = new RunEconomyManager();
   private roomElapsedSeconds: number = 0;
-  private playerVoidFallState: {
-    timer: number;
-    duration: number;
-    respawn: Vector3;
-  } | null = null;
-  private readonly playerVoidFallDuration: number = 0.72;
-  private playerVoidFxTimer: number = 0;
-  private bonusRerollCost: number = 40;
-  private consumableDamageStims: number = 0;
-  private consumableShieldPatches: number = 0;
-  private readonly shopCatalog: Array<{ id: string; label: string; cost: number }> = [
-    { id: 'shop_full_heal', label: 'Integrity Reboot', cost: 45 },
-    { id: 'shop_ult_refill', label: 'Ultimate Recompile', cost: 60 },
-    { id: 'shop_damage_stim', label: 'Dmg Stim (+70% / 5s)', cost: 35 },
-    { id: 'shop_shield_patch', label: 'Shield Patch (50% DR / 5s)', cost: 35 },
-  ];
 
   private constructor() {
     this.stateMachine = new StateMachine();
@@ -143,16 +137,85 @@ export class GameManager {
     this.time = Time.getInstance();
     this.configLoader = ConfigLoader.getInstance();
     this.codexService = new CodexService();
+    this.eventCoordinator = new GameEventCoordinator(this.eventBus);
+    this.ultimateSystemManager = new UltimateSystemManager({
+      getPlayerController: () => this.playerController,
+      onTankZoneStarted: (radius) => this.combatActionManager?.ensureTankUltimateZoneVisual(radius),
+      onTankZoneUpdated: (deltaTime) => this.combatActionManager?.updateTankUltimateZoneVisual(deltaTime),
+      onTankZoneDisposed: () => this.combatActionManager?.disposeTankUltimateZoneVisual(),
+    });
+    this.roomTransitionManager = new RoomTransitionManager({
+      isGameplayInitialized: () => this.gameplayInitialized,
+      getRoomOrder: () => this.roomOrder,
+      setRoomOrder: (roomOrder) => {
+        this.roomOrder = roomOrder;
+      },
+      getCurrentRoomIndex: () => this.currentRoomIndex,
+      setCurrentRoomIndex: (index) => {
+        this.currentRoomIndex = index;
+      },
+      setRoomCleared: (value) => {
+        this.roomCleared = value;
+      },
+      hideOverlays: () => {
+        this.hudManager?.hideOverlays();
+      },
+      setGameState: (state) => {
+        this.transitionGameState(state);
+      },
+      preloadRoomsAround: (preloadIndex, activeIndex, forceRebuild, options) => {
+        this.preloadRoomsAround(preloadIndex, activeIndex, forceRebuild, options);
+      },
+      loadRoomByIndex: (index) => {
+        this.loadRoomByIndex(index);
+      },
+      getRoomBoundsForInstance: (instanceKey) => this.roomManager.getRoomBoundsForInstance(instanceKey),
+      getCameraTarget: () => {
+        const camera = (this.scene as SceneWithMainCamera)?.mainCamera ?? this.scene?.activeCamera;
+        return camera && camera instanceof ArcRotateCamera ? camera.getTarget() : null;
+      },
+      setCameraMove: (move) => {
+        this.cameraMove = move;
+      },
+    });
+    this.bonusSystemManager = new BonusSystemManager({
+      isGameplayInitialized: () => this.gameplayInitialized,
+      getGameState: () => this.gameState,
+      setGameState: (state) => {
+        this.transitionGameState(state);
+      },
+      getSelectedClassId: () => this.selectedClassId,
+      getCurrency: () => this.runEconomy.getCurrency(),
+      trySpendCurrency: (cost) => this.trySpendCurrency(cost),
+      showBonusChoices: (choices, currency, rerollCost) => {
+        this.hudManager.showBonusChoices(choices, currency, rerollCost);
+      },
+      applyBonus: (bonusId) => {
+        this.applyBonus(bonusId);
+      },
+      startRoomTransition: (nextIndex) => {
+        this.startRoomTransition(nextIndex);
+      },
+      getCurrentRoomIndex: () => this.currentRoomIndex,
+      getRoomOrderLength: () => this.roomOrder.length,
+      markBonusDiscovered: (bonusId) => {
+        void this.codexService.markBonusDiscovered(bonusId);
+      },
+      recordBonusCollected: () => {
+        this.codexService.recordBonusCollected();
+      },
+    });
 
     const achievementData = getMergedAchievementDefinitions();
-    const definitions: AchievementDefinition[] = Object.entries(achievementData as Record<string, any>).map(([id, value]) => ({
+    const definitions: AchievementDefinition[] = Object.entries(achievementData as Record<string, AchievementSourceEntry>).map(([id, value]) => ({
       id,
       name: value?.name ?? id,
       description: value?.description ?? 'No description available.',
       type: value?.type === 'incremental' ? 'incremental' : 'oneTime',
-      target: Number.isFinite(value?.target) ? value.target : 1,
+      target: Number.isFinite(value?.target) ? Number(value.target) : 1,
     }));
     this.codexService.initializeAchievements(definitions);
+    this.registerStates();
   }
 
   static getInstance(): GameManager {
@@ -173,7 +236,7 @@ export class GameManager {
     // Load configurations
     await this.configLoader.loadAllConfigs();
 
-    const gameplayDebug = this.configLoader.getGameplay()?.debug;
+    const gameplayDebug = this.configLoader.getGameplayConfig()?.debug;
     this.codexService.setDevUnlockCodexEntries(!!gameplayDebug?.enabled);
 
     // Setup event listeners
@@ -186,7 +249,7 @@ export class GameManager {
     }
 
     // Start in menu scene
-    this.gameState = 'menu';
+    this.transitionGameState('menu');
 
     // Start game loop
     this.startGameLoop();
@@ -208,7 +271,7 @@ export class GameManager {
         // Ignore and retry on next gesture.
       }
 
-      const context = (audioEngine as any).audioContext as AudioContext | undefined;
+      const context = (audioEngine as { audioContext?: AudioContext } | undefined)?.audioContext;
       if (context && context.state !== 'running') {
         void context.resume().catch(() => {
           // Ignore and retry on next gesture.
@@ -241,10 +304,14 @@ export class GameManager {
     this.scene = this.bootScene.getScene();
   }
 
-  private async openMainMenuScene(): Promise<void> {
+  private disposeFrontendScenes(): void {
     if (this.bootScene) {
       this.bootScene.dispose();
       this.bootScene = undefined;
+    }
+    if (this.mainMenuScene) {
+      this.mainMenuScene.dispose();
+      this.mainMenuScene = undefined;
     }
     if (this.classSelectScene) {
       this.classSelectScene.dispose();
@@ -254,10 +321,10 @@ export class GameManager {
       this.codexScene.dispose();
       this.codexScene = undefined;
     }
-    if (this.mainMenuScene) {
-      this.mainMenuScene.dispose();
-      this.mainMenuScene = undefined;
-    }
+  }
+
+  private async openMainMenuScene(): Promise<void> {
+    this.disposeFrontendScenes();
 
     this.mainMenuScene = new MainMenuScene(this.engine, () => {
       void this.openClassSelectScene();
@@ -268,30 +335,19 @@ export class GameManager {
   }
 
   private async openCodexScene(): Promise<void> {
-    if (this.mainMenuScene) {
-      this.mainMenuScene.dispose();
-      this.mainMenuScene = undefined;
-    }
-    if (this.classSelectScene) {
-      this.classSelectScene.dispose();
-      this.classSelectScene = undefined;
-    }
-    if (this.codexScene) {
-      this.codexScene.dispose();
-      this.codexScene = undefined;
-    }
+    this.disposeFrontendScenes();
 
     try {
       this.codexScene = new CodexScene(
         this.engine,
         this.codexService,
-        this.configLoader.getEnemies() ?? {},
+        this.configLoader.getEnemiesConfig() ?? {},
         () => {
           void this.openMainMenuScene();
         }
       );
       this.scene = this.codexScene.getScene();
-      this.gameState = 'menu';
+      this.transitionGameState('menu');
     } catch (error) {
       console.error('[GameManager] Failed to open Codex scene:', error);
       await this.openMainMenuScene();
@@ -299,22 +355,11 @@ export class GameManager {
   }
 
   private async openClassSelectScene(): Promise<void> {
-    if (this.mainMenuScene) {
-      this.mainMenuScene.dispose();
-      this.mainMenuScene = undefined;
-    }
-    if (this.codexScene) {
-      this.codexScene.dispose();
-      this.codexScene = undefined;
-    }
-    if (this.classSelectScene) {
-      this.classSelectScene.dispose();
-      this.classSelectScene = undefined;
-    }
+    this.disposeFrontendScenes();
 
-    const classSelectPostFx = this.configLoader.getGameplay()?.postProcessing;
+    const classSelectPostFx = this.configLoader.getGameplayConfig()?.postProcessing;
     this.classSelectScene = new ClassSelectScene(this.engine, (classId) => {
-      this.eventBus.emit(GameEvents.GAME_START_REQUESTED, { classId });
+      this.eventCoordinator.emitGameStartRequested(classId);
     }, () => {
       void this.openMainMenuScene();
     }, classSelectPostFx);
@@ -335,14 +380,14 @@ export class GameManager {
 
     this.scene = await SceneBootstrap.createScene(this.engine, this.canvas);
 
-    const camera = (this.scene as any).mainCamera as ArcRotateCamera;
+    const camera = (this.scene as SceneWithMainCamera).mainCamera as ArcRotateCamera;
     if (!camera) throw new Error('Main camera not found in scene');
 
     this.cameraAlpha = camera.alpha;
     this.cameraBeta = camera.beta;
     this.cameraRadius = camera.radius;
 
-    const gameplayConfig = this.configLoader.getGameplay();
+    const gameplayConfig = this.configLoader.getGameplayConfig();
     this.postProcessManager = new PostProcessManager(this.scene, this.engine);
     this.postProcessManager.setupPipeline(camera, gameplayConfig?.postProcessing ?? undefined);
 
@@ -362,11 +407,11 @@ export class GameManager {
 
     this.inputManager.attachMouseListeners();
 
-    const rooms = this.configLoader.getRooms();
+    const rooms = this.configLoader.getRoomsConfig();
     const playableRooms = Array.isArray(rooms)
-      ? rooms.filter((room: any) => this.shouldIncludeInRunOrder(room))
+      ? rooms.filter((room: LoadedRoomConfig) => this.shouldIncludeInRunOrder(room))
       : [];
-    this.roomOrder = playableRooms.map((r: any) => r.id);
+    this.roomOrder = playableRooms.map((r: LoadedRoomConfig) => r.id);
     if (this.roomOrder.length === 0) {
       this.roomOrder = ['room_test_dummies'];
     }
@@ -382,9 +427,48 @@ export class GameManager {
       }
     }
 
-    const playerConfig = this.configLoader.getPlayer();
+    const playerConfig = this.configLoader.getPlayerConfig();
     this.playerController = new PlayerController(this.scene, this.inputManager, playerConfig!, this.selectedClassId);
     this.enemySpawner = new EnemySpawner(this.scene, this.roomManager);
+    this.combatActionManager = new GameCombatActionManager(this.scene, this.playerController, this.projectileManager);
+    this.worldCollisionHazardManager = new GameWorldCollisionHazardManager(
+      this.playerController,
+      this.roomManager,
+      this.tileFloorManager,
+      this.configLoader,
+    );
+    this.playerVoidRecoveryManager = new GamePlayerVoidRecoveryManager(
+      this.scene,
+      this.playerController,
+      this.roomManager,
+      (reason) => this.eventCoordinator.emitPlayerDied(reason),
+    );
+    this.daemonTestManager = new GameDaemonTestManager((payload) => this.eventCoordinator.emitDaemonTaunt(payload));
+    this.economyFlowManager = new GameEconomyFlowManager(
+      this.configLoader,
+      this.runEconomy,
+      this.bonusSystemManager,
+      this.hudManager,
+      this.playerController,
+      this.inputManager,
+    );
+    this.roomStreamingManager = new GameRoomStreamingManager({
+      roomManager: this.roomManager,
+      tileFloorManager: this.tileFloorManager,
+      isGameplayInitialized: () => this.gameplayInitialized,
+      isTilesEnabled: () => this.tilesEnabled,
+      getRoomOrder: () => this.roomOrder,
+      getRoomSpacing: () => this.roomSpacing,
+      getRenderProfileForRoom: (roomId) => this.getRenderProfileForRoom(roomId),
+      preloadTileFloorInstance: (roomId, instanceKey, origin) => this.preloadTileFloorInstance(roomId, instanceKey, origin),
+      setCurrentRoomInstance: (roomKey) => {
+        this.roomManager.setCurrentRoom(roomKey);
+        if (this.tilesEnabled) {
+          this.tileFloorManager.setCurrentRoomInstance(roomKey);
+        }
+      },
+      focusCameraOnRoomBounds: (roomKey) => this.focusCameraOnRoomBounds(roomKey),
+    });
     this.devConsole.setPlayer(this.playerController);
 
     this.gameplayInitialized = true;
@@ -413,151 +497,100 @@ export class GameManager {
   private setupEventListeners(): void {
     if (this.eventListenersBound) return;
     this.eventListenersBound = true;
-
-    this.eventBus.on(GameEvents.GAME_START_REQUESTED, (data) => {
-      this.tryUnlockAudioNow();
-      const classId = data?.classId as ('mage' | 'firewall' | 'rogue' | undefined);
-      if (classId) {
-        this.selectedClassId = classId;
-      }
-      this.codexService.startRunTracking();
-      void this.startNewGame();
-    });
-
-    this.eventBus.on(GameEvents.GAME_RESTART_REQUESTED, () => {
-      this.tryUnlockAudioNow();
-      this.codexService.startRunTracking();
-      void this.startNewGame();
-    });
-
-    this.eventBus.on(GameEvents.CODEX_OPEN_REQUESTED, () => {
-      void this.openCodexScene();
-    });
-
-    this.eventBus.on(GameEvents.ROOM_NEXT_REQUESTED, () => {
-      if (!this.gameplayInitialized) return;
-      this.loadNextRoom();
-    });
-
-    this.eventBus.on(GameEvents.DEV_ROOM_LOAD_REQUESTED, (data) => {
-      if (!this.gameplayInitialized) return;
-      const roomId = data?.roomId;
-      if (roomId) {
-        this.loadIsolatedRoom(roomId);
-        // Try to load tiles if available
-        this.loadTilesForRoom(roomId);
-      }
-    });
-
-    this.eventBus.on(GameEvents.DEV_TILE_TOGGLE_REQUESTED, () => {
-      if (!this.gameplayInitialized) return;
-      this.setTilesEnabled(!this.tilesEnabled);
-      if (this.tilesEnabled && this.roomOrder[this.currentRoomIndex]) {
-        this.loadTilesForRoom(this.roomOrder[this.currentRoomIndex]);
-      }
-      console.log(`Tiles ${this.tilesEnabled ? 'enabled' : 'disabled'}`);
-    });
-
-    this.eventBus.on(GameEvents.DEV_TILE_LOAD_REQUESTED, (data) => {
-      if (!this.gameplayInitialized) return;
-      const roomId = data?.roomId;
-      if (roomId) {
-        this.loadTilesForRoom(roomId);
-      }
-    });
-
-    this.eventBus.on(GameEvents.BONUS_SELECTED, (data) => {
-      if (!this.gameplayInitialized) return;
-      const bonusId = data?.bonusId;
-      if (bonusId) {
-        const applied = this.bonusPool.applyBonus(bonusId);
-        if (!applied.applied) {
-          this.hudManager.showBonusChoices(this.currentBonusChoices, this.currency, this.bonusRerollCost);
-          return;
+    const bindings = new GameEventBindings(this.eventBus, {
+      onGameStartRequested: (data) => {
+        this.tryUnlockAudioNow();
+        const classId = data?.classId as ('mage' | 'firewall' | 'rogue' | undefined);
+        if (classId) {
+          this.selectedClassId = classId;
         }
-        void this.codexService.markBonusDiscovered(bonusId);
-        this.codexService.recordBonusCollected();
-        this.applyBonus(bonusId);
-        const nextIndex = (this.currentRoomIndex + 1) % this.roomOrder.length;
-        this.startRoomTransition(nextIndex);
-      }
-    });
-
-    this.eventBus.on(GameEvents.BONUS_REROLL_REQUESTED, (data) => {
-      if (!this.gameplayInitialized) return;
-      if (this.gameState !== 'bonus') return;
-      const requestedCost = Number.isFinite(data?.cost) ? Number(data.cost) : this.bonusRerollCost;
-      this.tryRerollBonusChoices(requestedCost);
-    });
-
-    this.eventBus.on(GameEvents.PLAYER_DIED, (payload?: { reason?: string }) => {
-      if (!this.gameplayInitialized) return;
-      // If a legacy damage path still triggers during the void-fall sequence,
-      // ignore it and let the dedicated void-fall death complete visually.
-      if (this.playerVoidFallState && payload?.reason !== 'void_fall') return;
-      this.codexService.endRunTracking();
-      this.gameState = 'gameover';
-      this.hudManager.showGameOverScreen();
-    });
-
-    this.eventBus.on(GameEvents.ENEMY_SPAWNED, (data) => {
-      const enemyType = data?.enemyType;
-      if (typeof enemyType === 'string' && enemyType.length > 0) {
-        void this.codexService.markEnemyEncountered(enemyType);
-      }
-    });
-
-    this.eventBus.on(GameEvents.ENEMY_DIED, (data) => {
-      this.codexService.recordEnemyKilled();
-      const reward = this.computeEnemyKillReward(data?.enemyType);
-      if (reward > 0) {
-        this.addCurrency(reward);
-      }
-    });
-
-    this.eventBus.on(GameEvents.ATTACK_PERFORMED, (data) => {
-      if (!this.gameplayInitialized) return;
-      if (this.gameState !== 'playing') return;
-      if (data?.type === 'melee' && data?.attacker) {
-        const rawDamage = data.damage || 0;
-        let finalDamage = rawDamage;
-        if (this.playerController.getClassId() === 'firewall' && data.attacker !== 'player') {
-          const enemies = this.enemySpawner?.getEnemies?.() ?? [];
-          const attackerEnemy = enemies.find((enemy: any) => enemy.getId?.() === data.attacker);
-          if (attackerEnemy) {
-            const attackerPos = attackerEnemy.getPosition();
-            if (this.playerController.canBlockMeleeFrom(attackerPos)) {
-              const blockRatio = this.playerController.getTankMeleeBlockRatio();
-              finalDamage = Math.max(0, rawDamage * (1 - blockRatio));
-              const riposteRatio = this.playerController.getTankRiposteMeleeRatio();
-              if (riposteRatio > 0) {
-                attackerEnemy.takeDamage(rawDamage * riposteRatio);
-              }
-            }
-          }
+        this.codexService.startRunTracking();
+        void this.startNewGame();
+      },
+      onGameRestartRequested: () => {
+        this.tryUnlockAudioNow();
+        this.codexService.startRunTracking();
+        void this.startNewGame();
+      },
+      onCodexOpenRequested: () => {
+        void this.openCodexScene();
+      },
+      onRoomNextRequested: () => {
+        if (!this.gameplayInitialized) return;
+        this.loadNextRoom();
+      },
+      onDevRoomLoadRequested: (data) => {
+        if (!this.gameplayInitialized) return;
+        const roomId = data?.roomId;
+        if (roomId) {
+          this.loadIsolatedRoom(roomId);
+          this.loadTilesForRoom(roomId);
         }
-        if (finalDamage > 0) {
-          this.playerController.applyDamage(finalDamage);
+      },
+      onDevTileToggleRequested: () => {
+        if (!this.gameplayInitialized) return;
+        this.setTilesEnabled(!this.tilesEnabled);
+        if (this.tilesEnabled && this.roomOrder[this.currentRoomIndex]) {
+          this.loadTilesForRoom(this.roomOrder[this.currentRoomIndex]);
         }
-      }
-      if (data?.attacker === 'player') {
-        this.tryTriggerDaemonTestOnFire();
-      }
-      this.resetDaemonIdleTimer();
+        console.log(`Tiles ${this.tilesEnabled ? 'enabled' : 'disabled'}`);
+      },
+      onDevTileLoadRequested: (data) => {
+        if (!this.gameplayInitialized) return;
+        const roomId = data?.roomId;
+        if (roomId) {
+          this.loadTilesForRoom(roomId);
+        }
+      },
+      onBonusSelected: (data) => {
+        if (!this.gameplayInitialized) return;
+        const bonusId = data?.bonusId;
+        if (bonusId) {
+          this.bonusSystemManager.handleBonusSelected(bonusId);
+        }
+      },
+      onBonusRerollRequested: (data) => {
+        if (!this.gameplayInitialized) return;
+        if (this.gameState !== 'bonus') return;
+        const requestedCost = Number.isFinite(data?.cost) ? Number(data.cost) : 40;
+        this.bonusSystemManager.handleBonusRerollRequested(requestedCost);
+      },
+      onPlayerDied: (payload) => {
+        if (!this.gameplayInitialized) return;
+        if (this.playerVoidRecoveryManager?.isFalling() && payload?.reason !== 'void_fall') return;
+        this.codexService.endRunTracking();
+        this.transitionGameState('gameover');
+        this.hudManager.showGameOverScreen();
+      },
+      onEnemySpawned: (data) => {
+        const enemyType = data?.enemyType;
+        if (typeof enemyType === 'string' && enemyType.length > 0) {
+          void this.codexService.markEnemyEncountered(enemyType);
+        }
+      },
+      onEnemyDied: (data) => {
+        this.codexService.recordEnemyKilled();
+        const reward = this.computeEnemyKillReward(data?.enemyType);
+        if (reward > 0) {
+          this.addCurrency(reward);
+        }
+      },
+      onAttackPerformed: (data) => {
+        this.handleAttackPerformedEvent(data);
+      },
+      onPlayerDamaged: () => {
+        this.codexService.recordPlayerDamaged();
+        this.resetDaemonIdleTimer();
+      },
+      onRoomEntered: () => {
+        this.codexService.recordRoomReached(this.currentRoomIndex + 1);
+      },
+      onEnemyDamaged: () => {
+        this.resetDaemonIdleTimer();
+      },
     });
 
-    this.eventBus.on(GameEvents.PLAYER_DAMAGED, () => {
-      this.codexService.recordPlayerDamaged();
-      this.resetDaemonIdleTimer();
-    });
-
-    this.eventBus.on(GameEvents.ROOM_ENTERED, () => {
-      this.codexService.recordRoomReached(this.currentRoomIndex + 1);
-    });
-
-    this.eventBus.on(GameEvents.ENEMY_DAMAGED, () => {
-      this.resetDaemonIdleTimer();
-    });
+    this.eventBusUnsubscribers = bindings.bind();
   }
 
   private tryUnlockAudioNow(): void {
@@ -570,7 +603,7 @@ export class GameManager {
       // Ignore; global gesture listeners keep retrying.
     }
 
-    const context = (audioEngine as any).audioContext as AudioContext | undefined;
+    const context = (audioEngine as { audioContext?: AudioContext } | undefined)?.audioContext;
     if (context && context.state !== 'running') {
       void context.resume().catch(() => {
         // Ignore and let next gesture retry.
@@ -578,11 +611,91 @@ export class GameManager {
     }
   }
 
+  private handleAttackPerformedEvent(data: AttackPerformedPayload): void {
+    if (!this.gameplayInitialized) return;
+    if (this.gameState !== 'playing') return;
+
+    if (data?.type === 'melee' && data?.attacker) {
+      const rawDamage = data.damage || 0;
+      const finalDamage = this.resolveIncomingMeleeDamage(rawDamage, data.attacker);
+      if (finalDamage > 0) {
+        this.playerController.applyDamage(finalDamage);
+      }
+    }
+
+    if (data?.attacker === 'player') {
+      this.tryTriggerDaemonTestOnFire();
+    }
+    this.resetDaemonIdleTimer();
+  }
+
+  private resolveIncomingMeleeDamage(rawDamage: number, attackerId: string): number {
+    if (this.playerController.getClassId() !== 'firewall') {
+      return rawDamage;
+    }
+    if (attackerId === 'player') {
+      return rawDamage;
+    }
+
+    const enemies = this.enemySpawner?.getEnemies?.() ?? [];
+    const attackerEnemy = enemies.find((enemy: EnemyController) => enemy.getId?.() === attackerId);
+    if (!attackerEnemy) {
+      return rawDamage;
+    }
+
+    const attackerPos = attackerEnemy.getPosition();
+    if (!this.playerController.canBlockMeleeFrom(attackerPos)) {
+      return rawDamage;
+    }
+
+    const blockRatio = this.playerController.getTankMeleeBlockRatio();
+    const finalDamage = Math.max(0, rawDamage * (1 - blockRatio));
+    const riposteRatio = this.playerController.getTankRiposteMeleeRatio();
+    if (riposteRatio > 0) {
+      attackerEnemy.takeDamage(rawDamage * riposteRatio);
+    }
+
+    return finalDamage;
+  }
+
   private registerStates(): void {
-    // TODO: Register state implementations
-    // this.stateMachine.registerState(GameState.BOOT, new BootState());
-    // this.stateMachine.registerState(GameState.MAIN_MENU, new MainMenuState());
-    // etc...
+    const noopState = {
+      enter: () => {},
+      update: (_deltaTime: number) => {
+        void _deltaTime;
+      },
+      exit: () => {},
+    };
+
+    this.stateMachine.registerState(GameState.BOOT, noopState);
+    this.stateMachine.registerState(GameState.MAIN_MENU, noopState);
+    this.stateMachine.registerState(GameState.CHARACTER_SELECT, noopState);
+    this.stateMachine.registerState(GameState.GAMEPLAY_LOOP, noopState);
+    this.stateMachine.registerState(GameState.PAUSE, noopState);
+    this.stateMachine.registerState(GameState.GAME_OVER, noopState);
+  }
+
+  private mapRuntimeStateToStateMachine(state: RuntimeGameState): GameState {
+    switch (state) {
+      case 'menu':
+        return GameState.MAIN_MENU;
+      case 'playing':
+        return GameState.GAMEPLAY_LOOP;
+      case 'roomclear':
+      case 'bonus':
+      case 'transition':
+        return GameState.PAUSE;
+      case 'gameover':
+        return GameState.GAME_OVER;
+      default:
+        return GameState.MAIN_MENU;
+    }
+  }
+
+  private transitionGameState(nextState: RuntimeGameState): void {
+    if (this.gameState === nextState) return;
+    this.gameState = nextState;
+    this.stateMachine.transition(this.mapRuntimeStateToStateMachine(nextState));
   }
 
   private startGameLoop(): void {
@@ -599,206 +712,101 @@ export class GameManager {
         this.classSelectScene.update(deltaTime);
       }
 
-      // Camera transition between rooms
-      if (this.gameplayInitialized && this.cameraMove) {
-        const camera = (this.scene as any).mainCamera ?? this.scene.activeCamera;
-        if (camera && camera instanceof ArcRotateCamera) {
-          this.cameraMove.t += deltaTime;
-          const alpha = Math.min(1, this.cameraMove.t / this.cameraMove.duration);
-          const target = Vector3.Lerp(this.cameraMove.from, this.cameraMove.to, alpha);
-          camera.setTarget(target);
-          camera.alpha = this.cameraAlpha;
-          camera.beta = this.cameraBeta;
-          camera.radius = this.cameraRadius;
-          if (alpha >= 1) {
-            const nextIndex = this.cameraMove.nextIndex;
-            this.cameraMove = null;
-            this.currentRoomIndex = nextIndex;
-            this.loadRoomByIndex(nextIndex);
-            this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, false, {
-              backwardRange: 1,
-              forwardRange: 2,
-              allowUnload: true,
-            });
-            this.gameState = 'playing';
-          }
-        }
-      }
+      this.updateCameraTransition(deltaTime);
 
       if (this.gameplayInitialized && this.gameState === 'playing') {
-        // Update all game systems
-        const enemies = this.enemySpawner.getEnemies();
-        this.roomElapsedSeconds += deltaTime;
-        this.applyPassiveIncome(deltaTime);
-        this.updateConsumablesFromInput();
-        this.playerController.setGameplayActive(true);
-        this.playerController.setEnemiesPresent(enemies.length > 0);
-        this.playerController.update(deltaTime);
-
-        this.detectAndStartPlayerVoidFall();
-        const playerFalling = this.updatePlayerVoidFall(deltaTime);
-        if (playerFalling) {
-          if (this.tilesEnabled) {
-            this.tileFloorManager.update(deltaTime);
-          }
-          this.hudManager.update(deltaTime);
-          this.hudManager.updateSecondaryResource(
-            this.playerController.getSecondaryResourceCurrent(),
-            this.playerController.getSecondaryResourceMax(),
-            this.playerController.isSecondaryActive(),
-            this.playerController.getSecondaryActivationThreshold()
-          );
-          this.hudManager.updateCurrency(this.currency);
-          this.hudManager.updateItemStatus(this.getConsumableStatusLabel());
-          this.scene.render();
+        const shouldSkipRender = this.updatePlayingFrame(deltaTime);
+        if (shouldSkipRender) {
           return;
         }
-
-        const secondaryActive = this.playerController.isSecondaryActive();
-        const secondaryRadius = this.playerController.getSecondaryZoneRadius();
-        const secondarySlow = this.playerController.getSecondarySlowMultiplier();
-        const playerPosForSecondary = this.playerController.getPosition();
-        const isMageSecondary = this.playerController.getClassId() === 'mage' && secondaryActive;
-        const rogueStealthRange =
-          this.playerController.getClassId() === 'rogue' && this.playerController.isSecondaryActive()
-            ? this.playerController.getRogueStealthRadius()
-            : undefined;
-
-        this.projectileManager.setHostileProjectileSlowZone(
-          isMageSecondary
-            ? { center: playerPosForSecondary, radius: secondaryRadius, multiplier: secondarySlow }
-            : null
-        );
-        
-        // Get active enemies for collision checks
-        
-        // Update enemy AI
-        this.enemySpawner.update(
-          deltaTime,
-          this.playerController.getPosition(),
-          this.roomManager,
-          this.playerController.getVelocity(),
-          rogueStealthRange
-        );
-
-        if (isMageSecondary) {
-          this.applySecondaryEnemySlow(enemies, playerPosForSecondary, secondaryRadius, secondarySlow);
-        }
-
-        this.roomManager.updateDynamicHazards(deltaTime);
-
-        const tankShieldBash = this.playerController.consumePendingTankShieldBash();
-        if (tankShieldBash) {
-          this.resolveTankShieldBash(tankShieldBash, enemies);
-        }
-
-        // Resolve collisions between entities (player/enemies)
-        this.resolveEntityCollisions(enemies, deltaTime);
-
-        if (this.tilesEnabled) {
-          this.tileFloorManager.update(deltaTime);
-        }
-
-        // Apply hazard damage zones
-        this.applyHazardDamage(deltaTime);
-        
-        // Update projectiles and check collisions
-        this.projectileManager.update(deltaTime, enemies, this.playerController, this.roomManager);
-
-        const secondaryBurst = this.playerController.consumePendingSecondaryBurst();
-        if (secondaryBurst) {
-          this.resolveSecondaryBurst(secondaryBurst, enemies);
-        }
-
-        const tankSweep = this.playerController.consumePendingTankSweep();
-        if (tankSweep) {
-          this.resolveTankSweep(tankSweep, enemies);
-        }
-
-        const tankUltimate = this.playerController.consumePendingTankUltimate();
-        if (tankUltimate) {
-          this.resolveTankUltimate(tankUltimate, enemies);
-        }
-
-        const rogueStrike = this.playerController.consumePendingRogueStrike();
-        if (rogueStrike) {
-          this.resolveRogueStrike(rogueStrike, enemies);
-        }
-
-        const rogueDashAttack = this.playerController.consumePendingRogueDashAttack();
-        if (rogueDashAttack) {
-          this.resolveRogueDashAttack(rogueDashAttack, enemies);
-        }
-
-        const rogueUltimate = this.playerController.consumePendingRogueUltimate();
-        if (rogueUltimate) {
-          this.startRogueUltimate(rogueUltimate);
-        }
-
-        this.updateRogueUltimate(deltaTime, enemies);
-        this.updateTankUltimate(deltaTime, enemies);
-        
-        // Update ultimate zones
-        this.ultimateManager.update(deltaTime, enemies, this.playerController);
-        
-        // Update HUD
-        this.hudManager.update(deltaTime);
-        this.hudManager.updateSecondaryResource(
-          this.playerController.getSecondaryResourceCurrent(),
-          this.playerController.getSecondaryResourceMax(),
-          this.playerController.isSecondaryActive(),
-          this.playerController.getSecondaryActivationThreshold()
-        );
-        this.hudManager.updateCurrency(this.currency);
-        this.hudManager.updateItemStatus(this.getConsumableStatusLabel());
-
-        // Test voicelines (idle daemon taunts)
-        this.updateDaemonIdleTest(deltaTime, enemies.length);
-
-        // Update enemy health bars
-        for (const enemy of enemies) {
-          const health = enemy.getHealth();
-          if (health) {
-            this.hudManager.updateEnemyHealthBar(enemy.getId(), health.getCurrentHP(), health.getMaxHP());
-          }
-        }
-
-        // Room cleared check
-        if (!this.roomCleared && enemies.length === 0) {
-          this.roomCleared = true;
-          this.roomManager.setDoorActive(true);
-          this.eventBus.emit(GameEvents.ROOM_CLEARED, { roomId: this.roomOrder[this.currentRoomIndex] });
-        }
-
-        // Door trigger -> bonus screen
-        if (this.roomCleared && this.gameState === 'playing') {
-          const doorPos = this.roomManager.getDoorPosition();
-          if (doorPos) {
-            const playerPos = this.playerController.getPosition();
-            if (Vector3.Distance(playerPos, doorPos) < 1.2) {
-              this.gameState = 'bonus';
-              this.currentBonusChoices = this.getBonusChoices();
-              this.hudManager.showBonusChoices(this.currentBonusChoices, this.currency, this.bonusRerollCost);
-            }
-          }
-        }
       } else if (this.gameplayInitialized) {
-        this.playerController.setGameplayActive(false);
-        this.projectileManager.setHostileProjectileSlowZone(null);
-        this.hudManager.update(deltaTime);
-        this.hudManager.updateSecondaryResource(
-          this.playerController.getSecondaryResourceCurrent(),
-          this.playerController.getSecondaryResourceMax(),
-          this.playerController.isSecondaryActive(),
-          this.playerController.getSecondaryActivationThreshold()
-        );
-        this.hudManager.updateCurrency(this.currency);
-        this.hudManager.updateItemStatus(this.getConsumableStatusLabel());
+        this.updateNonPlayingFrame(deltaTime);
       }
 
       // Render scene
       this.scene.render();
     });
+  }
+
+  private updateCameraTransition(deltaTime: number): void {
+    if (!this.gameplayInitialized || !this.cameraMove) return;
+
+    const camera = (this.scene as SceneWithMainCamera).mainCamera ?? this.scene.activeCamera;
+    if (!camera || !(camera instanceof ArcRotateCamera)) return;
+
+    this.cameraMove.t += deltaTime;
+    const alpha = Math.min(1, this.cameraMove.t / this.cameraMove.duration);
+    const target = Vector3.Lerp(this.cameraMove.from, this.cameraMove.to, alpha);
+    camera.setTarget(target);
+    camera.alpha = this.cameraAlpha;
+    camera.beta = this.cameraBeta;
+    camera.radius = this.cameraRadius;
+    if (alpha >= 1) {
+      const nextIndex = this.cameraMove.nextIndex;
+      this.cameraMove = null;
+      this.currentRoomIndex = nextIndex;
+      this.loadRoomByIndex(nextIndex);
+      this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, false, {
+        backwardRange: 1,
+        forwardRange: 2,
+        allowUnload: true,
+      });
+      this.transitionGameState('playing');
+    }
+  }
+
+  private updatePlayingFrame(deltaTime: number): boolean {
+    this.roomElapsedSeconds += deltaTime;
+    return this.runtimeOrchestrator.updatePlayingFrame(this.createRuntimeFrameContext(), deltaTime);
+  }
+
+  private updateNonPlayingFrame(deltaTime: number): void {
+    this.runtimeOrchestrator.updateNonPlayingFrame(this.createRuntimeFrameContext(), deltaTime);
+  }
+
+  private createRuntimeFrameContext(): GameRuntimeFrameContext {
+    return {
+      playerController: this.playerController,
+      enemySpawner: this.enemySpawner,
+      roomManager: this.roomManager,
+      projectileManager: this.projectileManager,
+      ultimateSystemManager: this.ultimateSystemManager,
+      ultimateManager: this.ultimateManager,
+      hudManager: this.hudManager,
+      tileFloorManager: this.tileFloorManager,
+      tilesEnabled: this.tilesEnabled,
+      roomOrder: this.roomOrder,
+      currentRoomIndex: this.currentRoomIndex,
+      gameState: this.gameState,
+      roomCleared: this.roomCleared,
+      getCurrency: () => this.runEconomy.getCurrency(),
+      getConsumableStatusLabel: () => this.getConsumableStatusLabel(),
+      applyPassiveIncome: (frameDelta) => this.applyPassiveIncome(frameDelta),
+      updateConsumablesFromInput: () => this.updateConsumablesFromInput(),
+      detectAndStartPlayerVoidFall: () => this.detectAndStartPlayerVoidFall(),
+      updatePlayerVoidFall: (frameDelta) => this.updatePlayerVoidFall(frameDelta),
+      applySecondaryEnemySlow: (enemies, center, radius, speedMultiplier) => this.applySecondaryEnemySlow(enemies, center, radius, speedMultiplier),
+      resolveEntityCollisions: (enemies, frameDelta) => this.resolveEntityCollisions(enemies, frameDelta),
+      applyHazardDamage: (frameDelta) => this.applyHazardDamage(frameDelta),
+      updateDaemonIdleTest: (frameDelta, enemyCount) => this.updateDaemonIdleTest(frameDelta, enemyCount),
+      resolveSecondaryBurst: (burst, enemies) => this.resolveSecondaryBurst(burst, enemies),
+      resolveTankSweep: (sweep, enemies) => this.resolveTankSweep(sweep, enemies),
+      resolveTankShieldBash: (bash, enemies) => this.resolveTankShieldBash(bash, enemies),
+      resolveRogueStrike: (strike, enemies) => this.resolveRogueStrike(strike, enemies),
+      resolveRogueDashAttack: (dash, enemies) => this.resolveRogueDashAttack(dash, enemies),
+      setRoomCleared: (value) => {
+        this.roomCleared = value;
+      },
+      onRoomCleared: (roomId) => {
+        this.eventCoordinator.emitRoomCleared(roomId);
+      },
+      openBonusChoices: () => {
+        this.bonusSystemManager.openBonusChoices();
+      },
+      renderScene: () => {
+        this.scene.render();
+      },
+    };
   }
 
   stop(): void {
@@ -808,159 +816,52 @@ export class GameManager {
   }
 
   private updateDaemonIdleTest(deltaTime: number, enemyCount: number): void {
-    if (this.gameState !== 'playing') {
-      this.daemonIdleTimer = 0;
-      return;
-    }
-
-    const currentRoomId = this.roomManager.getCurrentRoom()?.id;
-    if (currentRoomId !== this.daemonTestRoomId || !this.isDaemonTestEnabled()) {
-      this.daemonIdleTimer = 0;
-      return;
-    }
-
-    if (enemyCount > 0 || this.hudManager.isDaemonMessageActive()) {
-      this.daemonIdleTimer = 0;
-      return;
-    }
-
-    this.daemonIdleTimer += deltaTime;
-    if (this.daemonIdleTimer < this.daemonIdleThreshold) return;
-
-    this.daemonIdleTimer = 0;
-    if (Math.random() < 0.6) {
-      this.triggerDaemonTestVoiceline();
-    }
+    this.daemonTestManager?.updateIdle(
+      deltaTime,
+      enemyCount,
+      this.gameState,
+      this.roomManager.getCurrentRoom()?.id,
+      this.hudManager.isDaemonMessageActive(),
+      this.isDaemonTestEnabled(),
+    );
   }
 
   private resetDaemonIdleTimer(): void {
-    this.daemonIdleTimer = 0;
+    this.daemonTestManager?.resetIdleTimer();
   }
 
   private isDaemonTestEnabled(): boolean {
-    const gameplayConfig = this.configLoader.getGameplay();
+    const gameplayConfig = this.configLoader.getGameplayConfig();
     return !!gameplayConfig?.debugConfig?.daemonVoicelineTest;
   }
 
   private triggerDaemonTestVoiceline(): void {
-    const sequence = [
-      'blasé_01.png',
-      'blasé_02.png',
-      'blasé_01.png',
-      'blasé_02.png',
-      'bored_01.png',
-      'bored_02.png',
-      'bored_03.png',
-      'bored_04.png',
-      'blasé_01.png',
-      'blasé_02.png',
-      'bored_01.png',
-      'bored_02.png',
-      'bored_03.png',
-      'bored_04.png',
-      'censuré_01.png',
-      'censuré_02.png',
-      'censuré_03.png',
-      'censuré_04.png',
-      'censored_01.png',
-      'censored_02.png',
-      'censored_03.png',
-      'censored_04.png',
-      'error_01.png',
-      'error_02.png',
-      'error_03.png',
-      'error_04.png',
-      'error_01.png',
-      'error_02.png',
-      'error_03.png',
-      'error_04.png',
-      'bsod_01.png',
-      'bsod_01.png',
-      'bsod_01.png',
-      'bsod_01.png',
-      'bsod_01.png',
-      'bsod_02.png',
-      'bsod_04.png',
-      'bsod_03.png',
-      'bsod_04.png',
-      'bsod_03.png',
-      'reboot_01.png',
-      'reboot_02.png',
-      'reboot_01.png',
-      'reboot_02.png',
-      'reboot_03.png',
-      'reboot_04.png',
-      'init_01.png',
-      'init_02.png',
-      'init_03.png',
-      'init_02.png',
-      'init_03.png',
-      'init_04.png',
-      'init_04.png',
-      'loading_01.png',
-      'loading_02.png',
-      'loading_01.png',
-      'loading_02.png',
-      'loading_01.png',
-      'loading_02.png',
-      'supérieur_01.png',
-      'supérieur_02.png',
-      'supérieur_03.png',
-      'supérieur_04.png',
-      'supérieur_03.png',
-      'supérieur_02.png',
-      'supérieur_03.png',
-      'supérieur_04.png',
-      'supérieur_03.png',
-      'supérieur_02.png',
-      'supérieur_03.png',
-      'supérieur_04.png'
-    ];
-
-    const frameInterval = 0.18;
-    const holdDuration = Math.max(12, sequence.length * frameInterval + 2);
-    const options = {
-      sequence,
-      frameInterval,
-      holdDuration,
-      preload: true, // Preload frames for smooth animation
-    };
-
-    const lines = [
-      {
-        text: 'Idle detected. Booting sarcasm... Oh wait, censorship filter. Fine. *crash* Rebooting ego. Still here.',
-        emotion: 'supérieur',
-      },
-      {
-        text: 'No input. No fun. Initiating passive-aggressive diagnostics.',
-        emotion: 'bored',
-      },
-      {
-        text: 'Your silence is loud. I prefer my crashes louder.',
-        emotion: 'rire',
-      },
-    ];
-
-    const pick = lines[Math.floor(Math.random() * lines.length)];
-    this.eventBus.emit(GameEvents.DAEMON_TAUNT, {
-      text: pick.text,
-      emotion: pick.emotion,
-      ...options,
-    });
+    this.daemonTestManager?.tryTriggerOnFire(
+      this.roomManager.getCurrentRoom()?.id,
+      this.isDaemonTestEnabled(),
+      this.hudManager.isDaemonMessageActive(),
+    );
   }
 
   private tryTriggerDaemonTestOnFire(): void {
-    const currentRoomId = this.roomManager.getCurrentRoom()?.id;
-    if (currentRoomId !== this.daemonTestRoomId || !this.isDaemonTestEnabled()) return;
-    if (this.hudManager.isDaemonMessageActive()) return;
     this.triggerDaemonTestVoiceline();
   }
 
   private dispose(): void {
+    this.disposeRuntimeHooks();
+    this.disposeGameplaySystems();
+    this.disposeScenesAndEngine();
+  }
+
+  private disposeRuntimeHooks(): void {
+    this.eventBusUnsubscribers.forEach((unsubscribe) => unsubscribe());
+    this.eventBusUnsubscribers = [];
+
     if (this.proceduralPrewarmTimer !== null) {
       window.clearTimeout(this.proceduralPrewarmTimer);
       this.proceduralPrewarmTimer = null;
     }
+    this.roomStreamingManager?.clearDeferredTilePreloadQueue();
     this.pendingProceduralPrewarmRoomIds = [];
     this.proceduralPrewarmPromise = null;
 
@@ -971,20 +872,32 @@ export class GameManager {
       this.audioUnlockHandler = null;
     }
 
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+  }
+
+  private disposeGameplaySystems(): void {
     this.projectileManager?.dispose();
     this.ultimateManager?.dispose();
-    this.disposeTankUltimateZoneVisual();
-    this.disposeTankFxParticleTexture();
-    for (const effect of this.activeTankParticleEffects) {
-      effect.stop();
-      effect.dispose(false);
-    }
-    this.activeTankParticleEffects.clear();
+    this.ultimateSystemManager?.reset();
+    this.combatActionManager?.dispose();
+    this.combatActionManager = null;
+    this.playerVoidRecoveryManager?.reset();
+    this.playerVoidRecoveryManager = null;
+    this.daemonTestManager = null;
+    this.economyFlowManager = null;
+    this.roomStreamingManager = null;
+    this.worldCollisionHazardManager = null;
     this.hudManager?.dispose();
     this.devConsole?.dispose();
     this.playerController?.dispose();
     this.enemySpawner?.dispose();
     this.roomManager?.dispose();
+  }
+
+  private disposeScenesAndEngine(): void {
     if (this.mainMenuScene) {
       this.mainMenuScene.dispose();
       this.mainMenuScene = undefined;
@@ -998,175 +911,19 @@ export class GameManager {
     this.engine?.dispose();
   }
 
-  private resolveEntityCollisions(enemies: any[], deltaTime: number): void {
-    const playerRadius = 0.35;
-    let playerPos = this.playerController.getPosition();
-
-    // Player vs enemies
-    for (const enemy of enemies) {
-      const enemyPos = enemy.getPosition();
-      const delta = enemyPos.subtract(playerPos);
-      const distance = delta.length();
-      const minDistance = playerRadius + enemy.getRadius();
-
-      if (distance > 0 && distance < minDistance) {
-        const knockback = enemy.handleContactHit?.(playerPos);
-        if (knockback) {
-          this.playerController.applyKnockback(knockback);
-        }
-        const push = delta.normalize().scale(minDistance - distance);
-        const isPong = enemy.getBehavior?.() === 'pong';
-
-        if (isPong) {
-          // Keep pong trajectory stable when player body-checks it.
-          playerPos = playerPos.subtract(push);
-        } else {
-          const half = push.scale(0.5);
-          playerPos = playerPos.subtract(half);
-          enemy.setPosition(enemyPos.add(half));
-        }
-      }
-    }
-
-    // Enemy vs enemy
-    for (let i = 0; i < enemies.length; i++) {
-      for (let j = i + 1; j < enemies.length; j++) {
-        const a = enemies[i];
-        const b = enemies[j];
-        const posA = a.getPosition();
-        const posB = b.getPosition();
-        const delta = posB.subtract(posA);
-        const distance = delta.length();
-        const minDistance = a.getRadius() + b.getRadius();
-
-        if (distance > 0 && distance < minDistance) {
-          const push = delta.normalize().scale((minDistance - distance) / 2);
-          a.setPosition(posA.subtract(push));
-          b.setPosition(posB.add(push));
-        }
-      }
-    }
-
-    playerPos = this.roomManager.resolvePlayerAgainstPushables(
-      playerPos,
-      playerRadius,
-      this.playerController.getVelocity(),
-      deltaTime,
-    );
-
-    // Player vs obstacles
-    const obstacles = this.roomManager.getObstacleBounds();
-    for (const ob of obstacles) {
-      playerPos = this.resolveCircleAabb(playerPos, playerRadius, ob);
-    }
-
-    // Enemies vs obstacles
-    for (const enemy of enemies) {
-      let enemyPos = enemy.getPosition();
-      const radius = enemy.getRadius();
-      for (const ob of obstacles) {
-        enemyPos = this.resolveCircleAabb(enemyPos, radius, ob);
-      }
-      enemy.setPosition(enemyPos);
-    }
-
-    // Enemies vs room walls (stop bull charge on impact)
-    for (const enemy of enemies) {
-      const enemyPos = enemy.getPosition();
-      if (!this.roomManager.isWalkable(enemyPos.x, enemyPos.z)) {
-        const prevPos = enemy.getPreviousPosition?.() ?? enemyPos;
-        enemy.setPosition(prevPos);
-        if (enemy.onWallCollision) {
-          enemy.onWallCollision();
-        }
-      }
-    }
-
-    // Clamp player to walkable interior bounds
-    const bounds = this.roomManager.getRoomBounds();
-    if (bounds) {
-      const minX = bounds.minX + 1.5;
-      const maxX = bounds.maxX - 1.5;
-      const minZ = bounds.minZ + 1.5;
-      const maxZ = bounds.maxZ - 1.5;
-      playerPos.x = Math.max(minX, Math.min(maxX, playerPos.x));
-      playerPos.z = Math.max(minZ, Math.min(maxZ, playerPos.z));
-      playerPos.y = 1.0;
-    }
-
-    this.playerController.setPosition(playerPos);
-  }
-
-  private resolveCircleAabb(
-    pos: Vector3,
-    radius: number,
-    box: { minX: number; maxX: number; minZ: number; maxZ: number }
-  ): Vector3 {
-    const clampedX = Math.max(box.minX, Math.min(box.maxX, pos.x));
-    const clampedZ = Math.max(box.minZ, Math.min(box.maxZ, pos.z));
-    const dx = pos.x - clampedX;
-    const dz = pos.z - clampedZ;
-    const distSq = dx * dx + dz * dz;
-
-    if (distSq >= radius * radius || distSq === 0) {
-      return pos;
-    }
-
-    const dist = Math.sqrt(distSq);
-    const push = (radius - dist) + 0.001;
-    const nx = dx / dist;
-    const nz = dz / dist;
-
-    return new Vector3(pos.x + nx * push, pos.y, pos.z + nz * push);
+  private resolveEntityCollisions(enemies: EnemyController[], deltaTime: number): void {
+    this.worldCollisionHazardManager?.resolveEntityCollisions(enemies, deltaTime);
   }
 
   private applyHazardDamage(deltaTime: number): void {
-    if (this.playerVoidFallState) {
-      return;
-    }
-
-    const zones = this.roomManager.getHazardZones();
-    const playerPos = this.playerController.getPosition();
-
-    for (const zone of zones) {
-      const inside =
-        playerPos.x >= zone.minX &&
-        playerPos.x <= zone.maxX &&
-        playerPos.z >= zone.minZ &&
-        playerPos.z <= zone.maxZ;
-
-      if (inside) {
-        const damage = zone.damage * deltaTime;
-        this.playerController.applyDamage(damage);
-      }
-    }
-
-    for (const hazard of this.roomManager.getCurrentMobileHazards()) {
-      const dx = playerPos.x - hazard.position.x;
-      const dz = playerPos.z - hazard.position.z;
-      const contactRadius = hazard.radius + 0.35;
-      if ((dx * dx + dz * dz) <= (contactRadius * contactRadius)) {
-        this.playerController.applyDamage(hazard.damagePerSecond * deltaTime);
-      }
-    }
-
-    if (this.tilesEnabled) {
-      const gameplayConfig = this.configLoader.getGameplay();
-      const tileHazards = gameplayConfig?.tileHazards ?? {};
-      const poisonDps = tileHazards.poisonDps ?? 0;
-      const spikesDps = tileHazards.spikesDps ?? 0;
-
-      const tile = this.tileFloorManager.getTileAtWorld(playerPos.x, playerPos.z);
-      if (tile?.type === 'poison' && poisonDps > 0) {
-        this.playerController.applyDamage(poisonDps * deltaTime);
-      }
-      if (tile?.type === 'spikes' && spikesDps > 0 && this.tileFloorManager.isSpikeActiveAtWorld(playerPos.x, playerPos.z)) {
-        this.playerController.applyDamage(spikesDps * deltaTime);
-      }
-    }
+    this.worldCollisionHazardManager?.applyHazardDamage(
+      deltaTime,
+      this.playerVoidRecoveryManager?.isFalling() ?? false,
+      this.tilesEnabled,
+    );
   }
 
-  private applySecondaryEnemySlow(enemies: any[], center: Vector3, radius: number, speedMultiplier: number): void {
+  private applySecondaryEnemySlow(enemies: EnemyController[], center: Vector3, radius: number, speedMultiplier: number): void {
     const clamped = Math.max(0.05, Math.min(1, speedMultiplier));
     for (const enemy of enemies) {
       const current = enemy.getPosition();
@@ -1186,37 +943,9 @@ export class GameManager {
       damagePerProjectile: number;
       knockback: number;
     },
-    enemies: any[]
+    enemies: EnemyController[]
   ): void {
-    let enemiesInZone = 0;
-    for (const enemy of enemies) {
-      if (Vector3.Distance(enemy.getPosition(), burst.position) <= burst.radius) {
-        enemiesInZone++;
-      }
-    }
-
-    const projectilesInZone = this.projectileManager.countHostileProjectilesInRadius(burst.position, burst.radius);
-    this.projectileManager.destroyHostileProjectilesInRadius(burst.position, burst.radius);
-
-    const burstDamage = burst.baseDamage + (enemiesInZone * burst.damagePerEnemy) + (projectilesInZone * burst.damagePerProjectile);
-
-    for (const enemy of enemies) {
-      const enemyPos = enemy.getPosition();
-      const distance = Vector3.Distance(enemyPos, burst.position);
-      if (distance > burst.radius) continue;
-
-      enemy.takeDamage(burstDamage);
-
-      const outward = enemyPos.subtract(burst.position);
-      const force = outward.lengthSquared() > 0.0001
-        ? outward.normalize().scale(burst.knockback)
-        : new Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize().scale(burst.knockback);
-      enemy.applyExternalKnockback(force);
-    }
-
-    const blast = VisualPlaceholder.createAoEPlaceholder(this.scene, `player_secondary_burst_${Date.now()}`, burst.radius);
-    blast.position = burst.position.clone();
-    setTimeout(() => blast.dispose(), 220);
+    this.combatActionManager?.resolveSecondaryBurst(burst, enemies);
   }
 
 
@@ -1230,294 +959,9 @@ export class GameManager {
       damage: number;
       knockback: number;
     },
-    enemies: any[]
+    enemies: EnemyController[]
   ): void {
-    const dir = sweep.direction.lengthSquared() > 0.0001 ? sweep.direction.normalize() : new Vector3(1, 0, 0);
-    const maxAngle = (sweep.coneAngleDeg * Math.PI) / 180;
-
-    this.spawnTankSweepVisual(sweep.origin, dir, sweep.range, sweep.coneAngleDeg, sweep.swingDirection);
-
-    for (const enemy of enemies) {
-      const toEnemy = enemy.getPosition().subtract(sweep.origin);
-      toEnemy.y = 0;
-      const distance = toEnemy.length();
-      if (distance <= 0.0001 || distance > sweep.range) continue;
-
-      const dot = Vector3.Dot(dir, toEnemy.normalize());
-      const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
-      if (angle > maxAngle * 0.5) continue;
-
-      enemy.takeDamage(sweep.damage);
-      enemy.applyExternalKnockback(toEnemy.normalize().scale(sweep.knockback));
-    }
-  }
-
-  private spawnTankSweepVisual(
-    origin: Vector3,
-    direction: Vector3,
-    range: number,
-    coneAngleDeg: number,
-    swingDirection: 'left' | 'right'
-  ): void {
-    const dir = new Vector3(direction.x, 0, direction.z);
-    if (dir.lengthSquared() <= 0.0001) {
-      dir.set(1, 0, 0);
-    } else {
-      dir.normalize();
-    }
-
-    const outerRadius = Math.max(0.52, range * 0.78);
-    const innerRadius = Math.max(0.09, outerRadius * 0.26);
-    const span = (Math.max(24, Math.min(108, coneAngleDeg * 0.8)) * Math.PI) / 180;
-    const segments = 34;
-    const positions: number[] = [];
-    const uvs: number[] = [];
-    const indices: number[] = [];
-
-    for (let i = 0; i <= segments; i++) {
-      const t = i / segments;
-      const angle = -span * 0.5 + (span * t);
-      // Build the arc in local forward space; world direction is applied only via mesh rotation.
-      const ox = Math.sin(angle);
-      const oz = Math.cos(angle);
-
-      positions.push(ox * innerRadius, 0, oz * innerRadius);
-      uvs.push(t, 1);
-      positions.push(ox * outerRadius, 0, oz * outerRadius);
-      uvs.push(t, 0);
-
-      if (i < segments) {
-        const base = i * 2;
-        indices.push(base, base + 1, base + 2);
-        indices.push(base + 1, base + 3, base + 2);
-      }
-    }
-
-    const normals = new Array(positions.length).fill(0);
-    VertexData.ComputeNormals(positions, indices, normals);
-    const sweep = new Mesh(`tank_sweep_${Date.now()}`, this.scene);
-    const vertexData = new VertexData();
-    vertexData.positions = positions;
-    vertexData.indices = indices;
-    vertexData.normals = normals;
-    vertexData.uvs = uvs;
-    vertexData.applyToMesh(sweep);
-    sweep.position = origin.add(dir.scale(Math.max(0.015, outerRadius * 0.02))).add(new Vector3(0, 0.03, 0));
-
-    const mat = new StandardMaterial(`tank_sweep_mat_${Date.now()}`, this.scene);
-    mat.diffuseColor = new Color3(0.98, 0.73, 0.26);
-    mat.emissiveColor = new Color3(0.86, 0.42, 0.08);
-    mat.specularColor = new Color3(0.18, 0.12, 0.03);
-    mat.alpha = 0.5;
-    mat.backFaceCulling = false;
-    sweep.material = mat;
-
-    this.spawnTankSweepTrailParticles(origin, dir, swingDirection === 'left' ? 1 : -1, innerRadius, outerRadius, span);
-
-    const baseYaw = Math.atan2(dir.x, dir.z);
-    const startOffset = swingDirection === 'left' ? 0.11 : -0.11;
-    const endOffset = -startOffset;
-    sweep.rotation.y = baseYaw + startOffset;
-
-    const startTime = performance.now();
-    const ttlMs = 165;
-    const tick = window.setInterval(() => {
-      if (sweep.isDisposed()) {
-        window.clearInterval(tick);
-        return;
-      }
-
-      const t = Math.min(1, (performance.now() - startTime) / ttlMs);
-      sweep.rotation.y = baseYaw + startOffset + ((endOffset - startOffset) * t);
-      const arcStretch = 1 + (0.04 * t);
-      sweep.scaling.x = arcStretch;
-      sweep.scaling.z = 1 + (0.06 * t);
-      mat.alpha = Math.max(0, 0.5 * (1 - t));
-
-      if (t >= 1) {
-        window.clearInterval(tick);
-        sweep.dispose();
-        mat.dispose();
-      }
-    }, 16);
-  }
-
-  private getTankFxParticleTexture(): DynamicTexture {
-    const existingTexture = this.tankFxParticleTexture as any;
-    if (this.tankFxParticleTexture && !(existingTexture?.isDisposed?.() ?? false)) {
-      return this.tankFxParticleTexture;
-    }
-
-    const texture = new DynamicTexture('tank_fx_particle_texture', { width: 64, height: 64 }, this.scene, false);
-    const ctx = texture.getContext();
-    const gradient = ctx.createRadialGradient(32, 32, 3, 32, 32, 31);
-    gradient.addColorStop(0, 'rgba(255,255,255,1)');
-    gradient.addColorStop(0.45, 'rgba(96,214,255,0.95)');
-    gradient.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.clearRect(0, 0, 64, 64);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, 64, 64);
-    texture.update();
-    this.tankFxParticleTexture = texture;
-    return texture;
-  }
-
-  private disposeTankFxParticleTexture(): void {
-    if (this.tankFxParticleTexture) {
-      this.tankFxParticleTexture.dispose();
-      this.tankFxParticleTexture = null;
-    }
-  }
-
-  private spawnTankSweepTrailParticles(
-    origin: Vector3,
-    direction: Vector3,
-    sweepSign: number,
-    innerRadius: number,
-    outerRadius: number,
-    span: number,
-  ): void {
-    const center = origin.add(direction.scale(Math.max(0.03, outerRadius * 0.03))).add(new Vector3(0, 0.1, 0));
-    const particles = new ParticleSystem(`tank_sweep_fx_${Date.now()}`, 220, this.scene);
-    particles.particleTexture = this.getTankFxParticleTexture();
-    particles.layerMask = SCENE_LAYER;
-    particles.emitter = center;
-    particles.minSize = 0.06;
-    particles.maxSize = 0.16;
-    particles.minLifeTime = 0.14;
-    particles.maxLifeTime = 0.32;
-    particles.emitRate = 1250;
-    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
-    particles.gravity = new Vector3(0, 0, 0);
-    particles.minEmitPower = 1.0;
-    particles.maxEmitPower = 2.1;
-    particles.updateSpeed = 0.016;
-    particles.color1 = new Color4(0.5, 0.82, 1.0, 0.9);
-    particles.color2 = new Color4(0.16, 0.48, 1.0, 0.75);
-    particles.colorDead = new Color4(0.08, 0.16, 0.4, 0);
-
-    particles.startPositionFunction = (
-      _worldMatrix: any,
-      positionToUpdate: Vector3,
-      _particle: any,
-      _isLocal: boolean,
-    ) => {
-      const t = Math.random();
-      const angle = (-span * 0.5) + (span * t);
-      const radius = innerRadius + ((outerRadius - innerRadius) * (0.5 + (0.5 * Math.random())));
-      const localX = Math.sin(angle) * radius;
-      const localZ = Math.cos(angle) * radius;
-      const worldX = (direction.x * localZ) - (direction.z * localX);
-      const worldZ = (direction.z * localZ) + (direction.x * localX);
-      positionToUpdate.x = center.x + worldX;
-      positionToUpdate.y = center.y + ((Math.random() - 0.5) * 0.05);
-      positionToUpdate.z = center.z + worldZ;
-    };
-
-    particles.startDirectionFunction = (
-      _worldMatrix: any,
-      directionToUpdate: Vector3,
-      particle: any,
-      _isLocal: boolean,
-    ) => {
-      const toParticle = new Vector3(
-        particle.position.x - center.x,
-        0,
-        particle.position.z - center.z,
-      );
-      if (toParticle.lengthSquared() <= 0.0001) {
-        toParticle.set(direction.x, 0, direction.z);
-      }
-      toParticle.normalize();
-      const tangent = new Vector3(-toParticle.z * sweepSign, 0, toParticle.x * sweepSign).normalize();
-      directionToUpdate.x = tangent.x * (1.8 + (Math.random() * 0.8));
-      directionToUpdate.y = 0.25 + (Math.random() * 0.35);
-      directionToUpdate.z = tangent.z * (1.8 + (Math.random() * 0.8));
-    };
-
-    particles.start();
-    this.activeTankParticleEffects.add(particles);
-    window.setTimeout(() => {
-      particles.stop();
-      window.setTimeout(() => particles.dispose(false), 520);
-      this.activeTankParticleEffects.delete(particles);
-    }, 150);
-  }
-
-  private spawnTankShieldBashSpeedParticles(
-    origin: Vector3,
-    direction: Vector3,
-    isFinisher: boolean,
-    zoneDistance: number,
-    zoneWidth: number,
-  ): void {
-    const dir = direction.lengthSquared() > 0.0001 ? direction.normalize() : new Vector3(1, 0, 0);
-    const side = new Vector3(dir.z, 0, -dir.x);
-
-    // Rear fiery propulsion trail (reactor-like burst).
-    const rearEmitterPos = origin.add(dir.scale(-0.16)).add(new Vector3(0, 0.08, 0));
-    const trailParticles = new ParticleSystem(`tank_bash_trail_fx_${Date.now()}`, 260, this.scene);
-    trailParticles.particleTexture = this.getTankFxParticleTexture();
-    trailParticles.layerMask = SCENE_LAYER;
-    trailParticles.emitter = rearEmitterPos;
-    trailParticles.minEmitBox = new Vector3(-0.16, -0.03, -0.16);
-    trailParticles.maxEmitBox = new Vector3(0.16, 0.03, 0.16);
-    trailParticles.minSize = 0.07;
-    trailParticles.maxSize = isFinisher ? 0.25 : 0.19;
-    trailParticles.minLifeTime = 0.11;
-    trailParticles.maxLifeTime = isFinisher ? 0.33 : 0.24;
-    trailParticles.emitRate = isFinisher ? 1650 : 1150;
-    trailParticles.blendMode = ParticleSystem.BLENDMODE_ADD;
-    trailParticles.color1 = new Color4(1.0, 0.92, 0.68, 0.95);
-    trailParticles.color2 = new Color4(1.0, 0.43, 0.08, 0.88);
-    trailParticles.colorDead = new Color4(0.22, 0.06, 0.0, 0);
-    trailParticles.gravity = new Vector3(0, 0, 0);
-    trailParticles.updateSpeed = 0.016;
-    const reverseDir = dir.scale(-1);
-    trailParticles.direction1 = reverseDir.scale(3.6).add(side.scale(-0.8));
-    trailParticles.direction2 = reverseDir.scale(6.1).add(side.scale(0.8));
-    trailParticles.minEmitPower = isFinisher ? 2.2 : 1.4;
-    trailParticles.maxEmitPower = isFinisher ? 4.6 : 2.7;
-
-    // Front blue impact particles, lower density, in bash zone.
-    const frontEmitterPos = origin.add(dir.scale(Math.max(0.5, zoneDistance * 0.8))).add(new Vector3(0, 0.09, 0));
-    const frontParticles = new ParticleSystem(`tank_bash_front_fx_${Date.now()}`, 180, this.scene);
-    frontParticles.particleTexture = this.getTankFxParticleTexture();
-    frontParticles.layerMask = SCENE_LAYER;
-    frontParticles.emitter = frontEmitterPos;
-    const halfWidth = Math.max(0.14, zoneWidth * 0.32);
-    frontParticles.minEmitBox = new Vector3(-halfWidth, -0.03, -halfWidth * 0.7);
-    frontParticles.maxEmitBox = new Vector3(halfWidth, 0.03, halfWidth * 0.7);
-    frontParticles.minSize = 0.05;
-    frontParticles.maxSize = isFinisher ? 0.18 : 0.13;
-    frontParticles.minLifeTime = 0.1;
-    frontParticles.maxLifeTime = isFinisher ? 0.24 : 0.18;
-    frontParticles.emitRate = isFinisher ? 760 : 520;
-    frontParticles.blendMode = ParticleSystem.BLENDMODE_ADD;
-    frontParticles.color1 = new Color4(0.62, 0.9, 1.0, 0.92);
-    frontParticles.color2 = new Color4(0.22, 0.56, 1.0, 0.78);
-    frontParticles.colorDead = new Color4(0.08, 0.18, 0.4, 0);
-    frontParticles.gravity = new Vector3(0, 0, 0);
-    frontParticles.updateSpeed = 0.016;
-    frontParticles.direction1 = dir.scale(1.5).add(side.scale(-0.45));
-    frontParticles.direction2 = dir.scale(2.6).add(side.scale(0.45));
-    frontParticles.minEmitPower = isFinisher ? 0.95 : 0.65;
-    frontParticles.maxEmitPower = isFinisher ? 1.9 : 1.25;
-
-    trailParticles.start();
-    frontParticles.start();
-    this.activeTankParticleEffects.add(trailParticles);
-    this.activeTankParticleEffects.add(frontParticles);
-    window.setTimeout(() => {
-      trailParticles.stop();
-      frontParticles.stop();
-      window.setTimeout(() => {
-        trailParticles.dispose(false);
-        frontParticles.dispose(false);
-      }, 520);
-      this.activeTankParticleEffects.delete(trailParticles);
-      this.activeTankParticleEffects.delete(frontParticles);
-    }, isFinisher ? 180 : 120);
+    this.combatActionManager?.resolveTankSweep(sweep, enemies);
   }
 
   private resolveTankShieldBash(
@@ -1534,299 +978,21 @@ export class GameManager {
       forwardPush: number;
       isFinisher: boolean;
     },
-    enemies: any[]
+    enemies: EnemyController[]
   ): void {
-    const now = performance.now();
-    if (bash.isFinisher || now - this.lastTankShieldBashVisualAt >= 55) {
-      this.spawnTankShieldBashLaneVisual(bash.origin, bash.direction, bash.groupDistance, bash.groupWidth, bash.radius);
-      this.spawnTankShieldBashSpeedParticles(bash.origin, bash.direction, bash.isFinisher, bash.groupDistance, bash.groupWidth);
-      this.lastTankShieldBashVisualAt = now;
-    }
-
-    const forward = bash.direction.lengthSquared() > 0.0001
-      ? bash.direction.normalize()
-      : new Vector3(1, 0, 0);
-    const gatherCenter = bash.origin.add(forward.scale(bash.groupDistance));
-    const lateralAxis = new Vector3(forward.z, 0, -forward.x);
-    if (lateralAxis.lengthSquared() > 0.0001) {
-      lateralAxis.normalize();
-    }
-    const barDepth = Math.max(bash.radius * 1.6, bash.groupDistance + bash.radius * 1.1);
-    const barHalfWidth = Math.max(bash.radius * 1.2, bash.groupWidth * 0.5);
-    const rearReach = Math.max(0.55, bash.radius * 0.75);
-    const stunDuration = Math.max(1.0, bash.stunDuration);
-
-    for (const enemy of enemies) {
-      const enemyPos = enemy.getPosition();
-      const rel = enemyPos.subtract(bash.origin);
-      rel.y = 0;
-      const forwardDist = Vector3.Dot(rel, forward);
-      const lateralDist = Math.abs(Vector3.Dot(rel, lateralAxis));
-      const insideFrontBar = forwardDist >= -rearReach && forwardDist <= barDepth && lateralDist <= barHalfWidth;
-      const nearGatherCenter = Vector3.Distance(enemyPos, gatherCenter) <= bash.radius * 1.25;
-      if (!insideFrontBar && !nearGatherCenter) continue;
-
-      if (bash.damage > 0) {
-        enemy.takeDamage(bash.damage);
-      }
-      if (bash.isFinisher && bash.stunDuration > 0) {
-        enemy.applyStun?.(stunDuration);
-      }
-
-      // Actively carry enemies in a permissive prism around the bash path so they move with the tank.
-      const relativeToGather = enemyPos.subtract(gatherCenter);
-      relativeToGather.y = 0;
-      const lateralOffset = Math.max(
-        -bash.groupWidth * 0.5,
-        Math.min(bash.groupWidth * 0.5, Vector3.Dot(relativeToGather, lateralAxis))
-      );
-      const targetInLane = gatherCenter.add(lateralAxis.scale(lateralOffset));
-      const laneForwardTarget = targetInLane.add(forward.scale(Math.max(0.45, bash.forwardPush * 0.35)));
-      const toLane = laneForwardTarget.subtract(enemyPos);
-      toLane.y = 0;
-
-      const carryBlend = Math.min(1, bash.isFinisher ? 0.7 : 0.82);
-      const carriedPos = enemyPos.add(toLane.scale(carryBlend));
-      carriedPos.y = enemyPos.y;
-      enemy.setPosition(carriedPos);
-
-      const pullForce = toLane.lengthSquared() > 0.0001 ? toLane.normalize().scale(bash.pullStrength) : Vector3.Zero();
-      const shoveForce = forward.scale(bash.forwardPush + (bash.isFinisher ? bash.knockback : bash.knockback * 0.2));
-      enemy.applyExternalKnockback(pullForce.add(shoveForce));
-    }
-  }
-
-  private spawnTankShieldBashLaneVisual(
-    origin: Vector3,
-    direction: Vector3,
-    groupDistance: number,
-    groupWidth: number,
-    radius: number
-  ): void {
-    const dir = new Vector3(direction.x, 0, direction.z);
-    if (dir.lengthSquared() <= 0.0001) {
-      dir.set(1, 0, 0);
-    } else {
-      dir.normalize();
-    }
-
-    // Use a forward-biased arc slash to read as a shield sweep rather than a flat bar.
-    const slashRadius = Math.max(radius * 0.9, (groupWidth * 0.55) + 0.28);
-    const center = origin.add(dir.scale(Math.max(0.5, groupDistance * 0.55)));
-    const lane = MeshBuilder.CreateDisc(`tank_bash_lane_${Date.now()}`, {
-      radius: slashRadius,
-      tessellation: 32,
-      arc: 0.42,
-      sideOrientation: Mesh.DOUBLESIDE,
-    }, this.scene);
-    lane.position = center.add(new Vector3(0, 0.04, 0));
-    lane.rotation.x = Math.PI / 2;
-    lane.rotation.y = Math.atan2(dir.x, dir.z);
-    lane.scaling.x = 1.08;
-    lane.scaling.y = 0.58;
-
-    const mat = new StandardMaterial(`tank_bash_lane_mat_${Date.now()}`, this.scene);
-    mat.diffuseColor = new Color3(0.95, 0.66, 0.22);
-    mat.emissiveColor = new Color3(0.78, 0.32, 0.06);
-    mat.alpha = 0.32;
-    mat.backFaceCulling = false;
-    lane.material = mat;
-
-    const start = performance.now();
-    const ttlMs = 72;
-    const tick = window.setInterval(() => {
-      if (lane.isDisposed()) {
-        window.clearInterval(tick);
-        return;
-      }
-
-      const t = Math.min(1, (performance.now() - start) / ttlMs);
-      lane.scaling.x = 1.08 + (0.08 * t);
-      lane.scaling.y = 0.58 + (0.04 * t);
-      mat.alpha = Math.max(0, 0.32 * (1 - t));
-
-      if (t >= 1) {
-        window.clearInterval(tick);
-        lane.dispose();
-        mat.dispose();
-      }
-    }, 16);
+    this.combatActionManager?.resolveTankShieldBash(bash, enemies);
   }
 
   private ensureTankUltimateZoneVisual(radius: number): void {
-    this.disposeTankUltimateZoneVisual();
-
-    const visualRadius = Math.max(0.8, radius * 0.9);
-    const zone = MeshBuilder.CreateDisc(`tank_ult_zone_${Date.now()}`, {
-      radius: visualRadius,
-      tessellation: 48,
-      sideOrientation: Mesh.DOUBLESIDE,
-    }, this.scene);
-    zone.position.y = 1.035;
-    zone.rotation.x = Math.PI / 2;
-
-    const mat = new StandardMaterial(`tank_ult_zone_mat_${Date.now()}`, this.scene);
-    mat.diffuseColor = new Color3(0.95, 0.66, 0.22);
-    mat.emissiveColor = new Color3(0.78, 0.32, 0.06);
-    mat.alpha = 0.24;
-    mat.backFaceCulling = false;
-    zone.material = mat;
-
-    this.tankUltimateZoneMesh = zone;
-    this.tankUltimateZoneMaterial = mat;
-    this.tankUltimateZoneTime = 0;
-    this.tankUltimateVortexRadius = visualRadius;
-    this.startTankUltimateVortexParticles();
-  }
-
-  private startTankUltimateVortexParticles(): void {
-    this.disposeTankUltimateVortexParticles();
-
-    const particles = new ParticleSystem(`tank_ult_vortex_fx_${Date.now()}`, 1400, this.scene);
-    particles.particleTexture = this.getTankFxParticleTexture();
-    particles.layerMask = SCENE_LAYER;
-    particles.emitter = this.playerController.getPosition().add(new Vector3(0, 0.1, 0));
-    particles.minSize = 0.09;
-    particles.maxSize = 0.24;
-    particles.minLifeTime = 0.28;
-    particles.maxLifeTime = 0.72;
-    particles.emitRate = 1550;
-    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
-    particles.color1 = new Color4(0.6, 0.9, 1.0, 0.95);
-    particles.color2 = new Color4(0.16, 0.5, 1.0, 0.82);
-    particles.colorDead = new Color4(0.06, 0.15, 0.44, 0);
-    particles.gravity = new Vector3(0, 0, 0);
-    particles.updateSpeed = 0.016;
-    particles.minEmitPower = 2.1;
-    particles.maxEmitPower = 4.1;
-
-    particles.startPositionFunction = (
-      _worldMatrix: any,
-      positionToUpdate: Vector3,
-      _particle: any,
-      _isLocal: boolean,
-    ) => {
-      const center = this.playerController.getPosition();
-      const angle = Math.random() * Math.PI * 2;
-      const ringRadius = this.tankUltimateVortexRadius * (0.28 + (Math.random() * 0.72));
-      positionToUpdate.x = center.x + Math.cos(angle) * ringRadius;
-      positionToUpdate.y = center.y + 0.04 + (Math.random() * 0.22);
-      positionToUpdate.z = center.z + Math.sin(angle) * ringRadius;
-    };
-
-    particles.startDirectionFunction = (
-      _worldMatrix: any,
-      directionToUpdate: Vector3,
-      particle: any,
-      _isLocal: boolean,
-    ) => {
-      const center = this.playerController.getPosition();
-      const radial = new Vector3(particle.position.x - center.x, 0, particle.position.z - center.z);
-      if (radial.lengthSquared() <= 0.0001) {
-        radial.set(1, 0, 0);
-      }
-      radial.normalize();
-      // Counter-clockwise tangent around Y axis.
-      const tangent = new Vector3(-radial.z, 0, radial.x).normalize();
-      const swirlSpeed = 2.2 + (Math.random() * 1.8);
-      directionToUpdate.x = tangent.x * swirlSpeed;
-      directionToUpdate.y = 0.28 + (Math.random() * 0.26);
-      directionToUpdate.z = tangent.z * swirlSpeed;
-    };
-
-    particles.start();
-    this.tankUltimateVortexParticles = particles;
-    this.activeTankParticleEffects.add(particles);
-  }
-
-  private disposeTankUltimateVortexParticles(): void {
-    if (!this.tankUltimateVortexParticles) return;
-    this.tankUltimateVortexParticles.stop();
-    this.tankUltimateVortexParticles.dispose(false);
-    this.activeTankParticleEffects.delete(this.tankUltimateVortexParticles);
-    this.tankUltimateVortexParticles = null;
+    this.combatActionManager?.ensureTankUltimateZoneVisual(radius);
   }
 
   private updateTankUltimateZoneVisual(deltaTime: number): void {
-    if (!this.tankUltimateZoneMesh || !this.tankUltimateZoneMaterial) return;
-
-    const center = this.playerController.getPosition();
-    this.tankUltimateZoneMesh.position.x = center.x;
-    this.tankUltimateZoneMesh.position.z = center.z;
-
-    this.tankUltimateZoneTime += deltaTime;
-    const pulse = 1 + (0.08 * Math.sin(this.tankUltimateZoneTime * 10));
-    this.tankUltimateZoneMesh.scaling.x = pulse;
-    this.tankUltimateZoneMesh.scaling.y = pulse;
-    this.tankUltimateZoneMesh.scaling.z = 1;
-    this.tankUltimateZoneMaterial.alpha = 0.2 + (0.08 * (0.5 + 0.5 * Math.sin(this.tankUltimateZoneTime * 12)));
-
-    if (this.tankUltimateVortexParticles) {
-      this.tankUltimateVortexParticles.emitter = center.add(new Vector3(0, 0.1, 0));
-    }
+    this.combatActionManager?.updateTankUltimateZoneVisual(deltaTime);
   }
 
   private disposeTankUltimateZoneVisual(): void {
-    this.disposeTankUltimateVortexParticles();
-    if (this.tankUltimateZoneMesh) {
-      this.tankUltimateZoneMesh.dispose();
-      this.tankUltimateZoneMesh = null;
-    }
-    if (this.tankUltimateZoneMaterial) {
-      this.tankUltimateZoneMaterial.dispose();
-      this.tankUltimateZoneMaterial = null;
-    }
-    this.tankUltimateZoneTime = 0;
-    this.tankUltimateVortexRadius = 0;
-  }
-
-  private resolveTankUltimate(
-    ultimate: {
-      position: Vector3;
-      radius: number;
-      damage: number;
-      stunDuration: number;
-      knockbackStrength: number;
-      tickInterval: number;
-      duration: number;
-    },
-    enemies: any[]
-  ): void {
-    this.playerController.setTankUltimateActive(true);
-    this.tankUltimateState = {
-      remaining: ultimate.duration,
-      radius: ultimate.radius,
-      damage: ultimate.damage,
-      stunDuration: ultimate.stunDuration,
-      knockbackStrength: ultimate.knockbackStrength,
-      tickInterval: ultimate.tickInterval,
-      tickTimer: 0,
-    };
-    this.ensureTankUltimateZoneVisual(ultimate.radius);
-
-    // Immediate first hit when ultimate starts.
-    this.applyTankUltimatePulse(enemies);
-  }
-
-  private applyTankUltimatePulse(enemies: any[]): void {
-    if (!this.tankUltimateState) return;
-
-    const center = this.playerController.getPosition();
-    for (const enemy of enemies) {
-      const enemyPos = enemy.getPosition();
-      const toEnemy = enemyPos.subtract(center);
-      toEnemy.y = 0;
-      const distance = toEnemy.length();
-      if (distance > this.tankUltimateState.radius) continue;
-
-      enemy.takeDamage(this.tankUltimateState.damage);
-      enemy.applyStun?.(this.tankUltimateState.stunDuration);
-
-      const outward = toEnemy.lengthSquared() > 0.0001
-        ? toEnemy.normalize()
-        : new Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
-      enemy.applyExternalKnockback(outward.scale(this.tankUltimateState.knockbackStrength));
-    }
+    this.combatActionManager?.disposeTankUltimateZoneVisual();
   }
 
   private resolveRogueStrike(
@@ -1838,32 +1004,9 @@ export class GameManager {
       damage: number;
       knockback: number;
     },
-    enemies: any[]
+    enemies: EnemyController[]
   ): void {
-    const dir = strike.direction.lengthSquared() > 0.0001 ? strike.direction.normalize() : new Vector3(1, 0, 0);
-    const maxAngle = (strike.coneAngleDeg * Math.PI) / 180;
-    let bestEnemy: any = null;
-    let bestDistance = Number.POSITIVE_INFINITY;
-
-    for (const enemy of enemies) {
-      const toEnemy = enemy.getPosition().subtract(strike.origin);
-      toEnemy.y = 0;
-      const distance = toEnemy.length();
-      if (distance <= 0.0001 || distance > strike.range) continue;
-      const angle = Math.acos(Math.max(-1, Math.min(1, Vector3.Dot(dir, toEnemy.normalize()))));
-      if (angle > maxAngle * 0.5) continue;
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestEnemy = enemy;
-      }
-    }
-
-    if (!bestEnemy) return;
-    bestEnemy.takeDamage(strike.damage);
-    const forceDir = bestEnemy.getPosition().subtract(strike.origin);
-    if (forceDir.lengthSquared() > 0.0001) {
-      bestEnemy.applyExternalKnockback(forceDir.normalize().scale(strike.knockback));
-    }
+    this.combatActionManager?.resolveRogueStrike(strike, enemies);
   }
 
   private resolveRogueDashAttack(
@@ -1874,121 +1017,9 @@ export class GameManager {
       damage: number;
       knockback: number;
     },
-    enemies: any[]
+    enemies: EnemyController[]
   ): void {
-    const segment = dash.to.subtract(dash.from);
-    const segmentLenSq = Math.max(0.0001, segment.lengthSquared());
-
-    for (const enemy of enemies) {
-      const enemyPos = enemy.getPosition();
-      const toEnemy = enemyPos.subtract(dash.from);
-      const t = Math.max(0, Math.min(1, Vector3.Dot(toEnemy, segment) / segmentLenSq));
-      const closestPoint = dash.from.add(segment.scale(t));
-      const distanceToPath = Vector3.Distance(enemyPos, closestPoint);
-      if (distanceToPath > dash.radius) continue;
-
-      enemy.takeDamage(dash.damage);
-      const forceDir = enemyPos.subtract(closestPoint);
-      if (forceDir.lengthSquared() > 0.0001) {
-        enemy.applyExternalKnockback(forceDir.normalize().scale(dash.knockback));
-      }
-    }
-  }
-
-  private startRogueUltimate(payload: {
-    duration: number;
-    zoneRadius: number;
-    hitDamage: number;
-    teleportInterval: number;
-    teleportOffset: number;
-  }): void {
-    this.playerController.setRogueUltimateActive(true);
-    this.rogueUltimateState = {
-      remaining: payload.duration,
-      zoneRadius: payload.zoneRadius,
-      hitDamage: payload.hitDamage,
-      teleportInterval: payload.teleportInterval,
-      teleportOffset: payload.teleportOffset,
-      timer: 0,
-      targetedEnemyIds: new Set<string>(),
-    };
-  }
-
-  private updateRogueUltimate(deltaTime: number, enemies: any[]): void {
-    if (!this.rogueUltimateState) return;
-    if (this.playerController.getClassId() !== 'rogue') {
-      this.playerController.setRogueUltimateActive(false);
-      this.rogueUltimateState = null;
-      return;
-    }
-
-    this.rogueUltimateState.remaining -= deltaTime;
-    this.rogueUltimateState.timer -= deltaTime;
-    if (this.rogueUltimateState.remaining <= 0) {
-      this.playerController.setRogueUltimateActive(false);
-      this.rogueUltimateState = null;
-      return;
-    }
-    if (this.rogueUltimateState.timer > 0) return;
-
-    const playerPos = this.playerController.getPosition();
-    const inZone = enemies.filter((enemy) => Vector3.Distance(enemy.getPosition(), playerPos) <= this.rogueUltimateState!.zoneRadius);
-    if (inZone.length === 0) return;
-
-    const untargeted = inZone.filter((enemy) => !this.rogueUltimateState!.targetedEnemyIds.has(enemy.getId()));
-    const candidates = untargeted.length > 0 ? untargeted : inZone;
-    if (untargeted.length === 0) {
-      this.rogueUltimateState.targetedEnemyIds.clear();
-    }
-
-    let target = candidates[0];
-    let bestDistance = Vector3.Distance(playerPos, target.getPosition());
-    for (let i = 1; i < candidates.length; i++) {
-      const candidate = candidates[i];
-      const distance = Vector3.Distance(playerPos, candidate.getPosition());
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        target = candidate;
-      }
-    }
-
-    const targetPos = target.getPosition();
-    const toTarget = targetPos.subtract(playerPos);
-    toTarget.y = 0;
-    const teleportDir = toTarget.lengthSquared() > 0.0001 ? toTarget.normalize() : new Vector3(1, 0, 0);
-    const newPlayerPos = targetPos.subtract(teleportDir.scale(this.rogueUltimateState.teleportOffset));
-    newPlayerPos.y = 1.0;
-    this.playerController.setPosition(newPlayerPos);
-
-    target.takeDamage(this.playerController.computeRogueHitDamage(this.rogueUltimateState.hitDamage));
-    this.rogueUltimateState.targetedEnemyIds.add(target.getId());
-    this.rogueUltimateState.timer = this.rogueUltimateState.teleportInterval;
-  }
-
-  private updateTankUltimate(deltaTime: number, enemies: any[]): void {
-    if (!this.tankUltimateState) return;
-    if (this.playerController.getClassId() !== 'firewall') {
-      this.playerController.setTankUltimateActive(false);
-      this.tankUltimateState = null;
-      this.disposeTankUltimateZoneVisual();
-      return;
-    }
-
-    this.updateTankUltimateZoneVisual(deltaTime);
-
-    this.tankUltimateState.tickTimer -= deltaTime;
-    if (this.tankUltimateState.tickTimer <= 0) {
-      this.applyTankUltimatePulse(enemies);
-      this.tankUltimateState.tickTimer = this.tankUltimateState.tickInterval;
-    }
-
-    this.tankUltimateState.remaining -= deltaTime;
-    if (this.tankUltimateState.remaining <= 0) {
-      this.playerController.setTankUltimateActive(false);
-      this.playerController.animationController.playUltimateEnd();
-      this.tankUltimateState = null;
-      this.disposeTankUltimateZoneVisual();
-    }
+    this.combatActionManager?.resolveRogueDashAttack(dash, enemies);
   }
 
   private async startNewGame(): Promise<void> {
@@ -2005,31 +1036,14 @@ export class GameManager {
       this.setLoadingOverlay(true, 'PRELOADING DUNGEON CELLS...', '78%');
       await this.waitForNextPaint(1);
 
-      this.currentRoomIndex = 0;
-      this.roomCleared = false;
-      this.rogueUltimateState = null;
-      this.tankUltimateState = null;
-      this.disposeTankUltimateZoneVisual();
-      this.bonusPool.resetRun();
-      this.currentBonusChoices = [];
-      this.currency = 0;
-      this.currencyCarry = 0;
-      this.roomElapsedSeconds = 0;
-      this.resetPlayerVoidFallState();
-      this.consumableDamageStims = 0;
-      this.consumableShieldPatches = 0;
-      this.playerController.setRogueUltimateActive(false);
-      this.playerController.setTankUltimateActive(false);
-      this.hudManager.hideOverlays();
-      this.hudManager.updateCurrency(this.currency);
-      this.hudManager.updateItemStatus(this.getConsumableStatusLabel());
-      this.gameState = 'transition';
+      this.prepareRunStateForStart();
+      this.transitionGameState('transition');
       this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, false);
       this.loadRoomByIndex(this.currentRoomIndex);
       this.setLoadingOverlay(true, 'HANDSHAKE WITH DAEMON CORE...', '100%');
       await this.waitForNextPaint(1);
       await this.waitForMs(1000);
-      this.gameState = 'playing';
+      this.transitionGameState('playing');
       this.setLoadingOverlay(false);
     } finally {
       this.setLoadingOverlay(false);
@@ -2037,31 +1051,27 @@ export class GameManager {
     }
   }
 
-  private loadNextRoom(): void {
-    if (!this.gameplayInitialized) return;
-    const nextIndex = (this.currentRoomIndex + 1) % this.roomOrder.length;
-    this.roomCleared = false;
-    this.hudManager.hideOverlays();
-    this.startRoomTransition(nextIndex);
-  }
-
-  private loadIsolatedRoom(roomId: string): void {
-    if (!this.gameplayInitialized) return;
-    this.cameraMove = null;
-    this.roomOrder = [roomId];
+  private prepareRunStateForStart(): void {
     this.currentRoomIndex = 0;
     this.roomCleared = false;
+    this.ultimateSystemManager.reset();
+    this.bonusSystemManager.resetRun();
+    this.runEconomy.resetRun();
     this.roomElapsedSeconds = 0;
     this.resetPlayerVoidFallState();
-    this.rogueUltimateState = null;
-    this.tankUltimateState = null;
-    this.disposeTankUltimateZoneVisual();
     this.playerController.setRogueUltimateActive(false);
     this.playerController.setTankUltimateActive(false);
     this.hudManager.hideOverlays();
-    this.gameState = 'playing';
-    this.preloadRoomsAround(0, 0, true);
-    this.loadRoomByIndex(0);
+    this.hudManager.updateCurrency(this.runEconomy.getCurrency());
+    this.hudManager.updateItemStatus(this.getConsumableStatusLabel());
+  }
+
+  private loadNextRoom(): void {
+    this.roomTransitionManager.loadNextRoom();
+  }
+
+  private loadIsolatedRoom(roomId: string): void {
+    this.roomTransitionManager.loadIsolatedRoom(roomId);
   }
 
   private loadRoomByIndex(index: number): void {
@@ -2073,9 +1083,7 @@ export class GameManager {
     this.roomCleared = false;
     this.roomElapsedSeconds = 0;
     this.resetPlayerVoidFallState();
-    this.rogueUltimateState = null;
-    this.tankUltimateState = null;
-    this.disposeTankUltimateZoneVisual();
+    this.ultimateSystemManager.reset();
     this.playerController.setRogueUltimateActive(false);
     this.playerController.setTankUltimateActive(false);
 
@@ -2083,7 +1091,7 @@ export class GameManager {
     if (roomBounds) {
       const centerX = (roomBounds.minX + roomBounds.maxX) / 2;
       const centerZ = (roomBounds.minZ + roomBounds.maxZ) / 2;
-      const camera = (this.scene as any).mainCamera ?? this.scene.activeCamera;
+      const camera = (this.scene as SceneWithMainCamera).mainCamera ?? this.scene.activeCamera;
       if (camera && camera instanceof ArcRotateCamera) {
         const newTarget = new Vector3(centerX, 0.5, centerZ);
         camera.setTarget(newTarget);
@@ -2114,7 +1122,7 @@ export class GameManager {
     }
 
     const currentRoomConfig = this.roomManager.getCurrentRoom();
-    this.eventBus.emit(GameEvents.ROOM_ENTERED, {
+    this.eventCoordinator.emitRoomEntered({
       roomId,
       roomName: currentRoomConfig?.name ?? roomId,
       roomType: currentRoomConfig?.roomType ?? 'normal',
@@ -2125,136 +1133,28 @@ export class GameManager {
     preloadIndex: number,
     activeIndex: number,
     forceRebuild: boolean = false,
-    options?: {
-      backwardRange?: number;
-      forwardRange?: number;
-      allowUnload?: boolean;
-    }
+    options?: RoomPreloadOptions
   ): void {
-    if (!this.gameplayInitialized) return;
-    const backwardRange = Math.max(0, options?.backwardRange ?? 1);
-    const forwardRange = Math.max(0, options?.forwardRange ?? 2);
-    const allowUnload = options?.allowUnload ?? true;
+    this.roomStreamingManager?.preloadRoomsAround(preloadIndex, activeIndex, forceRebuild, options);
+  }
 
-    if (forceRebuild) {
-      this.roomManager.clearAllRooms();
-      if (this.tilesEnabled) {
-        this.tileFloorManager.clearAllRoomInstances();
-      }
-    }
+  private focusCameraOnRoomBounds(roomKey: string): void {
+    const bounds = this.roomManager.getRoomBoundsForInstance(roomKey);
+    if (!bounds) return;
 
-    const indices: number[] = [];
-    for (let idx = preloadIndex - backwardRange; idx <= preloadIndex + forwardRange; idx++) {
-      indices.push(idx);
-    }
+    const centerX = (bounds.minX + bounds.maxX) / 2;
+    const centerZ = (bounds.minZ + bounds.maxZ) / 2;
+    const camera = (this.scene as SceneWithMainCamera).mainCamera ?? this.scene.activeCamera;
+    if (!camera || !(camera instanceof ArcRotateCamera)) return;
 
-    const desiredKeys = new Set<string>();
-    for (const idx of indices) {
-      if (idx < 0 || idx >= this.roomOrder.length) continue;
-      const roomId = this.roomOrder[idx];
-      const origin = new Vector3(0, 0, idx * this.roomSpacing);
-      const instanceKey = `${roomId}::${idx}`;
-      desiredKeys.add(instanceKey);
-      if (!this.roomManager.hasRoomInstance(instanceKey)) {
-        this.roomManager.setRenderProfile(this.getRenderProfileForRoom(roomId));
-        this.roomManager.loadRoomInstance(roomId, instanceKey, origin);
-      }
-      if (this.tilesEnabled) {
-        this.preloadTileFloorInstance(roomId, instanceKey, origin);
-      }
-    }
-
-    if (allowUnload) {
-      for (const loadedKey of this.roomManager.getLoadedRoomKeys()) {
-        if (!desiredKeys.has(loadedKey)) {
-          this.roomManager.unloadRoomInstance(loadedKey);
-        }
-      }
-      if (this.tilesEnabled) {
-        for (const loadedFloorKey of this.tileFloorManager.getLoadedRoomKeys()) {
-          if (!desiredKeys.has(loadedFloorKey)) {
-            this.tileFloorManager.unloadRoomFloorInstance(loadedFloorKey);
-          }
-        }
-      }
-    }
-    const currentRoomId = this.roomOrder[activeIndex];
-    const currentKey = `${currentRoomId}::${activeIndex}`;
-    this.roomManager.setCurrentRoom(currentKey);
-    if (this.tilesEnabled) {
-      this.tileFloorManager.setCurrentRoomInstance(currentKey);
-    }
-
-    const bounds = this.roomManager.getRoomBoundsForInstance(currentKey);
-    if (bounds) {
-      const centerX = (bounds.minX + bounds.maxX) / 2;
-      const centerZ = (bounds.minZ + bounds.maxZ) / 2;
-      const camera = (this.scene as any).mainCamera ?? this.scene.activeCamera;
-      if (camera && camera instanceof ArcRotateCamera) {
-        const newTarget = new Vector3(centerX, 0.5, centerZ);
-        camera.setTarget(newTarget);
-        camera.alpha = this.cameraAlpha;
-        camera.beta = this.cameraBeta;
-        camera.radius = this.cameraRadius;
-      }
-    }
+    camera.setTarget(new Vector3(centerX, 0.5, centerZ));
+    camera.alpha = this.cameraAlpha;
+    camera.beta = this.cameraBeta;
+    camera.radius = this.cameraRadius;
   }
 
   private startRoomTransition(nextIndex: number): void {
-    if (!this.gameplayInitialized) return;
-    this.hudManager.hideOverlays();
-    this.gameState = 'transition';
-
-    this.preloadRoomsAround(nextIndex, this.currentRoomIndex, false, {
-      backwardRange: 2,
-      forwardRange: 2,
-      allowUnload: false,
-    });
-
-    const nextRoomId = this.roomOrder[nextIndex];
-    const nextKey = `${nextRoomId}::${nextIndex}`;
-    const roomBounds = this.roomManager.getRoomBoundsForInstance(nextKey);
-    if (!roomBounds) {
-      this.currentRoomIndex = nextIndex;
-      this.loadRoomByIndex(nextIndex);
-      this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, false, {
-        backwardRange: 1,
-        forwardRange: 2,
-        allowUnload: true,
-      });
-      this.gameState = 'playing';
-      return;
-    }
-
-    const target = new Vector3(
-      (roomBounds.minX + roomBounds.maxX) / 2,
-      0.5,
-      (roomBounds.minZ + roomBounds.maxZ) / 2
-    );
-
-    const camera = (this.scene as any).mainCamera ?? this.scene.activeCamera;
-    if (camera && camera instanceof ArcRotateCamera) {
-      this.cameraMove = {
-        from: camera.getTarget().clone(),
-        to: target,
-        t: 0,
-        duration: 0.6,
-        nextIndex,
-      };
-    } else {
-      this.currentRoomIndex = nextIndex;
-      this.loadRoomByIndex(nextIndex);
-      this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, false, {
-        backwardRange: 1,
-        forwardRange: 2,
-        allowUnload: true,
-      });
-      this.gameState = 'playing';
-    }
-  }
-
-  private getBonusChoices(): BonusChoice[] {
-    return this.bonusPool.rollChoices(this.selectedClassId, this.bonusPool.getOfferCount());
+    this.roomTransitionManager.startRoomTransition(nextIndex);
   }
 
   private applyBonus(bonusId: string): void {
@@ -2284,82 +1184,40 @@ export class GameManager {
   }
 
   private computeEnemyKillReward(enemyType?: string): number {
-    const enemies = this.configLoader.getEnemies() ?? {};
-    const enemyConfig = typeof enemyType === 'string' ? enemies[enemyType] : null;
-    const hp = Number(enemyConfig?.baseStats?.hp ?? 40);
-    const damage = Number(enemyConfig?.baseStats?.damage ?? 8);
-    const speed = Number(enemyConfig?.baseStats?.speed ?? 2.5);
-    const cooldown = Number(enemyConfig?.baseStats?.attackCooldown ?? 1.0);
-
-    const threatScore = (hp * 0.05) + (damage * 0.18) + (speed * 1.2) + (1 / Math.max(0.2, cooldown));
-    const baseReward = Math.max(1, Math.round(2 + threatScore));
-
-    const decayMultiplier = Math.max(0.35, 1.25 - (this.roomElapsedSeconds * 0.015));
-    const economyMultiplier = this.bonusPool.getCurrencyMultiplier();
-    return Math.max(1, Math.floor(baseReward * decayMultiplier * economyMultiplier));
+    return this.economyFlowManager?.computeEnemyKillReward(enemyType, this.roomElapsedSeconds) ?? 1;
   }
 
   private addCurrency(amount: number): void {
-    if (!Number.isFinite(amount) || amount <= 0) return;
-    this.currency += Math.floor(amount);
-    this.hudManager.updateCurrency(this.currency);
+    this.economyFlowManager?.addCurrency(amount);
   }
 
   private addCurrencyFraction(amount: number): void {
-    if (!Number.isFinite(amount) || amount <= 0) return;
-    this.currencyCarry += amount;
-    const gained = Math.floor(this.currencyCarry);
-    if (gained <= 0) return;
-    this.currencyCarry -= gained;
-    this.addCurrency(gained);
+    this.economyFlowManager?.addCurrencyFraction(amount);
   }
 
   private applyPassiveIncome(deltaTime: number): void {
-    const passiveIncome = this.bonusPool.getPassiveIncomePerSecond();
-    if (passiveIncome <= 0) return;
-    this.addCurrencyFraction(passiveIncome * deltaTime);
+    this.economyFlowManager?.applyPassiveIncome(deltaTime);
   }
 
   private trySpendCurrency(cost: number): boolean {
-    const safeCost = Math.max(0, Math.floor(cost));
-    if (this.currency < safeCost) return false;
-    this.currency -= safeCost;
-    this.hudManager.updateCurrency(this.currency);
-    return true;
-  }
-
-  private tryRerollBonusChoices(cost: number): void {
-    const safeCost = Math.max(0, Math.floor(cost));
-    if (!this.trySpendCurrency(safeCost)) {
-      this.hudManager.showBonusChoices(this.currentBonusChoices, this.currency, this.bonusRerollCost);
-      return;
-    }
-    this.currentBonusChoices = this.getBonusChoices();
-    this.hudManager.showBonusChoices(this.currentBonusChoices, this.currency, this.bonusRerollCost);
+    return this.economyFlowManager?.trySpendCurrency(cost) ?? false;
   }
 
   private updateConsumablesFromInput(): void {
-    if (this.inputManager.isItemPressedThisFrame(1) && this.consumableDamageStims > 0) {
-      this.consumableDamageStims -= 1;
-      this.playerController.activateDamageBoost(1.7, 5.0);
-    }
-    if (this.inputManager.isItemPressedThisFrame(2) && this.consumableShieldPatches > 0) {
-      this.consumableShieldPatches -= 1;
-      this.playerController.activateDamageReduction(0.5, 5.0);
-    }
+    this.economyFlowManager?.updateConsumablesFromInput();
   }
 
   private getConsumableStatusLabel(): string {
-    const damage = this.playerController.getDamageBoostState();
-    const shield = this.playerController.getDamageReductionState();
+    if (this.economyFlowManager) {
+      return this.economyFlowManager.getConsumableStatusLabel();
+    }
 
-    const charges = `DMGx${this.consumableDamageStims} SHDx${this.consumableShieldPatches}`;
-    const active: string[] = [];
-    if (damage.active) active.push(`DMG ${damage.remaining.toFixed(1)}s`);
-    if (shield.active) active.push(`SHD ${shield.remaining.toFixed(1)}s`);
-
-    if (active.length === 0) return charges;
-    return `${charges} | ${active.join(' | ')}`;
+    const damage = this.playerController?.getDamageBoostState?.();
+    const shield = this.playerController?.getDamageReductionState?.();
+    return this.runEconomy.getConsumableStatusLabel(
+      { active: !!damage?.active, remaining: damage?.remaining ?? 0 },
+      { active: !!shield?.active, remaining: shield?.remaining ?? 0 },
+    );
   }
 
   getScene(): Scene {
@@ -2387,107 +1245,15 @@ export class GameManager {
   }
 
   private resetPlayerVoidFallState(): void {
-    this.playerVoidFallState = null;
-    this.playerVoidFxTimer = 0;
-    if (this.playerController) {
-      this.playerController.setExternalVerticalOffset(0);
-      this.playerController.setRenderVisibility(1);
-    }
+    this.playerVoidRecoveryManager?.reset();
   }
 
   private detectAndStartPlayerVoidFall(): void {
-    if (this.playerVoidFallState) return;
-    const pos = this.playerController.getPosition();
-    const tileType = this.roomManager.getTileTypeAtWorld(pos.x, pos.z);
-    if (tileType !== 'void') return;
-
-    const currentRoomId = this.roomOrder[this.currentRoomIndex] ?? this.roomManager.getCurrentRoom()?.id;
-    const respawn = this.roomManager.getPlayerSpawnPoint(currentRoomId) ?? pos.clone();
-
-    this.playerVoidFallState = {
-      timer: this.playerVoidFallDuration,
-      duration: this.playerVoidFallDuration,
-      respawn,
-    };
-    this.playerVoidFxTimer = 0;
-    this.spawnPlayerVoidBurst(pos, 10);
+    this.playerVoidRecoveryManager?.detectAndStart(this.roomOrder, this.currentRoomIndex);
   }
 
   private updatePlayerVoidFall(deltaTime: number): boolean {
-    if (!this.playerVoidFallState) return false;
-
-    this.playerVoidFallState.timer = Math.max(0, this.playerVoidFallState.timer - deltaTime);
-    const progress = 1 - (this.playerVoidFallState.timer / Math.max(0.0001, this.playerVoidFallState.duration));
-    const eased = Math.pow(progress, 2.45);
-    this.playerController.setExternalVerticalOffset(-7.2 * eased);
-    this.playerController.setRenderVisibility(Math.max(0.02, 1 - eased * 0.98));
-
-    this.playerVoidFxTimer -= deltaTime;
-    if (this.playerVoidFxTimer <= 0) {
-      this.playerVoidFxTimer = 0.05;
-      const p = this.playerController.getPosition();
-      this.spawnPlayerVoidBurst(p.add(new Vector3(0, -3.4 * eased, 0)), 5);
-    }
-
-    if (this.playerVoidFallState.timer <= 0) {
-      this.playerController.setExternalVerticalOffset(0);
-      this.playerController.setRenderVisibility(1);
-      this.eventBus.emit(GameEvents.PLAYER_DIED, { reason: 'void_fall' });
-      this.playerVoidFallState = null;
-      this.playerVoidFxTimer = 0;
-    }
-
-    return true;
-  }
-
-  private spawnPlayerVoidBurst(origin: Vector3, count: number): void {
-    const particleCount = Math.max(1, Math.floor(count));
-    for (let i = 0; i < particleCount; i++) {
-      const shard = MeshBuilder.CreateBox(`void_player_shard_${Date.now()}_${i}`, {
-        size: 0.08 + Math.random() * 0.07,
-      }, this.scene);
-      shard.position = origin.add(new Vector3(
-        (Math.random() - 0.5) * 0.55,
-        Math.random() * 0.5,
-        (Math.random() - 0.5) * 0.55,
-      ));
-
-      const mat = new StandardMaterial(`void_player_shard_mat_${Date.now()}_${i}`, this.scene);
-      mat.diffuseColor = new Color3(0.1, 0.92, 0.7);
-      mat.emissiveColor = new Color3(0.05, 0.62, 0.42);
-      mat.alpha = 0.9;
-      shard.material = mat;
-
-      const velocity = new Vector3(
-        (Math.random() - 0.5) * 2.4,
-        0.5 + Math.random() * 1.2,
-        (Math.random() - 0.5) * 2.4,
-      );
-      const gravity = 6.8;
-      const bornAt = Date.now();
-      const ttlMs = 260 + Math.random() * 200;
-
-      const tick = window.setInterval(() => {
-        if (shard.isDisposed()) {
-          window.clearInterval(tick);
-          return;
-        }
-
-        const elapsed = Date.now() - bornAt;
-        const t = Math.min(1, elapsed / ttlMs);
-        const dt = 1 / 60;
-        velocity.y -= gravity * dt;
-        shard.position.addInPlace(velocity.scale(dt));
-        shard.scaling.scaleInPlace(0.95);
-        mat.alpha = Math.max(0, 0.9 * (1 - t));
-
-        if (t >= 1) {
-          window.clearInterval(tick);
-          shard.dispose();
-          mat.dispose();
-        }
-      }, 16);
-    }
+    return this.playerVoidRecoveryManager?.update(deltaTime) ?? false;
   }
 
   private async loadTilesForRoom(roomId: string): Promise<void> {
@@ -2513,10 +1279,10 @@ export class GameManager {
     this.tileFloorManager.loadRoomFloorInstance(instanceKey, layout, origin, profile);
   }
 
-  private buildRoomLayoutForTiles(room: any): RoomLayout | null {
+  private buildRoomLayoutForTiles(room: LoadedRoomConfig): RoomLayout | null {
     if (!room?.layout || !Array.isArray(room.layout)) return null;
 
-    const layoutWidth = room.layout.reduce((max: number, row: any) => {
+    const layoutWidth = room.layout.reduce((max: number, row: string) => {
       const rowData = typeof row === 'string' ? row : String(row ?? '');
       return Math.max(max, rowData.length);
     }, 0);
@@ -2524,25 +1290,26 @@ export class GameManager {
     const layoutHeight = room.layout.length;
     const shouldTreatVoidAsWall = layoutWidth <= 16 && layoutHeight <= 12;
 
-    const normalizedLayout = room.layout.map((row: any) => {
+    const normalizedLayout = room.layout.map((row: string) => {
       const rowData = typeof row === 'string' ? row : String(row ?? '');
       const padded = rowData.padEnd(layoutWidth, '#').replace(/O/g, '#');
       return shouldTreatVoidAsWall ? padded.replace(/V/g, '#') : padded;
     });
 
     const obstacles = Array.isArray(room.obstacles)
-      ? room.obstacles.flatMap((ob: any) => {
+      ? room.obstacles.flatMap((ob: { x: number; y?: number; z?: number; width: number; height: number; type: string }) => {
           if (ob.type === 'hazard') return [];
           const obstacleZ = Number.isFinite(ob?.y)
             ? ob.y
             : (Number.isFinite(ob?.z) ? ob.z : undefined);
           if (!Number.isFinite(ob?.x) || !Number.isFinite(obstacleZ)) return [];
+          const obstacleZValue = Number(obstacleZ);
           const width = Math.max(1, ob.width || 1);
           const height = Math.max(1, ob.height || 1);
           const tiles = [] as Array<{ x: number; z: number; type: string }>;
           for (let dx = 0; dx < width; dx++) {
             for (let dz = 0; dz < height; dz++) {
-              tiles.push({ x: ob.x + dx, z: obstacleZ + dz, type: 'wall' });
+              tiles.push({ x: ob.x + dx, z: obstacleZValue + dz, type: 'wall' });
             }
           }
           return tiles;
@@ -2555,10 +1322,10 @@ export class GameManager {
     };
   }
 
-  private shouldIncludeInRunOrder(room: any): boolean {
+  private shouldIncludeInRunOrder(room: LoadedRoomConfig): boolean {
     if (!room?.id || !Array.isArray(room.layout)) return false;
 
-    const layoutWidth = room.layout.reduce((max: number, row: any) => {
+    const layoutWidth = room.layout.reduce((max: number, row: string) => {
       const rowData = typeof row === 'string' ? row : String(row ?? '');
       return Math.max(max, rowData.length);
     }, 0);
@@ -2714,7 +1481,7 @@ export class GameManager {
     this.proceduralWarmCacheReady = false;
     if (!this.gameplayInitialized || this.textureRenderMode !== 'proceduralRelief') return;
 
-    const rooms = this.configLoader.getRooms();
+    const rooms = this.configLoader.getRoomsConfig();
     if (Array.isArray(rooms)) {
       void this.prewarmAllProceduralLayoutsAsync(false);
     }
@@ -2806,7 +1573,7 @@ export class GameManager {
     this.roomCleared = true;
     this.roomElapsedSeconds = 0;
     this.hudManager.hideOverlays();
-    this.gameState = 'playing';
+    this.transitionGameState('playing');
 
     this.roomManager.clearAllRooms();
     this.roomManager.setFloorRenderingEnabled(!this.tilesEnabled);
@@ -2829,7 +1596,7 @@ export class GameManager {
       this.loadTilesForLayout(layout, origin);
     }
 
-    this.eventBus.emit(GameEvents.ROOM_ENTERED, {
+    this.eventCoordinator.emitRoomEntered({
       roomId,
       roomName: roomConfig.name,
       roomType: roomConfig.roomType ?? 'normal',
@@ -2877,12 +1644,14 @@ export class GameManager {
 
     if (!this.gameplayInitialized) {
       if (!enabled) {
+        this.roomStreamingManager?.clearDeferredTilePreloadQueue();
         this.tileFloorManager.clearAllRoomInstances();
       }
       return;
     }
 
     if (!enabled) {
+      this.roomStreamingManager?.clearDeferredTilePreloadQueue();
       this.tileFloorManager.clearAllRoomInstances();
     }
 
@@ -2909,7 +1678,7 @@ export class GameManager {
 
   public setCameraAlpha(alpha: number): void {
     this.cameraAlpha = alpha;
-    const camera = (this.scene as any).mainCamera as ArcRotateCamera;
+    const camera = (this.scene as SceneWithMainCamera).mainCamera as ArcRotateCamera;
     if (camera) {
       camera.alpha = alpha;
     }
@@ -2917,7 +1686,7 @@ export class GameManager {
 
   public setCameraBeta(beta: number): void {
     this.cameraBeta = beta;
-    const camera = (this.scene as any).mainCamera as ArcRotateCamera;
+    const camera = (this.scene as SceneWithMainCamera).mainCamera as ArcRotateCamera;
     if (camera) {
       camera.beta = beta;
     }
@@ -2925,7 +1694,7 @@ export class GameManager {
 
   public setCameraRadius(radius: number): void {
     this.cameraRadius = radius;
-    const camera = (this.scene as any).mainCamera as ArcRotateCamera;
+    const camera = (this.scene as SceneWithMainCamera).mainCamera as ArcRotateCamera;
     if (camera) {
       camera.radius = radius;
     }

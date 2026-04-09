@@ -4,8 +4,12 @@
 
 import { Entity } from '../../entities/Entity';
 
+export interface ModifierPayload {
+  [key: string]: unknown;
+}
+
 export interface IModifier {
-  modify(data: any): any;
+  modify(data: ModifierPayload): ModifierPayload;
   onHit?(target: Entity): void;
 }
 
@@ -16,7 +20,7 @@ export class StunModifier implements IModifier {
     this.duration = duration;
   }
 
-  modify(data: any): any {
+  modify(data: ModifierPayload): ModifierPayload {
     return data;
   }
 
@@ -34,7 +38,7 @@ export class DotModifier implements IModifier {
     this.duration = duration;
   }
 
-  modify(data: any): any {
+  modify(data: ModifierPayload): ModifierPayload {
     return data;
   }
 
@@ -50,7 +54,7 @@ export class PierceModifier implements IModifier {
     this.pierceCount = pierceCount;
   }
 
-  modify(data: any): any {
+  modify(data: ModifierPayload): ModifierPayload {
     // Modify projectile to pierce through enemies
     return { ...data, pierce: this.pierceCount };
   }
@@ -65,7 +69,7 @@ export class BounceModifier implements IModifier {
     this.bounceRange = bounceRange;
   }
 
-  modify(data: any): any {
+  modify(data: ModifierPayload): ModifierPayload {
     // Modify projectile to bounce to nearby enemies
     return { ...data, bounce: this.bounceCount, bounceRange: this.bounceRange };
   }

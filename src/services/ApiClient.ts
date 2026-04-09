@@ -21,7 +21,7 @@ export class ApiClient {
   private async request<T>(
     endpoint: string,
     method: string = 'GET',
-    body?: any
+    body?: unknown
   ): Promise<T> {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -58,11 +58,11 @@ export class ApiClient {
     return this.request<T>(endpoint, 'GET');
   }
 
-  async post<T>(endpoint: string, body: any): Promise<T> {
+  async post<T>(endpoint: string, body: unknown): Promise<T> {
     return this.request<T>(endpoint, 'POST', body);
   }
 
-  async put<T>(endpoint: string, body: any): Promise<T> {
+  async put<T>(endpoint: string, body: unknown): Promise<T> {
     return this.request<T>(endpoint, 'PUT', body);
   }
 

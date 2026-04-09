@@ -1,11 +1,58 @@
+# Dependencies
 node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.pnpm-debug.log*
+
+# Build outputs
 dist/
+*.tsbuildinfo
+build/
+out/
+
+# Development
 .vscode/
 .idea/
-*.log
-.DS_Store
+*.swp
+*.swo
+*~
+.sublime-project
+.sublime-workspace
+
+# Environment
 .env
 .env.local
+.env.*.local
+
+# OS & Logs
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# IDE Temp Files
+.eslintcache
+.prettierignore
+
+# Cache & Temp
+.npm-cache/
+.yarn/cache/
+.next/
+.nuxt/
+.cache/
+.turbo/
+.vite/
+
+# Archive & Backups
 archive/
 archive_docs/
 archive-local/
+*.bak
+*.backup
+
+# Runtime & Temporary
+.tmp/
+.temp/
+dist-**/

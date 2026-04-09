@@ -2,69 +2,15 @@
  * ConfigLoader - Loads and manages game configurations
  */
 
-export interface PlayerConfig {
-  health: { max: number; current?: number };
-  movement: { speed: number };
-  attack: { damage: number; fireRate: number; range: number; speed: number };
-  passive?: { name: string; focusFireBonus: number; focusFireAccumulation: number };
-  ultimate?: { name: string; chargeTime: number; radius: number; damage: number; duration: number };
-  [key: string]: any;
-}
-
-export interface EnemyConfig {
-  [key: string]: any;
-}
-
-export interface GameplayConfig {
-  ui: {
-    showEnemyHealthBars: boolean;
-    showDamageNumbers: boolean;
-    showFPS?: boolean;
-  };
-  debug: {
-    enabled: boolean;
-    godMode: boolean;
-    infiniteUltimate: boolean;
-    freezeEnemies: boolean;
-    showGrid?: boolean;
-  };
-  camera?: {
-    alpha: number;
-    beta: number;
-    radius: number;
-    target: [number, number, number];
-  };
-  scaling?: {
-    enabled: boolean;
-    hpPerRoom: number;
-    damagePerRoom: number;
-    speedPerRoom: number;
-  };
-  tankVisuals?: {
-    height: number;
-    lateral: number;
-    depth: number;
-    size: number;
-  };
-  [key: string]: any;
-}
-
-export interface RoomConfig {
-  id: string;
-  name: string;
-  roomType?: string;
-  layout: string[];
-  spawnPoints: { player: [number, number]; enemies: [number, number][] };
-  [key: string]: any;
-}
+import type { EnemiesConfig, GameplayConfig, PlayerConfig, RoomConfig, RoomsConfig } from '../types/config';
 
 export class ConfigLoader {
   private static instance: ConfigLoader;
 
   private playerConfig: PlayerConfig | null = null;
-  private enemiesConfig: any = null;
+  private enemiesConfig: EnemiesConfig | null = null;
   private gameplayConfig: GameplayConfig | null = null;
-  private roomsConfig: any = null;
+  private roomsConfig: RoomsConfig | null = null;
 
   private constructor() {}
 
@@ -77,19 +23,22 @@ export class ConfigLoader {
 
   async loadAllConfigs(): Promise<void> {
     try {
-      this.playerConfig = await this.loadJSON('/src/data/config/player.json');
-      this.enemiesConfig = await this.loadJSON('/src/data/config/enemies.json');
-      this.gameplayConfig = await this.loadJSON('/src/data/config/gameplay.json');
+      this.playerConfig = await this.loadJSON<PlayerConfig>('/src/data/config/player.json');
+      this.enemiesConfig = await this.loadJSON<EnemiesConfig>('/src/data/config/enemies.json');
+      this.gameplayConfig = await this.loadJSON<GameplayConfig>('/src/data/config/gameplay.json');
 
-      const roomModules = import.meta.glob('../data/rooms/room_*.json', { eager: true }) as Record<string, any>;
+      const roomModules = import.meta.glob('../data/rooms/room_*.json', { eager: true }) as Record<
+        string,
+        { default?: RoomConfig } | RoomConfig
+      >;
       const loadedRooms = Object.values(roomModules)
-        .map((module: any) => module?.default ?? module)
-        .filter((room: any) => room && typeof room.id === 'string');
+        .map((module) => (module as { default?: RoomConfig }).default ?? (module as RoomConfig))
+        .filter((room): room is RoomConfig => Boolean(room && typeof room.id === 'string'));
 
       if (loadedRooms.length > 0) {
-        this.roomsConfig = loadedRooms.sort((a: any, b: any) => a.id.localeCompare(b.id));
+        this.roomsConfig = loadedRooms.sort((a, b) => a.id.localeCompare(b.id));
       } else {
-        this.roomsConfig = await this.loadJSON('/src/data/config/rooms.json');
+        this.roomsConfig = await this.loadJSON<RoomsConfig>('/src/data/config/rooms.json');
       }
 
       console.log('All configs loaded successfully');
@@ -99,36 +48,20 @@ export class ConfigLoader {
     }
   }
 
-  async loadConfigs(): Promise<void> {
-    return this.loadAllConfigs();
-  }
-
-  private async loadJSON(path: string): Promise<any> {
+  private async loadJSON<T>(path: string): Promise<T> {
     const response = await fetch(path);
     if (!response.ok) {
       throw new Error(`Failed to load ${path}: ${response.status}`);
     }
-    return response.json();
-  }
-
-  getPlayer(): PlayerConfig | null {
-    return this.playerConfig;
+    return response.json() as Promise<T>;
   }
 
   getPlayerConfig(): PlayerConfig | null {
     return this.playerConfig;
   }
 
-  getEnemies(): any {
+  getEnemiesConfig(): EnemiesConfig | null {
     return this.enemiesConfig;
-  }
-
-  getEnemiesConfig(): any {
-    return this.enemiesConfig;
-  }
-
-  getGameplay(): GameplayConfig | null {
-    return this.gameplayConfig;
   }
 
   getGameplayConfig(): GameplayConfig | null {
@@ -140,18 +73,14 @@ export class ConfigLoader {
       console.error('Rooms config not loaded or not an array:', this.roomsConfig);
       return null;
     }
-    const room = this.roomsConfig.find((r: any) => r.id === roomId);
+    const room = this.roomsConfig.find((r) => r.id === roomId);
     if (!room) {
-      console.error('Room not found:', roomId, 'Available rooms:', this.roomsConfig.map((r: any) => r.id));
+      console.error('Room not found:', roomId, 'Available rooms:', this.roomsConfig.map((r) => r.id));
     }
     return room || null;
   }
 
-  getRooms(): any {
-    return this.roomsConfig;
-  }
-
-  getRoomsConfig(): any {
+  getRoomsConfig(): RoomsConfig | null {
     return this.roomsConfig;
   }
 
@@ -163,9 +92,13 @@ export class ConfigLoader {
     this.gameplayConfig = config;
   }
 
-  updateDebugConfig(key: string, value: boolean): void {
-    if (this.gameplayConfig && this.gameplayConfig.debug) {
-      (this.gameplayConfig.debug as any)[key] = value;
+  updateDebugConfig(key: keyof NonNullable<GameplayConfig['debug']>, value: boolean): void {
+    if (!this.gameplayConfig) return;
+    if (this.gameplayConfig.debug && key in this.gameplayConfig.debug) {
+      this.gameplayConfig.debug[key] = value;
+    }
+    if (this.gameplayConfig.debugConfig && key in this.gameplayConfig.debugConfig) {
+      this.gameplayConfig.debugConfig[key] = value;
     }
   }
 }

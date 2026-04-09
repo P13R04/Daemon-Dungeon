@@ -6,6 +6,11 @@
 import { Scene, Camera, DefaultRenderingPipeline, Color4, Engine, PostProcess, Effect } from '@babylonjs/core';
 import { EventBus, GameEvents } from '../core/EventBus';
 
+interface UiOptionChangedPayload {
+  option?: string;
+  value?: boolean | number;
+}
+
 export interface PostProcessingConfig {
   enabled: boolean;
   pixelScale: number;
@@ -122,7 +127,7 @@ export class PostProcessManager {
   }
 
   private bindEvents(): void {
-    this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data) => {
+    this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data: UiOptionChangedPayload) => {
       if (!data?.option) return;
       switch (data.option) {
         case 'postProcessingEnabled':

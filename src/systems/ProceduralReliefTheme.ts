@@ -13,6 +13,8 @@ import {
   VertexData,
 } from '@babylonjs/core';
 
+type Canvas2DRenderingContext = CanvasRenderingContext2D;
+
 export type ProceduralReliefNeighborMasks = {
   wallMask: number;
   wallDiagMask: number;
@@ -168,7 +170,7 @@ function flipDiagMaskVertical(diagMask: number): number {
     | ((diagMask & SW) ? NW : 0);
 }
 
-function drawCircuit(ctx: any, size: number, mask: number, colorA: string, colorB: string, offset = 0): void {
+function drawCircuit(ctx: Canvas2DRenderingContext, size: number, mask: number, colorA: string, colorB: string, offset = 0): void {
   const edge = Math.floor(size * 0.12) + offset;
   const w = Math.max(2, Math.floor(size * 0.02));
   ctx.save();
@@ -194,7 +196,7 @@ function drawCircuit(ctx: any, size: number, mask: number, colorA: string, color
   ctx.restore();
 }
 
-function drawExteriorCornerTransitions(ctx: any, size: number, cardinalMask: number, diagMask: number, colorA: string, offset = 0): void {
+function drawExteriorCornerTransitions(ctx: Canvas2DRenderingContext, size: number, cardinalMask: number, diagMask: number, colorA: string, offset = 0): void {
   const edge = Math.floor(size * 0.12) + offset;
   const w = Math.max(2, Math.floor(size * 0.018));
   ctx.save();
@@ -220,7 +222,7 @@ function drawExteriorCornerTransitions(ctx: any, size: number, cardinalMask: num
 }
 
 function drawWallBrickHighlights(
-  ctx: any,
+  ctx: Canvas2DRenderingContext,
   size: number,
   hOffset: number,
   axisSeed = 0,
@@ -301,7 +303,7 @@ function drawWallBrickHighlights(
   ctx.restore();
 }
 
-function applyPoisonTransition(ctx: any, size: number, poisonMask: number, poisonDiagMask: number): void {
+function applyPoisonTransition(ctx: Canvas2DRenderingContext, size: number, poisonMask: number, poisonDiagMask: number): void {
   const edge = Math.floor(size * 0.18);
   const side = (bit: number, x: number, y: number, w: number, h: number, horizontal: boolean) => {
     if (!(poisonMask & bit)) return;
@@ -340,7 +342,7 @@ function applyPoisonTransition(ctx: any, size: number, poisonMask: number, poiso
   c(SW, 0, size, S, W);
 }
 
-function applyVoidRim(ctx: any, size: number, voidMask: number, voidDiagMask: number): void {
+function applyVoidRim(ctx: Canvas2DRenderingContext, size: number, voidMask: number, voidDiagMask: number): void {
   const edge = Math.floor(size * 0.17);
   const side = (bit: number, x: number, y: number, w: number, h: number, horizontal: boolean) => {
     if (!(voidMask & bit)) return;
@@ -997,8 +999,8 @@ export class ProceduralReliefTheme {
     const invSize = 1 / Math.max(1, size - 1);
     const tex = new DynamicTexture(`f_tex_${key}`, { width: size, height: size }, scene, false);
     const bump = new DynamicTexture(`f_bump_${key}`, { width: size, height: size }, scene, false);
-    const ctx = tex.getContext();
-    const bctx = bump.getContext();
+    const ctx = tex.getContext() as Canvas2DRenderingContext;
+    const bctx = bump.getContext() as Canvas2DRenderingContext;
 
     const stoneX = 2.35;
     const stoneY = 2.35;
@@ -1101,8 +1103,8 @@ export class ProceduralReliefTheme {
     const invSize = 1 / Math.max(1, size - 1);
     const tex = new DynamicTexture(`w_tex_${key}`, { width: size, height: size }, scene, true);
     const bump = new DynamicTexture(`w_bump_${key}`, { width: size, height: size }, scene, true);
-    const ctx = tex.getContext();
-    const bctx = bump.getContext();
+    const ctx = tex.getContext() as Canvas2DRenderingContext;
+    const bctx = bump.getContext() as Canvas2DRenderingContext;
 
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {

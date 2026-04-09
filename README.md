@@ -29,7 +29,14 @@ npm run preview
 ```
 
 ## Project Structure
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
+- Active documentation index: [docs/README.md](docs/README.md)
+- Architecture map: [docs/project/ARCHITECTURE_MAP.md](docs/project/ARCHITECTURE_MAP.md)
+- Latest architecture update: [docs/project/ARCHITECTURE_UPDATE_2026-04-09.md](docs/project/ARCHITECTURE_UPDATE_2026-04-09.md)
+
+### Repository Organization
+- Development tools and labs: [tools/](tools/)
+- Active project documentation: [docs/](docs/)
+- Archived/obsolete documentation: [archives/docs-obsolete/](archives/docs-obsolete/)
 
 ## Tech Stack
 - Babylon.js 6+ (3D engine)

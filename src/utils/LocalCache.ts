@@ -34,7 +34,7 @@ export class LocalCache {
     });
   }
 
-  async set(storeName: string, key: string, value: any): Promise<void> {
+  async set(storeName: string, key: string, value: unknown): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {

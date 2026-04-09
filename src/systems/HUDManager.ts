@@ -10,15 +10,19 @@ import { VoicelineConfig, AnimationPhase } from '../data/voicelines/VoicelineDef
 import { DAEMON_ANIMATION_PRESETS, normalizeDaemonPresetName } from '../data/voicelines/DaemonAnimationPresets';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
 import { GameSettingsStore } from '../settings/GameSettings';
-
-interface DamageNumber {
-  text: TextBlock;
-  value: number;
-  position: Vector3;
-  timeElapsed: number;
-  duration: number;
-  anchor: TransformNode;
-}
+import { buildHudAssetUrl, getHudAssetBaseUrl } from './hud/HudAssetPaths';
+import { DaemonAvatarController, type DaemonAnimationPhaseState } from './hud/DaemonAvatarController';
+import { getPauseAtDisplayIndex, stripPauseMarkers } from './hud/DaemonTextUtils';
+import type {
+  AudioEngineLike,
+  DamageNumber,
+  DaemonTauntPayload,
+  EnemyEventPayload,
+  PlayerDamagedPayload,
+  PlayerUltReadyPayload,
+  RoomEnteredPayload,
+  UiOptionChangedPayload,
+} from './hud/HudTypes';
 
 export interface HudBonusChoice {
   id: string;
@@ -79,22 +83,8 @@ export class HUDManager {
   private daemonFlashPeakAlpha: number = 0;
   private daemonBaseTop: number = 80;
   private daemonBaseLeft: number = 0;
-  private avatarFrameTimer: number = 0;
-  private avatarFrameIndex: number = 0;
-  private avatarFrameDirection: number = 1;
-  private avatarFrameInterval: number = 0.12;
-  private avatarSequenceMode: 'pingpong' | 'loop' = 'pingpong';
-  private daemonAvatarEmotion: string = 'init';
-  private daemonAvatarSequence: string[] = [];
-  
-  // Multi-phase animation support for voicelines
-  private animationPhases: { emotion: string; frameSequence: string[]; frameInterval: number }[] = [];
-  private currentPhaseIndex: number = 0;
-  private currentPhaseCycleIndex: number = 0;
-  private currentPhaseFrameCount: number = 0;
+  private daemonAvatarController: DaemonAvatarController = new DaemonAvatarController();
   private activeVoicelineAudios: Set<Sound> = new Set();
-  private voicelineStartTime: number = 0;
-  private voicelineAudioDuration: number = 0;
   
   private waveNumber: number = 0;
   private isEnabled: boolean = true;
@@ -181,51 +171,27 @@ export class HUDManager {
 
   private setupEventListeners(): void {
     this.eventBus.on(GameEvents.ENEMY_DAMAGED, (data) => {
-      if (!data || !data.position) return;
-      if (this.showDamageNumbers) {
-        const enemyId = data?.entityId ?? data?.enemyId ?? 'unknown';
-        this.addDamageNumber(data.position, data.damage, enemyId);
-      }
+      this.handleEnemyDamagedEvent(data as EnemyEventPayload);
     });
 
-    this.eventBus.on(GameEvents.ENEMY_SPAWNED, (data) => {
-      const enemyId = data?.enemyId ?? data?.entityId;
-      if (!enemyId) return;
-      this.createEnemyHealthBar(enemyId, data?.enemyName, data?.mesh);
+    this.eventBus.on(GameEvents.ENEMY_SPAWNED, (data: EnemyEventPayload) => {
+      this.handleEnemySpawnedEvent(data);
     });
 
-    this.eventBus.on(GameEvents.ENEMY_DIED, (data) => {
-      const enemyId = data?.enemyId ?? data?.entityId;
-      if (!enemyId) return;
-      this.removeEnemyHealthBar(enemyId);
-      this.addLogMessage('ENEMY UNIT DEL...');
+    this.eventBus.on(GameEvents.ENEMY_DIED, (data: EnemyEventPayload) => {
+      this.handleEnemyDiedEvent(data);
     });
 
-    this.eventBus.on(GameEvents.PLAYER_DAMAGED, async (data) => {
-      this.updateHealthDisplay(data.health.current, data.health.max);
-      if (data?.damage && data.damage > 0) {
-        this.addLogMessage('INTEGRITY BREACH DETECTED.');
-        const taunt = this.getRandomTaunt('damage');
-        await this.showDaemonMessage(taunt.text, taunt.emotion);
-      }
+    this.eventBus.on(GameEvents.PLAYER_DAMAGED, async (data: PlayerDamagedPayload) => {
+      await this.handlePlayerDamagedEvent(data);
     });
 
     this.eventBus.on(GameEvents.ROOM_CLEARED, async () => {
-      this.addLogMessage('ROOM STATUS: CLEAR.');
-      const taunt = this.getRandomTaunt('clear');
-      await this.showDaemonMessage(taunt.text, taunt.emotion);
+      await this.handleRoomClearedEvent();
     });
 
-    this.eventBus.on(GameEvents.ROOM_ENTERED, (data) => {
-      this.waveNumber += 1;
-      this.updateWaveText(this.waveNumber);
-      this.addLogMessage(`WAVE ${this.waveNumber.toString().padStart(2, '0')} INIT.`);
-
-      const roomType = typeof data?.roomType === 'string' ? data.roomType.toLowerCase() : 'normal';
-      if (roomType === 'boss') {
-        const roomName = typeof data?.roomName === 'string' ? data.roomName : 'Unknown Chamber';
-        this.triggerBossRoomAlert(roomName);
-      }
+    this.eventBus.on(GameEvents.ROOM_ENTERED, (data: RoomEnteredPayload) => {
+      this.handleRoomEnteredEvent(data);
     });
 
     this.eventBus.on(GameEvents.ROOM_TRANSITION_START, () => {
@@ -242,47 +208,107 @@ export class HUDManager {
       this.resetWaveCounter();
     });
 
-    this.eventBus.on(GameEvents.DAEMON_TAUNT, async (data) => {
-      const message = typeof data?.text === 'string' ? data.text : String(data ?? '...');
-      const emotion = typeof data?.emotion === 'string' ? data.emotion : undefined;
-      const sequence = Array.isArray(data?.sequence) ? data.sequence : undefined;
-      const frameInterval = typeof data?.frameInterval === 'number' ? data.frameInterval : undefined;
-      const holdDuration = typeof data?.holdDuration === 'number' ? data.holdDuration : undefined;
-      const preload = data?.preload !== false; // Preload by default
-      await this.showDaemonMessage(message, emotion, { sequence, frameInterval, holdDuration, preload });
+    this.eventBus.on(GameEvents.DAEMON_TAUNT, async (data: DaemonTauntPayload) => {
+      await this.handleDaemonTauntEvent(data);
     });
 
-    this.eventBus.on(GameEvents.PLAYER_ULTIMATE_READY, (data) => {
-      if (this.playerUltDisplay) {
-        const percentage = Math.floor(data.charge * 100);
-        this.playerUltDisplay.text = `ULTI: ${percentage}%`;
-        this.playerUltDisplay.color = data.charge >= 1.0 ? '#00FF00' : '#FFFF00';
-      }
+    this.eventBus.on(GameEvents.PLAYER_ULTIMATE_READY, (data: PlayerUltReadyPayload) => {
+      this.handlePlayerUltimateReadyEvent(data);
     });
 
-    this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data) => {
-      if (data?.option === 'showDamageNumbers') {
-        this.showDamageNumbers = !!data.value;
-        if (!this.showDamageNumbers) {
-          this.clearDamageNumbers();
-        }
-      }
-      if (data?.option === 'showEnemyHealthBars') {
-        this.showEnemyHealthBars = !!data.value;
-        this.updateEnemyHealthBarsVisibility();
-      }
-      if (data?.option === 'showEnemyNames') {
-        this.showEnemyNames = !!data.value;
-        this.updateEnemyHealthBarsVisibility();
-      }
-      if (data?.option === 'postProcessingEnabled' || data?.option === 'postProcessingPixelScale') {
-        this.applyGuiScaling();
-      }
+    this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data: UiOptionChangedPayload) => {
+      this.handleUiOptionChangedEvent(data);
     });
 
     this.eventBus.on(GameEvents.DEV_ROOM_LOAD_REQUESTED, () => {
       this.clearEnemyHealthBars();
     });
+  }
+
+  private handleEnemyDamagedEvent(enemyEvent: EnemyEventPayload): void {
+    if (!enemyEvent || !enemyEvent.position || typeof enemyEvent.damage !== 'number') return;
+    if (!this.showDamageNumbers) return;
+
+    const enemyId = enemyEvent.entityId ?? enemyEvent.enemyId ?? 'unknown';
+    this.addDamageNumber(enemyEvent.position, enemyEvent.damage, enemyId);
+  }
+
+  private handleEnemySpawnedEvent(data: EnemyEventPayload): void {
+    const enemyId = data?.enemyId ?? data?.entityId;
+    if (!enemyId) return;
+    this.createEnemyHealthBar(enemyId, data?.enemyName, data?.mesh);
+  }
+
+  private handleEnemyDiedEvent(data: EnemyEventPayload): void {
+    const enemyId = data?.enemyId ?? data?.entityId;
+    if (!enemyId) return;
+    this.removeEnemyHealthBar(enemyId);
+    this.addLogMessage('ENEMY UNIT DEL...');
+  }
+
+  private async handlePlayerDamagedEvent(data: PlayerDamagedPayload): Promise<void> {
+    if (!data?.health) return;
+    this.updateHealthDisplay(data.health.current, data.health.max);
+    if (data.damage && data.damage > 0) {
+      this.addLogMessage('INTEGRITY BREACH DETECTED.');
+      const taunt = this.getRandomTaunt('damage');
+      await this.showDaemonMessage(taunt.text, taunt.emotion);
+    }
+  }
+
+  private async handleRoomClearedEvent(): Promise<void> {
+    this.addLogMessage('ROOM STATUS: CLEAR.');
+    const taunt = this.getRandomTaunt('clear');
+    await this.showDaemonMessage(taunt.text, taunt.emotion);
+  }
+
+  private handleRoomEnteredEvent(data: RoomEnteredPayload): void {
+    this.waveNumber += 1;
+    this.updateWaveText(this.waveNumber);
+    this.addLogMessage(`WAVE ${this.waveNumber.toString().padStart(2, '0')} INIT.`);
+
+    const roomType = typeof data?.roomType === 'string' ? data.roomType.toLowerCase() : 'normal';
+    if (roomType === 'boss') {
+      const roomName = typeof data?.roomName === 'string' ? data.roomName : 'Unknown Chamber';
+      this.triggerBossRoomAlert(roomName);
+    }
+  }
+
+  private async handleDaemonTauntEvent(data: DaemonTauntPayload): Promise<void> {
+    const message = typeof data?.text === 'string' ? data.text : String(data ?? '...');
+    const emotion = typeof data?.emotion === 'string' ? data.emotion : undefined;
+    const sequence = Array.isArray(data?.sequence) ? data.sequence : undefined;
+    const frameInterval = typeof data?.frameInterval === 'number' ? data.frameInterval : undefined;
+    const holdDuration = typeof data?.holdDuration === 'number' ? data.holdDuration : undefined;
+    const preload = data?.preload !== false;
+    await this.showDaemonMessage(message, emotion, { sequence, frameInterval, holdDuration, preload });
+  }
+
+  private handlePlayerUltimateReadyEvent(data: PlayerUltReadyPayload): void {
+    if (!this.playerUltDisplay) return;
+    const percentage = Math.floor(data.charge * 100);
+    this.playerUltDisplay.text = `ULTI: ${percentage}%`;
+    this.playerUltDisplay.color = data.charge >= 1.0 ? '#00FF00' : '#FFFF00';
+  }
+
+  private handleUiOptionChangedEvent(data: UiOptionChangedPayload): void {
+    if (data?.option === 'showDamageNumbers') {
+      this.showDamageNumbers = !!data.value;
+      if (!this.showDamageNumbers) {
+        this.clearDamageNumbers();
+      }
+    }
+    if (data?.option === 'showEnemyHealthBars') {
+      this.showEnemyHealthBars = !!data.value;
+      this.updateEnemyHealthBarsVisibility();
+    }
+    if (data?.option === 'showEnemyNames') {
+      this.showEnemyNames = !!data.value;
+      this.updateEnemyHealthBarsVisibility();
+    }
+    if (data?.option === 'postProcessingEnabled' || data?.option === 'postProcessingPixelScale') {
+      this.applyGuiScaling();
+    }
   }
 
   private createPlayerHUD(): void {
@@ -533,7 +559,7 @@ export class HUDManager {
     this.daemonAvatarImage.height = '90px';
     this.daemonAvatarImage.stretch = Image.STRETCH_UNIFORM;
     avatarBox.addControl(this.daemonAvatarImage);
-    this.daemonAvatarSequence = this.getAvatarFrames('init');
+    this.daemonAvatarController.setPingPongSequence(this.getAvatarFrames('init'), 0.12);
 
     this.daemonMessageText = new TextBlock('daemon_message');
     this.daemonMessageText.text = '';
@@ -1218,7 +1244,7 @@ export class HUDManager {
 
     // Prepare all frames from all phases for preloading
     const allFrames = new Set<string>();
-    const phases: { emotion: string; frameSequence: string[]; frameInterval: number }[] = [];
+    const phases: DaemonAnimationPhaseState[] = [];
 
     for (const phase of voiceline.animationSequence) {
       const normalizedEmotion = this.normalizeEmotionKey(phase.emotion);
@@ -1243,7 +1269,7 @@ export class HUDManager {
 
     // Set up voiceline messaging
     this.daemonFullText = voiceline.message;
-    this.daemonDisplayText = this.stripPauseMarkers(voiceline.message);
+    this.daemonDisplayText = stripPauseMarkers(voiceline.message);
     this.daemonTypingIndex = 0;
     this.daemonTypingTimer = 0;
     this.daemonTypingDelayTimer = 0;
@@ -1257,17 +1283,7 @@ export class HUDManager {
     this.primeDaemonTypingAudio();
     this.startDaemonPopupGlitch(1.05);
 
-    // Set up animation phases
-    this.animationPhases = phases;
-    this.currentPhaseIndex = 0;
-    this.currentPhaseCycleIndex = 0;
-    this.currentPhaseFrameCount = 0;
-    this.avatarFrameIndex = 0;
-    this.avatarFrameInterval = phases.length > 0 ? phases[0].frameInterval : 0.18;
-
-    // Store audio duration for looping animations
-    this.voicelineAudioDuration = voiceline.audioDuration ?? 0;
-    this.voicelineStartTime = 0; // Will be set by updateDaemonPopup on first frame
+    this.daemonAvatarController.setPhases(phases, voiceline.audioDuration ?? 0);
     
     // Load and play audio if provided
     if (voiceline.audioPath) {
@@ -1279,9 +1295,7 @@ export class HUDManager {
 
   private playVoicelineAudio(audioPath: string): void {
     try {
-      const baseUrl = (import.meta as any).env?.BASE_URL ?? '/';
-      const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-      const fullPath = `${normalizedBase}${audioPath}`;
+      const fullPath = buildHudAssetUrl(audioPath);
 
       const soundInstance = new Sound(
         'voiceline_audio',
@@ -1326,7 +1340,7 @@ export class HUDManager {
     }
     
     this.daemonFullText = message;
-    this.daemonDisplayText = this.stripPauseMarkers(message);
+    this.daemonDisplayText = stripPauseMarkers(message);
     this.daemonTypingIndex = 0;
     this.daemonTypingTimer = 0;
     this.daemonTypingDelayTimer = 0;
@@ -1349,16 +1363,11 @@ export class HUDManager {
     }
 
     this.updateDaemonPopupGlitch(deltaTime);
+    const nowSeconds = Date.now() / 1000;
 
-    // Initialize voiceline start time on first update
-    if (this.voicelineStartTime === 0 && this.voicelineAudioDuration > 0) {
-      this.voicelineStartTime = Date.now() / 1000;
-    }
-
-    this.avatarFrameTimer += deltaTime;
-    if (this.avatarFrameTimer >= this.avatarFrameInterval) {
-      this.avatarFrameTimer = 0;
-      this.advanceDaemonAvatarFrame();
+    this.daemonAvatarController.ensureVoicelineClockStarted(nowSeconds);
+    if (this.daemonAvatarController.tick(deltaTime)) {
+      this.updateDaemonAvatarImage();
     }
 
     // Wait for typing delay before starting text display
@@ -1368,7 +1377,7 @@ export class HUDManager {
     }
 
     // Check if we're in a pause
-    if (this.daemonPauseEndTime > 0 && Date.now() / 1000 < this.daemonPauseEndTime) {
+    if (this.daemonPauseEndTime > 0 && nowSeconds < this.daemonPauseEndTime) {
       return; // Still paused
     }
     this.daemonPauseEndTime = 0; // Resume typing
@@ -1380,10 +1389,10 @@ export class HUDManager {
         this.daemonTypingTimer -= interval;
         
         // Check if we're about to hit a pause marker
-        const pauseMatch = this.getPauseAtIndex(this.daemonTypingIndex);
+        const pauseMatch = getPauseAtDisplayIndex(this.daemonFullText, this.daemonTypingIndex);
         if (pauseMatch) {
           // Start pause
-          this.daemonPauseEndTime = (Date.now() / 1000) + pauseMatch.duration;
+          this.daemonPauseEndTime = nowSeconds + pauseMatch.duration;
           this.daemonTypingIndex += pauseMatch.markerLength;
           return; // Exit and wait for pause to end
         }
@@ -1398,10 +1407,8 @@ export class HUDManager {
     // Check if we should hide the popup
     let shouldHide = false;
     
-    if (this.voicelineAudioDuration > 0) {
-      // For voicelines with audio duration, hide when audio duration expires
-      const elapsedTime = (Date.now() / 1000) - this.voicelineStartTime;
-      shouldHide = elapsedTime >= this.voicelineAudioDuration;
+    if (this.daemonAvatarController.hasAudioDuration()) {
+      shouldHide = this.daemonAvatarController.hasVoicelineElapsed(nowSeconds);
     } else {
       // For regular taunts, use hold duration
       this.daemonHoldTimer += deltaTime;
@@ -1415,13 +1422,7 @@ export class HUDManager {
       
       this.stopAllVoicelineAudio();
       
-      // Clear animation phases after voiceline completes
-      this.animationPhases = [];
-      this.currentPhaseIndex = 0;
-      this.currentPhaseCycleIndex = 0;
-      this.currentPhaseFrameCount = 0;
-      this.voicelineStartTime = 0;
-      this.voicelineAudioDuration = 0;
+      this.daemonAvatarController.clearVoicelineState();
     }
   }
 
@@ -1430,7 +1431,7 @@ export class HUDManager {
     if (!audioEngine) return;
 
     audioEngine.useCustomUnlockedButton = true;
-    this.daemonTypewriterSynth.attachContext((audioEngine as any).audioContext as AudioContext | undefined);
+    this.daemonTypewriterSynth.attachContext((audioEngine as AudioEngineLike).audioContext);
   }
 
   private stopAllVoicelineAudio(): void {
@@ -1451,7 +1452,7 @@ export class HUDManager {
 
     audioEngine.useCustomUnlockedButton = true;
 
-    const existingContext = (audioEngine as any).audioContext as AudioContext | undefined;
+    const existingContext = (audioEngine as AudioEngineLike).audioContext;
     if (audioEngine.unlocked || existingContext?.state === 'running') {
       this.daemonTypewriterSynth.attachContext(existingContext);
       return;
@@ -1459,12 +1460,14 @@ export class HUDManager {
 
     const tryUnlock = () => {
       try {
-        audioEngine.unlock();
+        if (typeof audioEngine.unlock === 'function') {
+          audioEngine.unlock();
+        }
       } catch {
         // Ignore unlock errors and retry on next user gesture.
       }
       void this.daemonTypewriterSynth.unlock();
-      this.daemonTypewriterSynth.attachContext((audioEngine as any).audioContext as AudioContext | undefined);
+      this.daemonTypewriterSynth.attachContext((audioEngine as AudioEngineLike).audioContext);
       if (audioEngine.unlocked && this.daemonAudioUnlockHandler) {
         window.removeEventListener('pointerdown', this.daemonAudioUnlockHandler);
         window.removeEventListener('keydown', this.daemonAudioUnlockHandler);
@@ -1477,8 +1480,8 @@ export class HUDManager {
     window.addEventListener('keydown', tryUnlock);
   }
 
-  private getAudioEngine(): any {
-    return (this.scene.getEngine() as any).audioEngine ?? (Engine as any).audioEngine;
+  private getAudioEngine(): AudioEngineLike | undefined {
+    return (this.scene.getEngine() as { audioEngine?: AudioEngineLike }).audioEngine ?? (Engine as { audioEngine?: AudioEngineLike }).audioEngine;
   }
 
   private startDaemonPopupGlitch(strength: number): void {
@@ -1564,47 +1567,6 @@ export class HUDManager {
     }
   }
 
-  private stripPauseMarkers(text: string): string {
-    // Remove pause markers like {pause:0.5} from display text
-    return text.replace(/\{pause:[^}]+\}/g, '');
-  }
-
-  private getPauseAtIndex(displayIndex: number): { duration: number; markerLength: number } | null {
-    try {
-      // Parse pause markers from original text
-      let displayCount = 0;
-      let i = 0;
-      
-      while (i < this.daemonFullText.length) {
-        // Check if we're at a pause marker
-        const match = this.daemonFullText.substring(i).match(/^\{pause:([\d.]+)\}/);
-        if (match) {
-          // If we're at the target index, return pause info
-          if (displayCount === displayIndex) {
-            return {
-              duration: parseFloat(match[1]),
-              markerLength: match[0].length,
-            };
-          }
-          i += match[0].length;
-          continue;
-        }
-        
-        // Regular character
-        if (displayCount === displayIndex) {
-          return null; // No pause at this position
-        }
-        displayCount++;
-        i++;
-      }
-      
-      return null;
-    } catch (error) {
-      console.warn('Error checking pause at index:', error);
-      return null;
-    }
-  }
-
   private getRandomTaunt(type: 'damage' | 'clear'): { text: string; emotion: string } {
     const damageTaunts = [
       { text: 'Integrity dropping. Shocking.', emotion: 'énervé' },
@@ -1679,22 +1641,14 @@ export class HUDManager {
     frameInterval?: number
   ): void {
     if (customSequence && customSequence.length > 0) {
-      this.daemonAvatarSequence = customSequence.slice();
-      this.avatarSequenceMode = 'loop';
-      this.avatarFrameIndex = 0;
-      this.avatarFrameDirection = 1;
-      this.avatarFrameInterval = frameInterval ?? 0.18;
+      this.daemonAvatarController.setLoopSequence(customSequence, frameInterval ?? 0.18);
       this.updateDaemonAvatarImage();
       return;
     }
 
     const emotion = this.resolveDaemonEmotion(message, preferredEmotion);
-    this.daemonAvatarEmotion = emotion;
-    this.daemonAvatarSequence = this.buildAvatarSequence(emotion, message);
-    this.avatarSequenceMode = 'pingpong';
-    this.avatarFrameIndex = 0;
-    this.avatarFrameDirection = 1;
-    this.avatarFrameInterval = frameInterval ?? this.computeAvatarInterval(message, emotion);
+    const sequence = this.buildAvatarSequence(emotion, message);
+    this.daemonAvatarController.setPingPongSequence(sequence, frameInterval ?? this.computeAvatarInterval(message, emotion));
     this.updateDaemonAvatarImage();
   }
 
@@ -1794,96 +1748,13 @@ export class HUDManager {
     return fullSequence;
   }
 
-  private advanceDaemonAvatarFrame(): void {
-    // Handle multi-phase animation if present
-    if (this.animationPhases.length > 0) {
-      this.advancePhaseFrame();
-      return;
-    }
-
-    // Legacy single-sequence animation
-    if (!this.daemonAvatarSequence.length) return;
-    if (this.daemonAvatarSequence.length === 1) {
-      this.avatarFrameIndex = 0;
-      this.updateDaemonAvatarImage();
-      return;
-    }
-
-    if (this.avatarSequenceMode === 'loop') {
-      this.avatarFrameIndex = (this.avatarFrameIndex + 1) % this.daemonAvatarSequence.length;
-    } else {
-      const nextIndex = this.avatarFrameIndex + this.avatarFrameDirection;
-      if (nextIndex >= this.daemonAvatarSequence.length || nextIndex < 0) {
-        this.avatarFrameDirection *= -1;
-        this.avatarFrameIndex += this.avatarFrameDirection;
-      } else {
-        this.avatarFrameIndex = nextIndex;
-      }
-    }
-    this.updateDaemonAvatarImage();
-  }
-
-  private advancePhaseFrame(): void {
-    if (this.currentPhaseIndex >= this.animationPhases.length) return;
-
-    const phase = this.animationPhases[this.currentPhaseIndex];
-    if (!phase || phase.frameSequence.length === 0) return;
-
-    // Get current frame within the phase sequence
-    this.avatarFrameIndex = this.currentPhaseFrameCount % phase.frameSequence.length;
-    
-    // Advance frame counter
-    this.currentPhaseFrameCount++;
-
-    // Check if we've completed the full sequence of this phase
-    if (this.currentPhaseFrameCount >= phase.frameSequence.length) {
-      // For final phase: loop continuously if audioDuration is set
-      if (this.currentPhaseIndex === this.animationPhases.length - 1 && this.voicelineAudioDuration > 0) {
-        // Reset to beginning of final phase to loop
-        this.currentPhaseFrameCount = 0;
-      } else {
-        // Move to next phase
-        this.currentPhaseIndex++;
-        this.currentPhaseFrameCount = 0;
-        
-        if (this.currentPhaseIndex < this.animationPhases.length) {
-          this.avatarFrameInterval = this.animationPhases[this.currentPhaseIndex].frameInterval;
-        }
-      }
-    }
-
-    this.updateDaemonAvatarImage();
-  }
-
   private updateDaemonAvatarImage(): void {
-    // Handle multi-phase animation
-    if (this.animationPhases.length > 0 && this.currentPhaseIndex < this.animationPhases.length) {
-      if (!this.daemonAvatarImage) return;
-      
-      const phase = this.animationPhases[this.currentPhaseIndex];
-      if (!phase || !phase.frameSequence || phase.frameSequence.length === 0) return;
-      
-      const fileName = phase.frameSequence[this.avatarFrameIndex];
-      if (!fileName) return;
-      
-      const src = this.getAvatarFrameSrc(fileName);
-      
-      const cached = this.avatarImageCache.get(fileName);
-      if (cached && cached.complete) {
-        this.daemonAvatarImage.source = src;
-      } else {
-        this.daemonAvatarImage.source = src;
-      }
-      return;
-    }
-
-    // Legacy single-sequence animation
-    if (!this.daemonAvatarImage || !this.daemonAvatarSequence.length) return;
-    const fileName = this.daemonAvatarSequence[this.avatarFrameIndex];
+    if (!this.daemonAvatarImage) return;
+    const fileName = this.daemonAvatarController.getCurrentFrame();
     if (!fileName) return;
-    
+
     const src = this.getAvatarFrameSrc(fileName);
-    
+
     // Use cached image if available for instant display
     const cached = this.avatarImageCache.get(fileName);
     if (cached && cached.complete) {
@@ -1894,8 +1765,7 @@ export class HUDManager {
   }
 
   private getAvatarFrameSrc(fileName: string, normalization: 'NFC' | 'NFD' = 'NFD'): string {
-    const baseUrl = (import.meta as any).env?.BASE_URL ?? '/';
-    const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+    const normalizedBase = getHudAssetBaseUrl();
     // Normalize to specified form and encode for URL
     // macOS uses NFD (decomposed) while JavaScript uses NFC (composed) by default
     const normalizedFileName = fileName.normalize(normalization);

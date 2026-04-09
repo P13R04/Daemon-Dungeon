@@ -3,7 +3,7 @@
  * Use this to emit and listen to game events without tight coupling
  */
 
-type EventCallback = (...args: any[]) => void;
+type EventCallback = (...args: unknown[]) => void;
 
 export class EventBus {
   private static instance: EventBus;
@@ -24,11 +24,11 @@ export class EventBus {
    * @param callback - Callback to execute when event is emitted
    * @returns Unsubscribe function
    */
-  on(event: string, callback: EventCallback): () => void {
+  on<T extends unknown[]>(event: string, callback: (...args: T) => void): () => void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
-    this.listeners.get(event)!.push(callback);
+    this.listeners.get(event)!.push(callback as EventCallback);
 
     // Return unsubscribe function
     return () => this.off(event, callback);
@@ -37,10 +37,10 @@ export class EventBus {
   /**
    * Unsubscribe from an event
    */
-  off(event: string, callback: EventCallback): void {
+  off<T extends unknown[]>(event: string, callback: (...args: T) => void): void {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
-      const index = callbacks.indexOf(callback);
+      const index = callbacks.indexOf(callback as EventCallback);
       if (index > -1) {
         callbacks.splice(index, 1);
       }
@@ -50,10 +50,10 @@ export class EventBus {
   /**
    * Emit an event
    */
-  emit(event: string, ...args: any[]): void {
+  emit<T extends unknown[]>(event: string, ...args: T): void {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
-      callbacks.forEach(callback => callback(...args));
+      callbacks.forEach(callback => (callback as (...cbArgs: T) => void)(...args));
     }
   }
 

@@ -2,10 +2,15 @@
  * SceneBootstrap - Initializes the Babylon.js scene with base settings
  */
 
-import { Scene, Engine, ArcRotateCamera, Vector3, HemisphericLight, DirectionalLight, FreeCamera, Color3 } from '@babylonjs/core';
+import { Scene, Engine, ArcRotateCamera, Vector3, HemisphericLight, DirectionalLight, FreeCamera, Color3, Color4 } from '@babylonjs/core';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { PhysicsBootstrap } from './PhysicsBootstrap';
+
+type SceneWithCameras = Scene & {
+  mainCamera?: ArcRotateCamera;
+  uiCamera?: FreeCamera;
+};
 
 export class SceneBootstrap {
   static async createScene(engine: Engine, canvas: HTMLCanvasElement): Promise<Scene> {
@@ -33,9 +38,7 @@ export class SceneBootstrap {
 
     const uiCamera = new FreeCamera('uiCamera', new Vector3(0, 0, -10), scene);
     uiCamera.layerMask = UI_LAYER;
-    // Note: clearColor is a Scene property, not FreeCamera property
-    // The UI layer will be transparent through layerMask
-    (uiCamera as any).clear = false;
+
     
     // Brighter gameplay lighting closer to the reference texture lab setup.
     const hemi = new HemisphericLight('light', new Vector3(0.2, 1, 0), scene);
@@ -47,12 +50,13 @@ export class SceneBootstrap {
     dir.intensity = 0.95;
     
     // Scene settings
-    scene.clearColor = scene.clearColor.set(0.02, 0.02, 0.06, 1);
+    scene.clearColor = new Color4(0.02, 0.02, 0.06, 1);
     createSynthwaveGridBackground(scene);
     
     // Store cameras on scene for access by GameManager
-    (scene as any).mainCamera = camera;
-    (scene as any).uiCamera = uiCamera;
+    const sceneWithCameras = scene as SceneWithCameras;
+    sceneWithCameras.mainCamera = camera;
+    sceneWithCameras.uiCamera = uiCamera;
     scene.activeCameras = [camera, uiCamera];
     scene.activeCamera = camera;
 

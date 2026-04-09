@@ -2,7 +2,7 @@
  * PlayerController - Controls the player character (Mage, Tank, Rogue)
  */
 
-import { Scene, Mesh, Vector3, Matrix, StandardMaterial, Color3, MeshBuilder } from '@babylonjs/core';
+import { Scene, Mesh, Vector3, Matrix, StandardMaterial, Color3, MeshBuilder, Camera } from '@babylonjs/core';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { InputManager } from '../input/InputManager';
 import { PlayerAnimationController, AnimationState } from './PlayerAnimationController';
@@ -13,8 +13,23 @@ import { Knockback } from '../components/Knockback';
 import { MathUtils } from '../utils/Math';
 import { ConfigLoader } from '../utils/ConfigLoader';
 import { GameSettings, GameSettingsStore } from '../settings/GameSettings';
+import type {
+  PlayerConfig,
+  PlayerClassConfig,
+  PlayerFirewallAttackConfig,
+  PlayerFirewallPassiveConfig,
+  PlayerFirewallShieldBashConfig,
+  PlayerFirewallShieldConfig,
+  PlayerMageSecondaryConfig,
+  PlayerRogueAttackConfig,
+  PlayerRogueDashAttackConfig,
+  PlayerRoguePassiveConfig,
+  PlayerRogueStealthConfig,
+  PlayerRogueUltimateConfig,
+} from '../types/config';
 
 type PlayerClassId = 'mage' | 'firewall' | 'rogue';
+type SceneWithMainCamera = Scene & { mainCamera?: Camera };
 
 export class PlayerController {
   private static readonly MODEL_VERTICAL_TILE_FIX = 1.8;
@@ -27,7 +42,7 @@ export class PlayerController {
   public animationController!: PlayerAnimationController; // Public pour DevConsole
   private modelLoadingPromise: Promise<void> | null = null;
   
-  private config: any;
+  private config: PlayerConfig;
   private classId: PlayerClassId;
   private position: Vector3 = Vector3.Zero();
   private velocity: Vector3 = Vector3.Zero();
@@ -230,7 +245,7 @@ export class PlayerController {
   private autoAimTowardMovement: boolean = true;
   private unsubscribeSettings: (() => void) | null = null;
 
-  constructor(scene: Scene, inputManager: InputManager, config: any, classId: PlayerClassId = 'mage') {
+  constructor(scene: Scene, inputManager: InputManager, config: PlayerConfig, classId: PlayerClassId = 'mage') {
     this.scene = scene;
     this.inputManager = inputManager;
     this.config = config;
@@ -300,7 +315,7 @@ export class PlayerController {
       this.createClassPlaceholder(this.classId);
     }
 
-    const classConfig = this.config[this.classId] ?? this.config.mage;
+    const classConfig: PlayerClassConfig = this.config[this.classId] ?? this.config.mage;
     const maxHP = classConfig.baseStats.hp;
     this.health = new Health(maxHP, 'player');
 
@@ -339,10 +354,10 @@ export class PlayerController {
 
   private applyTankConfig(): void {
     const tank = this.config?.firewall ?? {};
-    const attack = tank.attack ?? {};
-    const shield = tank.shield ?? {};
-    const bash = tank.shieldBash ?? {};
-    const passive = tank.passive ?? {};
+    const attack = (tank.attack ?? {}) as PlayerFirewallAttackConfig;
+    const shield = (tank.shield ?? {}) as PlayerFirewallShieldConfig;
+    const bash = (tank.shieldBash ?? {}) as PlayerFirewallShieldBashConfig;
+    const passive = (tank.passive ?? {}) as PlayerFirewallPassiveConfig;
 
     this.tankPrimaryRange = this.readPositiveNumber(attack.range, this.tankPrimaryRange);
     this.tankPrimaryConeAngleDeg = this.readPositiveNumber(attack.coneAngleDeg, this.tankPrimaryConeAngleDeg);
@@ -385,7 +400,7 @@ export class PlayerController {
   }
 
   private applySecondaryConfig(): void {
-    const secondary = this.config?.mage?.secondary ?? {};
+    const secondary = (this.config?.mage?.secondary ?? {}) as PlayerMageSecondaryConfig;
 
     this.secondaryResourceMax = this.readPositiveNumber(secondary.resourceMax, this.secondaryResourceMax);
     this.secondaryActivationThreshold = this.readClampedNumber(
@@ -417,11 +432,11 @@ export class PlayerController {
 
   private applyRogueConfig(): void {
     const rogue = this.config?.rogue ?? {};
-    const attack = rogue.attack ?? {};
-    const stealth = rogue.stealth ?? {};
-    const dash = rogue.dashAttack ?? {};
-    const passive = rogue.passive ?? {};
-    const ultimate = rogue.ultimate ?? {};
+    const attack = (rogue.attack ?? {}) as PlayerRogueAttackConfig;
+    const stealth = (rogue.stealth ?? {}) as PlayerRogueStealthConfig;
+    const dash = (rogue.dashAttack ?? {}) as PlayerRogueDashAttackConfig;
+    const passive = (rogue.passive ?? {}) as PlayerRoguePassiveConfig;
+    const ultimate = (rogue.ultimate ?? {}) as PlayerRogueUltimateConfig;
 
     this.roguePrimaryRange = this.readPositiveNumber(attack.range, this.roguePrimaryRange);
     this.roguePrimaryConeAngleDeg = this.readPositiveNumber(attack.coneAngleDeg, this.roguePrimaryConeAngleDeg);
@@ -736,7 +751,7 @@ export class PlayerController {
       return;
     }
 
-    const camera = (this.scene as any).mainCamera ?? this.scene.activeCamera;
+    const camera = (this.scene as SceneWithMainCamera).mainCamera ?? this.scene.activeCamera;
     if (!camera) return;
 
     const mousePos = this.inputManager.getMousePosition();
@@ -806,9 +821,9 @@ export class PlayerController {
     }
 
     if (this.isFiring && !this.isMoving && this.timeSinceMovement > 0) {
-      const passiveConfig = this.config.mage?.passive ?? { fireRateBonus: 0, maxBonus: 1 };
-      const bonusPerSecond = passiveConfig.fireRateBonus;
-      const maxBonus = passiveConfig.maxBonus;
+      const passiveConfig = (this.config.mage?.passive as { fireRateBonus?: number; maxBonus?: number } | undefined) ?? {};
+      const bonusPerSecond = this.readPositiveNumber(passiveConfig.fireRateBonus, 0);
+      const maxBonus = this.readPositiveNumber(passiveConfig.maxBonus, 1);
       
       this.focusFireBonus = Math.min(
         maxBonus,
@@ -825,7 +840,7 @@ export class PlayerController {
 
   private updateUltimate(deltaTime: number): void {
     const configLoader = ConfigLoader.getInstance();
-    const gameplayConfig = configLoader.getGameplay();
+    const gameplayConfig = configLoader.getGameplayConfig();
 
     if (gameplayConfig?.debugConfig?.infiniteUltimate) {
       this.ultCharge = 1.0;
@@ -842,8 +857,11 @@ export class PlayerController {
 
     // Charge only during gameplay when enemies are present
     if (this.gameplayActive && this.hasEnemiesInRoom) {
-      const classConfig = this.config[this.classId] ?? this.config.mage;
-      const chargeTime = Math.max(0.01, classConfig.ultimate?.chargeTime ?? 14);
+      const classConfig: PlayerClassConfig = this.config[this.classId] ?? this.config.mage;
+      const chargeTime = Math.max(
+        0.01,
+        this.readPositiveNumber((classConfig.ultimate as { chargeTime?: number } | undefined)?.chargeTime, 14)
+      );
       const chargePerSecond = 1 / chargeTime;
       this.ultCharge = Math.min(1.0, this.ultCharge + chargePerSecond * deltaTime);
     }
@@ -1162,8 +1180,8 @@ export class PlayerController {
   }
 
   private fireProjectile(): void {
-    const classConfig = this.config[this.classId] ?? this.config.mage;
-    const attackConfig = classConfig.attack;
+    const classConfig: PlayerClassConfig = this.config[this.classId] ?? this.config.mage;
+    const attackConfig = (classConfig.attack ?? {}) as { projectileSpeed?: number; range?: number };
     const damage = this.applyDamageModifiers(classConfig.baseStats.damage);
 
     if (this.animationController) {
@@ -1180,8 +1198,8 @@ export class PlayerController {
       position: this.position.clone(),
       direction: this.attackDirection.clone(),
       damage: damage,
-      speed: attackConfig.projectileSpeed,
-      range: attackConfig.range,
+      speed: this.readPositiveNumber(attackConfig.projectileSpeed, 25),
+      range: this.readPositiveNumber(attackConfig.range, 30),
       friendly: true,
     });
 
@@ -1226,31 +1244,41 @@ export class PlayerController {
       return;
     }
 
-    const ultConfig = this.config.mage.ultimate;
+    const ultConfig = this.config.mage?.ultimate as
+      | {
+          cooldown?: number;
+          radius?: number;
+          damage?: number;
+          dotDuration?: number;
+          dotTickRate?: number;
+          healPerTick?: number;
+        }
+      | undefined;
+    const mageUltConfig = ultConfig ?? {};
     if (this.animationController) {
       this.animationController.rotateTowardDirection(this.attackDirection);
       this.animationController.setOnUltimateAnimationFinished(() => {
         this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_USED, {
           position: this.position.clone(),
-          radius: ultConfig.radius,
-          damage: this.applyDamageModifiers(ultConfig.damage),
-          duration: ultConfig.dotDuration,
-          dotTickRate: ultConfig.dotTickRate,
-          healPerTick: ultConfig.healPerTick,
+          radius: this.readPositiveNumber(mageUltConfig.radius, 4),
+          damage: this.applyDamageModifiers(this.readPositiveNumber(mageUltConfig.damage, 50)),
+          duration: this.readPositiveNumber(mageUltConfig.dotDuration, 8),
+          dotTickRate: this.readPositiveNumber(mageUltConfig.dotTickRate, 0.5),
+          healPerTick: this.readPositiveNumber(mageUltConfig.healPerTick, 6),
         });
       });
     } else {
       this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_USED, {
         position: this.position.clone(),
-        radius: ultConfig.radius,
-        damage: this.applyDamageModifiers(ultConfig.damage),
-        duration: ultConfig.dotDuration,
-        dotTickRate: ultConfig.dotTickRate,
-        healPerTick: ultConfig.healPerTick,
+        radius: this.readPositiveNumber(mageUltConfig.radius, 4),
+        damage: this.applyDamageModifiers(this.readPositiveNumber(mageUltConfig.damage, 50)),
+        duration: this.readPositiveNumber(mageUltConfig.dotDuration, 8),
+        dotTickRate: this.readPositiveNumber(mageUltConfig.dotTickRate, 0.5),
+        healPerTick: this.readPositiveNumber(mageUltConfig.healPerTick, 6),
       });
     }
     this.ultCharge = 0;
-    this.ultCooldown = ultConfig.cooldown;
+    this.ultCooldown = this.readPositiveNumber(mageUltConfig.cooldown, 0);
   }
 
   getPosition(): Vector3 {
@@ -1552,7 +1580,7 @@ export class PlayerController {
       return;
     }
     const configLoader = ConfigLoader.getInstance();
-    const gameplayConfig = configLoader.getGameplay();
+    const gameplayConfig = configLoader.getGameplayConfig();
     if (gameplayConfig?.debugConfig?.godMode) {
       return;
     }

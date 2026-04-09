@@ -87,7 +87,11 @@ export class SciFiTypewriterSynth {
   }
 
   async unlock(): Promise<void> {
-    const Ctor = (window as any).AudioContext || (window as any).webkitAudioContext;
+    const browserWindow = window as unknown as {
+      AudioContext?: typeof AudioContext;
+      webkitAudioContext?: typeof AudioContext;
+    };
+    const Ctor = browserWindow.AudioContext || browserWindow.webkitAudioContext;
     if (!this.internalContext && Ctor) {
       this.internalContext = new Ctor();
     }

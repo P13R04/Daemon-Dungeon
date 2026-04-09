@@ -70,6 +70,24 @@ interface SplitTravel {
   finalDuration?: number;
 }
 
+interface ProjectilePlayer {
+  getPosition(): Vector3;
+  applyDamage(amount: number): void;
+  getPoisonBonus?: () => { percent: number; duration: number } | null | undefined;
+  reflectProjectileIfShielding?: (
+    hitPoint: Vector3,
+    damage: number,
+    direction: Vector3
+  ) => { position: Vector3; direction: Vector3; damage: number; speedMultiplier: number } | null | undefined;
+}
+
+interface ProjectileEnemy {
+  getPosition(): Vector3;
+  getId(): string;
+  takeDamage(amount: number): void;
+  applyDot?(damagePerSecond: number, duration: number): void;
+}
+
 class Projectile implements IPoolable {
   mesh?: Mesh;
   data: ProjectileData | null = null;
@@ -228,7 +246,7 @@ export class ProjectileManager {
     this.activeProjectiles.push(projectile);
   }
 
-  update(deltaTime: number, enemies: any[], player: any, roomManager?: RoomManager): void {
+  update(deltaTime: number, enemies: ProjectileEnemy[], player: ProjectilePlayer, roomManager?: RoomManager): void {
     this.currentRoomManager = roomManager;
 
     // Update delayed explosions
@@ -418,7 +436,7 @@ export class ProjectileManager {
 
               const poison = player.getPoisonBonus?.();
               if (poison && poison.percent > 0 && poison.duration > 0) {
-                enemy.applyDot(projectile.data.damage * poison.percent, poison.duration);
+                enemy.applyDot?.(projectile.data.damage * poison.percent, poison.duration);
               }
 
               this.eventBus.emit(GameEvents.PROJECTILE_HIT, {
@@ -582,7 +600,7 @@ export class ProjectileManager {
     return destroyed;
   }
 
-  private applyImpactAoeToPlayer(projectile: Projectile, position: Vector3, player: any): void {
+  private applyImpactAoeToPlayer(projectile: Projectile, position: Vector3, player: ProjectilePlayer): void {
     const data = projectile.data;
     if (!data?.splitConfig?.impactRadius || !data.splitConfig.impactDamage) return;
     if (data.friendly) return;

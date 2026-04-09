@@ -10,8 +10,9 @@ type AchievementLike = {
 };
 
 type AchievementRecord = Record<string, AchievementLike>;
+type ModuleRecord = Record<string, unknown> & { default?: unknown };
 
-const entryModules = import.meta.glob("./entries/*.json", { eager: true }) as Record<string, unknown>;
+const entryModules = import.meta.glob("./entries/*.json", { eager: true }) as Record<string, ModuleRecord>;
 
 function normalizeDefinition(input: AchievementLike): AchievementLike {
   return {
@@ -36,7 +37,7 @@ export function getMergedAchievementDefinitions(): AchievementRecord {
   }
 
   Object.values(entryModules).forEach((moduleValue) => {
-    const entry = (moduleValue as any)?.default ?? moduleValue;
+    const entry = moduleValue.default ?? moduleValue;
     if (!entry || typeof entry !== "object") return;
 
     const achievementEntry = entry as AchievementLike;

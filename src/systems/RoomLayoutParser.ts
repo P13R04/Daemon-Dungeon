@@ -4,10 +4,25 @@
 
 import { TileData, TileType } from './TileSystem';
 
+export interface RoomSpawnPoint {
+  x: number;
+  z: number;
+  type?: string;
+  [key: string]: unknown;
+}
+
+export interface RoomObstacle {
+  x: number;
+  z: number;
+  y?: number;
+  type: string;
+  [key: string]: unknown;
+}
+
 export interface RoomLayout {
   layout: Array<string | string[]>;
-  spawnPoints?: Array<{ x: number; z: number; [key: string]: any }>;
-  obstacles?: Array<{ x: number; z: number; type: string }>;
+  spawnPoints?: RoomSpawnPoint[];
+  obstacles?: RoomObstacle[];
 }
 
 export interface TileMappingLayout {
@@ -28,15 +43,10 @@ export class RoomLayoutParser {
    * 'O' = obstacle/pillar
    * 'M', 'R', 'S' etc = spawn points (will be floor)
    */
-  static parseLayout(roomLayout: RoomLayout | any): TileData[] {
+  static parseLayout(roomLayout: RoomLayout | Array<string | string[]>): TileData[] {
     const tiles: TileData[] = [];
-    
-    // Handle both direct layout (string[]) and roomLayout object
-    let layoutData = roomLayout;
-    if (roomLayout && roomLayout.layout) {
-      layoutData = roomLayout.layout;
-    }
-    
+
+    const layoutData = Array.isArray(roomLayout) ? roomLayout : roomLayout.layout;
     if (!layoutData) {
       throw new Error('Invalid layout: layout data is missing');
     }
@@ -68,7 +78,7 @@ export class RoomLayoutParser {
     }
 
     // Add obstacles as pillar tiles
-    if (roomLayout.obstacles) {
+    if (!Array.isArray(roomLayout) && roomLayout.obstacles) {
       for (const obstacle of roomLayout.obstacles) {
         const obstacleZ = Number.isFinite(obstacle.z)
           ? obstacle.z
@@ -90,7 +100,7 @@ export class RoomLayoutParser {
         tiles.push({
           type: 'wall',
           x: obstacle.x,
-          z: obstacleZ,
+          z: obstacleZ as number,
         });
       }
     }
@@ -186,8 +196,8 @@ export class RoomLayoutParser {
   /**
    * Get spawn points from room layout
    */
-  static getSpawnPoints(roomLayout: RoomLayout): Array<{ x: number; z: number; [key: string]: any }> {
-    const spawnPoints: Array<{ x: number; z: number; [key: string]: any }> = [];
+  static getSpawnPoints(roomLayout: RoomLayout): RoomSpawnPoint[] {
+    const spawnPoints: RoomSpawnPoint[] = [];
     const layout = roomLayout.layout;
 
     // Extract from layout grid

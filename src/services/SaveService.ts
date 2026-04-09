@@ -7,7 +7,7 @@ import { ApiClient } from './ApiClient';
 export interface RunSaveData {
   class: string;
   roomNumber: number;
-  playerState: any;
+  playerState: Record<string, unknown>;
   seed?: string;
   timestamp: number;
 }

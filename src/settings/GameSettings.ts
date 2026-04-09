@@ -49,6 +49,10 @@ export interface GameSettings {
   accessibility: AccessibilitySettings;
 }
 
+interface AudioEngineLike {
+  setGlobalVolume?: (value: number) => void;
+}
+
 const STORAGE_KEY = 'daemonDungeon.settings.v1';
 
 const DEFAULT_SETTINGS: GameSettings = {
@@ -159,7 +163,7 @@ export class GameSettingsStore {
       targetCanvas.style.filter = getCanvasFilter(GameSettingsStore.settings.accessibility.colorFilter);
     }
 
-    const audioEngine = Engine.audioEngine as any;
+    const audioEngine = Engine.audioEngine as AudioEngineLike | undefined;
     if (audioEngine && typeof audioEngine.setGlobalVolume === 'function') {
       audioEngine.setGlobalVolume(clamp01(GameSettingsStore.settings.audio.master));
     }

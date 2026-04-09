@@ -3,9 +3,11 @@
  * Handles loading character models (mage, tank) and managing animation states with proper prioritization
  */
 
-import { Scene, Mesh, AbstractMesh, AnimationGroup, SceneLoader, Vector3, TransformNode, ParticleSystem, DynamicTexture, Color4 } from '@babylonjs/core';
+import { Scene, Mesh, AbstractMesh, AnimationGroup, SceneLoader, Vector3, TransformNode, ParticleSystem, DynamicTexture, Color4, Observer, Nullable } from '@babylonjs/core';
 import { SCENE_LAYER } from '../ui/uiLayers';
 import { ConfigLoader } from '../utils/ConfigLoader';
+
+type Canvas2DRenderingContext = CanvasRenderingContext2D;
 
 export enum AnimationState {
   IDLE = 'idle',
@@ -61,7 +63,6 @@ export class PlayerAnimationController {
 
   // Animation transition settings
   private readonly FADE_DURATION = 0.1; // seconds
-  private readonly ATTACK_SPEED_INTERVAL = 200; // ms between speed changes
 
   // Tank shield state
   private isShieldActive: boolean = false;
@@ -171,8 +172,6 @@ export class PlayerAnimationController {
       }
     });
 
-    let animationName = '';
-
     if (this.playerClass === 'mage') {
       this._playMageAnimation(state, speedMultiplier);
     } else if (this.playerClass === 'firewall') {
@@ -277,7 +276,6 @@ export class PlayerAnimationController {
         animationName = this.lastAttackWasAttack1 ? 'Attack_1' : 'Attack_2';
 
         // Vary speed to avoid repetition
-        const framesToWait = Date.now() % this.ATTACK_SPEED_INTERVAL;
         const speedVariation = this.attackSpeedVariation[this.lastAttackSpeedIndex];
         this.lastAttackSpeedIndex = (this.lastAttackSpeedIndex + 1) % this.attackSpeedVariation.length;
 
@@ -721,7 +719,7 @@ export class PlayerAnimationController {
     group.speedRatio = startSpeed;
 
     let elapsed = 0;
-    let observer: any = null;
+    let observer: Nullable<Observer<Scene>> = null;
 
     const cleanup = (): void => {
       if (observer) {
@@ -798,7 +796,7 @@ export class PlayerAnimationController {
 
     const particles = new ParticleSystem('tank_thruster_particles', 1400, this.scene);
     const particleTexture = new DynamicTexture('tank_thruster_particle_texture', { width: 64, height: 64 }, this.scene, false);
-    const ctx = particleTexture.getContext();
+    const ctx = particleTexture.getContext() as Canvas2DRenderingContext;
     const gradient = ctx.createRadialGradient(32, 32, 4, 32, 32, 31);
     gradient.addColorStop(0, 'rgba(255,255,255,1)');
     gradient.addColorStop(0.55, 'rgba(255,190,80,0.95)');
@@ -869,7 +867,7 @@ export class PlayerAnimationController {
   }
 
   private loadTankThrusterTuningFromConfig(): { height: number; lateral: number; depth: number; size: number } {
-    const gameplayConfig = ConfigLoader.getInstance().getGameplay();
+    const gameplayConfig = ConfigLoader.getInstance().getGameplayConfig();
     const tuning = gameplayConfig?.tankVisuals;
     return {
       height: tuning?.height ?? this.tankThrusterIdleOffset.y,
@@ -1077,7 +1075,7 @@ export class PlayerAnimationController {
       console.log(`  [${idx}] ${child.name}`);
       console.log(`      Type: ${child.constructor.name}`);
       if ('rotation' in child) {
-        const rot = child as any;
+        const rot = child as { rotation: Vector3 };
         console.log(`      Rotation: ${rot.rotation.x}, ${rot.rotation.y}, ${rot.rotation.z}`);
       }
     });

@@ -7,6 +7,15 @@ import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { Pool, IPoolable } from '../utils/Pool';
 
+interface PlayerUltimateUsedPayload {
+  position: Vector3;
+  radius: number;
+  damage: number;
+  duration: number;
+  healPerTick?: number;
+  dotTickRate?: number;
+}
+
 interface UltimateZoneData {
   position: Vector3;
   radius: number;
@@ -15,6 +24,17 @@ interface UltimateZoneData {
   healPerTick: number;
   dotTickRate: number;
   timeElapsed: number;
+}
+
+interface UltimateEnemy {
+  getPosition(): Vector3;
+  getId(): string;
+  takeDamage(amount: number): void;
+}
+
+interface UltimatePlayer {
+  getPosition(): Vector3;
+  heal(amount: number): void;
 }
 
 class UltimateZone implements IPoolable {
@@ -102,8 +122,8 @@ export class UltimateManager {
   }
 
   private setupEventListeners(): void {
-    this.eventBus.on(GameEvents.PLAYER_ULTIMATE_USED, (data) => {
-      this.spawn(data.position, data.radius, data.damage, data.duration, data.healPerTick, data.dotTickRate);
+    this.eventBus.on(GameEvents.PLAYER_ULTIMATE_USED, (data: PlayerUltimateUsedPayload) => {
+      this.spawn(data.position, data.radius, data.damage, data.duration, data.healPerTick ?? 1, data.dotTickRate ?? 0.5);
     });
   }
 
@@ -121,7 +141,7 @@ export class UltimateManager {
     this.activeZones.push(zone);
   }
 
-  update(deltaTime: number, enemies: any[], player: any): void {
+  update(deltaTime: number, enemies: UltimateEnemy[], player: UltimatePlayer): void {
     for (let i = this.activeZones.length - 1; i >= 0; i--) {
       const zone = this.activeZones[i];
       zone.update(deltaTime);

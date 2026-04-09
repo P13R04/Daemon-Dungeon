@@ -813,8 +813,8 @@ export class TileSystem {
       for (const mesh of meshes) {
         const material = mesh.material;
         mesh.dispose();
-        if (material && typeof (material as any).dispose === 'function') {
-          (material as any).dispose();
+        if (material && typeof (material as StandardMaterial | null)?.dispose === 'function') {
+          (material as StandardMaterial | null)?.dispose();
         }
       }
     }

@@ -8,6 +8,8 @@ import {
   StandardMaterial,
 } from '@babylonjs/core';
 
+type Canvas2DRenderingContext = CanvasRenderingContext2D;
+
 export type TileNeighborKinds = {
   wallMask: number;
   wallDiagMask: number;
@@ -44,7 +46,7 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 }
 
 function drawCircuitEdge(
-  ctx: any,
+  ctx: Canvas2DRenderingContext,
   mask: number,
   size: number,
   colorA: string,
@@ -112,7 +114,7 @@ function drawCircuitEdge(
   ctx.restore();
 }
 
-function drawStoneCracks(ctx: any, size: number, strength: number, seed: number): void {
+function drawStoneCracks(ctx: Canvas2DRenderingContext, size: number, strength: number, seed: number): void {
   const crackCount = 14 + Math.floor(strength * 22);
   ctx.save();
   ctx.globalAlpha = 0.22 + strength * 0.28;
@@ -133,7 +135,7 @@ function drawStoneCracks(ctx: any, size: number, strength: number, seed: number)
   ctx.restore();
 }
 
-function drawMoss(ctx: any, size: number, density: number, seed: number): void {
+function drawMoss(ctx: Canvas2DRenderingContext, size: number, density: number, seed: number): void {
   const patches = 12 + Math.floor(density * 22);
   ctx.save();
   for (let i = 0; i < patches; i++) {
@@ -151,7 +153,7 @@ function drawMoss(ctx: any, size: number, density: number, seed: number): void {
 }
 
 function applyPoisonTransition(
-  ctx: any,
+  ctx: Canvas2DRenderingContext,
   size: number,
   neighbors: TileNeighborKinds,
   intensity: number
@@ -194,7 +196,7 @@ function applyPoisonTransition(
   ctx.restore();
 }
 
-function applyVoidRim(ctx: any, size: number, neighbors: TileNeighborKinds): void {
+function applyVoidRim(ctx: Canvas2DRenderingContext, size: number, neighbors: TileNeighborKinds): void {
   const edge = Math.floor(size * 0.12);
   ctx.save();
   ctx.shadowBlur = Math.floor(size * 0.03);
@@ -251,8 +253,8 @@ export class ProceduralDungeonTheme {
     const size = 256;
     const texture = new DynamicTexture(`neo_floor_tex_${key}`, { width: size, height: size }, scene, false);
     const bump = new DynamicTexture(`neo_floor_bump_${key}`, { width: size, height: size }, scene, false);
-    const ctx = texture.getContext();
-    const bctx = bump.getContext();
+    const ctx = texture.getContext() as Canvas2DRenderingContext;
+    const bctx = bump.getContext() as Canvas2DRenderingContext;
 
     const mortarWidth = 0.07;
     const bricksX = 4.0;
@@ -361,8 +363,8 @@ export class ProceduralDungeonTheme {
     const size = 384;
     const texture = new DynamicTexture(`neo_${kind}_tex_${key}`, { width: size, height: size }, scene, false);
     const bump = new DynamicTexture(`neo_${kind}_bump_${key}`, { width: size, height: size }, scene, false);
-    const ctx = texture.getContext();
-    const bctx = bump.getContext();
+    const ctx = texture.getContext() as Canvas2DRenderingContext;
+    const bctx = bump.getContext() as Canvas2DRenderingContext;
 
     const bricksX = kind === 'wall' ? 3.0 : 4.0;
     const bricksY = kind === 'wall' ? 6.0 : 7.0;

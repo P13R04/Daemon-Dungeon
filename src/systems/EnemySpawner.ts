@@ -8,6 +8,11 @@ import { ConfigLoader } from '../utils/ConfigLoader';
 import { RoomManager } from './RoomManager';
 import { EventBus, GameEvents } from '../core/EventBus';
 
+interface EnemySpawnRequestPayload {
+  typeId?: string;
+  position?: Vector3;
+}
+
 export class EnemySpawner {
   private enemies: EnemyController[] = [];
   private eventBus: EventBus;
@@ -20,7 +25,7 @@ export class EnemySpawner {
   ) {
     this.eventBus = EventBus.getInstance();
     this.configLoader = ConfigLoader.getInstance();
-    this.eventBus.on(GameEvents.ENEMY_SPAWN_REQUESTED, (data) => {
+    this.eventBus.on(GameEvents.ENEMY_SPAWN_REQUESTED, (data: EnemySpawnRequestPayload) => {
       const typeId = data?.typeId;
       const position = data?.position;
       if (!typeId || !position) return;
@@ -30,7 +35,7 @@ export class EnemySpawner {
 
   spawnEnemiesForRoom(roomId: string): void {
     const room = this.configLoader.getRoom(roomId);
-    const enemyConfig = this.configLoader.getEnemies();
+    const enemyConfig = this.configLoader.getEnemiesConfig();
 
     if (!room || !enemyConfig) {
       console.error('Missing room or enemy config!');
@@ -44,7 +49,7 @@ export class EnemySpawner {
       const enemyTypeConfig = enemyConfig[enemyType];
       if (!enemyTypeConfig) continue;
 
-      const gameplayConfig = this.configLoader.getGameplay();
+      const gameplayConfig = this.configLoader.getGameplayConfig();
       const scaling = gameplayConfig?.scaling;
       const level = Math.max(0, this.difficultyLevel);
 
@@ -66,13 +71,13 @@ export class EnemySpawner {
   }
 
   private spawnEnemyAt(typeId: string, position: Vector3): void {
-    const enemyConfig = this.configLoader.getEnemies();
+    const enemyConfig = this.configLoader.getEnemiesConfig();
     if (!enemyConfig) return;
 
     const enemyTypeConfig = enemyConfig[typeId];
     if (!enemyTypeConfig) return;
 
-    const gameplayConfig = this.configLoader.getGameplay();
+    const gameplayConfig = this.configLoader.getGameplayConfig();
     const scaling = gameplayConfig?.scaling;
     const level = Math.max(0, this.difficultyLevel);
 

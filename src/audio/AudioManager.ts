@@ -4,6 +4,11 @@
 
 import { Engine, Scene, Sound, Vector3 } from '@babylonjs/core';
 
+interface AudioEngineLike {
+  audioContext?: AudioContext;
+  unlocked?: boolean;
+}
+
 export class AudioManager {
   private scene: Scene;
   private sounds: Map<string, Sound> = new Map();
@@ -16,7 +21,7 @@ export class AudioManager {
     this.scene = scene;
   }
 
-  loadSound(name: string, path: string, options?: any): Promise<Sound> {
+  loadSound(name: string, path: string, options?: ConstructorParameters<typeof Sound>[4]): Promise<Sound> {
     return new Promise((resolve, reject) => {
       const sound = new Sound(
         name,
@@ -77,8 +82,8 @@ export class AudioManager {
     const sound = this.sounds.get('beep');
     if (!sound) return;
 
-    const audioEngine = Engine.audioEngine;
-    const context = (audioEngine as any)?.audioContext as AudioContext | undefined;
+    const audioEngine = Engine.audioEngine as AudioEngineLike | undefined;
+    const context = audioEngine?.audioContext;
     if (audioEngine && !(audioEngine.unlocked || context?.state === 'running')) {
       return;
     }

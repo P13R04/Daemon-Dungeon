@@ -9,6 +9,8 @@
     "build:voice-lab": "esbuild src/tools/daemonVoiceLab/main.ts --bundle --platform=browser --format=esm --outfile=daemon-voice-lab.bundle.js",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
+    "lint:ci": "eslint src --ext .ts,.tsx --max-warnings=0",
+    "ci:local": "npm run lint:ci && npm run build",
     "format": "prettier --write \"src/**/*.{ts,tsx,json}\""
   },
   "dependencies": {
@@ -22,6 +24,7 @@
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
+    "esbuild": "^0.20.0",
     "eslint": "^8.0.0",
     "prettier": "^3.0.0",
     "typescript": "^5.0.0",

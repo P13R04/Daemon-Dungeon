@@ -9,7 +9,7 @@ export interface ScoreSubmission {
   score: number;
   roomsCleared: number;
   timeSurvived: number;
-  buildSummary: any;
+  buildSummary: Record<string, unknown>;
 }
 
 export interface LeaderboardFilter {
@@ -17,20 +17,26 @@ export interface LeaderboardFilter {
   class?: string;
 }
 
+export interface LeaderboardEntry {
+  [key: string]: unknown;
+}
+
 export class LeaderboardService {
   private apiClient: ApiClient;
-  private cache: Map<string, any> = new Map();
+  private cache: Map<string, LeaderboardEntry[]> = new Map();
 
   constructor(apiClient: ApiClient) {
     this.apiClient = apiClient;
   }
 
-  async fetchLeaderboard(filter: LeaderboardFilter = {}): Promise<any[]> {
+  async fetchLeaderboard(filter: LeaderboardFilter = {}): Promise<LeaderboardEntry[]> {
     const cacheKey = JSON.stringify(filter);
     
     try {
-      const params = new URLSearchParams(filter as any).toString();
-      const data = await this.apiClient.get<any[]>(`/leaderboard?${params}`);
+      const params = new URLSearchParams();
+      if (filter.period) params.set('period', filter.period);
+      if (filter.class) params.set('class', filter.class);
+      const data = await this.apiClient.get<LeaderboardEntry[]>(`/leaderboard?${params.toString()}`);
       this.cache.set(cacheKey, data);
       return data;
     } catch (error) {

@@ -214,9 +214,9 @@ export class ClassSelectScene {
     camera.inputs.clear();
     camera.layerMask = SCENE_LAYER;
 
-    const uiCamera = new FreeCamera('classSelectUiCamera', new Vector3(0, 0, -10), this.scene);
+    const uiCamera = new FreeCamera('classSelectUiCamera', new Vector3(0, 0, -10), this.scene) as FreeCamera & { clear: boolean };
     uiCamera.layerMask = UI_LAYER;
-    (uiCamera as any).clear = false;
+    uiCamera.clear = false;
 
     this.scene.activeCameras = [camera, uiCamera];
     this.scene.activeCamera = camera;

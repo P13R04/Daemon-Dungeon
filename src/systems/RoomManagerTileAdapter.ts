@@ -52,18 +52,26 @@ export class RoomManagerTileAdapter {
    */
   convertRoomConfigToLayout(config: RoomConfig): RoomLayout {
     // Si le RoomManager utilise déjà un format ASCII, on peut le convertir
+    const spawnPoints = (config.spawnPoints ?? [])
+      .filter((sp) => Number.isFinite(sp.x) && (Number.isFinite(sp.y) || Number.isFinite(sp.z)))
+      .map((sp) => ({
+        x: sp.x,
+        z: Number.isFinite(sp.y) ? Number(sp.y) : Number(sp.z), // y -> z (2D)
+        type: sp.enemyType,
+      }));
+
+    const obstacles = (config.obstacles ?? [])
+      .filter((obs) => Number.isFinite(obs.x) && (Number.isFinite(obs.y) || Number.isFinite(obs.z)))
+      .map((obs) => ({
+        x: Math.floor(obs.x),
+        z: Math.floor(Number.isFinite(obs.y) ? Number(obs.y) : Number(obs.z)), // y -> z (2D)
+        type: obs.type,
+      }));
+
     const layout: RoomLayout = {
       layout: config.layout.map(line => line.split('')),
-      spawnPoints: config.spawnPoints.map(sp => ({
-        x: sp.x,
-        z: sp.y, // Note: y → z (2D)
-        type: sp.enemyType,
-      })),
-      obstacles: config.obstacles.map(obs => ({
-        x: Math.floor(obs.x),
-        z: Math.floor(obs.y), // Note: y → z (2D)
-        type: obs.type,
-      })),
+      spawnPoints,
+      obstacles,
     };
 
     return layout;

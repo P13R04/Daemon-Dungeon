@@ -11,11 +11,9 @@ import { Time } from '../core/Time';
 import { MathUtils } from '../utils/Math';
 import { ConfigLoader } from '../utils/ConfigLoader';
 import type { NavigationCapabilities, RoomManager } from '../systems/RoomManager';
-
-interface BeamSegment {
-  start: Vector3;
-  end: Vector3;
-}
+import type { EnemyRuntimeConfig } from './enemy/EnemyControllerTypes';
+import { EnemyLaserPatternSubsystem } from './enemy/EnemyLaserPatternSubsystem';
+import { EnemySpikeCastSubsystem } from './enemy/EnemySpikeCastSubsystem';
 
 export class EnemyController {
   public mesh!: Mesh; // Public pour DevConsole
@@ -27,7 +25,7 @@ export class EnemyController {
   private id: string;
   private typeId: string;
   
-  private config: any;
+  private config: EnemyRuntimeConfig;
   private position: Vector3 = Vector3.Zero();
   private previousPosition: Vector3 = Vector3.Zero();
   private velocity: Vector3 = Vector3.Zero();
@@ -173,39 +171,14 @@ export class EnemyController {
   private necromancerSummonTimer: number = 0;
   private necromancerSummonType: string = 'zombie_basic';
   private necromancerSummonRadius: number = 2.0;
-  private spikeCastCooldown: number = 4.0;
-  private spikeCastWarningDuration: number = 0.8;
-  private spikeCastActiveDuration: number = 1.2;
-  private spikeCastDamage: number = 22;
-  private spikeCastTickInterval: number = 0.45;
-  private spikeCastTimer: number = 0;
-  private spikeCastState: 'idle' | 'warning' | 'active' = 'idle';
-  private spikeCastStateTimer: number = 0;
-  private spikeCastTickTimer: number = 0;
-  private spikeZoneBounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
-  private spikeZoneVisuals: Mesh[] = [];
-  private laserBossCooldown: number = 2.2;
-  private laserBossWindup: number = 0.6;
-  private laserBossRotateDuration: number = 4.2;
-  private laserBossGridDuration: number = 3.2;
-  private laserBossDamage: number = 20;
-  private laserBossTickInterval: number = 0.25;
-  private laserBossBeamWidth: number = 0.3;
-  private laserBossGridSpacing: number = 2.0;
-  private laserBossState: 'cooldown' | 'windup' | 'casting' = 'cooldown';
-  private laserBossPattern: 'none' | 'rotating' | 'grid' = 'none';
-  private laserBossStateTimer: number = 1.8;
-  private laserBossContactCooldown: number = 0.12;
-  private laserBossContactTimer: number = 0;
-  private laserBossAngle: number = 0;
-  private laserBossSegments: BeamSegment[] = [];
-  private laserBossVisuals: Mesh[] = [];
+  private spikeCastSubsystem: EnemySpikeCastSubsystem;
+  private laserPatternSubsystem: EnemyLaserPatternSubsystem;
   
   private target: Vector3 | null = null;
   private isAlive: boolean = true;
   private stunRemaining: number = 0;
 
-  constructor(scene: Scene, typeId: string, position: Vector3, config: any) {
+  constructor(scene: Scene, typeId: string, position: Vector3, config: EnemyRuntimeConfig) {
     this.scene = scene;
     this.typeId = typeId;
     this.config = config;
@@ -213,6 +186,8 @@ export class EnemyController {
     this.eventBus = EventBus.getInstance();
     this.time = Time.getInstance();
     this.id = `enemy_${typeId}_${Date.now()}_${Math.random()}`;
+    this.spikeCastSubsystem = new EnemySpikeCastSubsystem(this.scene);
+    this.laserPatternSubsystem = new EnemyLaserPatternSubsystem(this.scene, this.id);
 
     // Initialize from config
     this.speed = config.baseStats?.speed || 2.5;
@@ -228,115 +203,107 @@ export class EnemyController {
     if (behaviorPreset) {
       this.applyBehaviorPreset(behaviorPreset);
     }
-
-    if (config.behaviorConfig) {
-      this.bullTriggerRange = config.behaviorConfig.triggerRange ?? this.bullTriggerRange;
-      this.bullAimDuration = config.behaviorConfig.aimDuration ?? this.bullAimDuration;
-      this.bullChargeDuration = config.behaviorConfig.chargeDuration ?? this.bullChargeDuration;
-      this.bullChargeSpeedMultiplier = config.behaviorConfig.chargeSpeedMultiplier ?? this.bullChargeSpeedMultiplier;
-      this.bullHitRange = config.behaviorConfig.hitRange ?? this.bullHitRange;
-      this.bullCooldownDuration = config.behaviorConfig.chargeCooldown ?? this.bullCooldownDuration;
-      this.bullKnockbackStrength = config.behaviorConfig.knockbackStrength ?? this.bullKnockbackStrength;
-      this.bullModelScale = config.behaviorConfig.modelScale ?? this.bullModelScale;
-      this.useCrowdSteering = config.behaviorConfig.useCrowd ?? this.useCrowdSteering;
-      this.separationRadius = config.behaviorConfig.separationRadius ?? this.separationRadius;
-      this.separationStrength = config.behaviorConfig.separationStrength ?? this.separationStrength;
-      this.crowdMinDistance = config.behaviorConfig.crowdMinDistance ?? this.crowdMinDistance;
-      this.avoidObstacles = config.behaviorConfig.avoidObstacles ?? this.avoidObstacles;
-      this.avoidDistance = config.behaviorConfig.avoidDistance ?? this.avoidDistance;
-      this.canFly = config.behaviorConfig.canFly ?? this.canFly;
-      this.avoidVoid = config.behaviorConfig.avoidVoid ?? this.avoidVoid;
-      this.canFallIntoVoid = config.behaviorConfig.canFallIntoVoid ?? this.canFallIntoVoid;
-      this.navRepathInterval = config.behaviorConfig.navRepathInterval ?? this.navRepathInterval;
-      this.pongInitialAngleDeg = config.behaviorConfig.initialAngleDeg ?? this.pongInitialAngleDeg;
-      this.pongContactDamageRatio = config.behaviorConfig.contactDamageRatio ?? this.pongContactDamageRatio;
-      this.pongContactKnockback = config.behaviorConfig.contactKnockback ?? this.pongContactKnockback;
-      this.jumperTriggerRange = config.behaviorConfig.triggerRange ?? this.jumperTriggerRange;
-      this.jumperAimDuration = config.behaviorConfig.aimDuration ?? this.jumperAimDuration;
-      this.jumperJumpDuration = config.behaviorConfig.jumpDuration ?? this.jumperJumpDuration;
-      this.jumperJumpSpeedMultiplier = config.behaviorConfig.jumpSpeedMultiplier ?? this.jumperJumpSpeedMultiplier;
-      this.jumperHitRange = config.behaviorConfig.hitRange ?? this.jumperHitRange;
-      this.jumperCooldownDuration = config.behaviorConfig.jumpCooldown ?? this.jumperCooldownDuration;
-      this.jumperJumpHeight = config.behaviorConfig.jumpHeight ?? this.jumperJumpHeight;
-      this.jumperShockwaveEnabled = config.behaviorConfig.shockwaveEnabled ?? this.jumperShockwaveEnabled;
-      this.jumperShockwaveRadius = config.behaviorConfig.shockwaveRadius ?? this.jumperShockwaveRadius;
-      this.jumperShockwaveDuration = config.behaviorConfig.shockwaveDuration ?? this.jumperShockwaveDuration;
-      this.jumperShockwaveDamage = config.behaviorConfig.shockwaveDamage ?? this.jumperShockwaveDamage;
-      this.pongRadius = config.behaviorConfig.pongRadius ?? this.pongRadius;
-      this.kiteMinRange = config.behaviorConfig.kiteMinRange ?? this.kiteMinRange;
-      this.kiteMaxRange = config.behaviorConfig.kiteMaxRange ?? this.kiteMaxRange;
-      this.fuyardPanicTriggerRange = config.behaviorConfig.panicTriggerRange ?? this.fuyardPanicTriggerRange;
-      this.fuyardPanicDuration = config.behaviorConfig.panicDuration ?? this.fuyardPanicDuration;
-      this.fuyardChaosJitter = config.behaviorConfig.panicChaosJitter ?? this.fuyardChaosJitter;
-      this.fuyardStrafeStrength = config.behaviorConfig.strafeStrength ?? this.fuyardStrafeStrength;
-      this.orbitStrength = config.behaviorConfig.orbitStrength ?? this.orbitStrength;
-      this.leadTime = config.behaviorConfig.leadTime ?? this.leadTime;
-      this.rangedMinRange = config.behaviorConfig.rangedMinRange ?? this.rangedMinRange;
-      this.rangedMaxRange = config.behaviorConfig.rangedMaxRange ?? this.rangedMaxRange;
-      this.rangedCooldown = config.behaviorConfig.rangedCooldown ?? this.rangedCooldown;
-      this.rangedProjectileSpeed = config.behaviorConfig.projectileSpeed ?? this.rangedProjectileSpeed;
-      this.rangedProjectileRange = config.behaviorConfig.projectileRange ?? this.rangedProjectileRange;
-      this.rangedProjectileBounces = config.behaviorConfig.projectileBounces ?? this.rangedProjectileBounces;
-      this.rangedProjectileBounceDamping = config.behaviorConfig.projectileBounceDamping ?? this.rangedProjectileBounceDamping;
-      this.rangedWindup = config.behaviorConfig.rangedWindup ?? this.rangedWindup;
-      this.prefireWindup = config.behaviorConfig.prefireWindup ?? this.prefireWindup;
-      this.prefireLeadBonus = config.behaviorConfig.prefireLeadBonus ?? this.prefireLeadBonus;
-      this.swarmCommandInterval = config.behaviorConfig.swarmCommandInterval ?? this.swarmCommandInterval;
-      this.swarmCommandRange = config.behaviorConfig.swarmCommandRange ?? this.swarmCommandRange;
-      this.swarmCommandDuration = config.behaviorConfig.swarmCommandDuration ?? this.swarmCommandDuration;
-      this.swarmCommandWeight = config.behaviorConfig.swarmCommandWeight ?? this.swarmCommandWeight;
-      this.swarmFormationRadius = config.behaviorConfig.swarmFormationRadius ?? this.swarmFormationRadius;
-      this.healerRange = config.behaviorConfig.healRange ?? this.healerRange;
-      this.healerAmount = config.behaviorConfig.healAmount ?? this.healerAmount;
-      this.healerCooldown = config.behaviorConfig.healCooldown ?? this.healerCooldown;
-      this.artificerMinRange = config.behaviorConfig.artificerMinRange ?? this.artificerMinRange;
-      this.artificerMaxRange = config.behaviorConfig.artificerMaxRange ?? this.artificerMaxRange;
-      this.artificerCooldown = config.behaviorConfig.artificerCooldown ?? this.artificerCooldown;
-      this.artificerWindup = config.behaviorConfig.artificerWindup ?? this.artificerWindup;
-      this.artificerSplitCount = config.behaviorConfig.splitCount ?? this.artificerSplitCount;
-      this.artificerSplitRadius = config.behaviorConfig.splitRadius ?? this.artificerSplitRadius;
-      this.artificerSplitDelay = config.behaviorConfig.splitDelay ?? this.artificerSplitDelay;
-      this.artificerExplosionRadius = config.behaviorConfig.explosionRadius ?? this.artificerExplosionRadius;
-      this.artificerExplosionDamage = config.behaviorConfig.explosionDamage ?? this.artificerExplosionDamage;
-      this.artificerImpactRadius = config.behaviorConfig.impactRadius ?? this.artificerImpactRadius;
-      this.artificerImpactDamage = config.behaviorConfig.impactDamage ?? this.artificerImpactDamage;
-      this.artificerDotRadius = config.behaviorConfig.dotRadius ?? this.artificerDotRadius;
-      this.artificerDotDps = config.behaviorConfig.dotDps ?? this.artificerDotDps;
-      this.artificerDotDuration = config.behaviorConfig.dotDuration ?? this.artificerDotDuration;
-      this.artificerSplitTravelSpeed = config.behaviorConfig.splitTravelSpeed ?? this.artificerSplitTravelSpeed;
-      this.artificerImpactDuration = config.behaviorConfig.impactDuration ?? this.artificerImpactDuration;
-      this.artificerFinalDuration = config.behaviorConfig.finalDuration ?? this.artificerFinalDuration;
-      this.bulletHellCount = config.behaviorConfig.bulletCount ?? this.bulletHellCount;
-      this.bulletHellSpreadDeg = config.behaviorConfig.spreadDeg ?? this.bulletHellSpreadDeg;
-      this.bulletHellCooldown = config.behaviorConfig.bulletCooldown ?? this.bulletHellCooldown;
-      this.missileCooldown = config.behaviorConfig.missileCooldown ?? this.missileCooldown;
-      this.missileTurnRate = config.behaviorConfig.missileTurnRate ?? this.missileTurnRate;
-      this.missileMinSpeed = config.behaviorConfig.missileMinSpeed ?? this.missileMinSpeed;
-      this.missileMaxSpeed = config.behaviorConfig.missileMaxSpeed ?? this.missileMaxSpeed;
-      this.missileAccel = config.behaviorConfig.missileAccel ?? this.missileAccel;
-      this.necromancerSummonCooldown = config.behaviorConfig.summonCooldown ?? this.necromancerSummonCooldown;
-      this.necromancerSummonType = config.behaviorConfig.summonType ?? this.necromancerSummonType;
-      this.necromancerSummonRadius = config.behaviorConfig.summonRadius ?? this.necromancerSummonRadius;
-      this.spikeCastCooldown = config.behaviorConfig.spikeCastCooldown ?? this.spikeCastCooldown;
-      this.spikeCastWarningDuration = config.behaviorConfig.spikeWarningDuration ?? this.spikeCastWarningDuration;
-      this.spikeCastActiveDuration = config.behaviorConfig.spikeActiveDuration ?? this.spikeCastActiveDuration;
-      this.spikeCastDamage = config.behaviorConfig.spikeDamage ?? this.spikeCastDamage;
-      this.spikeCastTickInterval = config.behaviorConfig.spikeTickInterval ?? this.spikeCastTickInterval;
-      this.laserBossCooldown = config.behaviorConfig.laserCooldown ?? this.laserBossCooldown;
-      this.laserBossWindup = config.behaviorConfig.laserWindup ?? this.laserBossWindup;
-      this.laserBossRotateDuration = config.behaviorConfig.laserRotateDuration ?? this.laserBossRotateDuration;
-      this.laserBossGridDuration = config.behaviorConfig.laserGridDuration ?? this.laserBossGridDuration;
-      this.laserBossDamage = config.behaviorConfig.laserDamage ?? this.laserBossDamage;
-      this.laserBossTickInterval = config.behaviorConfig.laserTickInterval ?? this.laserBossTickInterval;
-      this.laserBossBeamWidth = config.behaviorConfig.laserWidth ?? this.laserBossBeamWidth;
-      this.laserBossGridSpacing = config.behaviorConfig.laserGridSpacing ?? this.laserBossGridSpacing;
-    }
+    this.applyBehaviorConfig(config.behaviorConfig);
 
     if (this.behavior === 'bull' && config.knockbackStrength != null) {
       this.bullKnockbackStrength = config.knockbackStrength;
     }
 
     this.initialize();
+  }
+
+  private applyBehaviorConfig(behaviorConfig: EnemyRuntimeConfig['behaviorConfig']): void {
+    if (!behaviorConfig) return;
+
+    this.bullTriggerRange = behaviorConfig.triggerRange ?? this.bullTriggerRange;
+    this.bullAimDuration = behaviorConfig.aimDuration ?? this.bullAimDuration;
+    this.bullChargeDuration = behaviorConfig.chargeDuration ?? this.bullChargeDuration;
+    this.bullChargeSpeedMultiplier = behaviorConfig.chargeSpeedMultiplier ?? this.bullChargeSpeedMultiplier;
+    this.bullHitRange = behaviorConfig.hitRange ?? this.bullHitRange;
+    this.bullCooldownDuration = behaviorConfig.chargeCooldown ?? this.bullCooldownDuration;
+    this.bullKnockbackStrength = behaviorConfig.knockbackStrength ?? this.bullKnockbackStrength;
+    this.bullModelScale = behaviorConfig.modelScale ?? this.bullModelScale;
+    this.useCrowdSteering = behaviorConfig.useCrowd ?? this.useCrowdSteering;
+    this.separationRadius = behaviorConfig.separationRadius ?? this.separationRadius;
+    this.separationStrength = behaviorConfig.separationStrength ?? this.separationStrength;
+    this.crowdMinDistance = behaviorConfig.crowdMinDistance ?? this.crowdMinDistance;
+    this.avoidObstacles = behaviorConfig.avoidObstacles ?? this.avoidObstacles;
+    this.avoidDistance = behaviorConfig.avoidDistance ?? this.avoidDistance;
+    this.canFly = behaviorConfig.canFly ?? this.canFly;
+    this.avoidVoid = behaviorConfig.avoidVoid ?? this.avoidVoid;
+    this.canFallIntoVoid = behaviorConfig.canFallIntoVoid ?? this.canFallIntoVoid;
+    this.navRepathInterval = behaviorConfig.navRepathInterval ?? this.navRepathInterval;
+    this.pongInitialAngleDeg = behaviorConfig.initialAngleDeg ?? this.pongInitialAngleDeg;
+    this.pongContactDamageRatio = behaviorConfig.contactDamageRatio ?? this.pongContactDamageRatio;
+    this.pongContactKnockback = behaviorConfig.contactKnockback ?? this.pongContactKnockback;
+    this.jumperTriggerRange = behaviorConfig.triggerRange ?? this.jumperTriggerRange;
+    this.jumperAimDuration = behaviorConfig.aimDuration ?? this.jumperAimDuration;
+    this.jumperJumpDuration = behaviorConfig.jumpDuration ?? this.jumperJumpDuration;
+    this.jumperJumpSpeedMultiplier = behaviorConfig.jumpSpeedMultiplier ?? this.jumperJumpSpeedMultiplier;
+    this.jumperHitRange = behaviorConfig.hitRange ?? this.jumperHitRange;
+    this.jumperCooldownDuration = behaviorConfig.jumpCooldown ?? this.jumperCooldownDuration;
+    this.jumperJumpHeight = behaviorConfig.jumpHeight ?? this.jumperJumpHeight;
+    this.jumperShockwaveEnabled = behaviorConfig.shockwaveEnabled ?? this.jumperShockwaveEnabled;
+    this.jumperShockwaveRadius = behaviorConfig.shockwaveRadius ?? this.jumperShockwaveRadius;
+    this.jumperShockwaveDuration = behaviorConfig.shockwaveDuration ?? this.jumperShockwaveDuration;
+    this.jumperShockwaveDamage = behaviorConfig.shockwaveDamage ?? this.jumperShockwaveDamage;
+    this.pongRadius = behaviorConfig.pongRadius ?? this.pongRadius;
+    this.kiteMinRange = behaviorConfig.kiteMinRange ?? this.kiteMinRange;
+    this.kiteMaxRange = behaviorConfig.kiteMaxRange ?? this.kiteMaxRange;
+    this.fuyardPanicTriggerRange = behaviorConfig.panicTriggerRange ?? this.fuyardPanicTriggerRange;
+    this.fuyardPanicDuration = behaviorConfig.panicDuration ?? this.fuyardPanicDuration;
+    this.fuyardChaosJitter = behaviorConfig.panicChaosJitter ?? this.fuyardChaosJitter;
+    this.fuyardStrafeStrength = behaviorConfig.strafeStrength ?? this.fuyardStrafeStrength;
+    this.orbitStrength = behaviorConfig.orbitStrength ?? this.orbitStrength;
+    this.leadTime = behaviorConfig.leadTime ?? this.leadTime;
+    this.rangedMinRange = behaviorConfig.rangedMinRange ?? this.rangedMinRange;
+    this.rangedMaxRange = behaviorConfig.rangedMaxRange ?? this.rangedMaxRange;
+    this.rangedCooldown = behaviorConfig.rangedCooldown ?? this.rangedCooldown;
+    this.rangedProjectileSpeed = behaviorConfig.projectileSpeed ?? this.rangedProjectileSpeed;
+    this.rangedProjectileRange = behaviorConfig.projectileRange ?? this.rangedProjectileRange;
+    this.rangedProjectileBounces = behaviorConfig.projectileBounces ?? this.rangedProjectileBounces;
+    this.rangedProjectileBounceDamping = behaviorConfig.projectileBounceDamping ?? this.rangedProjectileBounceDamping;
+    this.rangedWindup = behaviorConfig.rangedWindup ?? this.rangedWindup;
+    this.prefireWindup = behaviorConfig.prefireWindup ?? this.prefireWindup;
+    this.prefireLeadBonus = behaviorConfig.prefireLeadBonus ?? this.prefireLeadBonus;
+    this.swarmCommandInterval = behaviorConfig.swarmCommandInterval ?? this.swarmCommandInterval;
+    this.swarmCommandRange = behaviorConfig.swarmCommandRange ?? this.swarmCommandRange;
+    this.swarmCommandDuration = behaviorConfig.swarmCommandDuration ?? this.swarmCommandDuration;
+    this.swarmCommandWeight = behaviorConfig.swarmCommandWeight ?? this.swarmCommandWeight;
+    this.swarmFormationRadius = behaviorConfig.swarmFormationRadius ?? this.swarmFormationRadius;
+    this.healerRange = behaviorConfig.healRange ?? this.healerRange;
+    this.healerAmount = behaviorConfig.healAmount ?? this.healerAmount;
+    this.healerCooldown = behaviorConfig.healCooldown ?? this.healerCooldown;
+    this.artificerMinRange = behaviorConfig.artificerMinRange ?? this.artificerMinRange;
+    this.artificerMaxRange = behaviorConfig.artificerMaxRange ?? this.artificerMaxRange;
+    this.artificerCooldown = behaviorConfig.artificerCooldown ?? this.artificerCooldown;
+    this.artificerWindup = behaviorConfig.artificerWindup ?? this.artificerWindup;
+    this.artificerSplitCount = behaviorConfig.splitCount ?? this.artificerSplitCount;
+    this.artificerSplitRadius = behaviorConfig.splitRadius ?? this.artificerSplitRadius;
+    this.artificerSplitDelay = behaviorConfig.splitDelay ?? this.artificerSplitDelay;
+    this.artificerExplosionRadius = behaviorConfig.explosionRadius ?? this.artificerExplosionRadius;
+    this.artificerExplosionDamage = behaviorConfig.explosionDamage ?? this.artificerExplosionDamage;
+    this.artificerImpactRadius = behaviorConfig.impactRadius ?? this.artificerImpactRadius;
+    this.artificerImpactDamage = behaviorConfig.impactDamage ?? this.artificerImpactDamage;
+    this.artificerDotRadius = behaviorConfig.dotRadius ?? this.artificerDotRadius;
+    this.artificerDotDps = behaviorConfig.dotDps ?? this.artificerDotDps;
+    this.artificerDotDuration = behaviorConfig.dotDuration ?? this.artificerDotDuration;
+    this.artificerSplitTravelSpeed = behaviorConfig.splitTravelSpeed ?? this.artificerSplitTravelSpeed;
+    this.artificerImpactDuration = behaviorConfig.impactDuration ?? this.artificerImpactDuration;
+    this.artificerFinalDuration = behaviorConfig.finalDuration ?? this.artificerFinalDuration;
+    this.bulletHellCount = behaviorConfig.bulletCount ?? this.bulletHellCount;
+    this.bulletHellSpreadDeg = behaviorConfig.spreadDeg ?? this.bulletHellSpreadDeg;
+    this.bulletHellCooldown = behaviorConfig.bulletCooldown ?? this.bulletHellCooldown;
+    this.missileCooldown = behaviorConfig.missileCooldown ?? this.missileCooldown;
+    this.missileTurnRate = behaviorConfig.missileTurnRate ?? this.missileTurnRate;
+    this.missileMinSpeed = behaviorConfig.missileMinSpeed ?? this.missileMinSpeed;
+    this.missileMaxSpeed = behaviorConfig.missileMaxSpeed ?? this.missileMaxSpeed;
+    this.missileAccel = behaviorConfig.missileAccel ?? this.missileAccel;
+    this.necromancerSummonCooldown = behaviorConfig.summonCooldown ?? this.necromancerSummonCooldown;
+    this.necromancerSummonType = behaviorConfig.summonType ?? this.necromancerSummonType;
+    this.necromancerSummonRadius = behaviorConfig.summonRadius ?? this.necromancerSummonRadius;
+    this.spikeCastSubsystem.configure(behaviorConfig);
+    this.laserPatternSubsystem.configure(behaviorConfig);
   }
 
   private initialize(): void {
@@ -355,9 +322,9 @@ export class EnemyController {
     this.health = new Health(maxHP, this.id);
 
     // Setup attack stats (config is already the zombie_basic object)
-    this.speed = this.config.baseStats.speed;
-    this.damage = this.config.baseStats.damage;
-    this.attackRange = this.config.baseStats.attackRange;
+    this.speed = this.config.baseStats?.speed ?? this.speed;
+    this.damage = this.config.baseStats?.damage ?? this.damage;
+    this.attackRange = this.config.baseStats?.attackRange ?? this.attackRange;
     this.attackCooldown = 0;
 
     this.eventBus.emit(GameEvents.ENEMY_SPAWNED, {
@@ -398,7 +365,7 @@ export class EnemyController {
 
     // Check if enemies are frozen via debug flag
     const configLoader = ConfigLoader.getInstance();
-    const gameplayConfig = configLoader.getGameplay();
+    const gameplayConfig = configLoader.getGameplayConfig();
     if (gameplayConfig?.debugConfig?.freezeEnemies) {
       return; // Don't update if frozen
     }
@@ -1174,169 +1141,14 @@ export class EnemyController {
   ): void {
     this.updateStrategist(deltaTime, playerPosition, playerVelocity, allEnemies, roomManager);
 
-    if (!roomManager) {
-      return;
-    }
+    if (!roomManager) return;
 
-    if (this.spikeCastState === 'idle') {
-      this.spikeCastTimer -= deltaTime;
-      if (this.spikeCastTimer <= 0) {
-        const zone = this.computeRandomThirdZone(roomManager);
-        if (!zone) {
-          this.spikeCastTimer = this.spikeCastCooldown;
-          return;
-        }
-        this.spikeZoneBounds = zone;
-        this.spikeCastState = 'warning';
-        this.spikeCastStateTimer = this.spikeCastWarningDuration;
-        this.spawnSpikeZoneWarningVisuals(zone);
-      }
-      return;
-    }
-
-    this.spikeCastStateTimer -= deltaTime;
-
-    if (this.spikeCastState === 'warning') {
-      if (this.spikeCastStateTimer <= 0) {
-        this.spikeCastState = 'active';
-        this.spikeCastStateTimer = this.spikeCastActiveDuration;
-        this.spikeCastTickTimer = 0;
-        this.spawnSpikeZoneActiveVisuals();
-      }
-      return;
-    }
-
-    if (this.spikeCastState === 'active') {
-      this.spikeCastTickTimer -= deltaTime;
-      if (this.spikeCastTickTimer <= 0) {
-        if (this.spikeZoneBounds && this.isPointInsideZone(playerPosition, this.spikeZoneBounds)) {
-          this.attackPlayerWithDamage(this.spikeCastDamage);
-        }
-        this.spikeCastTickTimer = this.spikeCastTickInterval;
-      }
-
-      if (this.spikeCastStateTimer <= 0) {
-        this.clearSpikeZoneVisuals();
-        this.spikeZoneBounds = null;
-        this.spikeCastState = 'idle';
-        this.spikeCastTimer = this.spikeCastCooldown;
-      }
-    }
-  }
-
-  private computeRandomThirdZone(roomManager: RoomManager): { minX: number; maxX: number; minZ: number; maxZ: number } | null {
-    const bounds = roomManager.getRoomBounds();
-    if (!bounds) return null;
-
-    const width = bounds.maxX - bounds.minX;
-    const height = bounds.maxZ - bounds.minZ;
-    if (width <= 0.001 || height <= 0.001) return null;
-
-    const vertical = Math.random() < 0.5;
-    const tier = Math.floor(Math.random() * 3);
-
-    if (vertical) {
-      const third = width / 3;
-      const minX = bounds.minX + tier * third;
-      return {
-        minX,
-        maxX: minX + third,
-        minZ: bounds.minZ,
-        maxZ: bounds.maxZ,
-      };
-    }
-
-    const third = height / 3;
-    const minZ = bounds.minZ + tier * third;
-    return {
-      minX: bounds.minX,
-      maxX: bounds.maxX,
-      minZ,
-      maxZ: minZ + third,
-    };
-  }
-
-  private spawnSpikeZoneWarningVisuals(zone: { minX: number; maxX: number; minZ: number; maxZ: number }): void {
-    this.clearSpikeZoneVisuals();
-    const width = Math.max(0.15, zone.maxX - zone.minX);
-    const depth = Math.max(0.15, zone.maxZ - zone.minZ);
-
-    const warningMesh = MeshBuilder.CreateGround(`spike_warning_${Date.now()}`, {
-      width,
-      height: depth,
-    }, this.scene);
-    warningMesh.position = new Vector3((zone.minX + zone.maxX) * 0.5, 0.05, (zone.minZ + zone.maxZ) * 0.5);
-
-    const warningMat = new StandardMaterial(`spike_warning_mat_${Date.now()}`, this.scene);
-    warningMat.diffuseColor = new Color3(1.0, 0.1, 0.1);
-    warningMat.emissiveColor = new Color3(0.6, 0.0, 0.0);
-    warningMat.alpha = 0.28;
-    warningMesh.material = warningMat;
-
-    this.spikeZoneVisuals.push(warningMesh);
-  }
-
-  private spawnSpikeZoneActiveVisuals(): void {
-    if (!this.spikeZoneBounds) return;
-
-    const zone = this.spikeZoneBounds;
-    this.clearSpikeZoneVisuals();
-    const width = Math.max(0.15, zone.maxX - zone.minX);
-    const depth = Math.max(0.15, zone.maxZ - zone.minZ);
-
-    const zoneMesh = MeshBuilder.CreateGround(`spike_active_${Date.now()}`, {
-      width,
-      height: depth,
-    }, this.scene);
-    zoneMesh.position = new Vector3((zone.minX + zone.maxX) * 0.5, 0.06, (zone.minZ + zone.maxZ) * 0.5);
-
-    const zoneMat = new StandardMaterial(`spike_active_mat_${Date.now()}`, this.scene);
-    zoneMat.diffuseColor = new Color3(0.95, 0.0, 0.0);
-    zoneMat.emissiveColor = new Color3(0.75, 0.05, 0.05);
-    zoneMat.alpha = 0.42;
-    zoneMesh.material = zoneMat;
-    this.spikeZoneVisuals.push(zoneMesh);
-
-    const area = width * depth;
-    const desiredSpikes = 70;
-    const spacing = Math.min(1.2, Math.max(0.6, Math.sqrt(area / desiredSpikes)));
-    const baseSize = Math.min(0.45, spacing * 0.6);
-    const spikeHeight = 0.9;
-
-    for (let x = zone.minX + spacing * 0.5; x < zone.maxX; x += spacing) {
-      for (let z = zone.minZ + spacing * 0.5; z < zone.maxZ; z += spacing) {
-        const spike = MeshBuilder.CreateCylinder(`spike_${Date.now()}_${x}_${z}`, {
-          height: spikeHeight,
-          diameterTop: 0,
-          diameterBottom: baseSize,
-          tessellation: 4,
-        }, this.scene);
-        spike.position = new Vector3(x, 0.06 + spikeHeight * 0.5, z);
-        spike.rotation.y = Math.random() * Math.PI;
-
-        const spikeMat = new StandardMaterial(`spike_mat_${Date.now()}`, this.scene);
-        spikeMat.diffuseColor = new Color3(0.42, 0.02, 0.02);
-        spikeMat.emissiveColor = new Color3(0.22, 0.0, 0.0);
-        spikeMat.alpha = 0.95;
-        spike.material = spikeMat;
-        this.spikeZoneVisuals.push(spike);
-      }
-    }
-  }
-
-  private isPointInsideZone(point: Vector3, zone: { minX: number; maxX: number; minZ: number; maxZ: number }): boolean {
-    return point.x >= zone.minX && point.x <= zone.maxX && point.z >= zone.minZ && point.z <= zone.maxZ;
-  }
-
-  private clearSpikeZoneVisuals(): void {
-    for (const mesh of this.spikeZoneVisuals) {
-      const mat = mesh.material;
-      mesh.dispose();
-      if (mat && typeof (mat as any).dispose === 'function') {
-        (mat as any).dispose();
-      }
-    }
-    this.spikeZoneVisuals = [];
+    this.spikeCastSubsystem.update({
+      deltaTime,
+      playerPosition,
+      roomManager,
+      onAttackPlayerWithDamage: (damage) => this.attackPlayerWithDamage(damage),
+    });
   }
 
   private updateLaserPatternBoss(
@@ -1359,323 +1171,16 @@ export class EnemyController {
     }
 
     const bossCenter = new Vector3(this.position.x, 0.06, this.position.z);
-    this.laserBossContactTimer = Math.max(0, this.laserBossContactTimer - deltaTime);
-    this.laserBossStateTimer -= deltaTime;
-
-    if (this.laserBossState === 'cooldown') {
-      if (this.laserBossStateTimer <= 0) {
-        this.laserBossPattern = Math.random() < 0.5 ? 'rotating' : 'grid';
-        this.laserBossState = 'windup';
-        this.laserBossStateTimer = this.laserBossWindup;
-        if (this.laserBossPattern === 'grid') {
-          const baseAngle = Math.random() * Math.PI;
-          this.laserBossSegments = this.generateGridSegments(roomManager, baseAngle, this.laserBossGridSpacing);
-          this.updateLaserVisualMeshes(this.laserBossSegments, new Color3(1.0, 0.24, 0.18), 0.28);
-        } else {
-          this.clearLaserPatternVisuals();
-        }
-      }
-      return;
-    }
-
-    if (this.laserBossState === 'windup') {
-      if (this.laserBossStateTimer <= 0) {
-        this.startLaserPattern(roomManager);
-      }
-      return;
-    }
-
-    if (this.laserBossState !== 'casting') return;
-
-    if (this.laserBossPattern === 'rotating') {
-      const duration = Math.max(0.3, this.laserBossRotateDuration);
-      const angularSpeed = (Math.PI * 2) / duration;
-      this.laserBossAngle += angularSpeed * deltaTime;
-      const direction = new Vector3(Math.cos(this.laserBossAngle), 0, Math.sin(this.laserBossAngle));
-      const end = this.computeBeamEndAtFirstWall(bossCenter, direction, roomManager);
-      this.laserBossSegments = [{ start: bossCenter.clone(), end }];
-      this.updateLaserVisualMeshes(this.laserBossSegments, new Color3(1.0, 0.2, 0.2));
-      this.rotateToward(direction, deltaTime, 8);
-    }
-
-    const previousPlayerPosition = playerPosition.subtract(playerVelocity.scale(deltaTime));
-    const touchesLaser = this.isPlayerSweptHitByAnyLaserSegment(
-      previousPlayerPosition,
+    this.laserPatternSubsystem.update({
+      deltaTime,
+      bossCenter,
       playerPosition,
-      this.laserBossSegments,
-      this.laserBossBeamWidth
-    );
-    if (touchesLaser && this.laserBossContactTimer <= 0) {
-      this.attackPlayerWithDamage(this.laserBossDamage);
-      this.laserBossContactTimer = this.laserBossContactCooldown;
-    }
-
-    if (this.laserBossStateTimer <= 0) {
-      this.clearLaserPatternVisuals();
-      this.laserBossSegments = [];
-      this.laserBossPattern = 'none';
-      this.laserBossState = 'cooldown';
-      this.laserBossStateTimer = this.laserBossCooldown;
-    }
-  }
-
-  private startLaserPattern(roomManager: RoomManager): void {
-    this.laserBossState = 'casting';
-    this.laserBossContactTimer = 0;
-    this.clearLaserPatternVisuals();
-    const bossCenter = new Vector3(this.position.x, 0.06, this.position.z);
-
-    if (this.laserBossPattern === 'rotating') {
-      this.laserBossStateTimer = this.laserBossRotateDuration;
-      this.laserBossAngle = Math.random() * Math.PI * 2;
-      const direction = new Vector3(Math.cos(this.laserBossAngle), 0, Math.sin(this.laserBossAngle));
-      const end = this.computeBeamEndAtFirstWall(bossCenter, direction, roomManager);
-      this.laserBossSegments = [{ start: bossCenter.clone(), end }];
-      this.updateLaserVisualMeshes(this.laserBossSegments, new Color3(1.0, 0.2, 0.2));
-      return;
-    }
-
-    this.laserBossStateTimer = this.laserBossGridDuration;
-    this.updateLaserVisualMeshes(this.laserBossSegments, new Color3(1.0, 0.28, 0.22));
-  }
-
-  private computeBeamEndAtFirstWall(origin: Vector3, direction: Vector3, roomManager: RoomManager): Vector3 {
-    const maxDistance = 40;
-    const step = 0.06;
-    let lastWalkable = origin.clone();
-
-    for (let d = step; d <= maxDistance; d += step) {
-      const sample = origin.add(direction.scale(d));
-      if (this.isVisionBlockedAt(sample, roomManager)) {
-        return lastWalkable;
-      }
-      lastWalkable = sample;
-    }
-
-    return lastWalkable;
-  }
-
-  private generateGridSegments(roomManager: RoomManager, angle: number, spacing: number): BeamSegment[] {
-    const bounds = roomManager.getRoomBounds();
-    if (!bounds) return [];
-
-    const normalA = new Vector3(-Math.sin(angle), 0, Math.cos(angle));
-    const normalB = new Vector3(-normalA.z, 0, normalA.x);
-
-    const segments: BeamSegment[] = [];
-    segments.push(...this.generateLineFamily(bounds, normalA, spacing, roomManager));
-    segments.push(...this.generateLineFamily(bounds, normalB, spacing, roomManager));
-    return segments;
-  }
-
-  private generateLineFamily(
-    bounds: { minX: number; maxX: number; minZ: number; maxZ: number },
-    normal: Vector3,
-    spacing: number,
-    roomManager: RoomManager
-  ): BeamSegment[] {
-    const corners = [
-      new Vector3(bounds.minX, 0, bounds.minZ),
-      new Vector3(bounds.maxX, 0, bounds.minZ),
-      new Vector3(bounds.maxX, 0, bounds.maxZ),
-      new Vector3(bounds.minX, 0, bounds.maxZ),
-    ];
-
-    let minProj = Number.POSITIVE_INFINITY;
-    let maxProj = Number.NEGATIVE_INFINITY;
-    for (const corner of corners) {
-      const projection = corner.x * normal.x + corner.z * normal.z;
-      minProj = Math.min(minProj, projection);
-      maxProj = Math.max(maxProj, projection);
-    }
-
-    const step = Math.max(0.8, spacing);
-    const segments: BeamSegment[] = [];
-    for (let c = minProj - step; c <= maxProj + step; c += step) {
-      const clipped = this.clipInfiniteLineToRoom(bounds, normal, c);
-      if (clipped) {
-        const clippedSegments = this.splitSegmentByWalls(clipped, roomManager);
-        segments.push(...clippedSegments);
-      }
-    }
-    return segments;
-  }
-
-  private splitSegmentByWalls(segment: BeamSegment, roomManager: RoomManager): BeamSegment[] {
-    const parts: BeamSegment[] = [];
-    const delta = segment.end.subtract(segment.start);
-    const length = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
-    if (length <= 0.05) return parts;
-
-    const step = 0.08;
-    const steps = Math.max(2, Math.ceil(length / step));
-    let openStart: Vector3 | null = null;
-    let previousSample = segment.start.clone();
-
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const sample = segment.start.add(delta.scale(t));
-      const walkable = !this.isVisionBlockedAt(sample, roomManager);
-
-      if (walkable && !openStart) {
-        openStart = sample.clone();
-      }
-
-      if ((!walkable || i === steps) && openStart) {
-        const endPoint = walkable && i === steps ? sample.clone() : previousSample.clone();
-        if (Vector3.DistanceSquared(openStart, endPoint) > 0.04) {
-          parts.push({ start: openStart.clone(), end: endPoint });
-        }
-        openStart = null;
-      }
-
-      previousSample = sample;
-    }
-
-    return parts;
-  }
-
-  private clipInfiniteLineToRoom(
-    bounds: { minX: number; maxX: number; minZ: number; maxZ: number },
-    normal: Vector3,
-    c: number
-  ): BeamSegment | null {
-    const epsilon = 1e-6;
-    const points: Vector3[] = [];
-
-    const tryAddPoint = (x: number, z: number) => {
-      if (x < bounds.minX - 1e-4 || x > bounds.maxX + 1e-4 || z < bounds.minZ - 1e-4 || z > bounds.maxZ + 1e-4) {
-        return;
-      }
-      for (const point of points) {
-        if (Math.abs(point.x - x) < 1e-4 && Math.abs(point.z - z) < 1e-4) {
-          return;
-        }
-      }
-      points.push(new Vector3(x, 0.06, z));
-    };
-
-    if (Math.abs(normal.z) > epsilon) {
-      tryAddPoint(bounds.minX, (c - normal.x * bounds.minX) / normal.z);
-      tryAddPoint(bounds.maxX, (c - normal.x * bounds.maxX) / normal.z);
-    }
-
-    if (Math.abs(normal.x) > epsilon) {
-      tryAddPoint((c - normal.z * bounds.minZ) / normal.x, bounds.minZ);
-      tryAddPoint((c - normal.z * bounds.maxZ) / normal.x, bounds.maxZ);
-    }
-
-    if (points.length < 2) {
-      return null;
-    }
-
-    let bestA = points[0];
-    let bestB = points[1];
-    let bestDist = Vector3.DistanceSquared(bestA, bestB);
-    for (let i = 0; i < points.length; i++) {
-      for (let j = i + 1; j < points.length; j++) {
-        const dist = Vector3.DistanceSquared(points[i], points[j]);
-        if (dist > bestDist) {
-          bestDist = dist;
-          bestA = points[i];
-          bestB = points[j];
-        }
-      }
-    }
-
-    if (bestDist <= 0.02) return null;
-    return { start: bestA, end: bestB };
-  }
-
-  private updateLaserVisualMeshes(segments: BeamSegment[], color: Color3, alpha: number = 0.88): void {
-    this.clearLaserPatternVisuals();
-    for (let i = 0; i < segments.length; i++) {
-      const segment = segments[i];
-      const delta = segment.end.subtract(segment.start);
-      const length = delta.length();
-      if (length <= 0.05) continue;
-
-      const beam = MeshBuilder.CreateBox(`laser_${this.id}_${Date.now()}_${i}`, {
-        width: this.laserBossBeamWidth,
-        height: 0.14,
-        depth: 1,
-      }, this.scene);
-
-      const material = new StandardMaterial(`laser_mat_${this.id}_${Date.now()}_${i}`, this.scene);
-      material.diffuseColor = color.scale(0.55);
-      material.emissiveColor = color;
-      material.alpha = alpha;
-      beam.material = material;
-
-      beam.position = segment.start.add(segment.end).scale(0.5);
-      beam.position.y = 0.1;
-      beam.scaling = new Vector3(1, 1, length);
-      beam.rotation.y = Math.atan2(delta.x, delta.z);
-      beam.isPickable = false;
-      this.laserBossVisuals.push(beam);
-    }
-  }
-
-  private isPlayerSweptHitByAnyLaserSegment(
-    previousPlayerPosition: Vector3,
-    playerPosition: Vector3,
-    segments: BeamSegment[],
-    width: number
-  ): boolean {
-    for (const segment of segments) {
-      const distance = this.distanceBetweenSegments2D(previousPlayerPosition, playerPosition, segment.start, segment.end);
-      if (distance <= width * 0.5) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private distanceBetweenSegments2D(a0: Vector3, a1: Vector3, b0: Vector3, b1: Vector3): number {
-    const sampleCount = 10;
-    let minDistance = Number.POSITIVE_INFINITY;
-    for (let i = 0; i <= sampleCount; i++) {
-      const t = i / sampleCount;
-      const sample = a0.add(a1.subtract(a0).scale(t));
-      minDistance = Math.min(minDistance, this.distancePointToSegment2D(sample, b0, b1));
-    }
-    return minDistance;
-  }
-
-  private distancePointToSegment2D(point: Vector3, start: Vector3, end: Vector3): number {
-    const ax = start.x;
-    const az = start.z;
-    const bx = end.x;
-    const bz = end.z;
-    const px = point.x;
-    const pz = point.z;
-
-    const abx = bx - ax;
-    const abz = bz - az;
-    const abLenSq = abx * abx + abz * abz;
-    if (abLenSq <= 1e-8) {
-      return Math.sqrt((px - ax) * (px - ax) + (pz - az) * (pz - az));
-    }
-
-    const apx = px - ax;
-    const apz = pz - az;
-    const t = Math.max(0, Math.min(1, (apx * abx + apz * abz) / abLenSq));
-    const closestX = ax + abx * t;
-    const closestZ = az + abz * t;
-    const dx = px - closestX;
-    const dz = pz - closestZ;
-    return Math.sqrt(dx * dx + dz * dz);
-  }
-
-  private clearLaserPatternVisuals(): void {
-    for (const mesh of this.laserBossVisuals) {
-      const material = mesh.material;
-      mesh.dispose();
-      if (material && typeof (material as any).dispose === 'function') {
-        (material as any).dispose();
-      }
-    }
-    this.laserBossVisuals = [];
+      playerVelocity,
+      roomManager,
+      isVisionBlockedAt: (position, room) => this.isVisionBlockedAt(position, room),
+      onRotateToward: (direction, dt, speed) => this.rotateToward(direction, dt, speed),
+      onAttackPlayerWithDamage: (damage) => this.attackPlayerWithDamage(damage),
+    });
   }
 
   private fireProjectile(playerPosition: Vector3, playerVelocity: Vector3): void {
@@ -2413,7 +1918,7 @@ export class EnemyController {
       damage,
     });
 
-    this.attackCooldown = this.config.baseStats.attackCooldown;
+    this.attackCooldown = this.config.baseStats?.attackCooldown ?? this.attackCooldown;
   }
 
   private attackPlayer(): void {
@@ -2441,7 +1946,8 @@ export class EnemyController {
 
   private die(): void {
     this.isAlive = false;
-    this.clearLaserPatternVisuals();
+    this.laserPatternSubsystem.dispose();
+    this.spikeCastSubsystem.dispose();
     if (this.mesh) {
       this.mesh.dispose();
     }
@@ -2505,8 +2011,8 @@ export class EnemyController {
   }
 
   dispose(): void {
-    this.clearLaserPatternVisuals();
-    this.clearSpikeZoneVisuals();
+    this.laserPatternSubsystem.dispose();
+    this.spikeCastSubsystem.dispose();
     for (const group of this.bullAnimGroups.values()) {
       group.stop();
       group.dispose();
@@ -2698,7 +2204,7 @@ export class EnemyController {
 
   private async loadBullModel(): Promise<void> {
     try {
-      const baseUrl = (import.meta as any).env?.BASE_URL ?? '/';
+      const baseUrl = import.meta.env.BASE_URL ?? '/';
       const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
       const rootUrl = `${normalizedBase}models/bull/`;
       const result = await SceneLoader.ImportMeshAsync(

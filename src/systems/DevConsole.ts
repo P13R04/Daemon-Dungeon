@@ -9,6 +9,36 @@ import { EventBus, GameEvents } from '../core/EventBus';
 import { PlayerController } from '../gameplay/PlayerController';
 import { UI_LAYER } from '../ui/uiLayers';
 import { listAllVoicelineIds, getVoiceline } from '../data/voicelines/VoicelineDefinitions';
+import type { VoicelineConfig } from '../data/voicelines/VoicelineDefinitions';
+
+interface UiOptionChangedPayload {
+  option?: string;
+  value?: boolean;
+}
+
+interface DevConsoleGameManager {
+  isUsingTiles(): boolean;
+  setTilesEnabled(enabled: boolean): void;
+  loadRoomFromTileMappingJson(payload: string): void;
+  getTextureRenderMode(): 'classic' | 'proceduralRelief';
+  setTextureRenderMode(mode: 'classic' | 'proceduralRelief'): void;
+  getProceduralQuality(): string;
+  setProceduralQuality(quality: string): void;
+  getTileStatistics(): { rooms?: number; tiles?: number; obstacles?: number; spawnPoints?: number; [key: string]: unknown };
+  getHUDManager(): { playVoiceline(voiceline: VoicelineConfig): Promise<void> };
+  getCameraAlpha(): number;
+  setCameraAlpha(value: number): void;
+  getCameraBeta(): number;
+  setCameraBeta(value: number): void;
+  getCameraRadius(): number;
+  setCameraRadius(value: number): void;
+  getPlayerHeightOffset(): number;
+  setPlayerHeightOffset(value: number): void;
+  getEnemyHeightOffset(): number;
+  setEnemyHeightOffset(value: number): void;
+  areWallsVisible(): boolean;
+  setWallsVisible(value: boolean): void;
+}
 
 export class DevConsole {
   private gui: AdvancedDynamicTexture;
@@ -31,14 +61,14 @@ export class DevConsole {
   private voicelineIds: string[] = [];
   private voicelineSelectIndex: number = 0;
   private voicelineSelectLabel: TextBlock | null = null;
-  private gameManager: any;
+  private gameManager: DevConsoleGameManager;
   private devScrollViewer?: ScrollViewer;
   private devPanelBackground: Rectangle | null = null;
   private devPanelContent: StackPanel | null = null;
-  private devScrollWheelObserver: any;
+  private devScrollWheelObserver: Parameters<ScrollViewer['onWheelObservable']['remove']>[0] = null;
   private lastValidDevScrollValue: number = 0;
 
-  constructor(private scene: Scene, gameManager: any) {
+  constructor(private scene: Scene, gameManager: DevConsoleGameManager) {
     this.gameManager = gameManager;
     this.eventBus = EventBus.getInstance();
     this.configLoader = ConfigLoader.getInstance();
@@ -60,7 +90,7 @@ export class DevConsole {
     this.setupLiveStats();
     this.applyGuiScaling();
 
-    this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data) => {
+    this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data: UiOptionChangedPayload) => {
       if (data?.option === 'postProcessingEnabled' || data?.option === 'postProcessingPixelScale') {
         this.applyGuiScaling();
       }
@@ -152,7 +182,7 @@ export class DevConsole {
       this.lastValidDevScrollValue = next;
     });
 
-    this.devScrollWheelObserver = scroll.onWheelObservable.add((delta: any) => {
+    this.devScrollWheelObserver = scroll.onWheelObservable.add((delta) => {
       const rawY = Number(delta?.y ?? 0);
       if (!Number.isFinite(rawY) || rawY === 0) return;
 
@@ -238,8 +268,10 @@ export class DevConsole {
   }
 
   private createPlayerStatsSection(parent: StackPanel): void {
-    const playerConfig = this.configLoader.getPlayer();
-    if (!playerConfig || !playerConfig.health || !playerConfig.attack) return;
+    const playerConfig = this.configLoader.getPlayerConfig();
+    const healthConfig = playerConfig?.health;
+    const attackConfig = playerConfig?.attack;
+    if (!playerConfig || !healthConfig || !attackConfig) return;
 
     const sectionTitle = new TextBlock('playerStatsTitle');
     sectionTitle.text = '═══ PLAYER STATS ═══';
@@ -253,7 +285,7 @@ export class DevConsole {
 
     // HP Slider
     const hpLabel = new TextBlock('hpLabel');
-    hpLabel.text = `HP: ${playerConfig.health.max}`;
+    hpLabel.text = `HP: ${healthConfig.max}`;
     hpLabel.fontSize = 13;
     hpLabel.fontWeight = 'bold';
     hpLabel.color = '#FFFFFF';
@@ -263,7 +295,7 @@ export class DevConsole {
     const hpSlider = new Slider('hpSlider');
     hpSlider.minimum = 10;
     hpSlider.maximum = 500;
-    hpSlider.value = playerConfig.health.max;
+    hpSlider.value = healthConfig.max;
     hpSlider.height = '25px';
     hpSlider.width = '440px';
     hpSlider.color = '#FF3333';
@@ -271,14 +303,14 @@ export class DevConsole {
     
     hpSlider.onValueChangedObservable.add((value: number) => {
       hpLabel.text = `HP: ${Math.floor(value)}`;
-      playerConfig.health.max = Math.floor(value);
+      healthConfig.max = Math.floor(value);
       this.configLoader.updatePlayerConfig(playerConfig);
     });
     parent.addControl(hpSlider);
 
     // Damage Slider
     const dmgLabel = new TextBlock('dmgLabel');
-    dmgLabel.text = `Damage: ${playerConfig.attack.damage}`;
+    dmgLabel.text = `Damage: ${attackConfig.damage}`;
     dmgLabel.fontSize = 13;
     dmgLabel.fontWeight = 'bold';
     dmgLabel.color = '#FFFFFF';
@@ -288,7 +320,7 @@ export class DevConsole {
     const dmgSlider = new Slider('dmgSlider');
     dmgSlider.minimum = 1;
     dmgSlider.maximum = 100;
-    dmgSlider.value = playerConfig.attack.damage;
+    dmgSlider.value = attackConfig.damage;
     dmgSlider.height = '25px';
     dmgSlider.width = '440px';
     dmgSlider.color = '#FF9933';
@@ -296,14 +328,14 @@ export class DevConsole {
 
     dmgSlider.onValueChangedObservable.add((value: number) => {
       dmgLabel.text = `Damage: ${Math.floor(value)}`;
-      playerConfig.attack.damage = Math.floor(value);
+      attackConfig.damage = Math.floor(value);
       this.configLoader.updatePlayerConfig(playerConfig);
     });
     parent.addControl(dmgSlider);
 
     // Fire Rate Slider
     const frLabel = new TextBlock('frLabel');
-    frLabel.text = `Fire Rate: ${playerConfig.attack.fireRate.toFixed(2)}`;
+    frLabel.text = `Fire Rate: ${attackConfig.fireRate.toFixed(2)}`;
     frLabel.fontSize = 13;
     frLabel.fontWeight = 'bold';
     frLabel.color = '#FFFFFF';
@@ -313,7 +345,7 @@ export class DevConsole {
     const frSlider = new Slider('frSlider');
     frSlider.minimum = 0.05;
     frSlider.maximum = 1.0;
-    frSlider.value = playerConfig.attack.fireRate;
+    frSlider.value = attackConfig.fireRate;
     frSlider.height = '25px';
     frSlider.width = '440px';
     frSlider.color = '#00FF00';
@@ -321,15 +353,16 @@ export class DevConsole {
 
     frSlider.onValueChangedObservable.add((value: number) => {
       frLabel.text = `Fire Rate: ${value.toFixed(2)}`;
-      playerConfig.attack.fireRate = value;
+      attackConfig.fireRate = value;
       this.configLoader.updatePlayerConfig(playerConfig);
     });
     parent.addControl(frSlider);
   }
 
   private createGameplayOptionsSection(parent: StackPanel): void {
-    const gameplayConfig = this.configLoader.getGameplay();
+    const gameplayConfig = this.configLoader.getGameplayConfig();
     if (!gameplayConfig || !gameplayConfig.uiConfig) return;
+    const uiConfig = gameplayConfig.uiConfig;
 
     const sectionTitle = new TextBlock('gameplayTitle');
     sectionTitle.text = '═══ GAMEPLAY OPTIONS ═══';
@@ -349,7 +382,7 @@ export class DevConsole {
     healthBarsContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     
     const healthBarsCheckbox = new Checkbox('showHealthBarsCheckbox');
-    healthBarsCheckbox.isChecked = gameplayConfig.uiConfig.showEnemyHealthBars;
+    healthBarsCheckbox.isChecked = uiConfig.showEnemyHealthBars;
     healthBarsCheckbox.width = '25px';
     healthBarsCheckbox.height = '25px';
 
@@ -362,7 +395,7 @@ export class DevConsole {
 
     healthBarsCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
       console.log('Health bars checkbox changed to:', isChecked);
-      gameplayConfig.uiConfig.showEnemyHealthBars = isChecked;
+      uiConfig.showEnemyHealthBars = isChecked;
       this.configLoader.updateGameplayConfig(gameplayConfig);
       this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'showEnemyHealthBars', value: isChecked });
     });
@@ -379,7 +412,7 @@ export class DevConsole {
     enemyNamesContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
 
     const enemyNamesCheckbox = new Checkbox('showEnemyNamesCheckbox');
-    enemyNamesCheckbox.isChecked = gameplayConfig.uiConfig.showEnemyNames ?? true;
+    enemyNamesCheckbox.isChecked = uiConfig.showEnemyNames ?? true;
     enemyNamesCheckbox.width = '25px';
     enemyNamesCheckbox.height = '25px';
 
@@ -391,7 +424,7 @@ export class DevConsole {
     enemyNamesLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
 
     enemyNamesCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
-      gameplayConfig.uiConfig.showEnemyNames = isChecked;
+      uiConfig.showEnemyNames = isChecked;
       this.configLoader.updateGameplayConfig(gameplayConfig);
       this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'showEnemyNames', value: isChecked });
     });
@@ -408,7 +441,7 @@ export class DevConsole {
     damageNumbersContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     
     const damageNumbersCheckbox = new Checkbox('showDamageNumbersCheckbox');
-    damageNumbersCheckbox.isChecked = gameplayConfig.uiConfig.showDamageNumbers;
+    damageNumbersCheckbox.isChecked = uiConfig.showDamageNumbers;
     damageNumbersCheckbox.width = '25px';
     damageNumbersCheckbox.height = '25px';
 
@@ -420,7 +453,7 @@ export class DevConsole {
     damageNumbersLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
 
     damageNumbersCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
-      gameplayConfig.uiConfig.showDamageNumbers = isChecked;
+      uiConfig.showDamageNumbers = isChecked;
       this.configLoader.updateGameplayConfig(gameplayConfig);
       this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'showDamageNumbers', value: isChecked });
     });
@@ -431,7 +464,7 @@ export class DevConsole {
   }
 
   private createPostProcessingSection(parent: StackPanel): void {
-    const gameplayConfig = this.configLoader.getGameplay();
+    const gameplayConfig = this.configLoader.getGameplayConfig();
     if (!gameplayConfig) return;
 
     if (!gameplayConfig.postProcessing) {
@@ -740,8 +773,8 @@ export class DevConsole {
   }
 
   private createRoomTestingSection(parent: StackPanel): void {
-    const rooms = this.configLoader.getRooms();
-    this.roomIds = Array.isArray(rooms) ? rooms.map((r: any) => r.id) : [];
+    const rooms = this.configLoader.getRoomsConfig();
+    this.roomIds = Array.isArray(rooms) ? rooms.map((room) => (room as { id?: string }).id).filter((id): id is string => typeof id === 'string' && id.length > 0) : [];
     if (this.roomIds.length === 0) {
       this.roomIds = ['room_test_dummies'];
     }
@@ -1186,8 +1219,8 @@ export class DevConsole {
   }
 
   private setupLiveStats(): void {
-    this.eventBus.on(GameEvents.ENEMY_DAMAGED, (data) => {
-      if (!data?.damage) return;
+    this.eventBus.on(GameEvents.ENEMY_DAMAGED, (data: { damage?: number }) => {
+      if (typeof data.damage !== 'number') return;
       const now = performance.now() / 1000;
       this.damageEvents.push({ t: now, dmg: data.damage });
     });
@@ -1219,8 +1252,9 @@ export class DevConsole {
   }
 
   private createDebugFlagsSection(parent: StackPanel): void {
-    const gameplayConfig = this.configLoader.getGameplay();
+    const gameplayConfig = this.configLoader.getGameplayConfig();
     if (!gameplayConfig || !gameplayConfig.debugConfig) return;
+    const debugConfig = gameplayConfig.debugConfig;
 
     const sectionTitle = new TextBlock('debugTitle');
     sectionTitle.text = '═══ DEBUG FLAGS ═══';
@@ -1240,7 +1274,7 @@ export class DevConsole {
     godModeContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     
     const godModeCheckbox = new Checkbox('godModeCheckbox');
-    godModeCheckbox.isChecked = gameplayConfig.debugConfig.godMode;
+    godModeCheckbox.isChecked = debugConfig.godMode;
     godModeCheckbox.width = '25px';
     godModeCheckbox.height = '25px';
 
@@ -1252,7 +1286,7 @@ export class DevConsole {
     godModeLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
 
     godModeCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
-      gameplayConfig.debugConfig.godMode = isChecked;
+      debugConfig.godMode = isChecked;
       this.configLoader.updateGameplayConfig(gameplayConfig);
       this.eventBus.emit(GameEvents.DEBUG_FLAG_CHANGED, { flag: 'godMode', value: isChecked });
     });
@@ -1269,7 +1303,7 @@ export class DevConsole {
     infUltContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     
     const infUltCheckbox = new Checkbox('infiniteUltCheckbox');
-    infUltCheckbox.isChecked = gameplayConfig.debugConfig.infiniteUltimate;
+    infUltCheckbox.isChecked = debugConfig.infiniteUltimate;
     infUltCheckbox.width = '25px';
     infUltCheckbox.height = '25px';
 
@@ -1281,7 +1315,7 @@ export class DevConsole {
     infUltLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
 
     infUltCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
-      gameplayConfig.debugConfig.infiniteUltimate = isChecked;
+      debugConfig.infiniteUltimate = isChecked;
       this.configLoader.updateGameplayConfig(gameplayConfig);
       this.eventBus.emit(GameEvents.DEBUG_FLAG_CHANGED, { flag: 'infiniteUltimate', value: isChecked });
     });
@@ -1298,7 +1332,7 @@ export class DevConsole {
     freezeContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     
     const freezeCheckbox = new Checkbox('freezeEnemiesCheckbox');
-    freezeCheckbox.isChecked = gameplayConfig.debugConfig.freezeEnemies;
+    freezeCheckbox.isChecked = debugConfig.freezeEnemies;
     freezeCheckbox.width = '25px';
     freezeCheckbox.height = '25px';
 
@@ -1311,7 +1345,7 @@ export class DevConsole {
 
     freezeCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
       console.log('Freeze enemies checkbox changed to:', isChecked);
-      gameplayConfig.debugConfig.freezeEnemies = isChecked;
+      debugConfig.freezeEnemies = isChecked;
       this.configLoader.updateGameplayConfig(gameplayConfig);
       this.eventBus.emit(GameEvents.DEBUG_FLAG_CHANGED, { flag: 'freezeEnemies', value: isChecked });
     });
@@ -1328,7 +1362,7 @@ export class DevConsole {
     daemonTestContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
 
     const daemonTestCheckbox = new Checkbox('daemonVoicelineCheckbox');
-    daemonTestCheckbox.isChecked = gameplayConfig.debugConfig.daemonVoicelineTest;
+    daemonTestCheckbox.isChecked = debugConfig.daemonVoicelineTest ?? false;
     daemonTestCheckbox.width = '25px';
     daemonTestCheckbox.height = '25px';
 
@@ -1340,7 +1374,7 @@ export class DevConsole {
     daemonTestLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
 
     daemonTestCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
-      gameplayConfig.debugConfig.daemonVoicelineTest = isChecked;
+      debugConfig.daemonVoicelineTest = isChecked;
       this.configLoader.updateGameplayConfig(gameplayConfig);
       this.eventBus.emit(GameEvents.DEBUG_FLAG_CHANGED, { flag: 'daemonVoicelineTest', value: isChecked });
     });
@@ -1366,7 +1400,7 @@ export class DevConsole {
   dispose(): void {
     if (this.devScrollViewer && this.devScrollWheelObserver) {
       this.devScrollViewer.onWheelObservable.remove(this.devScrollWheelObserver);
-      this.devScrollWheelObserver = undefined;
+      this.devScrollWheelObserver = null;
     }
     this.devScrollViewer = undefined;
 
