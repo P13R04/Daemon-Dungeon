@@ -57,7 +57,7 @@ export class TileSystem {
   private tileMeshes: Map<string, Mesh> = new Map();
   private tileGrid: Map<string, TileData> = new Map();
   private origin: Vector3 = Vector3.Zero();
-  private readonly textureBasePath: string = '/tiles_test';
+  private readonly textureBasePath: string = 'tiles_test';
   private readonly rotationOffsetDegrees: number = 0;
   private spikeMeshes: Map<string, Mesh[]> = new Map();
   private poisonParticles: Map<string, PoisonParticleData[]> = new Map();

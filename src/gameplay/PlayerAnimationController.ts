@@ -93,7 +93,7 @@ export class PlayerAnimationController {
   /**
    * Load character model and extract animation groups
    */
-  async loadModel(modelPath: string = '/models/player/'): Promise<Mesh> {
+  async loadModel(modelPath: string = 'models/player/'): Promise<Mesh> {
     try {
       const modelFile =
         this.playerClass === 'firewall'

@@ -742,7 +742,7 @@ export class CodexScene {
 
     if (entry.behavior === 'bull') {
       try {
-        const result = await SceneLoader.ImportMeshAsync('', '/models/bull/', 'bull.glb', this.scene);
+        const result = await SceneLoader.ImportMeshAsync('', 'models/bull/', 'bull.glb', this.scene);
         const mainRoot = result.meshes[0];
         if (mainRoot) {
           mainRoot.parent = root;
