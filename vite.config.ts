@@ -2,8 +2,9 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 
 export default defineConfig({
+  base: './',
   root: '.',
-  publicDir: './assets',
+  publicDir: 'public',
   optimizeDeps: {
     exclude: ['@babylonjs/havok'],
   },
