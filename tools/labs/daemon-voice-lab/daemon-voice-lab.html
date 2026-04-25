@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Daemon Voice Lab</title>
-  <link rel="stylesheet" href="/daemon-voice-lab.bundle.css" />
+  <link rel="stylesheet" href="./daemon-voice-lab.bundle.css" />
 </head>
 <body>
   <div class="lab-shell">
@@ -349,7 +349,7 @@
     };
 
     try {
-      await import('/daemon-voice-lab.bundle.js');
+      await import('./daemon-voice-lab.bundle.js');
     } catch (error) {
       const panel = document.createElement('div');
       panel.style.position = 'fixed';
@@ -363,7 +363,7 @@
       panel.style.color = '#ffdce4';
       panel.style.fontFamily = 'monospace';
       panel.style.zIndex = '99999';
-      panel.textContent = 'Daemon Voice Lab: failed to load /daemon-voice-lab.bundle.js';
+      panel.textContent = 'Daemon Voice Lab: failed to load ./daemon-voice-lab.bundle.js';
       document.body.appendChild(panel);
       console.error('Daemon Voice Lab bootstrap failed.', error);
     } finally {

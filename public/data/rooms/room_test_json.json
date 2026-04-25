@@ -1,0 +1,34 @@
+{
+  "id": "room_test_json",
+  "name": "Room Test JSON",
+  "layout": [
+    "VVVVVVVVVVVVVVVVVVVV",
+    "VVVVVVVVVVVVVVVVVVVV",
+    "VVVVVVVVVVVVVVVVVVVV",
+    "VVVVVVVVVVVVVVVVVVVV",
+    "VVVVVV############VV",
+    "VVVVVV#..........#VV",
+    "VVVVVV#..........#VV",
+    "VVVVVV#...VVPV...#VV",
+    "VVVVVV#.#.VVPV...#VV",
+    "VVVVVV#...PPPP...#VV",
+    "VVVVVV#...VVPV...#VV",
+    "VVVVVV#..........#VV",
+    "VVVVVV#.....#.##.#VV",
+    "VVVVVV#..........#VV",
+    "VVVVVV############VV",
+    "VVVVVVVVVVVVVVVVVVVV",
+    "VVVVVVVVVVVVVVVVVVVV",
+    "VVVVVVVVVVVVVVVVVVVV",
+    "VVVVVVVVVVVVVVVVVVVV",
+    "VVVVVVVVVVVVVVVVVVVV"
+  ],
+  "spawnPoints": [
+    {
+      "x": 10,
+      "y": 10,
+      "enemyType": "dummy_tank"
+    }
+  ],
+  "obstacles": []
+}

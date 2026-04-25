@@ -56,3 +56,19 @@ archive-local/
 .tmp/
 .temp/
 dist-**/
+
+# Python & Scripts
+*.py
+__pycache__/
+
+# AI & Extension Configs
+.continue/
+
+# Local Backups & Large Archives
+Archive/
+Archive.zip
+archives/
+daemon_dungeon_backup1/
+
+# Bundled Tools
+daemon-voice-lab.bundle.*

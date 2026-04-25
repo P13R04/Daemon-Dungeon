@@ -41,12 +41,21 @@ export interface AudioSettings {
 
 export interface AccessibilitySettings {
   colorFilter: ColorVisionFilter;
+  catGodModeEnabled: boolean;
+}
+
+export interface GraphicsSettings {
+  lightweightTexturesMode: boolean;
+  progressiveEnemySpawning: boolean;
+  enemySpawnBatchSize: number;
+  roomPreloadAheadCount: number;
 }
 
 export interface GameSettings {
   controls: ControlsSettings;
   audio: AudioSettings;
   accessibility: AccessibilitySettings;
+  graphics: GraphicsSettings;
 }
 
 interface AudioEngineLike {
@@ -80,6 +89,13 @@ const DEFAULT_SETTINGS: GameSettings = {
   },
   accessibility: {
     colorFilter: 'none',
+    catGodModeEnabled: false,
+  },
+  graphics: {
+    lightweightTexturesMode: true,
+    progressiveEnemySpawning: true,
+    enemySpawnBatchSize: 2,
+    roomPreloadAheadCount: 2,
   },
 };
 
@@ -148,6 +164,27 @@ export class GameSettingsStore {
       ...GameSettingsStore.settings.accessibility,
       ...patch,
     };
+    GameSettingsStore.persist(GameSettingsStore.settings);
+    GameSettingsStore.notify();
+  }
+
+  static updateGraphics(patch: Partial<GraphicsSettings>): void {
+    GameSettingsStore.settings.graphics = {
+      ...GameSettingsStore.settings.graphics,
+      ...patch,
+    };
+    GameSettingsStore.settings.graphics.enemySpawnBatchSize = clampInt(
+      GameSettingsStore.settings.graphics.enemySpawnBatchSize,
+      1,
+      12,
+      DEFAULT_SETTINGS.graphics.enemySpawnBatchSize,
+    );
+    GameSettingsStore.settings.graphics.roomPreloadAheadCount = clampInt(
+      GameSettingsStore.settings.graphics.roomPreloadAheadCount,
+      1,
+      8,
+      DEFAULT_SETTINGS.graphics.roomPreloadAheadCount,
+    );
     GameSettingsStore.persist(GameSettingsStore.settings);
     GameSettingsStore.notify();
   }
@@ -222,6 +259,25 @@ export class GameSettingsStore {
       },
       accessibility: {
         colorFilter: sanitizeFilter(parsed.accessibility?.colorFilter),
+        catGodModeEnabled: !!parsed.accessibility?.catGodModeEnabled,
+      },
+      graphics: {
+        lightweightTexturesMode:
+          parsed.graphics?.lightweightTexturesMode ?? DEFAULT_SETTINGS.graphics.lightweightTexturesMode,
+        progressiveEnemySpawning:
+          parsed.graphics?.progressiveEnemySpawning ?? DEFAULT_SETTINGS.graphics.progressiveEnemySpawning,
+        enemySpawnBatchSize: clampInt(
+          parsed.graphics?.enemySpawnBatchSize,
+          1,
+          12,
+          DEFAULT_SETTINGS.graphics.enemySpawnBatchSize,
+        ),
+        roomPreloadAheadCount: clampInt(
+          parsed.graphics?.roomPreloadAheadCount,
+          1,
+          8,
+          DEFAULT_SETTINGS.graphics.roomPreloadAheadCount,
+        ),
       },
     };
   }
@@ -282,4 +338,11 @@ function getCanvasFilter(filter: ColorVisionFilter): string {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+}
+
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  const rounded = Math.round(numeric);
+  return Math.max(min, Math.min(max, rounded));
 }

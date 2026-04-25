@@ -474,9 +474,9 @@ export class DevConsole {
         glowIntensity: 0.8,
         chromaticAmount: 30,
         chromaticRadial: 0.8,
-        grainEnabled: true,
-        grainIntensity: 12,
-        grainAnimated: true,
+        grainEnabled: false,
+        grainIntensity: 0,
+        grainAnimated: false,
         crtLinesEnabled: true,
         crtLineIntensity: 0.35,
         vignetteEnabled: true,
@@ -487,7 +487,9 @@ export class DevConsole {
     }
 
     const pp = gameplayConfig.postProcessing;
-    if (pp.grainEnabled === undefined) pp.grainEnabled = true;
+    if (pp.grainEnabled === undefined) pp.grainEnabled = false;
+    if (pp.grainIntensity === undefined) pp.grainIntensity = 0;
+    if (pp.grainAnimated === undefined) pp.grainAnimated = false;
     if (pp.crtLinesEnabled === undefined) pp.crtLinesEnabled = true;
     if (pp.crtLineIntensity === undefined) pp.crtLineIntensity = 0.35;
 

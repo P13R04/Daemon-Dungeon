@@ -1,4 +1,5 @@
 import { BONUS_CATALOG, BonusDefinition, BonusRarity, BonusScope } from '../data/bonuses/bonusCatalog';
+import { BONUS_TUNING } from '../data/bonuses/bonusTuning';
 
 export interface BonusChoice {
   id: string;
@@ -49,16 +50,22 @@ export class BonusPoolSystem {
   }
 
   getOfferCount(): number {
-    const extra = this.getMetaValue('meta_offer_slot', 1);
-    return Math.max(3, 3 + extra);
+    const extra = this.getMetaValue('meta_offer_slot', BONUS_TUNING.meta.offerSlotPerStack);
+    return Math.max(3, Math.min(5, 3 + extra));
   }
 
   getCurrencyMultiplier(): number {
-    return 1 + this.getMetaValue('meta_bounty_index', 0.1);
+    return 1 + this.getMetaValue('meta_bounty_index', BONUS_TUNING.meta.bountyIndexPerStack);
   }
 
   getPassiveIncomePerSecond(): number {
-    return this.getMetaValue('meta_background_miner', 0.35);
+    return this.getMetaValue('meta_background_miner', BONUS_TUNING.meta.backgroundMinerPerStack);
+  }
+
+  getShopDiscountMultiplier(): number {
+    const rawDiscount = this.getMetaValue('meta_discount_patch', BONUS_TUNING.meta.discountPerStack);
+    const discount = Math.min(BONUS_TUNING.meta.discountCap, rawDiscount);
+    return Math.max(0.6, 1 - discount);
   }
 
   private getRarityLuck(): number {
@@ -88,16 +95,33 @@ export class BonusPoolSystem {
       blockedIds.add(picked.id);
     }
 
-    return selected.map((def) => {
-      const stacks = this.getStackCount(def.id);
-      return {
-        id: def.id,
-        title: def.name,
-        description: def.description,
-        rarity: def.rarity,
-        stackLabel: this.formatStackLabel(def, stacks),
-      };
-    });
+    return selected.map((def) => this.toChoice(def));
+  }
+
+  rollRestrictedRareChoice(scope: BonusScope, restrictedPool: readonly string[]): BonusChoice | null {
+    const candidates = restrictedPool
+      .map((id) => this.definitions.get(id))
+      .filter((def): def is BonusDefinition => !!def)
+      .filter((def) => this.isEligible(def, scope))
+      .filter((def) => def.rarity === 'rare' || def.rarity === 'epic');
+
+    if (candidates.length === 0) return null;
+
+    const picked = this.pickByWeight(candidates);
+    if (!picked) return null;
+
+    return this.toChoice(picked);
+  }
+
+  private toChoice(def: BonusDefinition): BonusChoice {
+    const stacks = this.getStackCount(def.id);
+    return {
+      id: def.id,
+      title: def.name,
+      description: def.description,
+      rarity: def.rarity,
+      stackLabel: this.formatStackLabel(def, stacks),
+    };
   }
 
   private isEligible(def: BonusDefinition, scope: BonusScope): boolean {

@@ -29,7 +29,7 @@ import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { GameSettingsStore } from '../settings/GameSettings';
 
 interface ClassCarouselItem {
-  id: 'mage' | 'firewall' | 'rogue';
+  id: 'mage' | 'firewall' | 'rogue' | 'cat';
   label: string;
   playable: boolean;
   root: TransformNode;
@@ -50,6 +50,12 @@ interface TankVisualTuning {
   size: number;
 }
 
+interface ClassAmbientSystem {
+  classId: ClassCarouselItem['id'];
+  particle: ParticleSystem;
+  baseEmitRate: number;
+}
+
 export class ClassSelectScene {
   private scene: Scene;
   private gui: AdvancedDynamicTexture;
@@ -67,6 +73,11 @@ export class ClassSelectScene {
   private mageIdleGroup: AnimationGroup | null = null;
   private mageUltimateGroup: AnimationGroup | null = null;
   private tankIdleGroup: AnimationGroup | null = null;
+  private rogueIdleGroup: AnimationGroup | null = null;
+  private rogueIdle2Group: AnimationGroup | null = null;
+  private rogueIdle3Group: AnimationGroup | null = null;
+  private roguePreviewPlayToken: number = 0;
+  // Legacy cat preview state kept intact for optional easter egg class.
   private rogueTake001Group: AnimationGroup | null = null;
   private rogueSelectSound: Sound | null = null;
   private rogueSelectionTimeoutId: number | null = null;
@@ -74,6 +85,9 @@ export class ClassSelectScene {
   private tankThrusterParticles: ParticleSystem[] = [];
   private tankThrusterTextures: DynamicTexture[] = [];
   private tankThrusterAnchors: TransformNode[] = [];
+  private classAmbientSystems: ClassAmbientSystem[] = [];
+  private classAmbientTextures: DynamicTexture[] = [];
+  private classAmbientAnchors: TransformNode[] = [];
   private tankVisualTuning: TankVisualTuning = {
     height: 0.57,
     lateral: 0.13,
@@ -104,7 +118,7 @@ export class ClassSelectScene {
 
   constructor(
     private engine: Engine,
-    private onStartClass: (classId: 'mage' | 'firewall' | 'rogue') => void,
+    private onStartClass: (classId: 'mage' | 'firewall' | 'rogue' | 'cat') => void,
     private onBackToTitle: () => void,
     postProcessingConfig?: Partial<PostProcessingConfig>
   ) {
@@ -117,9 +131,9 @@ export class ClassSelectScene {
       glowIntensity: 0.8,
       chromaticAmount: 30,
       chromaticRadial: 0.8,
-      grainEnabled: true,
-      grainIntensity: 12,
-      grainAnimated: true,
+      grainEnabled: false,
+      grainIntensity: 0,
+      grainAnimated: false,
       crtLinesEnabled: true,
       crtLineIntensity: 0.35,
       vignetteEnabled: true,
@@ -149,6 +163,7 @@ export class ClassSelectScene {
     this.startButton = startButton;
 
     this.createCarouselItems();
+    this.setupClassAmbientParticles();
     this.attachKeyboard();
     this.attachPointerSelection();
     this.refreshSelectionUi();
@@ -171,6 +186,7 @@ export class ClassSelectScene {
     const lerpAmount = Math.min(1, deltaTime * this.rotationSpeed);
     this.carouselRotation = Scalar.Lerp(this.carouselRotation, this.targetRotation, lerpAmount);
     this.updateCarouselLayout();
+    this.updateClassAmbientSystems();
   }
 
   dispose(): void {
@@ -179,6 +195,8 @@ export class ClassSelectScene {
       this.unsubscribeSettings = null;
     }
     window.removeEventListener('keydown', this.keyHandler);
+    this.roguePreviewPlayToken++;
+    this.stopAllPlayableRogueAnimations();
     this.clearRogueSelectionTimer();
     if (this.rogueSelectSound) {
       this.rogueSelectSound.dispose();
@@ -202,6 +220,19 @@ export class ClassSelectScene {
       anchor.dispose();
     }
     this.tankThrusterAnchors = [];
+    for (const ambient of this.classAmbientSystems) {
+      ambient.particle.stop();
+      ambient.particle.dispose();
+    }
+    this.classAmbientSystems = [];
+    for (const texture of this.classAmbientTextures) {
+      texture.dispose();
+    }
+    this.classAmbientTextures = [];
+    for (const anchor of this.classAmbientAnchors) {
+      anchor.dispose();
+    }
+    this.classAmbientAnchors = [];
     this.gui.dispose();
     this.scene.dispose();
   }
@@ -364,11 +395,237 @@ export class ClassSelectScene {
     });
 
     const rogueRoot = new TransformNode('classRogueRoot', this.scene);
-    this.loadRogueModelInto(rogueRoot).catch((error) => {
+    this.loadRoguePlayableModelInto(rogueRoot).catch((error) => {
       console.warn('Rogue model load failed in class select, using placeholder:', error);
       this.createCylinderPlaceholder(rogueRoot, new Color3(0.6, 0.9, 0.35), 2.4, 0.9, 'ROGUE');
     });
     this.items.push({ id: 'rogue', label: 'ROGUE', playable: true, root: rogueRoot });
+
+    const catEasterEggEnabled = GameSettingsStore.get().accessibility.catGodModeEnabled;
+    if (catEasterEggEnabled) {
+      const catRoot = new TransformNode('classCatRoot', this.scene);
+      this.loadRogueModelInto(catRoot).catch((error) => {
+        console.warn('Cat model load failed in class select, using placeholder:', error);
+        this.createCylinderPlaceholder(catRoot, new Color3(0.9, 0.86, 0.35), 2.2, 0.85, 'CAT');
+      });
+      this.items.push({ id: 'cat', label: 'CAT', playable: true, root: catRoot });
+    }
+  }
+
+  private setupClassAmbientParticles(): void {
+    for (const item of this.items) {
+      if (item.id === 'mage') {
+        this.setupMageClassAmbient(item.root);
+        continue;
+      }
+      if (item.id === 'firewall') {
+        this.setupTankClassAmbient(item.root);
+        continue;
+      }
+      if (item.id === 'rogue' || item.id === 'cat') {
+        this.setupRogueClassAmbient(item.root, item.id);
+      }
+    }
+
+    this.updateClassAmbientSystems();
+  }
+
+  private updateClassAmbientSystems(): void {
+    const selected = this.items[this.selectedIndex] ?? null;
+    const selectedId = selected?.id ?? null;
+    const pulse = 0.92 + (0.08 * Math.sin(performance.now() * 0.004));
+
+    for (const system of this.classAmbientSystems) {
+      const selectedBoost = selectedId === system.classId ? 1.55 : 0.78;
+      system.particle.emitRate = system.baseEmitRate * selectedBoost * pulse;
+    }
+  }
+
+  private setupMageClassAmbient(root: TransformNode): void {
+    const anchor = new TransformNode('class_select_mage_ambient_anchor', this.scene);
+    anchor.parent = root;
+    anchor.position = new Vector3(0, 1.02, 0);
+    this.classAmbientAnchors.push(anchor);
+
+    const texture = this.createClassAmbientTexture('class_select_mage_ambient_texture', (ctx) => {
+      const outer = ctx.createRadialGradient(32, 32, 4, 32, 32, 31);
+      outer.addColorStop(0, 'rgba(218,238,255,0.72)');
+      outer.addColorStop(0.5, 'rgba(118,198,255,0.46)');
+      outer.addColorStop(0.82, 'rgba(136,100,255,0.24)');
+      outer.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = outer;
+      ctx.fillRect(0, 0, 64, 64);
+
+      const core = ctx.createRadialGradient(32, 32, 0, 32, 32, 15);
+      core.addColorStop(0, 'rgba(244,248,255,0.68)');
+      core.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = core;
+      ctx.fillRect(0, 0, 64, 64);
+
+      ctx.strokeStyle = 'rgba(156,130,255,0.24)';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(32, 32, 17, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+
+    const particles = new ParticleSystem('class_select_mage_ambient', 420, this.scene);
+    particles.particleTexture = texture;
+    particles.emitter = anchor as unknown as AbstractMesh;
+    particles.isLocal = true;
+    particles.layerMask = SCENE_LAYER;
+    particles.minEmitBox = new Vector3(-0.44, -0.2, -0.44);
+    particles.maxEmitBox = new Vector3(0.44, 0.58, 0.44);
+    particles.color1 = new Color4(0.58, 0.92, 1.0, 0.52);
+    particles.color2 = new Color4(0.56, 0.35, 1.0, 0.38);
+    particles.colorDead = new Color4(0.12, 0.16, 0.36, 0);
+    particles.minSize = 0.018;
+    particles.maxSize = 0.068;
+    particles.minLifeTime = 0.38;
+    particles.maxLifeTime = 1.25;
+    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+    particles.gravity = new Vector3(0, 0.015, 0);
+    particles.direction1 = new Vector3(-0.02, 0.015, -0.02);
+    particles.direction2 = new Vector3(0.02, 0.06, 0.02);
+    particles.minEmitPower = 0.006;
+    particles.maxEmitPower = 0.045;
+    particles.updateSpeed = 0.01;
+    const baseEmitRate = 220;
+    particles.emitRate = baseEmitRate;
+    particles.start();
+
+    this.classAmbientSystems.push({ classId: 'mage', particle: particles, baseEmitRate });
+  }
+
+  private setupTankClassAmbient(root: TransformNode): void {
+    const anchor = new TransformNode('class_select_tank_ambient_anchor', this.scene);
+    anchor.parent = root;
+    anchor.position = new Vector3(0, 0.98, 0);
+    this.classAmbientAnchors.push(anchor);
+
+    const texture = this.createClassAmbientTexture('class_select_tank_ambient_texture', (ctx) => {
+      ctx.fillStyle = 'rgba(0,0,0,0)';
+      ctx.fillRect(0, 0, 64, 64);
+      ctx.strokeStyle = 'rgba(255,210,120,0.92)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(16, 16, 32, 32);
+      ctx.strokeStyle = 'rgba(105,218,255,0.92)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(22, 32);
+      ctx.lineTo(30, 32);
+      ctx.lineTo(26, 20);
+      ctx.lineTo(42, 34);
+      ctx.lineTo(34, 34);
+      ctx.lineTo(38, 46);
+      ctx.closePath();
+      ctx.stroke();
+    });
+
+    const particles = new ParticleSystem('class_select_tank_ambient', 360, this.scene);
+    particles.particleTexture = texture;
+    particles.emitter = anchor as unknown as AbstractMesh;
+    particles.isLocal = true;
+    particles.layerMask = SCENE_LAYER;
+    particles.minSize = 0.028;
+    particles.maxSize = 0.15;
+    particles.minLifeTime = 0.1;
+    particles.maxLifeTime = 0.3;
+    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+    particles.color1 = new Color4(0.5, 0.92, 1.0, 0.94);
+    particles.color2 = new Color4(1.0, 0.78, 0.38, 0.82);
+    particles.colorDead = new Color4(0.14, 0.16, 0.2, 0);
+    particles.gravity = new Vector3(0, -0.02, 0);
+    particles.minEmitPower = 0.8;
+    particles.maxEmitPower = 2.5;
+    particles.minAngularSpeed = -28;
+    particles.maxAngularSpeed = 28;
+    particles.updateSpeed = 0.012;
+    particles.startPositionFunction = (_worldMatrix, positionToUpdate: Vector3) => {
+      const angle = Math.random() * Math.PI * 2;
+      const ring = 0.14 + (Math.random() * 0.58);
+      positionToUpdate.x = Math.cos(angle) * ring;
+      positionToUpdate.y = 0.1 + (Math.random() * 0.85);
+      positionToUpdate.z = Math.sin(angle) * ring;
+    };
+    particles.startDirectionFunction = (_worldMatrix, directionToUpdate: Vector3) => {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1.05 + (Math.random() * 2.2);
+      directionToUpdate.x = Math.cos(angle) * speed;
+      directionToUpdate.y = -0.18 + (Math.random() * 0.34);
+      directionToUpdate.z = Math.sin(angle) * speed;
+    };
+    const baseEmitRate = 158;
+    particles.emitRate = baseEmitRate;
+    particles.start();
+
+    this.classAmbientSystems.push({ classId: 'firewall', particle: particles, baseEmitRate });
+  }
+
+  private setupRogueClassAmbient(root: TransformNode, classId: 'rogue' | 'cat'): void {
+    const anchor = new TransformNode(`class_select_${classId}_ambient_anchor`, this.scene);
+    anchor.parent = root;
+    anchor.position = new Vector3(0, 0.94, 0);
+    this.classAmbientAnchors.push(anchor);
+
+    const texture = this.createClassAmbientTexture(`class_select_${classId}_ambient_texture`, (ctx) => {
+      ctx.fillStyle = 'rgba(0,0,0,0)';
+      ctx.fillRect(0, 0, 64, 64);
+      ctx.fillStyle = 'rgba(40,255,165,0.95)';
+      for (let i = 0; i < 14; i++) {
+        const size = 4 + Math.floor(Math.random() * 6);
+        const x = Math.floor(Math.random() * (64 - size));
+        const y = Math.floor(Math.random() * (64 - size));
+        ctx.fillRect(x, y, size, size);
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.fillRect(28, 28, 8, 8);
+    });
+
+    const particles = new ParticleSystem(`class_select_${classId}_ambient`, 660, this.scene);
+    particles.particleTexture = texture;
+    particles.emitter = anchor as unknown as AbstractMesh;
+    particles.isLocal = true;
+    particles.layerMask = SCENE_LAYER;
+    particles.minSize = 0.02;
+    particles.maxSize = 0.12;
+    particles.minLifeTime = 0.08;
+    particles.maxLifeTime = 0.28;
+    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+    particles.color1 = new Color4(0.26, 1.0, 0.65, 0.88);
+    particles.color2 = new Color4(0.1, 0.78, 0.36, 0.66);
+    particles.colorDead = new Color4(0.04, 0.2, 0.1, 0);
+    particles.gravity = Vector3.Zero();
+    particles.minEmitPower = 0.08;
+    particles.maxEmitPower = 0.28;
+    particles.updateSpeed = 0.011;
+    particles.startPositionFunction = (_worldMatrix, positionToUpdate: Vector3) => {
+      const angle = Math.random() * Math.PI * 2;
+      const ring = 0.12 + (Math.random() * 0.72);
+      positionToUpdate.x = Math.cos(angle) * ring;
+      positionToUpdate.y = 0.2 + (Math.random() * 1.0);
+      positionToUpdate.z = Math.sin(angle) * ring;
+    };
+    particles.startDirectionFunction = (_worldMatrix, directionToUpdate: Vector3) => {
+      directionToUpdate.x = (Math.random() - 0.5) * 0.38;
+      directionToUpdate.y = -0.05 + (Math.random() * 0.15);
+      directionToUpdate.z = (Math.random() - 0.5) * 0.38;
+    };
+    const baseEmitRate = classId === 'rogue' ? 230 : 180;
+    particles.emitRate = baseEmitRate;
+    particles.start();
+
+    this.classAmbientSystems.push({ classId, particle: particles, baseEmitRate });
+  }
+
+  private createClassAmbientTexture(name: string, painter: (ctx: ReturnType<DynamicTexture['getContext']>) => void): DynamicTexture {
+    const texture = new DynamicTexture(name, { width: 64, height: 64 }, this.scene, false);
+    const ctx = texture.getContext();
+    ctx.clearRect(0, 0, 64, 64);
+    painter(ctx);
+    texture.update();
+    this.classAmbientTextures.push(texture);
+    return texture;
   }
 
   private async loadMageModelInto(root: TransformNode): Promise<void> {
@@ -436,6 +693,39 @@ export class ClassSelectScene {
       this.tankIdleGroup.play(true);
     }
 
+    root.position.y = 1.0;
+  }
+
+  private async loadRoguePlayableModelInto(root: TransformNode): Promise<void> {
+    const result = await SceneLoader.ImportMeshAsync('', '/models/player/', 'rogue.glb', this.scene);
+
+    const candidateRoot = result.meshes[0];
+    if (candidateRoot) {
+      candidateRoot.parent = root;
+      const bounds = candidateRoot.getHierarchyBoundingVectors(true);
+      const currentHeight = Math.max(0.001, bounds.max.y - bounds.min.y);
+      const targetHeight = 2.5;
+      const modelScale = targetHeight / currentHeight;
+      candidateRoot.scaling.scaleInPlace(modelScale);
+      candidateRoot.position = Vector3.Zero();
+      candidateRoot.rotation.y = 0;
+    }
+
+    for (const mesh of result.meshes) {
+      if (mesh !== candidateRoot && mesh.parent === null) {
+        mesh.parent = root;
+      }
+      mesh.layerMask = SCENE_LAYER;
+    }
+
+    const findGroup = (name: string): AnimationGroup | null =>
+      result.animationGroups.find((group) => group.name.toLowerCase() === name.toLowerCase()) ?? null;
+
+    this.rogueIdleGroup = findGroup('idle');
+    this.rogueIdle2Group = findGroup('idle2');
+    this.rogueIdle3Group = findGroup('idle3');
+
+    this.playPlayableRogueIdleVariantSequence(++this.roguePreviewPlayToken);
     root.position.y = 1.0;
   }
 
@@ -769,14 +1059,17 @@ export class ClassSelectScene {
 
       const depthFactor = Scalar.Clamp((z + this.radius) / (2 * this.radius), 0, 1);
       const baseScale = 0.8 + depthFactor * 0.45;
-      const rogueScaleBoost = item.id === 'rogue' && i === this.selectedIndex ? this.roguePreviewTuning.selectedScaleMultiplier : 1;
-      const scale = baseScale * rogueScaleBoost;
+      const catScaleBoost = item.id === 'cat' && i === this.selectedIndex ? this.roguePreviewTuning.selectedScaleMultiplier : 1;
+      const scale = baseScale * catScaleBoost;
       item.root.scaling.setAll(scale);
 
       item.root.lookAt(new Vector3(0, item.root.position.y, 0));
       item.root.rotation.y += Math.PI / 2;
       if (item.id === 'firewall') {
         // Tank model has opposite forward axis in class select; keep a persistent 180° offset here.
+        item.root.rotation.y += Math.PI;
+      } else if (item.id === 'rogue') {
+        // Rogue model forward axis is inverted in preview; apply persistent 180° correction.
         item.root.rotation.y += Math.PI;
       }
 
@@ -814,6 +1107,18 @@ export class ClassSelectScene {
   private stopAllRogueAnimations(): void {
     if (this.rogueTake001Group?.isPlaying) {
       this.rogueTake001Group.stop();
+    }
+  }
+
+  private stopAllPlayableRogueAnimations(): void {
+    if (this.rogueIdleGroup?.isPlaying) {
+      this.rogueIdleGroup.stop();
+    }
+    if (this.rogueIdle2Group?.isPlaying) {
+      this.rogueIdle2Group.stop();
+    }
+    if (this.rogueIdle3Group?.isPlaying) {
+      this.rogueIdle3Group.stop();
     }
   }
 
@@ -862,8 +1167,60 @@ export class ClassSelectScene {
     }
 
     if (selected.id === 'rogue') {
+      this.clearRogueSelectionTimer();
+      this.playPlayableRogueSelectionSequence();
+      return;
+    }
+
+    if (selected.id === 'cat') {
       this.playRogueSelectionSequence();
     }
+  }
+
+  private playPlayableRogueSelectionSequence(): void {
+    const token = ++this.roguePreviewPlayToken;
+    this.stopAllPlayableRogueAnimations();
+
+    if (!this.rogueIdleGroup) {
+      this.playPlayableRogueIdleVariantSequence(token);
+      return;
+    }
+
+    this.rogueIdleGroup.loopAnimation = false;
+    this.rogueIdleGroup.speedRatio = 1.0;
+    this.rogueIdleGroup.onAnimationGroupEndObservable.addOnce(() => {
+      this.playPlayableRogueIdleVariantSequence(token);
+    });
+    this.rogueIdleGroup.play(false);
+  }
+
+  private playPlayableRogueIdleVariantSequence(token: number): void {
+    if (token !== this.roguePreviewPlayToken) {
+      return;
+    }
+
+    const variants = [this.rogueIdle2Group, this.rogueIdle3Group].filter(
+      (group): group is AnimationGroup => !!group
+    );
+
+    if (variants.length === 0) {
+      if (this.rogueIdleGroup) {
+        this.stopAllPlayableRogueAnimations();
+        this.rogueIdleGroup.loopAnimation = true;
+        this.rogueIdleGroup.speedRatio = 1.0;
+        this.rogueIdleGroup.play(true);
+      }
+      return;
+    }
+
+    const next = variants[Math.floor(Math.random() * variants.length)];
+    this.stopAllPlayableRogueAnimations();
+    next.loopAnimation = false;
+    next.speedRatio = 1.0;
+    next.onAnimationGroupEndObservable.addOnce(() => {
+      this.playPlayableRogueIdleVariantSequence(token);
+    });
+    next.play(false);
   }
 
   private playRogueSelectionSequence(): void {

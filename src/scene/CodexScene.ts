@@ -14,7 +14,8 @@ import {
   TransformNode,
   Vector3,
 } from '@babylonjs/core';
-import { AdvancedDynamicTexture, Button, Control, Rectangle, ScrollViewer, StackPanel, TextBlock } from '@babylonjs/gui';
+import { AdvancedDynamicTexture, Button, Control, Rectangle, ScrollViewer, StackPanel, TextBlock, Image } from '@babylonjs/gui';
+import { buildHudAssetUrl } from '../systems/hud/HudAssetPaths';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
@@ -109,6 +110,7 @@ export class CodexScene {
   private centerCardIcon: TextBlock;
   private centerCardTitle: TextBlock;
   private centerCardSubtitle: TextBlock;
+  private centerCardArtwork: Image;
 
   private bestiaryFogLeft: Rectangle;
   private bestiaryFogRight: Rectangle;
@@ -304,6 +306,14 @@ export class CodexScene {
     this.centerCardIcon = this.makeTerminalText('centerCardIcon', 64, '#8CFFF0');
     this.centerCardIcon.top = '-58px';
     this.centerCard.addControl(this.centerCardIcon);
+
+    this.centerCardArtwork = new Image('centerCardArtwork');
+    this.centerCardArtwork.width = '140px';
+    this.centerCardArtwork.height = '140px';
+    this.centerCardArtwork.stretch = Image.STRETCH_UNIFORM;
+    this.centerCardArtwork.top = '-40px';
+    this.centerCardArtwork.isVisible = false;
+    this.centerCard.addControl(this.centerCardArtwork);
 
     this.centerCardTitle = this.makeTerminalText('centerCardTitle', 20, '#C8FFF8');
     this.centerCardTitle.top = '34px';
@@ -964,6 +974,8 @@ export class CodexScene {
 
     const unlocked = this.codexService.isBonusUnlocked(bonus.id);
     if (!unlocked) {
+      this.centerCardIcon.isVisible = true;
+      this.centerCardArtwork.isVisible = false;
       this.centerCardIcon.text = '?';
       this.centerCardTitle.text = 'LOCKED';
       this.centerCardSubtitle.text = 'Undiscovered bonus';
@@ -972,7 +984,10 @@ export class CodexScene {
       return;
     }
 
-    this.centerCardIcon.text = bonus.iconText;
+    this.centerCardIcon.isVisible = false;
+    this.centerCardArtwork.isVisible = true;
+    this.centerCardArtwork.source = buildHudAssetUrl(`bonuses/${bonus.id}.png`);
+
     this.centerCardTitle.text = bonus.name;
     this.centerCardSubtitle.text = bonus.categories.join(' / ');
 
@@ -1003,6 +1018,8 @@ export class CodexScene {
       return;
     }
 
+    this.centerCardIcon.isVisible = true;
+    this.centerCardArtwork.isVisible = false;
     this.centerCardIcon.text = achievement.unlocked ? 'OK' : '...';
     this.centerCardTitle.text = achievement.name;
     this.centerCardSubtitle.text = achievement.unlocked ? 'Unlocked' : 'In progress';

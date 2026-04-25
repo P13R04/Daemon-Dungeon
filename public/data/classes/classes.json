@@ -1,0 +1,74 @@
+{
+  "warrior": {
+    "name": "Warrior",
+    "description": "Tank class with high HP and melee combat",
+    "stats": {
+      "hp": 150,
+      "speed": 4.0,
+      "damage": 15,
+      "fireRate": 0.8
+    },
+    "primary": {
+      "type": "melee",
+      "range": 2.0,
+      "pattern": "cleave"
+    },
+    "passive": {
+      "id": "armor",
+      "description": "Reduce incoming damage by 20%"
+    },
+    "ultimate": {
+      "id": "berserk",
+      "description": "Increased damage and speed for 10 seconds",
+      "chargeTime": 30
+    }
+  },
+  "mage": {
+    "name": "Mage",
+    "description": "High damage ranged spellcaster",
+    "stats": {
+      "hp": 80,
+      "speed": 5.0,
+      "damage": 25,
+      "fireRate": 1.2
+    },
+    "primary": {
+      "type": "projectile",
+      "range": 15.0,
+      "pattern": "fireball"
+    },
+    "passive": {
+      "id": "mana_regen",
+      "description": "Faster ultimate charge"
+    },
+    "ultimate": {
+      "id": "meteor",
+      "description": "Massive AoE damage",
+      "chargeTime": 40
+    }
+  },
+  "rogue": {
+    "name": "Rogue",
+    "description": "Fast assassin with high mobility",
+    "stats": {
+      "hp": 100,
+      "speed": 6.5,
+      "damage": 20,
+      "fireRate": 0.5
+    },
+    "primary": {
+      "type": "projectile",
+      "range": 10.0,
+      "pattern": "dagger"
+    },
+    "passive": {
+      "id": "dodge",
+      "description": "30% chance to dodge attacks"
+    },
+    "ultimate": {
+      "id": "shadow_strike",
+      "description": "Teleport behind enemy and deal massive damage",
+      "chargeTime": 25
+    }
+  }
+}

@@ -196,7 +196,32 @@ export class RoomManager {
 
   getCurrentRoomOrigin(): Vector3 {
     if (!this.currentRoomKey) return new Vector3(0, 0, 0);
-    return this.roomOrigins.get(this.currentRoomKey) ?? new Vector3(0, 0, 0);
+    const origin = this.roomOrigins.get(this.currentRoomKey) ?? new Vector3(0, 0, 0);
+    console.log(`[RoomManager] CurrentRoomKey: ${this.currentRoomKey}, Origin: ${origin}`);
+    return origin;
+  }
+
+  getCurrentRoomCenter(): Vector3 {
+    if (!this.currentRoomKey) {
+      console.warn('[RoomManager] getCurrentRoomCenter: currentRoomKey is null');
+      return Vector3.Zero();
+    }
+    const origin = this.roomOrigins.get(this.currentRoomKey);
+    if (!origin) {
+      console.warn(`[RoomManager] getCurrentRoomCenter: No origin found for ${this.currentRoomKey}`);
+      return Vector3.Zero();
+    }
+    if (!this.currentRoom) return origin;
+
+    const layout = this.currentRoom.layout;
+    const height = layout.length;
+    const width = layout.reduce((max, row) => Math.max(max, row?.length ?? 0), 0);
+    
+    return new Vector3(
+      origin.x + (width * this.tileSize) / 2,
+      0,
+      origin.z + (height * this.tileSize) / 2
+    );
   }
 
   setFloorRenderingEnabled(enabled: boolean): void {
@@ -245,8 +270,8 @@ export class RoomManager {
         const row = layout[y] ?? '';
         // Missing cells are treated as walls to avoid geometry holes.
         const char = row[x] ?? '#';
-        // Invert Y to Z to match tile system (layout[0] = far/top = max Z)
-        const z = height - 1 - y;
+        // Standard Y to Z mapping (no inversion)
+        const z = y;
         const position = new Vector3(
           origin.x + x * this.tileSize,
           0,
@@ -657,6 +682,28 @@ export class RoomManager {
     });
   }
 
+  getSpawnPointsWithTypeForInstance(instanceKey: string): Array<{ position: Vector3; enemyType: string }> {
+    const roomId = instanceKey.split('::')[0];
+    if (!roomId) return [];
+
+    const roomsData = this.configLoader.getRoomsConfig();
+    const roomList = Array.isArray(roomsData) ? roomsData.filter(isRoomConfig) : [];
+    const room = roomList.find((entry) => entry.id === roomId);
+    if (!room) {
+      return [];
+    }
+
+    const origin = this.roomOrigins.get(instanceKey) ?? new Vector3(0, 0, 0);
+    const layoutHeight = room.layout.length;
+
+    return room.spawnPoints
+      .filter((point) => this.isValidSpawnPoint(point))
+      .map((point) => ({
+        position: this.mapSpawnPointToWorld(point, layoutHeight, origin, 1.0),
+        enemyType: point.enemyType ?? 'zombie_basic',
+      }));
+  }
+
   getEnemySpawnPoints(): Array<{ position: Vector3; enemyType: string }> {
     if (!this.currentRoom) return [];
 
@@ -684,12 +731,12 @@ export class RoomManager {
     yHeight: number
   ): Vector3 {
     const pointY = Number.isFinite(point.y) ? Number(point.y) : Number(point.z);
-    const invertedY = layoutHeight - 1 - pointY;
+    const zValue = pointY;
 
     return new Vector3(
       (origin?.x ?? 0) + point.x * this.tileSize + this.tileSize / 2,
       yHeight,
-      (origin?.z ?? 0) + invertedY * this.tileSize + this.tileSize / 2
+      (origin?.z ?? 0) + zValue * this.tileSize + this.tileSize / 2
     );
   }
 

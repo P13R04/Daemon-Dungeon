@@ -2,11 +2,23 @@
  * ProjectileManager - Manages projectile lifecycle
  */
 
-import { Scene, Mesh, Vector3, Ray, RayHelper } from '@babylonjs/core';
+import {
+  Scene,
+  Mesh,
+  Vector3,
+  Ray,
+  RayHelper,
+  ParticleSystem,
+  DynamicTexture,
+  Color3,
+  Color4,
+  StandardMaterial,
+} from '@babylonjs/core';
 import type { RoomManager } from '../systems/RoomManager';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { Pool, IPoolable } from '../utils/Pool';
+import { SCENE_LAYER } from '../ui/uiLayers';
 
 interface ProjectileData {
   position: Vector3;
@@ -19,6 +31,9 @@ interface ProjectileData {
   maxBounces: number;
   remainingBounces: number;
   bounceDamping: number;
+  pierceCount: number;
+  homingRadius: number;
+  homingTurnRate: number;
   projectileType?: string;
   splitConfig?: {
     count: number;
@@ -73,6 +88,8 @@ interface SplitTravel {
 interface ProjectilePlayer {
   getPosition(): Vector3;
   applyDamage(amount: number): void;
+  onPlayerDealtDamage?(damage: number): void;
+  getMageImpactAoeConfig?(): { chance: number; radius: number; damageRatio: number; knockback: number } | null;
   getPoisonBonus?: () => { percent: number; duration: number } | null | undefined;
   reflectProjectileIfShielding?: (
     hitPoint: Vector3,
@@ -86,12 +103,14 @@ interface ProjectileEnemy {
   getId(): string;
   takeDamage(amount: number): void;
   applyDot?(damagePerSecond: number, duration: number): void;
+  applyExternalKnockback?(force: Vector3): void;
 }
 
 class Projectile implements IPoolable {
   mesh?: Mesh;
   data: ProjectileData | null = null;
   private activeFlag: boolean = false;
+  private readonly baseScaling: Vector3 = new Vector3(1, 1, 1);
 
   constructor(private scene: Scene) {}
 
@@ -100,9 +119,13 @@ class Projectile implements IPoolable {
     
     if (!this.mesh) {
       this.mesh = VisualPlaceholder.createProjectilePlaceholder(this.scene, `projectile_${Date.now()}`);
+      this.baseScaling.copyFrom(this.mesh.scaling);
     }
     
     this.mesh.position = data.position.clone();
+    this.mesh.scaling.copyFrom(this.baseScaling);
+    this.mesh.rotationQuaternion = null;
+    this.mesh.rotation.set(0, 0, 0);
   }
 
   update(deltaTime: number, speedMultiplier: number = 1): void {
@@ -113,11 +136,37 @@ class Projectile implements IPoolable {
     this.data.distanceTraveled += movement.length();
     
     this.mesh.position = this.data.position;
+
+    if (this.data.projectileType === 'mage_arcane') {
+      this.updateMageArcaneDeformation(speedMultiplier);
+      return;
+    }
+
+    this.mesh.scaling.copyFrom(this.baseScaling);
+  }
+
+  private updateMageArcaneDeformation(speedMultiplier: number): void {
+    if (!this.data || !this.mesh) return;
+
+    const effectiveSpeed = Math.max(0, this.data.speed * speedMultiplier);
+    const speedFactor = Math.min(1, effectiveSpeed / 28);
+    const stretch = 1 + (speedFactor * 0.95);
+    const compression = 1 - (speedFactor * 0.33);
+    const pulse = 1 + (0.05 * Math.sin((this.data.distanceTraveled * 18) + (performance.now() * 0.008)));
+
+    this.mesh.scaling.x = this.baseScaling.x * compression * pulse;
+    this.mesh.scaling.y = this.baseScaling.y * compression * pulse;
+    this.mesh.scaling.z = this.baseScaling.z * stretch;
+
+    if (this.data.direction.lengthSquared() > 0.0001) {
+      this.mesh.lookAt(this.data.position.add(this.data.direction));
+    }
   }
 
   reset(): void {
     this.data = null;
     if (this.mesh) {
+      this.mesh.scaling.copyFrom(this.baseScaling);
       this.mesh.position = new Vector3(0, -100, 0); // Move off-screen
     }
   }
@@ -150,6 +199,9 @@ export class ProjectileManager {
   private hostileSlowZone: { center: Vector3; radius: number; multiplier: number } | null = null;
   private currentRoomManager?: RoomManager;
   private readonly aoeVisualY = 0.03;
+  private mageProjectileParticleTexture: DynamicTexture | null = null;
+  private projectileParticleEffects: Map<Projectile, ParticleSystem> = new Map();
+  private deferredMeshDisposalQueue: Mesh[] = [];
 
   constructor(private scene: Scene, poolSize: number = 20) {
     this.eventBus = EventBus.getInstance();
@@ -184,6 +236,9 @@ export class ProjectileManager {
       };
       maxBounces?: number;
       bounceDamping?: number;
+      pierceCount?: number;
+      homingRadius?: number;
+      homingTurnRate?: number;
     }) => {
       if (!payload) return;
       this.spawnProjectile(
@@ -196,7 +251,10 @@ export class ProjectileManager {
         payload.projectileType,
         payload.splitConfig,
         payload.maxBounces,
-        payload.bounceDamping
+        payload.bounceDamping,
+        payload.pierceCount,
+        payload.homingRadius,
+        payload.homingTurnRate
       );
     });
   }
@@ -225,7 +283,10 @@ export class ProjectileManager {
       finalDuration?: number;
     },
     maxBounces: number = 0,
-    bounceDamping: number = 1
+    bounceDamping: number = 1,
+    pierceCount: number = 0,
+    homingRadius: number = 0,
+    homingTurnRate: number = 0
   ): void {
     const projectile = this.projectilePool.get();
     const safeBounces = Math.max(0, Math.floor(maxBounces));
@@ -239,14 +300,105 @@ export class ProjectileManager {
       maxBounces: safeBounces,
       remainingBounces: safeBounces,
       bounceDamping: Math.max(0.4, Math.min(1, bounceDamping)),
+      pierceCount: Math.max(0, Math.floor(pierceCount)),
+      homingRadius: Math.max(0, homingRadius),
+      homingTurnRate: Math.max(0, homingTurnRate),
       projectileType,
       splitConfig,
     });
     projectile.setActive(true);
     this.activeProjectiles.push(projectile);
+    this.applyProjectileSpawnVisual(projectile);
+  }
+
+  private applyProjectileSpawnVisual(projectile: Projectile): void {
+    if (!projectile.mesh || !projectile.data) return;
+
+    this.disposeProjectileParticleEffect(projectile);
+
+    const material = this.ensureProjectileMaterial(projectile.mesh);
+    if (projectile.data.projectileType === 'mage_arcane') {
+      material.diffuseColor = new Color3(0.62, 0.84, 1.0);
+      material.emissiveColor = new Color3(0.42, 0.32, 0.95);
+
+      const particles = new ParticleSystem(`mage_projectile_fx_${Date.now()}`, 180, this.scene);
+      particles.particleTexture = this.getMageProjectileParticleTexture();
+      particles.layerMask = SCENE_LAYER;
+      particles.emitter = projectile.mesh;
+      particles.minSize = 0.04;
+      particles.maxSize = 0.11;
+      particles.minLifeTime = 0.07;
+      particles.maxLifeTime = 0.2;
+      particles.emitRate = 640;
+      particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+      particles.color1 = new Color4(0.62, 0.92, 1.0, 0.92);
+      particles.color2 = new Color4(0.56, 0.36, 1.0, 0.78);
+      particles.colorDead = new Color4(0.08, 0.16, 0.4, 0);
+      particles.gravity = new Vector3(0, 0, 0);
+      particles.minEmitPower = 0.2;
+      particles.maxEmitPower = 0.9;
+      particles.updateSpeed = 0.016;
+      particles.direction1 = new Vector3(-0.2, 0.05, -0.2);
+      particles.direction2 = new Vector3(0.2, 0.2, 0.2);
+      particles.start();
+      this.projectileParticleEffects.set(projectile, particles);
+      return;
+    }
+
+    material.diffuseColor = new Color3(1.0, 1.0, 0.0);
+    material.emissiveColor = new Color3(1.0, 1.0, 0.0);
+  }
+
+  private ensureProjectileMaterial(mesh: Mesh): StandardMaterial {
+    const existing = mesh.material;
+    if (existing instanceof StandardMaterial) {
+      return existing;
+    }
+
+    const mat = new StandardMaterial(`${mesh.name}_mat`, this.scene);
+    mesh.material = mat;
+    return mat;
+  }
+
+  private getMageProjectileParticleTexture(): DynamicTexture {
+    if (this.mageProjectileParticleTexture) {
+      return this.mageProjectileParticleTexture;
+    }
+
+    const texture = new DynamicTexture('mage_projectile_particle_texture', { width: 64, height: 64 }, this.scene, false);
+    const ctx = texture.getContext();
+    const gradient = ctx.createRadialGradient(32, 32, 2, 32, 32, 31);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.4, 'rgba(148,240,255,0.96)');
+    gradient.addColorStop(0.72, 'rgba(138,98,255,0.88)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.clearRect(0, 0, 64, 64);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    texture.update();
+    this.mageProjectileParticleTexture = texture;
+    return texture;
+  }
+
+  private disposeProjectileParticleEffect(projectile: Projectile): void {
+    const particles = this.projectileParticleEffects.get(projectile);
+    if (!particles) return;
+    particles.stop();
+    particles.dispose(false);
+    this.projectileParticleEffects.delete(projectile);
+  }
+
+  private releaseProjectileAt(index: number): void {
+    const projectile = this.activeProjectiles[index];
+    if (!projectile) return;
+    this.disposeProjectileParticleEffect(projectile);
+    projectile.setActive(false);
+    this.projectilePool.release(projectile);
+    this.activeProjectiles.splice(index, 1);
   }
 
   update(deltaTime: number, enemies: ProjectileEnemy[], player: ProjectilePlayer, roomManager?: RoomManager): void {
+    this.processDeferredMeshDisposals(2);
     this.currentRoomManager = roomManager;
 
     // Update delayed explosions
@@ -368,6 +520,9 @@ export class ProjectileManager {
     for (let i = this.activeProjectiles.length - 1; i >= 0; i--) {
       const projectile = this.activeProjectiles[i];
       const previousPosition = projectile.data?.position.clone();
+      if (projectile.data && projectile.data.friendly && projectile.data.homingRadius > 0 && projectile.data.homingTurnRate > 0) {
+        this.applyFriendlyHoming(projectile, enemies, deltaTime);
+      }
       let speedMultiplier = 1;
       if (projectile.data && !projectile.data.friendly && this.hostileSlowZone) {
         const dist = Vector3.Distance(projectile.data.position, this.hostileSlowZone.center);
@@ -379,8 +534,7 @@ export class ProjectileManager {
       projectile.update(deltaTime, speedMultiplier);
 
       if (!projectile.isActive()) {
-        this.projectilePool.release(projectile);
-        this.activeProjectiles.splice(i, 1);
+        this.releaseProjectileAt(i);
         continue;
       }
 
@@ -410,9 +564,7 @@ export class ProjectileManager {
           const impactPos = this.resolveImpactPosition(blockedPoint, projectile.data.direction, roomManager);
           this.applyImpactAoeToPlayer(projectile, impactPos, player);
           this.handleProjectileImpact(projectile, impactPos.clone(), roomManager);
-          projectile.setActive(false);
-          this.projectilePool.release(projectile);
-          this.activeProjectiles.splice(i, 1);
+          this.releaseProjectileAt(i);
           continue;
         }
       }
@@ -420,9 +572,7 @@ export class ProjectileManager {
       if (projectile.data && projectile.data.distanceTraveled >= projectile.data.range) {
         this.applyImpactAoeToPlayer(projectile, projectile.data.position, player);
         this.handleProjectileImpact(projectile, projectile.data.position.clone(), roomManager);
-        projectile.setActive(false);
-        this.projectilePool.release(projectile);
-        this.activeProjectiles.splice(i, 1);
+        this.releaseProjectileAt(i);
         continue;
       }
 
@@ -433,10 +583,25 @@ export class ProjectileManager {
             const distance = Vector3.Distance(projectile.data.position, enemy.getPosition());
             if (distance < 1.0) {
               enemy.takeDamage(projectile.data.damage);
+              player.onPlayerDealtDamage?.(projectile.data.damage);
 
               const poison = player.getPoisonBonus?.();
               if (poison && poison.percent > 0 && poison.duration > 0) {
                 enemy.applyDot?.(projectile.data.damage * poison.percent, poison.duration);
+              }
+
+              const impactAoe = player.getMageImpactAoeConfig?.();
+              if (impactAoe && Math.random() < impactAoe.chance) {
+                this.applyFriendlyImpactAoe(enemy, projectile.data.damage, impactAoe, enemies, player);
+              }
+
+              if (projectile.data.pierceCount > 0) {
+                projectile.data.pierceCount -= 1;
+                projectile.data.position = projectile.data.position.add(projectile.data.direction.scale(0.4));
+                if (projectile.mesh) {
+                  projectile.mesh.position.copyFrom(projectile.data.position);
+                }
+                break;
               }
 
               this.eventBus.emit(GameEvents.PROJECTILE_HIT, {
@@ -447,9 +612,7 @@ export class ProjectileManager {
 
               this.handleProjectileImpact(projectile, projectile.data.position.clone(), roomManager);
 
-              projectile.setActive(false);
-              this.projectilePool.release(projectile);
-              this.activeProjectiles.splice(i, 1);
+              this.releaseProjectileAt(i);
               break;
             }
           }
@@ -476,18 +639,14 @@ export class ProjectileManager {
                 true
               );
               this.handleProjectileImpact(projectile, hitPoint.clone(), roomManager);
-              projectile.setActive(false);
-              this.projectilePool.release(projectile);
-              this.activeProjectiles.splice(i, 1);
+              this.releaseProjectileAt(i);
               continue;
             }
 
             if (projectile.data.projectileType === 'artificer_main') {
               this.applyImpactAoeToPlayer(projectile, hitPoint, player);
               this.handleProjectileImpact(projectile, hitPoint.clone(), roomManager);
-              projectile.setActive(false);
-              this.projectilePool.release(projectile);
-              this.activeProjectiles.splice(i, 1);
+              this.releaseProjectileAt(i);
               continue;
             }
 
@@ -500,9 +659,7 @@ export class ProjectileManager {
 
             this.handleProjectileImpact(projectile, hitPoint.clone(), roomManager);
 
-            projectile.setActive(false);
-            this.projectilePool.release(projectile);
-            this.activeProjectiles.splice(i, 1);
+            this.releaseProjectileAt(i);
           }
         }
       }
@@ -592,9 +749,7 @@ export class ProjectileManager {
       if (!projectile.data || projectile.data.friendly) continue;
       if (Vector3.Distance(projectile.data.position, center) > radius) continue;
 
-      projectile.setActive(false);
-      this.projectilePool.release(projectile);
-      this.activeProjectiles.splice(i, 1);
+      this.releaseProjectileAt(i);
       destroyed++;
     }
     return destroyed;
@@ -607,6 +762,62 @@ export class ProjectileManager {
     if (this.isPointAffectedByExplosion(position, player.getPosition(), data.splitConfig.impactRadius, this.currentRoomManager)) {
       player.applyDamage(data.splitConfig.impactDamage);
     }
+  }
+
+  private applyFriendlyHoming(projectile: Projectile, enemies: ProjectileEnemy[], deltaTime: number): void {
+    const data = projectile.data;
+    if (!data || !data.friendly || data.homingRadius <= 0 || data.homingTurnRate <= 0) return;
+
+    let nearestEnemy: ProjectileEnemy | null = null;
+    let nearestDist = Number.POSITIVE_INFINITY;
+    for (const enemy of enemies) {
+      const dist = Vector3.Distance(data.position, enemy.getPosition());
+      if (dist <= data.homingRadius && dist < nearestDist) {
+        nearestDist = dist;
+        nearestEnemy = enemy;
+      }
+    }
+
+    if (!nearestEnemy) return;
+
+    const desired = nearestEnemy.getPosition().subtract(data.position);
+    desired.y = 0;
+    if (desired.lengthSquared() <= 0.0001) return;
+
+    const desiredDir = desired.normalize();
+    const blend = Math.max(0, Math.min(1, data.homingTurnRate * deltaTime));
+    data.direction = Vector3.Lerp(data.direction, desiredDir, blend).normalize();
+  }
+
+  private applyFriendlyImpactAoe(
+    primaryTarget: ProjectileEnemy,
+    sourceDamage: number,
+    config: { chance: number; radius: number; damageRatio: number; knockback: number },
+    enemies: ProjectileEnemy[],
+    player: ProjectilePlayer
+  ): void {
+    const impactPos = primaryTarget.getPosition();
+    const splashDamage = sourceDamage * config.damageRatio;
+    if (!Number.isFinite(splashDamage) || splashDamage <= 0) return;
+
+    for (const enemy of enemies) {
+      if (enemy.getId() === primaryTarget.getId()) continue;
+      const delta = enemy.getPosition().subtract(impactPos);
+      delta.y = 0;
+      const distance = delta.length();
+      if (distance > config.radius) continue;
+
+      enemy.takeDamage(splashDamage);
+      player.onPlayerDealtDamage?.(splashDamage);
+
+      if (distance > 0.0001) {
+        enemy.applyExternalKnockback?.(delta.normalize().scale(config.knockback));
+      }
+    }
+
+    const blast = VisualPlaceholder.createAoEPlaceholder(this.scene, `mage_impact_aoe_${Date.now()}`, config.radius);
+    blast.position = this.toGroundPosition(impactPos);
+    setTimeout(() => blast.dispose(), 140);
   }
 
   private resolveImpactPosition(position: Vector3, direction: Vector3, roomManager: RoomManager): Vector3 {
@@ -880,7 +1091,74 @@ export class ProjectileManager {
     return new Vector3(position.x, this.aoeVisualY, position.z);
   }
 
+  resetForRoomTransition(): void {
+    for (const exp of this.delayedExplosions) {
+      if (exp.mesh) {
+        this.deferredMeshDisposalQueue.push(exp.mesh);
+      }
+    }
+    this.delayedExplosions = [];
+
+    for (const zone of this.activeAoeZones) {
+      if (zone.mesh) {
+        this.deferredMeshDisposalQueue.push(zone.mesh);
+      }
+    }
+    this.activeAoeZones = [];
+
+    for (const split of this.activeSplitTravels) {
+      if (split.mesh) {
+        this.deferredMeshDisposalQueue.push(split.mesh);
+      }
+    }
+    this.activeSplitTravels = [];
+
+    for (const projectile of this.activeProjectiles) {
+      this.disposeProjectileParticleEffect(projectile);
+      projectile.setActive(false);
+      this.projectilePool.release(projectile);
+    }
+    this.activeProjectiles = [];
+    this.hostileSlowZone = null;
+    this.currentRoomManager = undefined;
+  }
+
+  private processDeferredMeshDisposals(batchSize: number = 2): void {
+    if (this.deferredMeshDisposalQueue.length === 0) {
+      return;
+    }
+
+    const count = Math.max(1, Math.min(8, Math.round(batchSize)));
+    const frameStart = (typeof performance !== 'undefined' && typeof performance.now === 'function')
+      ? performance.now()
+      : Date.now();
+    const frameBudgetMs = 0.8;
+
+    for (let i = 0; i < count && this.deferredMeshDisposalQueue.length > 0; i++) {
+      const mesh = this.deferredMeshDisposalQueue.shift();
+      if (mesh && !mesh.isDisposed()) {
+        mesh.dispose();
+      }
+
+      if (i + 1 < count) {
+        const now = (typeof performance !== 'undefined' && typeof performance.now === 'function')
+          ? performance.now()
+          : Date.now();
+        if (now - frameStart >= frameBudgetMs) {
+          break;
+        }
+      }
+    }
+  }
+
   dispose(): void {
+    this.resetForRoomTransition();
+    for (const mesh of this.deferredMeshDisposalQueue) {
+      if (!mesh.isDisposed()) {
+        mesh.dispose();
+      }
+    }
+    this.deferredMeshDisposalQueue = [];
     for (const exp of this.delayedExplosions) {
       exp.mesh?.dispose();
     }
@@ -893,7 +1171,15 @@ export class ProjectileManager {
       split.mesh?.dispose();
     }
     this.activeSplitTravels = [];
-    this.activeProjectiles.forEach(p => p.dispose());
+    this.activeProjectiles.forEach((p) => {
+      this.disposeProjectileParticleEffect(p);
+      p.dispose();
+    });
     this.activeProjectiles = [];
+    if (this.mageProjectileParticleTexture) {
+      this.mageProjectileParticleTexture.dispose();
+      this.mageProjectileParticleTexture = null;
+    }
+    this.projectileParticleEffects.clear();
   }
 }

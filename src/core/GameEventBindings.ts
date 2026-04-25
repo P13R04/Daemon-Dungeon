@@ -1,10 +1,12 @@
 import { EventBus, GameEvents } from './EventBus';
 
-export type GameStartRequestedPayload = { classId?: 'mage' | 'firewall' | 'rogue' };
+export type GameStartRequestedPayload = { classId?: 'mage' | 'firewall' | 'rogue' | 'cat', mode?: 'normal' | 'tutorial' };
 export type DevRoomLoadRequestedPayload = { roomId?: string };
 export type DevTileLoadRequestedPayload = { roomId?: string };
 export type BonusSelectedPayload = { bonusId?: string };
+export type BonusPaidPickRequestedPayload = { bonusId?: string; cost?: number };
 export type BonusRerollRequestedPayload = { cost?: number };
+export type ShopPurchaseRequestedPayload = { itemId?: string; cost?: number };
 export type EnemySpawnedPayload = { enemyType?: string };
 export type EnemyDiedPayload = { enemyType?: string };
 export type AttackPerformedPayload = { type?: string; attacker?: string; damage?: number };
@@ -18,7 +20,9 @@ export interface GameEventBindingsCallbacks {
   onDevTileToggleRequested(): void;
   onDevTileLoadRequested(data: DevTileLoadRequestedPayload): void;
   onBonusSelected(data: BonusSelectedPayload): void;
+  onBonusPaidPickRequested(data: BonusPaidPickRequestedPayload): void;
   onBonusRerollRequested(data: BonusRerollRequestedPayload): void;
+  onShopPurchaseRequested(data: ShopPurchaseRequestedPayload): void;
   onPlayerDied(payload?: { reason?: string }): void;
   onEnemySpawned(data: EnemySpawnedPayload): void;
   onEnemyDied(data: EnemyDiedPayload): void;
@@ -26,6 +30,10 @@ export interface GameEventBindingsCallbacks {
   onPlayerDamaged(): void;
   onRoomEntered(): void;
   onEnemyDamaged(): void;
+  onTutorialStartRequested(data: GameStartRequestedPayload): void;
+  onTutorialPhaseCompleted(data?: { phaseId?: string }): void;
+  onTutorialEndRequested(): void;
+  onPlayerUltimateRefillRequested(): void;
 }
 
 export class GameEventBindings {
@@ -72,8 +80,16 @@ export class GameEventBindings {
       this.callbacks.onBonusSelected(data);
     });
 
+    onEvent<[BonusPaidPickRequestedPayload]>(GameEvents.BONUS_PAID_PICK_REQUESTED, (data) => {
+      this.callbacks.onBonusPaidPickRequested(data);
+    });
+
     onEvent<[BonusRerollRequestedPayload]>(GameEvents.BONUS_REROLL_REQUESTED, (data) => {
       this.callbacks.onBonusRerollRequested(data);
+    });
+
+    onEvent<[ShopPurchaseRequestedPayload]>(GameEvents.SHOP_PURCHASE_REQUESTED, (data) => {
+      this.callbacks.onShopPurchaseRequested(data);
     });
 
     onEvent(GameEvents.PLAYER_DIED, (payload?: { reason?: string }) => {
@@ -102,6 +118,22 @@ export class GameEventBindings {
 
     onEvent(GameEvents.ENEMY_DAMAGED, () => {
       this.callbacks.onEnemyDamaged();
+    });
+
+    onEvent<[GameStartRequestedPayload]>(GameEvents.TUTORIAL_START_REQUESTED, (data) => {
+      if (this.callbacks.onTutorialStartRequested) this.callbacks.onTutorialStartRequested(data);
+    });
+
+    onEvent<[{ phaseId?: string }]>(GameEvents.TUTORIAL_PHASE_COMPLETED, (data) => {
+      if (this.callbacks.onTutorialPhaseCompleted) this.callbacks.onTutorialPhaseCompleted(data);
+    });
+
+    onEvent(GameEvents.TUTORIAL_END_REQUESTED, () => {
+      if (this.callbacks.onTutorialEndRequested) this.callbacks.onTutorialEndRequested();
+    });
+
+    onEvent(GameEvents.PLAYER_ULTIMATE_REFILL_REQUESTED, () => {
+      if (this.callbacks.onPlayerUltimateRefillRequested) this.callbacks.onPlayerUltimateRefillRequested();
     });
 
     return unsubscribers;

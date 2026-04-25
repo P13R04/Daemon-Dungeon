@@ -2,7 +2,19 @@
  * PlayerController - Controls the player character (Mage, Tank, Rogue)
  */
 
-import { Scene, Mesh, Vector3, Matrix, StandardMaterial, Color3, MeshBuilder, Camera } from '@babylonjs/core';
+import {
+  Scene,
+  Mesh,
+  Vector3,
+  Matrix,
+  StandardMaterial,
+  Color3,
+  MeshBuilder,
+  Camera,
+  ParticleSystem,
+  DynamicTexture,
+  Color4,
+} from '@babylonjs/core';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { InputManager } from '../input/InputManager';
 import { PlayerAnimationController, AnimationState } from './PlayerAnimationController';
@@ -13,6 +25,8 @@ import { Knockback } from '../components/Knockback';
 import { MathUtils } from '../utils/Math';
 import { ConfigLoader } from '../utils/ConfigLoader';
 import { GameSettings, GameSettingsStore } from '../settings/GameSettings';
+import { BONUS_TUNING } from '../data/bonuses/bonusTuning';
+import { SCENE_LAYER } from '../ui/uiLayers';
 import type {
   PlayerConfig,
   PlayerClassConfig,
@@ -28,11 +42,12 @@ import type {
   PlayerRogueUltimateConfig,
 } from '../types/config';
 
-type PlayerClassId = 'mage' | 'firewall' | 'rogue';
+type PlayerClassId = 'mage' | 'firewall' | 'rogue' | 'cat';
 type SceneWithMainCamera = Scene & { mainCamera?: Camera };
 
 export class PlayerController {
   private static readonly MODEL_VERTICAL_TILE_FIX = 1.8;
+  private static readonly ROGUE_MODEL_VERTICAL_TILE_FIX = 1.5;
 
   private mesh!: Mesh;
   private health!: Health;
@@ -48,8 +63,15 @@ export class PlayerController {
   private velocity: Vector3 = Vector3.Zero();
   private externalVerticalOffset: number = 0;
   private renderVisibility: number = 1;
+  private stealthVisibilityMultiplier: number = 1;
   private knockback: Knockback = new Knockback(10);
   private speed: number = 5.5;
+  private movementDustCooldown: number = 0;
+  private movementDustParticleTexture: DynamicTexture | null = null;
+  private mageAmbientAuraParticles: ParticleSystem | null = null;
+  private tankAmbientArcParticles: ParticleSystem | null = null;
+  private mageAmbientParticleTexture: DynamicTexture | null = null;
+  private tankAmbientParticleTexture: DynamicTexture | null = null;
   
   // Direction tracking for model rotation
   private lastMovementDirection: Vector3 = new Vector3(1, 0, 0);
@@ -76,6 +98,28 @@ export class PlayerController {
   private isFiring: boolean = false;
   private poisonBonusPercent: number = 0;
   private poisonDuration: number = 0;
+
+  // Bonus runtime state (room-to-room build progression)
+  private bonusDodgeChance: number = 0;
+  private bonusCritChance: number = 0;
+  private bonusCritMultiplier: number = 0;
+  private bonusUltChargeRateMultiplier: number = 1;
+  private bonusUltDurationMultiplier: number = 1;
+  private bonusStanceEfficiencyMultiplier: number = 1;
+  private mageArcMultishotStacks: number = 0;
+  private mageDualBurstStacks: number = 0;
+  private mageBounceStacks: number = 0;
+  private magePierceStacks: number = 0;
+  private mageReactiveAoeStacks: number = 0;
+  private mageImpactAoeStacks: number = 0;
+  private mageReactiveAoeCooldownRemaining: number = 0;
+  private mageAutolockEnabled: boolean = false;
+  private rogueLifestealRatio: number = 0;
+  private rogueChainDamageRatio: number = 0;
+  private rogueChainRadius: number = 0;
+  private rogueChainMaxTargets: number = 0;
+  private firewallThornsDamageRatio: number = 0;
+  private firewallDamageReductionRatio: number = 0;
   
   // Ultimate
   private ultCharge: number = 0;
@@ -100,12 +144,21 @@ export class PlayerController {
   private secondaryActive: boolean = false;
   private secondaryLockUntilRightRelease: boolean = false;
   private secondaryZoneMesh: Mesh | null = null;
+  private secondaryZoneVisualRadius: number = 1;
+  private secondaryZoneParticles: ParticleSystem | null = null;
+  private mageSecondaryParticleTexture: DynamicTexture | null = null;
   private pendingSecondaryBurst: {
     position: Vector3;
     radius: number;
     baseDamage: number;
     damagePerEnemy: number;
     damagePerProjectile: number;
+    knockback: number;
+  } | null = null;
+  private pendingMageReactiveBurst: {
+    position: Vector3;
+    radius: number;
+    damage: number;
     knockback: number;
   } | null = null;
 
@@ -215,6 +268,18 @@ export class PlayerController {
   private rogueUltimateTeleportOffset: number = 0.8;
   private rogueUltimateActive: boolean = false;
   private tankUltimateActive: boolean = false;
+  private rogueStealthZoneMesh: Mesh | null = null;
+  private rogueStealthZoneVisualRadius: number = 1;
+  private rogueAmbientGlitchParticles: ParticleSystem | null = null;
+  private rogueParticleTexture: DynamicTexture | null = null;
+  private rogueDashImpactPending: boolean = false;
+  private rogueDashTrailLastPoint: Vector3 | null = null;
+  private rogueDashTrailAccumulatedDistance: number = 0;
+  private pendingRogueDashTrailSegments: Array<{
+    from: Vector3;
+    to: Vector3;
+    radius: number;
+  }> = [];
   private pendingRogueStrike: {
     origin: Vector3;
     direction: Vector3;
@@ -241,6 +306,9 @@ export class PlayerController {
   private damageBoostMultiplier: number = 1;
   private damageReductionTimer: number = 0;
   private damageReductionRatio: number = 0;
+  private catGodModeEnabled: boolean = false;
+  private benchmarkInvulnerable: boolean = false;
+  private catContactDamage: number = 260;
   private keyboardOnlyMode: boolean = false;
   private autoAimTowardMovement: boolean = true;
   private unsubscribeSettings: (() => void) | null = null;
@@ -311,11 +379,27 @@ export class PlayerController {
           console.error('Failed to load player rogue model:', error);
           this.createClassPlaceholder(this.classId);
         });
+    } else if (this.classId === 'cat') {
+      this.animationController = new PlayerAnimationController(this.scene, 'cat');
+      this.modelLoadingPromise = this.animationController
+        .loadModel('/models/player/')
+        .then(() => {
+          const loadedMesh = this.animationController.getMesh();
+          if (loadedMesh) {
+            this.mesh = loadedMesh;
+            this.mesh.position.y = 1.0;
+            console.log('✓ Player cat model loaded successfully');
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to load player cat model:', error);
+          this.createClassPlaceholder(this.classId);
+        });
     } else {
       this.createClassPlaceholder(this.classId);
     }
 
-    const classConfig: PlayerClassConfig = this.config[this.classId] ?? this.config.mage;
+    const classConfig = this.getCurrentClassConfig();
     const maxHP = classConfig.baseStats.hp;
     this.health = new Health(maxHP, 'player');
 
@@ -326,14 +410,20 @@ export class PlayerController {
     if (this.classId === 'mage') {
       this.applySecondaryConfig();
       this.createSecondaryZoneVisual();
+      this.startMageAmbientAuraParticles();
     }
 
     if (this.classId === 'firewall') {
       this.applyTankConfig();
+      this.startTankAmbientArcParticles();
     }
 
-    if (this.classId === 'rogue') {
+    if (this.isRogueLikeClass()) {
       this.applyRogueConfig();
+      this.createRogueStealthZoneVisual();
+      if (this.classId === 'rogue') {
+        this.startRogueAmbientGlitchParticles();
+      }
     }
   }
 
@@ -478,6 +568,40 @@ export class PlayerController {
     this.rogueOpeningStrikeTimer = 0;
   }
 
+  private getCritChance(): number {
+    return Math.max(0, Math.min(1, this.bonusCritChance));
+  }
+
+  private getCritMultiplier(): number {
+    return BONUS_TUNING.general.critMultiplierBase + Math.max(0, this.bonusCritMultiplier);
+  }
+
+  private getRogueCritChance(): number {
+    return Math.max(0, Math.min(1, this.rogueCritChance + this.bonusCritChance));
+  }
+
+  private getRogueCritMultiplier(): number {
+    return this.rogueCritMultiplier + Math.max(0, this.bonusCritMultiplier);
+  }
+
+  private getStanceEfficiencyMultiplier(): number {
+    return Math.max(1, this.bonusStanceEfficiencyMultiplier);
+  }
+
+  private getUltimateChargeRateMultiplier(): number {
+    return Math.max(1, this.bonusUltChargeRateMultiplier);
+  }
+
+  private getUltimateDurationMultiplier(): number {
+    return Math.max(1, this.bonusUltDurationMultiplier);
+  }
+
+  private rollCrit(baseDamage: number, critChance: number, critMultiplier: number): number {
+    if (!Number.isFinite(baseDamage) || baseDamage <= 0) return 0;
+    if (critChance <= 0 || critMultiplier <= 1) return baseDamage;
+    return Math.random() < critChance ? baseDamage * critMultiplier : baseDamage;
+  }
+
   private readPositiveNumber(value: unknown, fallback: number): number {
     if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
       return fallback;
@@ -490,6 +614,26 @@ export class PlayerController {
       return fallback;
     }
     return Math.max(min, Math.min(max, value));
+  }
+
+  private isRogueLikeClass(): boolean {
+    return this.classId === 'rogue' || this.classId === 'cat';
+  }
+
+  private getCurrentClassConfig(): PlayerClassConfig {
+    if (this.classId === 'cat') {
+      return this.config.rogue;
+    }
+    return this.config[this.classId] ?? this.config.mage;
+  }
+
+  isCatGodModeActive(): boolean {
+    return this.classId === 'cat' && this.catGodModeEnabled;
+  }
+
+  getCatContactDamage(): number {
+    if (!this.isCatGodModeActive()) return 0;
+    return Math.max(1, this.computeOutgoingDamage(this.catContactDamage, true));
   }
 
   /**
@@ -533,12 +677,13 @@ export class PlayerController {
     const renderPosition = this.position.clone();
     const animHeightOffset = this.animationController ? this.animationController.getHeightOffset() : 0;
     renderPosition.y = 1.0 + this.externalVerticalOffset - animHeightOffset + this.getClassModelVisualOffsetY();
+    const effectiveVisibility = Math.max(0, Math.min(1, this.renderVisibility * this.stealthVisibilityMultiplier));
     if (this.animationController) {
       this.animationController.setPosition(renderPosition);
-      this.animationController.setVisibility(this.renderVisibility);
+      this.animationController.setVisibility(effectiveVisibility);
     } else if (this.mesh) {
       this.mesh.position.copyFrom(renderPosition);
-      this.mesh.visibility = this.renderVisibility;
+      this.mesh.visibility = effectiveVisibility;
     }
   }
 
@@ -547,11 +692,16 @@ export class PlayerController {
     if (this.classId === 'mage' || this.classId === 'firewall') {
       return -PlayerController.MODEL_VERTICAL_TILE_FIX;
     }
+    if (this.classId === 'rogue') {
+      return -PlayerController.ROGUE_MODEL_VERTICAL_TILE_FIX;
+    }
     return 0;
   }
 
   update(deltaTime: number): void {
     if (!this.mesh) return;
+    const previousPosition = this.position.clone();
+    const rogueDashWasActiveAtFrameStart = this.isRogueLikeClass() && this.rogueDashRemaining > 0;
 
     if (this.damageBoostTimer > 0) {
       this.damageBoostTimer = Math.max(0, this.damageBoostTimer - deltaTime);
@@ -564,6 +714,9 @@ export class PlayerController {
       if (this.damageReductionTimer <= 0) {
         this.damageReductionRatio = 0;
       }
+    }
+    if (this.mageReactiveAoeCooldownRemaining > 0) {
+      this.mageReactiveAoeCooldownRemaining = Math.max(0, this.mageReactiveAoeCooldownRemaining - deltaTime);
     }
 
     if (this.tankShieldBashCooldownTimer > 0) {
@@ -583,7 +736,7 @@ export class PlayerController {
           swingDirection: 'right',
           range: this.tankPrimaryRange,
           coneAngleDeg: this.tankPrimaryConeAngleDeg,
-          damage: this.applyDamageModifiers(this.tankPrimaryDamage),
+          damage: this.computeOutgoingDamage(this.tankPrimaryDamage),
           knockback: this.tankPrimaryKnockback,
         };
         this.tankComboSecondSwingPending = false;
@@ -635,7 +788,7 @@ export class PlayerController {
         };
       }
     }
-    if (this.classId === 'rogue' && this.rogueDashRemaining > 0) {
+    if (this.isRogueLikeClass() && this.rogueDashRemaining > 0) {
       this.velocity = this.rogueDashDirection.scale(this.rogueDashSpeed);
       const dashStep = this.rogueDashSpeed * deltaTime;
       this.rogueDashDistanceRemaining = Math.max(0, this.rogueDashDistanceRemaining - dashStep);
@@ -643,6 +796,10 @@ export class PlayerController {
       if (this.rogueDashRemaining <= 0 || this.rogueDashDistanceRemaining <= 0) {
         this.rogueDashRemaining = 0;
         this.rogueDashDistanceRemaining = 0;
+        this.rogueDashImpactPending = true;
+        if (this.animationController && this.animationController.getCurrentState() === AnimationState.DASH) {
+          this.animationController.playAnimation(this.isMoving ? AnimationState.WALKING : AnimationState.IDLE);
+        }
       }
     }
     
@@ -653,8 +810,36 @@ export class PlayerController {
     this.position = newPosition;
     this.position.y = 1.0; // Keep at floor level
 
+    const rogueDashIsActiveAfterMovement = this.isRogueLikeClass() && (this.rogueDashRemaining > 0 || this.rogueDashImpactPending);
+    if (rogueDashWasActiveAtFrameStart || rogueDashIsActiveAfterMovement) {
+      this.queueRogueDashTrailSegment(previousPosition, this.position);
+    }
+
     // Update parent position using animation controller (handles height offset)
     this.syncVisualPosition();
+
+    if (this.isRogueLikeClass() && this.rogueDashImpactPending) {
+      if (this.rogueDashTrailLastPoint && Vector3.Distance(this.rogueDashTrailLastPoint, this.position) > 0.01) {
+        this.pendingRogueDashTrailSegments.push({
+          from: this.rogueDashTrailLastPoint.clone(),
+          to: this.position.clone(),
+          radius: this.rogueDashHitRadius,
+        });
+      }
+      this.pendingRogueDashAttack = {
+        from: this.rogueDashStartPosition.clone(),
+        to: this.position.clone(),
+        radius: this.rogueDashHitRadius,
+        damage: this.computeRogueDamage(this.rogueDashDamage),
+        knockback: this.rogueDashKnockback,
+      };
+      this.rogueDashImpactPending = false;
+      this.rogueDashTrailLastPoint = null;
+      this.rogueDashTrailAccumulatedDistance = 0;
+    }
+
+    this.updateMovementDust(deltaTime);
+    this.updateAmbientClassParticles();
 
     // Update attack cooldown
     this.timeSinceLastAttack += deltaTime;
@@ -679,8 +864,10 @@ export class PlayerController {
     // Priority: Ultimate > Attack > Movement > Idle
     if (this.animationController) {
       const isUltimateActive = this.inputManager.isSpaceHeld() && this.ultCharge >= 1.0;
+      const forceStealthWalk = this.isRogueLikeClass() && this.rogueStealthActive && this.rogueDashRemaining <= 0;
+      const animationMoving = this.isMoving || forceStealthWalk;
       this.animationController.updateAnimationState(
-        this.isMoving,
+        animationMoving,
         this.isFiring,
         isUltimateActive
       );
@@ -693,7 +880,7 @@ export class PlayerController {
       this.updateSecondaryStance(deltaTime);
     } else if (this.classId === 'firewall') {
       this.updateTankStance(deltaTime);
-    } else if (this.classId === 'rogue') {
+    } else if (this.isRogueLikeClass()) {
       this.updateRogueStealth(deltaTime);
     } else {
       this.secondaryActive = false;
@@ -807,9 +994,38 @@ export class PlayerController {
     return snapped.normalize();
   }
 
+  private computeMageAttackAnimationSpeed(): number {
+    if (!this.animationController) return 1;
+    const baseDuration = this.animationController.getPrimaryAttackBaseDurationSeconds();
+    const targetDuration = Math.max(0.06, this.fireRate * 0.9);
+    const speed = baseDuration / targetDuration;
+    return MathUtils.clamp(speed, 0.85, 4.5);
+  }
+
+  private computeRogueAttackAnimationSpeed(): number {
+    if (this.classId !== 'rogue' || !this.animationController) return 1;
+    const baseDuration = this.animationController.getPrimaryAttackBaseDurationSeconds();
+    const targetDuration = Math.max(0.05, this.fireRate * 0.82);
+    const speed = baseDuration / targetDuration;
+    return MathUtils.clamp(Math.max(1.25, speed), 1.25, 5.5);
+  }
+
+  private computeRogueDashAnimationSpeed(actualDistance: number, maxDashDistance: number): number {
+    if (this.classId !== 'rogue' || !this.animationController) return 1;
+
+    const baseDuration = this.animationController.getDashBaseDurationSeconds();
+    const dashTravelTime = actualDistance / Math.max(0.001, this.rogueDashSpeed);
+    const targetDuration = Math.max(0.05, dashTravelTime);
+    const cadenceSpeed = baseDuration / targetDuration;
+
+    void maxDashDistance;
+    return MathUtils.clamp(cadenceSpeed, 0.35, 6.0);
+  }
+
   private applySettings(settings: GameSettings): void {
     this.keyboardOnlyMode = !!settings.controls.keyboardOnlyMode;
     this.autoAimTowardMovement = !!settings.controls.autoAimTowardMovement;
+    this.catGodModeEnabled = !!settings.accessibility.catGodModeEnabled;
   }
 
   private updateFocusFire(deltaTime: number): void {
@@ -857,12 +1073,12 @@ export class PlayerController {
 
     // Charge only during gameplay when enemies are present
     if (this.gameplayActive && this.hasEnemiesInRoom) {
-      const classConfig: PlayerClassConfig = this.config[this.classId] ?? this.config.mage;
+      const classConfig = this.getCurrentClassConfig();
       const chargeTime = Math.max(
         0.01,
         this.readPositiveNumber((classConfig.ultimate as { chargeTime?: number } | undefined)?.chargeTime, 14)
       );
-      const chargePerSecond = 1 / chargeTime;
+      const chargePerSecond = (1 / chargeTime) * this.getUltimateChargeRateMultiplier();
       this.ultCharge = Math.min(1.0, this.ultCharge + chargePerSecond * deltaTime);
     }
 
@@ -919,16 +1135,16 @@ export class PlayerController {
           swingDirection: 'left',
           range: this.tankPrimaryRange,
           coneAngleDeg: this.tankPrimaryConeAngleDeg,
-          damage: this.applyDamageModifiers(this.tankPrimaryDamage),
+          damage: this.computeOutgoingDamage(this.tankPrimaryDamage),
           knockback: this.tankPrimaryKnockback,
         };
         this.tankComboDirection = this.attackDirection.clone();
         this.tankComboSecondSwingPending = true;
         this.tankComboSecondSwingTimer = this.fireRate * 0.5;
         this.timeSinceLastAttack = 0;
-        this.animationController.playTankPrimaryCombo(this.fireRate);
+        this.animationController.playTankPrimaryCombo(this.fireRate * 0.9);
       }
-    } else if (this.classId === 'rogue') {
+    } else if (this.isRogueLikeClass()) {
       if (this.rogueStealthLockUntilRightRelease && !slot2Held) {
         this.rogueStealthLockUntilRightRelease = false;
       }
@@ -953,6 +1169,8 @@ export class PlayerController {
         const actualDistance = Math.max(0.001, Math.min(maxDashDistance, targetDistance));
         this.rogueDashDirection = this.attackDirection.clone();
         this.rogueDashStartPosition = this.position.clone();
+        this.rogueDashTrailLastPoint = this.position.clone();
+        this.rogueDashTrailAccumulatedDistance = 0;
         this.rogueDashDistanceRemaining = actualDistance;
         this.rogueDashRemaining = actualDistance / this.rogueDashSpeed;
         this.rogueDashCooldownTimer = this.rogueDashCooldown;
@@ -961,19 +1179,21 @@ export class PlayerController {
         this.rogueOpeningStrikeTimer = this.rogueOpeningStrikeWindow;
         this.rogueStealthActive = false;
         this.rogueStealthLockUntilRightRelease = true;
+        this.animationController.playAnimation(
+          AnimationState.DASH,
+          this.computeRogueDashAnimationSpeed(actualDistance, maxDashDistance)
+        );
       } else if (!this.rogueStealthActive && this.rogueDashRemaining <= 0 && this.timeSinceLastAttack >= this.fireRate && slot1Held) {
         this.pendingRogueStrike = {
           origin: this.position.clone(),
           direction: this.attackDirection.clone(),
           range: this.roguePrimaryRange,
           coneAngleDeg: this.roguePrimaryConeAngleDeg,
-          damage: this.consumeRogueOpeningStrike(
-            this.computeRogueDamage(this.applyDamageModifiers(this.roguePrimaryDamage))
-          ),
+          damage: this.consumeRogueOpeningStrike(this.computeRogueDamage(this.roguePrimaryDamage)),
           knockback: this.roguePrimaryKnockback,
         };
         this.timeSinceLastAttack = 0;
-        this.animationController.playAnimation(AnimationState.ATTACKING);
+        this.animationController.playAnimation(AnimationState.ATTACKING, this.computeRogueAttackAnimationSpeed());
         this.eventBus.emit(GameEvents.ATTACK_PERFORMED, {
           attacker: 'player',
           type: 'melee',
@@ -1030,14 +1250,505 @@ export class PlayerController {
     mesh.isVisible = false;
     mesh.position.y = 1.02;
     this.secondaryZoneMesh = mesh;
+    this.secondaryZoneVisualRadius = Math.max(0.1, this.secondaryZoneRadius);
+  }
+
+  private createRogueStealthZoneVisual(): void {
+    const mesh = VisualPlaceholder.createAoEPlaceholder(this.scene, 'player_rogue_stealth_zone', this.rogueStealthZoneRadius);
+    const material = new StandardMaterial('player_rogue_stealth_zone_mat', this.scene);
+    material.diffuseColor = new Color3(0.12, 0.88, 0.48);
+    material.emissiveColor = new Color3(0.05, 0.34, 0.18);
+    material.alpha = 0.26;
+    mesh.material = material;
+    mesh.isVisible = false;
+    mesh.position.y = 1.02;
+    this.rogueStealthZoneMesh = mesh;
+    this.rogueStealthZoneVisualRadius = Math.max(0.1, this.rogueStealthZoneRadius);
+  }
+
+  private getMageSecondaryParticleTexture(): DynamicTexture {
+    if (this.mageSecondaryParticleTexture) {
+      return this.mageSecondaryParticleTexture;
+    }
+
+    const texture = new DynamicTexture('mage_secondary_particle_texture', { width: 64, height: 64 }, this.scene, false);
+    const ctx = texture.getContext();
+    const gradient = ctx.createRadialGradient(32, 32, 2, 32, 32, 31);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.42, 'rgba(136,239,255,0.95)');
+    gradient.addColorStop(0.74, 'rgba(132,98,255,0.88)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.clearRect(0, 0, 64, 64);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    texture.update();
+    this.mageSecondaryParticleTexture = texture;
+    return texture;
+  }
+
+  private getRogueParticleTexture(): DynamicTexture {
+    if (this.rogueParticleTexture) {
+      return this.rogueParticleTexture;
+    }
+
+    const texture = new DynamicTexture('rogue_particle_texture', { width: 64, height: 64 }, this.scene, false);
+    const ctx = texture.getContext();
+    ctx.clearRect(0, 0, 64, 64);
+
+    // Build a blocky/glitch look instead of a smooth radial dot.
+    const cell = 8;
+    for (let y = 0; y < 64; y += cell) {
+      for (let x = 0; x < 64; x += cell) {
+        const checker = ((x / cell) + (y / cell)) % 2 === 0;
+        const alpha = checker ? 0.38 : 0.18;
+        ctx.fillStyle = checker ? `rgba(82,255,155,${alpha})` : `rgba(20,168,86,${alpha})`;
+        ctx.fillRect(x, y, cell, cell);
+      }
+    }
+
+    ctx.fillStyle = 'rgba(255,64,200,0.26)';
+    ctx.fillRect(8, 16, 10, 8);
+    ctx.fillRect(40, 38, 12, 8);
+
+    const core = ctx.createRadialGradient(32, 32, 2, 32, 32, 28);
+    core.addColorStop(0, 'rgba(230,255,236,1)');
+    core.addColorStop(0.4, 'rgba(98,255,170,0.92)');
+    core.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = core;
+    ctx.fillRect(0, 0, 64, 64);
+
+    texture.update();
+    this.rogueParticleTexture = texture;
+    return texture;
+  }
+
+  private getMageAmbientParticleTexture(): DynamicTexture {
+    if (this.mageAmbientParticleTexture) {
+      return this.mageAmbientParticleTexture;
+    }
+
+    const texture = new DynamicTexture('mage_ambient_particle_texture', { width: 64, height: 64 }, this.scene, false);
+    const ctx = texture.getContext();
+    ctx.clearRect(0, 0, 64, 64);
+    const outer = ctx.createRadialGradient(32, 32, 4, 32, 32, 31);
+    outer.addColorStop(0, 'rgba(216,236,255,0.72)');
+    outer.addColorStop(0.45, 'rgba(118,196,255,0.46)');
+    outer.addColorStop(0.8, 'rgba(132,100,255,0.26)');
+    outer.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = outer;
+    ctx.fillRect(0, 0, 64, 64);
+
+    const core = ctx.createRadialGradient(32, 32, 0, 32, 32, 16);
+    core.addColorStop(0, 'rgba(242,248,255,0.7)');
+    core.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = core;
+    ctx.fillRect(0, 0, 64, 64);
+
+    ctx.strokeStyle = 'rgba(154,130,255,0.24)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(32, 32, 17, 0, Math.PI * 2);
+    ctx.stroke();
+
+    texture.update();
+    this.mageAmbientParticleTexture = texture;
+    return texture;
+  }
+
+  private getTankAmbientParticleTexture(): DynamicTexture {
+    if (this.tankAmbientParticleTexture) {
+      return this.tankAmbientParticleTexture;
+    }
+
+    const texture = new DynamicTexture('tank_ambient_particle_texture', { width: 64, height: 64 }, this.scene, false);
+    const ctx = texture.getContext();
+    ctx.clearRect(0, 0, 64, 64);
+
+    const glow = ctx.createRadialGradient(32, 32, 3, 32, 32, 30);
+    glow.addColorStop(0, 'rgba(255,255,255,1)');
+    glow.addColorStop(0.36, 'rgba(114,214,255,0.95)');
+    glow.addColorStop(0.72, 'rgba(255,196,86,0.82)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, 64, 64);
+
+    ctx.fillStyle = 'rgba(166,226,255,0.6)';
+    ctx.fillRect(31, 10, 2, 44);
+    ctx.fillRect(10, 31, 44, 2);
+    texture.update();
+    this.tankAmbientParticleTexture = texture;
+    return texture;
+  }
+
+  private getMovementDustParticleTexture(): DynamicTexture {
+    if (this.movementDustParticleTexture) {
+      return this.movementDustParticleTexture;
+    }
+
+    const texture = new DynamicTexture('movement_dust_particle_texture', { width: 64, height: 64 }, this.scene, false);
+    const ctx = texture.getContext();
+    const gradient = ctx.createRadialGradient(32, 32, 4, 32, 32, 31);
+    gradient.addColorStop(0, 'rgba(242,246,252,0.92)');
+    gradient.addColorStop(0.58, 'rgba(148,160,178,0.72)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.clearRect(0, 0, 64, 64);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    texture.update();
+    this.movementDustParticleTexture = texture;
+    return texture;
+  }
+
+  private startMageSecondaryZoneParticles(): void {
+    this.stopMageSecondaryZoneParticles();
+
+    const particles = new ParticleSystem(`mage_secondary_zone_fx_${Date.now()}`, 620, this.scene);
+    particles.particleTexture = this.getMageSecondaryParticleTexture();
+    particles.layerMask = SCENE_LAYER;
+    particles.emitter = this.position.add(new Vector3(0, 0.1, 0));
+    particles.minSize = 0.04;
+    particles.maxSize = 0.12;
+    particles.minLifeTime = 0.7;
+    particles.maxLifeTime = 1.6;
+    particles.emitRate = 170;
+    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+    particles.color1 = new Color4(0.58, 0.92, 1.0, 0.84);
+    particles.color2 = new Color4(0.58, 0.34, 1.0, 0.74);
+    particles.colorDead = new Color4(0.08, 0.18, 0.42, 0);
+    particles.gravity = new Vector3(0, 0, 0);
+    particles.minEmitPower = 0.02;
+    particles.maxEmitPower = 0.08;
+    particles.updateSpeed = 0.012;
+
+    particles.startPositionFunction = (
+      _worldMatrix,
+      positionToUpdate: Vector3,
+      _particle,
+      _isLocal,
+    ) => {
+      const angle = Math.random() * Math.PI * 2;
+      const r = this.secondaryZoneRadius * (0.15 + (Math.random() * 0.85));
+      positionToUpdate.x = this.position.x + (Math.cos(angle) * r);
+      positionToUpdate.y = this.position.y + 0.08 + (Math.random() * 0.2);
+      positionToUpdate.z = this.position.z + (Math.sin(angle) * r);
+    };
+
+    particles.startDirectionFunction = (
+      _worldMatrix,
+      directionToUpdate: Vector3,
+      _particle,
+      _isLocal,
+    ) => {
+      directionToUpdate.x = (Math.random() - 0.5) * 0.05;
+      directionToUpdate.y = 0.02 + (Math.random() * 0.05);
+      directionToUpdate.z = (Math.random() - 0.5) * 0.05;
+    };
+
+    particles.start();
+    this.secondaryZoneParticles = particles;
+  }
+
+  private stopMageSecondaryZoneParticles(): void {
+    if (!this.secondaryZoneParticles) return;
+    this.secondaryZoneParticles.stop();
+    this.secondaryZoneParticles.dispose(false);
+    this.secondaryZoneParticles = null;
+  }
+
+  private spawnMageSecondaryActivationBurst(): void {
+    const burst = new ParticleSystem(`mage_secondary_activate_fx_${Date.now()}`, 220, this.scene);
+    burst.particleTexture = this.getMageSecondaryParticleTexture();
+    burst.layerMask = SCENE_LAYER;
+    burst.emitter = this.position.add(new Vector3(0, 0.12, 0));
+    burst.minSize = 0.06;
+    burst.maxSize = 0.18;
+    burst.minLifeTime = 0.18;
+    burst.maxLifeTime = 0.32;
+    burst.emitRate = 1200;
+    burst.blendMode = ParticleSystem.BLENDMODE_ADD;
+    burst.color1 = new Color4(0.62, 0.94, 1.0, 0.92);
+    burst.color2 = new Color4(0.62, 0.36, 1.0, 0.78);
+    burst.colorDead = new Color4(0.08, 0.16, 0.4, 0);
+    burst.gravity = new Vector3(0, 0, 0);
+    burst.minEmitPower = 1.1;
+    burst.maxEmitPower = 2.6;
+    burst.updateSpeed = 0.016;
+    burst.start();
+
+    window.setTimeout(() => {
+      burst.stop();
+      window.setTimeout(() => burst.dispose(false), 360);
+    }, 120);
+  }
+
+  private startRogueAmbientGlitchParticles(): void {
+    this.stopRogueAmbientGlitchParticles();
+
+    const particles = new ParticleSystem(`rogue_ambient_glitch_fx_${Date.now()}`, 620, this.scene);
+    particles.particleTexture = this.getRogueParticleTexture();
+    particles.layerMask = SCENE_LAYER;
+    particles.emitter = this.position.add(new Vector3(0, 0.9, 0));
+    particles.minSize = 0.02;
+    particles.maxSize = 0.12;
+    particles.minLifeTime = 0.08;
+    particles.maxLifeTime = 0.28;
+    particles.emitRate = 250;
+    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+    particles.color1 = new Color4(0.26, 1.0, 0.65, 0.84);
+    particles.color2 = new Color4(0.1, 0.76, 0.33, 0.66);
+    particles.colorDead = new Color4(0.03, 0.2, 0.08, 0);
+    particles.gravity = new Vector3(0, 0, 0);
+    particles.minEmitPower = 0.05;
+    particles.maxEmitPower = 0.26;
+    particles.updateSpeed = 0.011;
+
+    particles.startPositionFunction = (
+      _worldMatrix,
+      positionToUpdate: Vector3,
+      _particle,
+      _isLocal,
+    ) => {
+      const angle = Math.random() * Math.PI * 2;
+      const ring = 0.18 + (Math.random() * 0.55);
+      positionToUpdate.x = this.position.x + (Math.cos(angle) * ring);
+      positionToUpdate.y = this.position.y + 0.32 + (Math.random() * 0.95);
+      positionToUpdate.z = this.position.z + (Math.sin(angle) * ring);
+    };
+
+    particles.startDirectionFunction = (
+      _worldMatrix,
+      directionToUpdate: Vector3,
+      _particle,
+      _isLocal,
+    ) => {
+      directionToUpdate.x = (Math.random() - 0.5) * 0.34;
+      directionToUpdate.y = -0.06 + (Math.random() * 0.15);
+      directionToUpdate.z = (Math.random() - 0.5) * 0.34;
+    };
+
+    particles.start();
+
+    this.rogueAmbientGlitchParticles = particles;
+  }
+
+  private stopRogueAmbientGlitchParticles(): void {
+    if (!this.rogueAmbientGlitchParticles) return;
+    this.rogueAmbientGlitchParticles.stop();
+    this.rogueAmbientGlitchParticles.dispose(false);
+    this.rogueAmbientGlitchParticles = null;
+  }
+
+  private startMageAmbientAuraParticles(): void {
+    this.stopMageAmbientAuraParticles();
+
+    const particles = new ParticleSystem(`mage_ambient_aura_fx_${Date.now()}`, 540, this.scene);
+    particles.particleTexture = this.getMageAmbientParticleTexture();
+    particles.layerMask = SCENE_LAYER;
+    particles.emitter = this.position.add(new Vector3(0, 0.85, 0));
+    particles.minSize = 0.012;
+    particles.maxSize = 0.06;
+    particles.minLifeTime = 0.35;
+    particles.maxLifeTime = 1.2;
+    particles.emitRate = 280;
+    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+    particles.color1 = new Color4(0.54, 0.88, 1.0, 0.52);
+    particles.color2 = new Color4(0.55, 0.35, 1.0, 0.38);
+    particles.colorDead = new Color4(0.08, 0.12, 0.34, 0);
+    particles.gravity = new Vector3(0, 0.012, 0);
+    particles.minEmitPower = 0.006;
+    particles.maxEmitPower = 0.04;
+    particles.updateSpeed = 0.01;
+
+    particles.startPositionFunction = (
+      _worldMatrix,
+      positionToUpdate: Vector3,
+      _particle,
+      _isLocal,
+    ) => {
+      const angle = Math.random() * Math.PI * 2;
+      const ring = 0.08 + (Math.random() * 0.78);
+      positionToUpdate.x = this.position.x + (Math.cos(angle) * ring);
+      positionToUpdate.y = this.position.y + 0.18 + (Math.random() * 1.04);
+      positionToUpdate.z = this.position.z + (Math.sin(angle) * ring);
+    };
+
+    particles.startDirectionFunction = (
+      _worldMatrix,
+      directionToUpdate: Vector3,
+      _particle,
+      _isLocal,
+    ) => {
+      directionToUpdate.x = (Math.random() - 0.5) * 0.03;
+      directionToUpdate.y = 0.012 + (Math.random() * 0.03);
+      directionToUpdate.z = (Math.random() - 0.5) * 0.03;
+    };
+
+    particles.start();
+    this.mageAmbientAuraParticles = particles;
+  }
+
+  private stopMageAmbientAuraParticles(): void {
+    if (!this.mageAmbientAuraParticles) return;
+    this.mageAmbientAuraParticles.stop();
+    this.mageAmbientAuraParticles.dispose(false);
+    this.mageAmbientAuraParticles = null;
+  }
+
+  private startTankAmbientArcParticles(): void {
+    this.stopTankAmbientArcParticles();
+
+    const particles = new ParticleSystem(`tank_ambient_arc_fx_${Date.now()}`, 560, this.scene);
+    particles.particleTexture = this.getTankAmbientParticleTexture();
+    particles.layerMask = SCENE_LAYER;
+    particles.emitter = this.position.add(new Vector3(0, 0.88, 0));
+    particles.minSize = 0.022;
+    particles.maxSize = 0.13;
+    particles.minLifeTime = 0.08;
+    particles.maxLifeTime = 0.24;
+    particles.emitRate = 182;
+    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+    particles.color1 = new Color4(0.52, 0.9, 1.0, 0.92);
+    particles.color2 = new Color4(1.0, 0.78, 0.36, 0.8);
+    particles.colorDead = new Color4(0.09, 0.12, 0.18, 0);
+    particles.gravity = new Vector3(0, -0.02, 0);
+    particles.minEmitPower = 0.8;
+    particles.maxEmitPower = 2.4;
+    particles.minAngularSpeed = -26;
+    particles.maxAngularSpeed = 26;
+    particles.updateSpeed = 0.012;
+
+    particles.startPositionFunction = (
+      _worldMatrix,
+      positionToUpdate: Vector3,
+      _particle,
+      _isLocal,
+    ) => {
+      const angle = Math.random() * Math.PI * 2;
+      const ring = 0.2 + (Math.random() * 0.64);
+      positionToUpdate.x = this.position.x + (Math.cos(angle) * ring);
+      positionToUpdate.y = this.position.y + 0.22 + (Math.random() * 1.02);
+      positionToUpdate.z = this.position.z + (Math.sin(angle) * ring);
+    };
+
+    particles.startDirectionFunction = (
+      _worldMatrix,
+      directionToUpdate: Vector3,
+      _particle,
+      _isLocal,
+    ) => {
+      const angle = Math.random() * Math.PI * 2;
+      const burst = 1.1 + (Math.random() * 2.2);
+      directionToUpdate.x = Math.cos(angle) * burst;
+      directionToUpdate.y = -0.2 + (Math.random() * 0.45);
+      directionToUpdate.z = Math.sin(angle) * burst;
+    };
+
+    particles.start();
+    this.tankAmbientArcParticles = particles;
+  }
+
+  private stopTankAmbientArcParticles(): void {
+    if (!this.tankAmbientArcParticles) return;
+    this.tankAmbientArcParticles.stop();
+    this.tankAmbientArcParticles.dispose(false);
+    this.tankAmbientArcParticles = null;
+  }
+
+  private spawnRogueStealthActivationSmoke(): void {
+    const smoke = new ParticleSystem(`rogue_stealth_smoke_fx_${Date.now()}`, 280, this.scene);
+    smoke.particleTexture = this.getRogueParticleTexture();
+    smoke.layerMask = SCENE_LAYER;
+    smoke.emitter = this.position.add(new Vector3(0, 0.12, 0));
+    smoke.minSize = 0.08;
+    smoke.maxSize = 0.26;
+    smoke.minLifeTime = 0.2;
+    smoke.maxLifeTime = 0.42;
+    smoke.emitRate = 1350;
+    smoke.blendMode = ParticleSystem.BLENDMODE_ADD;
+    smoke.color1 = new Color4(0.32, 0.95, 0.58, 0.72);
+    smoke.color2 = new Color4(0.1, 0.7, 0.28, 0.52);
+    smoke.colorDead = new Color4(0.03, 0.2, 0.08, 0);
+    smoke.gravity = new Vector3(0, 0, 0);
+    smoke.minEmitPower = 0.8;
+    smoke.maxEmitPower = 2.1;
+    smoke.updateSpeed = 0.016;
+    smoke.start();
+
+    window.setTimeout(() => {
+      smoke.stop();
+      window.setTimeout(() => smoke.dispose(false), 340);
+    }, 120);
+  }
+
+  private updateAmbientClassParticles(): void {
+    if (this.secondaryZoneParticles) {
+      this.secondaryZoneParticles.emitter = this.position.add(new Vector3(0, 0.1, 0));
+    }
+    if (this.mageAmbientAuraParticles) {
+      this.mageAmbientAuraParticles.emitter = this.position.add(new Vector3(0, 0.85, 0));
+      const magePulse = 0.82 + (0.18 * Math.sin(performance.now() * 0.0055));
+      this.mageAmbientAuraParticles.emitRate = 230 * magePulse;
+    }
+    if (this.tankAmbientArcParticles) {
+      this.tankAmbientArcParticles.emitter = this.position.add(new Vector3(0, 0.88, 0));
+      const tankPulse = 0.86 + (0.22 * Math.sin(performance.now() * 0.01));
+      this.tankAmbientArcParticles.emitRate = 172 * tankPulse;
+    }
+    if (this.rogueAmbientGlitchParticles) {
+      this.rogueAmbientGlitchParticles.emitter = this.position.add(new Vector3(0, 0.9, 0));
+    }
+  }
+
+  private updateMovementDust(deltaTime: number): void {
+    this.movementDustCooldown = Math.max(0, this.movementDustCooldown - deltaTime);
+    const flatSpeed = Math.sqrt((this.velocity.x * this.velocity.x) + (this.velocity.z * this.velocity.z));
+    if (!this.isMoving || flatSpeed <= 0.2) return;
+    if (this.movementDustCooldown > 0) return;
+
+    this.spawnMovementDustBurst(flatSpeed);
+    const cadence = flatSpeed > this.speed * 1.6 ? 0.05 : 0.11;
+    this.movementDustCooldown = cadence;
+  }
+
+  private spawnMovementDustBurst(flatSpeed: number): void {
+    const particles = new ParticleSystem(`player_move_dust_${Date.now()}`, 110, this.scene);
+    particles.particleTexture = this.getMovementDustParticleTexture();
+    particles.layerMask = SCENE_LAYER;
+    particles.emitter = this.position.add(new Vector3(0, 0.04, 0));
+    particles.minEmitBox = new Vector3(-0.2, -0.01, -0.2);
+    particles.maxEmitBox = new Vector3(0.2, 0.01, 0.2);
+    particles.minSize = 0.04;
+    particles.maxSize = 0.14;
+    particles.minLifeTime = 0.1;
+    particles.maxLifeTime = 0.28;
+    particles.emitRate = 720;
+    particles.blendMode = ParticleSystem.BLENDMODE_STANDARD;
+    particles.color1 = new Color4(0.84, 0.87, 0.92, 0.68);
+    particles.color2 = new Color4(0.6, 0.65, 0.72, 0.46);
+    particles.colorDead = new Color4(0.24, 0.26, 0.3, 0);
+    particles.gravity = new Vector3(0, 0.02, 0);
+    particles.minEmitPower = 0.25;
+    particles.maxEmitPower = Math.min(1.2, 0.4 + (flatSpeed * 0.1));
+    particles.updateSpeed = 0.016;
+    particles.direction1 = new Vector3(-0.75, 0.02, -0.75);
+    particles.direction2 = new Vector3(0.75, 0.16, 0.75);
+    particles.start();
+
+    window.setTimeout(() => {
+      particles.stop();
+      window.setTimeout(() => particles.dispose(false), 340);
+    }, 90);
   }
 
   private updateSecondaryStance(deltaTime: number): void {
     if (this.classId !== 'mage') {
       this.secondaryActive = false;
+      this.stopMageSecondaryZoneParticles();
       if (this.secondaryZoneMesh) this.secondaryZoneMesh.isVisible = false;
       return;
     }
+
+    const wasSecondaryActive = this.secondaryActive;
 
     const rightHeld = this.inputManager.isRightMouseDown() || this.inputManager.isAttackSlotHeld(2);
 
@@ -1068,14 +1779,16 @@ export class PlayerController {
         this.secondaryActive = false;
         this.secondaryLockUntilRightRelease = true;
       } else {
-        this.secondaryResource = Math.max(0, this.secondaryResource - this.secondaryDrainPerSecond * deltaTime);
+        const efficiency = this.getStanceEfficiencyMultiplier();
+        this.secondaryResource = Math.max(0, this.secondaryResource - (this.secondaryDrainPerSecond / efficiency) * deltaTime);
         if (this.secondaryResource <= 0) {
+          this.secondaryResource = 0;
           this.secondaryActive = false;
-          this.secondaryLockUntilRightRelease = true;
         }
       }
     } else {
-      this.secondaryResource = Math.min(this.secondaryResourceMax, this.secondaryResource + this.secondaryRegenPerSecond * deltaTime);
+      const efficiency = this.getStanceEfficiencyMultiplier();
+      this.secondaryResource = Math.min(this.secondaryResourceMax, this.secondaryResource + (this.secondaryRegenPerSecond * efficiency) * deltaTime);
     }
 
     if (this.secondaryZoneMesh) {
@@ -1083,6 +1796,23 @@ export class PlayerController {
       this.secondaryZoneMesh.position.x = this.position.x;
       this.secondaryZoneMesh.position.z = this.position.z;
       this.secondaryZoneMesh.position.y = 1.02;
+      const scale = Math.max(0.1, this.secondaryZoneRadius) / Math.max(0.1, this.secondaryZoneVisualRadius);
+      this.secondaryZoneMesh.scaling.x = scale;
+      this.secondaryZoneMesh.scaling.y = scale;
+      this.secondaryZoneMesh.scaling.z = 1;
+
+      const material = this.secondaryZoneMesh.material;
+      if (material instanceof StandardMaterial) {
+        const pulse = 0.5 + (0.5 * Math.sin(performance.now() * 0.008));
+        material.alpha = this.secondaryActive ? 0.2 + (0.09 * pulse) : 0.14;
+      }
+    }
+
+    if (this.secondaryActive && !wasSecondaryActive) {
+      this.startMageSecondaryZoneParticles();
+      this.spawnMageSecondaryActivationBurst();
+    } else if (!this.secondaryActive && wasSecondaryActive) {
+      this.stopMageSecondaryZoneParticles();
     }
   }
 
@@ -1109,17 +1839,20 @@ export class PlayerController {
     }
 
     if (this.tankShieldActive) {
-      this.tankStanceResource = Math.max(0, this.tankStanceResource - this.tankStanceDrainPerSecond * deltaTime);
+      const efficiency = this.getStanceEfficiencyMultiplier();
+      this.tankStanceResource = Math.max(0, this.tankStanceResource - (this.tankStanceDrainPerSecond / efficiency) * deltaTime);
       if (this.tankStanceResource <= 0) {
         this.tankShieldActive = false;
         this.tankShieldLockUntilRightRelease = true;
       }
     } else {
-      this.tankStanceResource = Math.min(this.tankStanceResourceMax, this.tankStanceResource + this.tankStanceRegenPerSecond * deltaTime);
+      const efficiency = this.getStanceEfficiencyMultiplier();
+      this.tankStanceResource = Math.min(this.tankStanceResourceMax, this.tankStanceResource + (this.tankStanceRegenPerSecond * efficiency) * deltaTime);
     }
   }
 
   private updateRogueStealth(deltaTime: number): void {
+    const wasStealthActive = this.rogueStealthActive;
     const rightHeld = this.inputManager.isRightMouseDown() || this.inputManager.isAttackSlotHeld(2);
 
     if (!this.gameplayActive) {
@@ -1142,24 +1875,50 @@ export class PlayerController {
     }
 
     if (this.rogueStealthActive) {
-      this.rogueStealthResource = Math.max(0, this.rogueStealthResource - this.rogueStealthDrainPerSecond * deltaTime);
+      const efficiency = this.getStanceEfficiencyMultiplier();
+      this.rogueStealthResource = Math.max(0, this.rogueStealthResource - (this.rogueStealthDrainPerSecond / efficiency) * deltaTime);
       if (this.rogueStealthResource <= 0) {
         this.rogueStealthActive = false;
         this.rogueStealthLockUntilRightRelease = true;
       }
     } else {
-      this.rogueStealthResource = Math.min(this.rogueStealthResourceMax, this.rogueStealthResource + this.rogueStealthRegenPerSecond * deltaTime);
+      const efficiency = this.getStanceEfficiencyMultiplier();
+      this.rogueStealthResource = Math.min(this.rogueStealthResourceMax, this.rogueStealthResource + (this.rogueStealthRegenPerSecond * efficiency) * deltaTime);
+    }
+
+    if (this.rogueStealthZoneMesh) {
+      this.rogueStealthZoneMesh.isVisible = this.rogueStealthActive;
+      this.rogueStealthZoneMesh.position.x = this.position.x;
+      this.rogueStealthZoneMesh.position.z = this.position.z;
+      this.rogueStealthZoneMesh.position.y = 1.02;
+      const scale = Math.max(0.1, this.rogueStealthZoneRadius) / Math.max(0.1, this.rogueStealthZoneVisualRadius);
+      this.rogueStealthZoneMesh.scaling.x = scale;
+      this.rogueStealthZoneMesh.scaling.y = scale;
+      this.rogueStealthZoneMesh.scaling.z = 1;
+
+      const mat = this.rogueStealthZoneMesh.material;
+      if (mat instanceof StandardMaterial) {
+        const pulse = 0.5 + (0.5 * Math.sin(performance.now() * 0.01));
+        mat.alpha = this.rogueStealthActive ? 0.18 + (0.08 * pulse) : 0.1;
+      }
+    }
+
+    this.stealthVisibilityMultiplier = this.rogueStealthActive ? 0.46 : 1;
+    if (this.rogueStealthActive !== wasStealthActive) {
+      this.syncVisualPosition();
+    }
+    if (this.rogueStealthActive && !wasStealthActive) {
+      this.spawnRogueStealthActivationSmoke();
     }
   }
 
   private computeRogueDamage(baseDamage: number): number {
-    if (this.classId !== 'rogue') return baseDamage;
-    const isCrit = Math.random() < this.rogueCritChance;
-    return isCrit ? baseDamage * this.rogueCritMultiplier : baseDamage;
+    if (!this.isRogueLikeClass()) return baseDamage;
+    return this.computeOutgoingDamage(baseDamage, true);
   }
 
   private consumeRogueOpeningStrike(baseDamage: number): number {
-    if (this.classId !== 'rogue' || !this.rogueOpeningStrikeReady || this.rogueOpeningStrikeTimer <= 0) {
+    if (!this.isRogueLikeClass() || !this.rogueOpeningStrikeReady || this.rogueOpeningStrikeTimer <= 0) {
       return baseDamage;
     }
 
@@ -1172,7 +1931,7 @@ export class PlayerController {
     this.pendingSecondaryBurst = {
       position: this.position.clone(),
       radius: this.secondaryZoneRadius,
-      baseDamage: this.applyDamageModifiers(this.secondaryBurstBaseDamage),
+      baseDamage: this.computeOutgoingDamage(this.secondaryBurstBaseDamage),
       damagePerEnemy: this.secondaryBurstDamagePerEnemy,
       damagePerProjectile: this.secondaryBurstDamagePerProjectile,
       knockback: this.secondaryBurstKnockback,
@@ -1180,12 +1939,16 @@ export class PlayerController {
   }
 
   private fireProjectile(): void {
-    const classConfig: PlayerClassConfig = this.config[this.classId] ?? this.config.mage;
+    const classConfig = this.getCurrentClassConfig();
     const attackConfig = (classConfig.attack ?? {}) as { projectileSpeed?: number; range?: number };
-    const damage = this.applyDamageModifiers(classConfig.baseStats.damage);
+    const damage = this.isRogueLikeClass()
+      ? this.computeRogueDamage(classConfig.baseStats.damage)
+      : this.computeOutgoingDamage(classConfig.baseStats.damage);
+    const baseSpeed = this.readPositiveNumber(attackConfig.projectileSpeed, 25);
+    const baseRange = this.readPositiveNumber(attackConfig.range, 30);
 
     if (this.animationController) {
-      this.animationController.playAnimation(AnimationState.ATTACKING);
+      this.animationController.playAnimation(AnimationState.ATTACKING, this.computeMageAttackAnimationSpeed());
     }
 
     // Rotate model to face attack direction at moment of firing
@@ -1194,14 +1957,32 @@ export class PlayerController {
       this.animationController.rotateTowardDirection(this.attackDirection);
     }
 
-    this.eventBus.emit(GameEvents.PROJECTILE_SPAWNED, {
-      position: this.position.clone(),
-      direction: this.attackDirection.clone(),
-      damage: damage,
-      speed: this.readPositiveNumber(attackConfig.projectileSpeed, 25),
-      range: this.readPositiveNumber(attackConfig.range, 30),
-      friendly: true,
-    });
+    const spreadDirections = this.getMageProjectileDirections();
+    const projectileCount = spreadDirections.length;
+    const dualBurstTriggered = this.shouldTriggerMageDualBurst();
+    const volleyOffsets = dualBurstTriggered ? [0, BONUS_TUNING.mage.dualBurstLateralOffset] : [0];
+
+    for (const direction of spreadDirections) {
+      for (let volleyIndex = 0; volleyIndex < volleyOffsets.length; volleyIndex++) {
+        const spreadDamageMultiplier = projectileCount > 1 ? BONUS_TUNING.mage.multishotDamageMultiplier : 1;
+        const dualBurstDamageMultiplier = volleyIndex === 0 ? 1 : BONUS_TUNING.mage.dualBurstDamageMultiplier;
+
+        this.eventBus.emit(GameEvents.PROJECTILE_SPAWNED, {
+          position: this.getProjectileSpawnPosition(direction, volleyIndex === 0 ? 0 : volleyOffsets[volleyIndex]),
+          direction,
+          damage: damage * spreadDamageMultiplier * dualBurstDamageMultiplier,
+          speed: baseSpeed,
+          range: baseRange,
+          friendly: true,
+          projectileType: 'mage_arcane',
+          maxBounces: this.getProjectileBounceCount(),
+          bounceDamping: BONUS_TUNING.mage.bounceDamping,
+          homingRadius: this.mageAutolockEnabled ? BONUS_TUNING.mage.autolockRadius : undefined,
+          homingTurnRate: this.mageAutolockEnabled ? BONUS_TUNING.mage.autolockTurnRate : undefined,
+          pierceCount: this.getProjectilePierceCount(),
+        });
+      }
+    }
 
     this.eventBus.emit(GameEvents.ATTACK_PERFORMED, {
       attacker: 'player',
@@ -1215,14 +1996,14 @@ export class PlayerController {
       this.pendingTankUltimate = {
         position: this.position.clone(),
         radius: this.readPositiveNumber(ultConfig.radius, 4.2),
-        damage: this.applyDamageModifiers(this.readPositiveNumber(ultConfig.damage, 12)),
+        damage: this.computeOutgoingDamage(this.readPositiveNumber(ultConfig.damage, 12)),
         stunDuration: this.readPositiveNumber(ultConfig.stunDuration, 1.2),
         knockbackStrength: this.readPositiveNumber(
           ultConfig.knockbackStrength,
           this.readPositiveNumber(ultConfig.pullStrength, 2.4)
         ),
         tickInterval: this.readPositiveNumber(ultConfig.tickInterval, 0.6),
-        duration: this.readPositiveNumber(ultConfig.duration, 5),
+        duration: this.applyUltimateDurationModifier(this.readPositiveNumber(ultConfig.duration, 5)),
       };
       this.ultCharge = 0;
       this.ultCooldown = this.readPositiveNumber(ultConfig.cooldown, 14);
@@ -1230,12 +2011,12 @@ export class PlayerController {
       return;
     }
 
-    if (this.classId === 'rogue') {
+    if (this.isRogueLikeClass()) {
       const ultConfig = this.config.rogue?.ultimate ?? {};
       this.pendingRogueUltimate = {
-        duration: this.readPositiveNumber(ultConfig.duration, this.rogueUltimateDuration),
+        duration: this.applyUltimateDurationModifier(this.readPositiveNumber(ultConfig.duration, this.rogueUltimateDuration)),
         zoneRadius: this.readPositiveNumber(ultConfig.zoneRadius, this.rogueUltimateZoneRadius),
-        hitDamage: this.applyDamageModifiers(this.readPositiveNumber(ultConfig.hitDamage, this.rogueUltimateHitDamage)),
+        hitDamage: this.computeRogueDamage(this.readPositiveNumber(ultConfig.hitDamage, this.rogueUltimateHitDamage)),
         teleportInterval: this.readPositiveNumber(ultConfig.teleportInterval, this.rogueUltimateTeleportInterval),
         teleportOffset: this.readPositiveNumber(ultConfig.teleportOffset, this.rogueUltimateTeleportOffset),
       };
@@ -1261,8 +2042,8 @@ export class PlayerController {
         this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_USED, {
           position: this.position.clone(),
           radius: this.readPositiveNumber(mageUltConfig.radius, 4),
-          damage: this.applyDamageModifiers(this.readPositiveNumber(mageUltConfig.damage, 50)),
-          duration: this.readPositiveNumber(mageUltConfig.dotDuration, 8),
+          damage: this.computeOutgoingDamage(this.readPositiveNumber(mageUltConfig.damage, 50)),
+          duration: this.applyUltimateDurationModifier(this.readPositiveNumber(mageUltConfig.dotDuration, 8)),
           dotTickRate: this.readPositiveNumber(mageUltConfig.dotTickRate, 0.5),
           healPerTick: this.readPositiveNumber(mageUltConfig.healPerTick, 6),
         });
@@ -1271,8 +2052,8 @@ export class PlayerController {
       this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_USED, {
         position: this.position.clone(),
         radius: this.readPositiveNumber(mageUltConfig.radius, 4),
-        damage: this.applyDamageModifiers(this.readPositiveNumber(mageUltConfig.damage, 50)),
-        duration: this.readPositiveNumber(mageUltConfig.dotDuration, 8),
+        damage: this.computeOutgoingDamage(this.readPositiveNumber(mageUltConfig.damage, 50)),
+        duration: this.applyUltimateDurationModifier(this.readPositiveNumber(mageUltConfig.dotDuration, 8)),
         dotTickRate: this.readPositiveNumber(mageUltConfig.dotTickRate, 0.5),
         healPerTick: this.readPositiveNumber(mageUltConfig.healPerTick, 6),
       });
@@ -1349,20 +2130,282 @@ export class PlayerController {
     this.poisonDuration = Math.max(this.poisonDuration, duration);
   }
 
+  applyDodgeRollBonus(): void {
+    this.bonusDodgeChance = Math.min(
+      BONUS_TUNING.general.dodgeChanceCap,
+      this.bonusDodgeChance + BONUS_TUNING.general.dodgeChancePerStack
+    );
+  }
+
+  applyCritEngineBonus(): void {
+    this.bonusCritChance = Math.min(
+      BONUS_TUNING.general.critChanceCap,
+      this.bonusCritChance + BONUS_TUNING.general.critChancePerStack
+    );
+    this.bonusCritMultiplier = Math.min(
+      BONUS_TUNING.general.critMultiplierBonusCap,
+      this.bonusCritMultiplier + BONUS_TUNING.general.critMultiplierBonusPerStack
+    );
+  }
+
+  applyUltimateChargeBonus(): void {
+    this.bonusUltChargeRateMultiplier = Math.min(
+      BONUS_TUNING.general.ultChargeRateMultiplierCap,
+      this.bonusUltChargeRateMultiplier + BONUS_TUNING.general.ultChargeRateMultiplierPerStack
+    );
+  }
+
+  applyUltimateDurationBonus(): void {
+    this.bonusUltDurationMultiplier = Math.min(
+      BONUS_TUNING.general.ultDurationMultiplierCap,
+      this.bonusUltDurationMultiplier + BONUS_TUNING.general.ultDurationMultiplierPerStack
+    );
+  }
+
+  applyStanceEfficiencyBonus(): void {
+    this.bonusStanceEfficiencyMultiplier = Math.min(
+      BONUS_TUNING.general.stanceEfficiencyMultiplierCap,
+      this.bonusStanceEfficiencyMultiplier + BONUS_TUNING.general.stanceEfficiencyMultiplierPerStack
+    );
+  }
+
+  applyMageMultishotArcBonus(): void {
+    this.mageArcMultishotStacks = Math.min(BONUS_TUNING.mage.multishotArcMaxProjectiles - 1, this.mageArcMultishotStacks + 1);
+  }
+
+  applyMageDualBurstBonus(): void {
+    this.mageDualBurstStacks += 1;
+  }
+
+  applyMageBounceKernelBonus(): void {
+    this.mageBounceStacks = Math.min(
+      BONUS_TUNING.mage.bounceMaxStacks,
+      this.mageBounceStacks + BONUS_TUNING.mage.bounceStacksPerBonus
+    );
+  }
+
+  applyMagePierceBonus(): void {
+    this.magePierceStacks = Math.min(
+      BONUS_TUNING.mage.pierceMaxStacks,
+      this.magePierceStacks + BONUS_TUNING.mage.pierceStacksPerBonus
+    );
+  }
+
+  applyMageReactiveAoEBonus(): void {
+    this.mageReactiveAoeStacks += 1;
+  }
+
+  applyMageImpactAoEBonus(): void {
+    this.mageImpactAoeStacks += 1;
+  }
+
+  enableMageAutolockBonus(): void {
+    this.mageAutolockEnabled = true;
+  }
+
+  applyFirewallDeflectBonus(): void {
+    this.tankProjectileReflectMultiplier *= BONUS_TUNING.firewall.deflectMultiplierPerStack;
+  }
+
+  applyFirewallStunBonus(): void {
+    this.tankShieldBashStunDuration *= BONUS_TUNING.firewall.stunMultiplierPerStack;
+  }
+
+  applyFirewallThornsBonus(): void {
+    this.firewallThornsDamageRatio += BONUS_TUNING.firewall.thornsRatioPerStack;
+  }
+
+  applyFirewallBashRangeBonus(): void {
+    this.tankShieldBashHitRadius = Math.min(
+      BONUS_TUNING.firewall.bashRangeRadiusCap,
+      this.tankShieldBashHitRadius + BONUS_TUNING.firewall.bashRangeRadiusPerStack
+    );
+    this.tankShieldBashGroupDistance = Math.min(
+      BONUS_TUNING.firewall.bashRangeGroupDistanceCap,
+      this.tankShieldBashGroupDistance + BONUS_TUNING.firewall.bashRangeGroupDistancePerStack
+    );
+    this.tankShieldBashGroupWidth = Math.min(
+      BONUS_TUNING.firewall.bashRangeGroupWidthCap,
+      this.tankShieldBashGroupWidth + BONUS_TUNING.firewall.bashRangeGroupWidthPerStack
+    );
+  }
+
+  applyFirewallDamageReductionBonus(): void {
+    this.firewallDamageReductionRatio = Math.min(
+      BONUS_TUNING.firewall.damageReductionCap,
+      this.firewallDamageReductionRatio + BONUS_TUNING.firewall.damageReductionPerStack
+    );
+  }
+
+  applyRogueLifestealBonus(): void {
+    this.rogueLifestealRatio = Math.min(
+      BONUS_TUNING.rogue.lifestealRatioCap,
+      this.rogueLifestealRatio + BONUS_TUNING.rogue.lifestealRatioPerStack
+    );
+  }
+
+  applyRogueWhitehatChainBonus(): void {
+    this.rogueChainDamageRatio = Math.min(
+      BONUS_TUNING.rogue.chainDamageRatioCap,
+      this.rogueChainDamageRatio + BONUS_TUNING.rogue.chainDamageRatioPerStack
+    );
+    this.rogueChainRadius = Math.min(
+      BONUS_TUNING.rogue.chainRadiusCap,
+      Math.max(BONUS_TUNING.rogue.chainRadiusMin, this.rogueChainRadius + BONUS_TUNING.rogue.chainRadiusPerStack)
+    );
+    this.rogueChainMaxTargets = Math.min(BONUS_TUNING.rogue.chainMaxTargetsCap, Math.max(1, this.rogueChainMaxTargets + 1));
+  }
+
+  applyRogueStealthZoneBonus(): void {
+    this.rogueStealthZoneRadius = Math.min(
+      BONUS_TUNING.rogue.stealthZoneRadiusCap,
+      this.rogueStealthZoneRadius + BONUS_TUNING.rogue.stealthZoneRadiusPerStack
+    );
+    this.rogueStealthDrainPerSecond = Math.max(
+      BONUS_TUNING.rogue.stealthDrainMin,
+      this.rogueStealthDrainPerSecond * BONUS_TUNING.rogue.stealthDrainMultiplierPerStack
+    );
+    this.rogueStealthRegenPerSecond = Math.min(
+      BONUS_TUNING.rogue.stealthRegenCap,
+      this.rogueStealthRegenPerSecond * BONUS_TUNING.rogue.stealthRegenMultiplierPerStack
+    );
+  }
+
+  applyRogueRangePatchBonus(): void {
+    this.roguePrimaryRange = Math.min(
+      BONUS_TUNING.rogue.rangePatchPrimaryRangeCap,
+      this.roguePrimaryRange + BONUS_TUNING.rogue.rangePatchPrimaryRangePerStack
+    );
+    this.rogueDashHitRadius = Math.min(
+      BONUS_TUNING.rogue.rangePatchDashRadiusCap,
+      this.rogueDashHitRadius + BONUS_TUNING.rogue.rangePatchDashRadiusPerStack
+    );
+  }
+
+  applyRogueBackdoorBonus(): void {
+    this.rogueOpeningStrikeMultiplier += BONUS_TUNING.rogue.backdoorDamageBonusPerStack;
+    this.rogueOpeningStrikeWindow += BONUS_TUNING.rogue.backdoorWindowBonusPerStack;
+  }
+
+  onPlayerDealtDamage(damage: number): void {
+    if (!Number.isFinite(damage) || damage <= 0) return;
+    if (!this.isRogueLikeClass() || this.rogueLifestealRatio <= 0) return;
+
+    const rawHeal = damage * this.rogueLifestealRatio;
+    const cappedHeal = Math.min(rawHeal, BONUS_TUNING.rogue.lifestealHealCapPerHit);
+    if (cappedHeal > 0) {
+      this.heal(cappedHeal);
+    }
+  }
+
+  getRogueChainConfig(): { damageRatio: number; radius: number; maxTargets: number } | null {
+    if (!this.isRogueLikeClass()) return null;
+    if (this.rogueChainDamageRatio <= 0 || this.rogueChainRadius <= 0 || this.rogueChainMaxTargets <= 0) return null;
+    return {
+      damageRatio: this.rogueChainDamageRatio,
+      radius: this.rogueChainRadius,
+      maxTargets: this.rogueChainMaxTargets,
+    };
+  }
+
+  getFirewallThornsDamageRatio(): number {
+    if (this.classId !== 'firewall') return 0;
+    return this.firewallThornsDamageRatio;
+  }
+
   getPoisonBonus(): { percent: number; duration: number } {
     return { percent: this.poisonBonusPercent, duration: this.poisonDuration };
+  }
+
+  getMageImpactAoeConfig(): { chance: number; radius: number; damageRatio: number; knockback: number } | null {
+    if (this.classId !== 'mage' || this.mageImpactAoeStacks <= 0) return null;
+
+    const chance = Math.min(
+      BONUS_TUNING.mage.impactAoeChanceCap,
+      this.mageImpactAoeStacks * BONUS_TUNING.mage.impactAoeChancePerStack
+    );
+    const radius = Math.min(
+      BONUS_TUNING.mage.impactAoeRadiusCap,
+      BONUS_TUNING.mage.impactAoeRadiusBase + (this.mageImpactAoeStacks * BONUS_TUNING.mage.impactAoeRadiusPerStack)
+    );
+    const damageRatio = Math.min(
+      BONUS_TUNING.mage.impactAoeDamageRatioCap,
+      BONUS_TUNING.mage.impactAoeDamageRatioBase + (this.mageImpactAoeStacks * BONUS_TUNING.mage.impactAoeDamageRatioPerStack)
+    );
+
+    return {
+      chance,
+      radius,
+      damageRatio,
+      knockback: BONUS_TUNING.mage.impactAoeKnockback,
+    };
+  }
+
+  private getProjectileBounceCount(): number {
+    if (this.classId !== 'mage') return 0;
+    return this.mageBounceStacks;
+  }
+
+  private getMageProjectileDirections(): Vector3[] {
+    const baseDirection = this.attackDirection.lengthSquared() > 0.0001
+      ? this.attackDirection.normalize()
+      : new Vector3(1, 0, 0);
+
+    if (this.classId !== 'mage' || this.mageArcMultishotStacks <= 0) {
+      return [baseDirection.clone()];
+    }
+
+    const projectileCount = Math.min(BONUS_TUNING.mage.multishotArcMaxProjectiles, 1 + this.mageArcMultishotStacks);
+    const spreadDeg = BONUS_TUNING.mage.multishotArcSpreadBaseDeg + (this.mageArcMultishotStacks * BONUS_TUNING.mage.multishotArcSpreadPerStackDeg);
+    const spreadRad = (spreadDeg * Math.PI) / 180;
+
+    const directions: Vector3[] = [];
+    if (projectileCount === 1) return [baseDirection.clone()];
+
+    for (let i = 0; i < projectileCount; i++) {
+      const t = i / (projectileCount - 1);
+      const angle = -spreadRad + (2 * spreadRad * t);
+      const rotated = this.rotateDirectionY(baseDirection, angle);
+      directions.push(rotated);
+    }
+
+    return directions;
+  }
+
+  private rotateDirectionY(direction: Vector3, angle: number): Vector3 {
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    const x = direction.x * cosA - direction.z * sinA;
+    const z = direction.x * sinA + direction.z * cosA;
+    return new Vector3(x, 0, z).normalize();
+  }
+
+  private shouldTriggerMageDualBurst(): boolean {
+    if (this.classId !== 'mage' || this.mageDualBurstStacks <= 0) return false;
+    const chance = Math.min(
+      BONUS_TUNING.mage.dualBurstChanceCap,
+      this.mageDualBurstStacks * BONUS_TUNING.mage.dualBurstChancePerStack
+    );
+    return Math.random() < chance;
+  }
+
+  private getProjectileSpawnPosition(direction: Vector3, lateralOffset: number): Vector3 {
+    if (lateralOffset <= 0.0001) return this.position.clone();
+    const side = new Vector3(direction.z, 0, -direction.x);
+    if (side.lengthSquared() <= 0.0001) return this.position.clone();
+    return this.position.add(side.normalize().scale(lateralOffset));
   }
 
   isSecondaryActive(): boolean {
     if (this.classId === 'mage') return this.secondaryActive;
     if (this.classId === 'firewall') return this.tankShieldActive;
-    if (this.classId === 'rogue') return this.rogueStealthActive;
+    if (this.isRogueLikeClass()) return this.rogueStealthActive;
     return false;
   }
 
   getSecondaryZoneRadius(): number {
     if (this.classId === 'mage') return this.secondaryZoneRadius;
-    if (this.classId === 'rogue') return this.rogueStealthZoneRadius;
+    if (this.isRogueLikeClass()) return this.rogueStealthZoneRadius;
     return 0;
   }
 
@@ -1374,21 +2417,21 @@ export class PlayerController {
   getSecondaryResourceCurrent(): number {
     if (this.classId === 'mage') return this.secondaryResource;
     if (this.classId === 'firewall') return this.tankStanceResource;
-    if (this.classId === 'rogue') return this.rogueStealthResource;
+    if (this.isRogueLikeClass()) return this.rogueStealthResource;
     return 0;
   }
 
   getSecondaryResourceMax(): number {
     if (this.classId === 'mage') return this.secondaryResourceMax;
     if (this.classId === 'firewall') return this.tankStanceResourceMax;
-    if (this.classId === 'rogue') return this.rogueStealthResourceMax;
+    if (this.isRogueLikeClass()) return this.rogueStealthResourceMax;
     return 0;
   }
 
   getSecondaryActivationThreshold(): number {
     if (this.classId === 'mage') return this.secondaryActivationThreshold;
     if (this.classId === 'firewall') return this.tankStanceActivationThreshold;
-    if (this.classId === 'rogue') return this.rogueStealthActivationThreshold;
+    if (this.isRogueLikeClass()) return this.rogueStealthActivationThreshold;
     return 0;
   }
 
@@ -1402,6 +2445,17 @@ export class PlayerController {
   } | null {
     const payload = this.pendingSecondaryBurst;
     this.pendingSecondaryBurst = null;
+    return payload;
+  }
+
+  consumePendingMageReactiveBurst(): {
+    position: Vector3;
+    radius: number;
+    damage: number;
+    knockback: number;
+  } | null {
+    const payload = this.pendingMageReactiveBurst;
+    this.pendingMageReactiveBurst = null;
     return payload;
   }
 
@@ -1520,6 +2574,47 @@ export class PlayerController {
     return payload;
   }
 
+  consumePendingRogueDashTrailSegments(): Array<{
+    from: Vector3;
+    to: Vector3;
+    radius: number;
+  }> {
+    const payload = this.pendingRogueDashTrailSegments;
+    this.pendingRogueDashTrailSegments = [];
+    return payload;
+  }
+
+  private queueRogueDashTrailSegment(from: Vector3, to: Vector3): void {
+    const traveled = Vector3.Distance(from, to);
+    if (traveled <= 0.0001) return;
+
+    if (!this.rogueDashTrailLastPoint) {
+      this.rogueDashTrailLastPoint = from.clone();
+      this.rogueDashTrailAccumulatedDistance = 0;
+    }
+
+    this.rogueDashTrailAccumulatedDistance += traveled;
+    const segmentThreshold = 0.08;
+    const dashStillActive = this.rogueDashRemaining > 0;
+    if (dashStillActive && this.rogueDashTrailAccumulatedDistance < segmentThreshold) {
+      return;
+    }
+
+    const segmentStart = this.rogueDashTrailLastPoint.clone();
+    const segmentEnd = to.clone();
+    if (Vector3.Distance(segmentStart, segmentEnd) <= 0.01) {
+      return;
+    }
+
+    this.pendingRogueDashTrailSegments.push({
+      from: segmentStart,
+      to: segmentEnd,
+      radius: this.rogueDashHitRadius,
+    });
+    this.rogueDashTrailLastPoint = segmentEnd;
+    this.rogueDashTrailAccumulatedDistance = 0;
+  }
+
   consumePendingRogueUltimate(): {
     duration: number;
     zoneRadius: number;
@@ -1533,7 +2628,7 @@ export class PlayerController {
   }
 
   setRogueUltimateActive(active: boolean): void {
-    if (this.classId !== 'rogue') {
+    if (!this.isRogueLikeClass()) {
       this.rogueUltimateActive = false;
       return;
     }
@@ -1549,11 +2644,11 @@ export class PlayerController {
   }
 
   getRogueStealthRadius(): number {
-    return this.classId === 'rogue' ? this.rogueStealthZoneRadius : 0;
+    return this.isRogueLikeClass() ? this.rogueStealthZoneRadius : 0;
   }
 
   computeRogueHitDamage(baseDamage: number): number {
-    return this.computeRogueDamage(this.applyDamageModifiers(baseDamage));
+    return this.computeRogueDamage(baseDamage);
   }
 
   setEnemiesPresent(hasEnemies: boolean): void {
@@ -1562,6 +2657,10 @@ export class PlayerController {
 
   setGameplayActive(active: boolean): void {
     this.gameplayActive = active;
+  }
+
+  setBenchmarkInvulnerable(active: boolean): void {
+    this.benchmarkInvulnerable = active;
   }
 
   resetFocusFire(): void {
@@ -1573,10 +2672,19 @@ export class PlayerController {
 
   applyDamage(amount: number): void {
     if (!this.health) return;
-    if (this.classId === 'rogue' && this.rogueUltimateActive) {
+    if (this.benchmarkInvulnerable) {
+      return;
+    }
+    if (this.isCatGodModeActive()) {
+      return;
+    }
+    if (this.isRogueLikeClass() && this.rogueUltimateActive) {
       return;
     }
     if (this.classId === 'firewall' && this.tankUltimateActive) {
+      return;
+    }
+    if (this.bonusDodgeChance > 0 && Math.random() < this.bonusDodgeChance) {
       return;
     }
     const configLoader = ConfigLoader.getInstance();
@@ -1584,7 +2692,9 @@ export class PlayerController {
     if (gameplayConfig?.debugConfig?.godMode) {
       return;
     }
-    const reducedDamage = amount * (1 - Math.max(0, Math.min(0.95, this.damageReductionRatio)));
+    const persistentFirewallReduction = this.classId === 'firewall' ? this.firewallDamageReductionRatio : 0;
+    const totalReduction = Math.max(0, Math.min(0.95, this.damageReductionRatio + persistentFirewallReduction));
+    const reducedDamage = amount * (1 - totalReduction);
     this.health.takeDamage(reducedDamage);
     this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
       health: {
@@ -1593,6 +2703,7 @@ export class PlayerController {
       },
       damage: reducedDamage,
     });
+    this.tryTriggerMageReactiveAoe(reducedDamage);
 
     if (this.health.getCurrentHP() <= 0) {
       this.eventBus.emit(GameEvents.PLAYER_DIED, { reason: 'damage' });
@@ -1660,15 +2771,97 @@ export class PlayerController {
     return baseDamage * this.damageBoostMultiplier;
   }
 
+  private computeOutgoingDamage(baseDamage: number, includeRogueCrit: boolean = false): number {
+    const boostedDamage = this.applyDamageModifiers(baseDamage);
+
+    if (includeRogueCrit && this.isRogueLikeClass()) {
+      return this.rollCrit(boostedDamage, this.getRogueCritChance(), this.getRogueCritMultiplier());
+    }
+
+    const critChance = this.getCritChance();
+    if (critChance <= 0) return boostedDamage;
+    return this.rollCrit(boostedDamage, critChance, this.getCritMultiplier());
+  }
+
+  private tryTriggerMageReactiveAoe(incomingDamage: number): void {
+    if (this.classId !== 'mage' || this.mageReactiveAoeStacks <= 0) return;
+    if (!Number.isFinite(incomingDamage) || incomingDamage <= 0) return;
+    if (this.mageReactiveAoeCooldownRemaining > 0) return;
+
+    const chance = Math.min(
+      BONUS_TUNING.mage.reactiveAoeChanceCap,
+      this.mageReactiveAoeStacks * BONUS_TUNING.mage.reactiveAoeChancePerStack
+    );
+    if (Math.random() >= chance) return;
+
+    const radius = Math.min(
+      BONUS_TUNING.mage.reactiveAoeRadiusCap,
+      BONUS_TUNING.mage.reactiveAoeRadiusBase + (this.mageReactiveAoeStacks * BONUS_TUNING.mage.reactiveAoeRadiusPerStack)
+    );
+    const damageRatio = Math.min(
+      BONUS_TUNING.mage.reactiveAoeDamageRatioCap,
+      BONUS_TUNING.mage.reactiveAoeDamageRatioBase + (this.mageReactiveAoeStacks * BONUS_TUNING.mage.reactiveAoeDamageRatioPerStack)
+    );
+    const damage = Math.max(BONUS_TUNING.mage.reactiveAoeMinDamage, incomingDamage * damageRatio);
+
+    this.pendingMageReactiveBurst = {
+      position: this.position.clone(),
+      radius,
+      damage,
+      knockback: BONUS_TUNING.mage.reactiveAoeKnockback,
+    };
+    this.mageReactiveAoeCooldownRemaining = BONUS_TUNING.mage.reactiveAoeCooldownSeconds;
+  }
+
+  private applyUltimateDurationModifier(baseDuration: number): number {
+    return Math.max(0.1, baseDuration * this.getUltimateDurationMultiplier());
+  }
+
+  private getProjectilePierceCount(): number {
+    if (this.classId !== 'mage') return 0;
+    return this.magePierceStacks;
+  }
+
   dispose(): void {
     if (this.unsubscribeSettings) {
       this.unsubscribeSettings();
       this.unsubscribeSettings = null;
     }
+    this.stopMageSecondaryZoneParticles();
+    this.stopMageAmbientAuraParticles();
+    this.stopTankAmbientArcParticles();
+    this.stopRogueAmbientGlitchParticles();
     if (this.secondaryZoneMesh) {
       this.secondaryZoneMesh.dispose();
       this.secondaryZoneMesh = null;
     }
+    if (this.rogueStealthZoneMesh) {
+      this.rogueStealthZoneMesh.dispose();
+      this.rogueStealthZoneMesh = null;
+    }
+    if (this.mageSecondaryParticleTexture) {
+      this.mageSecondaryParticleTexture.dispose();
+      this.mageSecondaryParticleTexture = null;
+    }
+    if (this.rogueParticleTexture) {
+      this.rogueParticleTexture.dispose();
+      this.rogueParticleTexture = null;
+    }
+    if (this.mageAmbientParticleTexture) {
+      this.mageAmbientParticleTexture.dispose();
+      this.mageAmbientParticleTexture = null;
+    }
+    if (this.tankAmbientParticleTexture) {
+      this.tankAmbientParticleTexture.dispose();
+      this.tankAmbientParticleTexture = null;
+    }
+    if (this.movementDustParticleTexture) {
+      this.movementDustParticleTexture.dispose();
+      this.movementDustParticleTexture = null;
+    }
+    this.pendingRogueDashTrailSegments = [];
+    this.rogueDashTrailLastPoint = null;
+    this.rogueDashTrailAccumulatedDistance = 0;
     if (this.mesh) {
       this.mesh.dispose();
     }

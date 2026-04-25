@@ -36,7 +36,10 @@ export interface RoomTransitionCallbacks {
       allowUnload?: boolean;
     }
   ): void;
-  loadRoomByIndex(index: number): void;
+  prepareRoomForTransition(index: number): void;
+  updateRoomTransitionPreparation(alpha: number, nextIndex: number): void;
+  finishRoomTransition(nextIndex: number): void;
+  loadRoomByIndex(index: number, options?: { preferPreparedEnemies?: boolean }): void;
   getRoomBoundsForInstance(instanceKey: string): RoomBounds | null;
   getCameraTarget(): Vector3 | null;
   setCameraMove(move: CameraMoveState | null): void;
@@ -77,8 +80,8 @@ export class RoomTransitionManager {
 
     const currentRoomIndex = this.callbacks.getCurrentRoomIndex();
     this.callbacks.preloadRoomsAround(nextIndex, currentRoomIndex, false, {
-      backwardRange: 2,
-      forwardRange: 2,
+      backwardRange: 1,
+      forwardRange: 1,
       allowUnload: false,
     });
 
@@ -95,6 +98,8 @@ export class RoomTransitionManager {
       this.completeImmediateTransition(nextIndex);
       return;
     }
+
+    this.callbacks.prepareRoomForTransition(nextIndex);
 
     const target = new Vector3(
       (roomBounds.minX + roomBounds.maxX) / 2,
@@ -117,14 +122,15 @@ export class RoomTransitionManager {
     this.completeImmediateTransition(nextIndex);
   }
 
+  updateTransitionProgress(alpha: number, nextIndex: number): void {
+    this.callbacks.updateRoomTransitionPreparation(alpha, nextIndex);
+  }
+
+  finishTransition(nextIndex: number): void {
+    this.callbacks.finishRoomTransition(nextIndex);
+  }
+
   private completeImmediateTransition(nextIndex: number): void {
-    this.callbacks.setCurrentRoomIndex(nextIndex);
-    this.callbacks.loadRoomByIndex(nextIndex);
-    this.callbacks.preloadRoomsAround(this.callbacks.getCurrentRoomIndex(), this.callbacks.getCurrentRoomIndex(), false, {
-      backwardRange: 1,
-      forwardRange: 2,
-      allowUnload: true,
-    });
-    this.callbacks.setGameState('playing');
+    this.callbacks.finishRoomTransition(nextIndex);
   }
 }

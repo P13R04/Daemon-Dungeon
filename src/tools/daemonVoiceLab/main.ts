@@ -1195,48 +1195,69 @@ function scheduleAlternation(
   }
 }
 
-function scheduleMicroGlitches(
-  context: AudioContext,
-  fxInput: GainNode,
-  sourceBuffer: AudioBuffer,
-  windowStart: number,
-  windowEnd: number,
-  glitch: GlitchPlan,
-  allNodes: AudioNode[],
-  sources: AudioBufferSourceNode[]
-): void {
-  const usableStart = windowStart + 0.08;
-  const usableEnd = windowEnd - glitch.sliceSeconds - 0.08;
-  if (usableEnd <= usableStart) return;
+interface GlitchEvent {
+  startPos: number;
+  sliceSeconds: number;
+  repeats: number;
+  gapSeconds: number;
+}
 
-  const offsetMin = Math.max(0, sourceBuffer.duration * 0.45);
-  const offsetMax = Math.max(offsetMin, sourceBuffer.duration * 0.96 - glitch.sliceSeconds);
-
-  for (let i = 0; i < glitch.eventCount; i += 1) {
-    if (Math.random() > numberValue(glitchChanceInput, 0.35)) continue;
-
-    const eventStart = usableStart + Math.random() * (usableEnd - usableStart);
-    const segmentOffset = offsetMin + Math.random() * Math.max(0.0001, offsetMax - offsetMin);
-
-    for (let repeat = 0; repeat < glitch.repeats; repeat += 1) {
-      const when = eventStart + repeat * glitch.repeatGapSeconds;
-      if (when + glitch.sliceSeconds >= windowEnd) break;
-
-      const source = context.createBufferSource();
-      source.buffer = sourceBuffer;
-
-      const gain = context.createGain();
-      const decay = 1 - repeat / Math.max(1, glitch.repeats + 1);
-      gain.gain.value = glitch.gain * (0.65 + decay * 0.35);
-
-      source.connect(gain);
-      gain.connect(fxInput);
-      source.start(when, segmentOffset, glitch.sliceSeconds);
-
-      allNodes.push(source, gain);
-      sources.push(source);
+function applyGlitchMapToBuffer(context: AudioContext, buffer: AudioBuffer, map: GlitchEvent[]): AudioBuffer {
+  if (map.length === 0) return buffer;
+  
+  let addedDuration = 0;
+  for (const ev of map) {
+    addedDuration += ev.repeats * Math.max(ev.sliceSeconds, ev.gapSeconds);
+  }
+  
+  const sampleRate = buffer.sampleRate;
+  const oldLength = buffer.length;
+  const newLength = oldLength + Math.ceil(addedDuration * sampleRate) + 100;
+  
+  const newBuffer = context.createBuffer(buffer.numberOfChannels, newLength, sampleRate);
+  
+  for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
+    const srcData = buffer.getChannelData(channel);
+    const dstData = newBuffer.getChannelData(channel);
+    
+    let srcIdx = 0;
+    let dstIdx = 0;
+    let mapIdx = 0;
+    
+    while (srcIdx < oldLength && dstIdx < newLength) {
+      if (mapIdx < map.length) {
+        const ev = map[mapIdx];
+        const evStartIdx = Math.floor(ev.startPos * sampleRate);
+        const evSliceLen = Math.floor(ev.sliceSeconds * sampleRate);
+        const evGapLen = Math.floor(ev.gapSeconds * sampleRate);
+        
+        if (srcIdx === evStartIdx) {
+          for (let i = 0; i < evSliceLen && srcIdx < oldLength && dstIdx < newLength; i += 1) {
+              dstData[dstIdx++] = srcData[srcIdx++];
+          }
+          
+          for (let r = 0; r < ev.repeats; r += 1) {
+            const decay = 1 - r / Math.max(1, ev.repeats + 1);
+            const volume = 0.65 + decay * 0.35; 
+            
+            for (let i = 0; i < evSliceLen && (evStartIdx + i) < oldLength && dstIdx < newLength; i += 1) {
+              dstData[dstIdx++] = srcData[evStartIdx + i] * volume;
+            }
+            if (evGapLen > evSliceLen) {
+               dstIdx += (evGapLen - evSliceLen);
+            }
+          }
+          
+          mapIdx++;
+          continue;
+        }
+      }
+      
+      dstData[dstIdx++] = srcData[srcIdx++];
     }
   }
+  
+  return newBuffer;
 }
 
 async function playSynthesisText(text: string): Promise<{ endTime: number; playback: ActivePlayback }> {
@@ -1253,6 +1274,8 @@ async function playSynthesisText(text: string): Promise<{ endTime: number; playb
   const allNodes: AudioNode[] = [...fx.nodes];
   const startAt = context.currentTime + 0.05;
 
+  const glitchMap: GlitchEvent[] = [];
+
   const renderedLayers = await Promise.all(
     plan.layers.map(async (layer) => ({
       layer,
@@ -1260,9 +1283,37 @@ async function playSynthesisText(text: string): Promise<{ endTime: number; playb
     }))
   );
 
+  if (plan.glitch && renderedLayers.length > 0) {
+    const duration = renderedLayers[0].buffer.duration;
+    const usableStart = 0.08;
+    const usableEnd = duration - plan.glitch.sliceSeconds - 0.08;
+    if (usableEnd > usableStart) {
+      const events: GlitchEvent[] = [];
+      for (let i = 0; i < plan.glitch.eventCount; i += 1) {
+        if (Math.random() > numberValue(glitchChanceInput, 0.35)) continue;
+        const eventStart = usableStart + Math.random() * (usableEnd - usableStart);
+        events.push({
+          startPos: eventStart,
+          sliceSeconds: plan.glitch.sliceSeconds,
+          repeats: plan.glitch.repeats,
+          gapSeconds: plan.glitch.repeatGapSeconds
+        });
+      }
+      events.sort((a, b) => a.startPos - b.startPos);
+      let lastEnd = 0;
+      for (const ev of events) {
+        if (ev.startPos < lastEnd) continue;
+        glitchMap.push(ev);
+        lastEnd = ev.startPos + ev.sliceSeconds + 0.01;
+      }
+    }
+  }
+
   const scheduledLayers = renderedLayers.map(({ layer, buffer }) => {
+    const processedBuffer = applyGlitchMapToBuffer(context, buffer, glitchMap);
+
     const source = context.createBufferSource();
-    source.buffer = buffer;
+    source.buffer = processedBuffer;
 
     const gainNode = context.createGain();
     gainNode.gain.value = layer.gain;
@@ -1311,21 +1362,7 @@ async function playSynthesisText(text: string): Promise<{ endTime: number; playb
     );
   }
 
-  if (plan.glitch) {
-    const preferred = highEntry ?? lowEntry ?? scheduledLayers[0];
-    if (preferred) {
-      scheduleMicroGlitches(
-        context,
-        fx.input,
-        preferred.buffer,
-        preferred.startTime,
-        preferred.endTime,
-        plan.glitch,
-        allNodes,
-        sources
-      );
-    }
-  }
+  // Micro glitches are now baked into the buffer directly using applyGlitchMapToBuffer
 
   const playback: ActivePlayback = {
     id: ++playbackIdCounter,

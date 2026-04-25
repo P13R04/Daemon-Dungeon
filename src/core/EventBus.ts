@@ -95,8 +95,10 @@ export const GameEvents = {
   // Bonus events
   BONUS_OFFERED: 'bonus:offered',
   BONUS_SELECTED: 'bonus:selected',
+  BONUS_PAID_PICK_REQUESTED: 'bonus:paidPickRequested',
   BONUS_REROLL_REQUESTED: 'bonus:rerollRequested',
   SHOP_PURCHASE_REQUESTED: 'shop:purchaseRequested',
+  PLAYER_ULTIMATE_REFILL_REQUESTED: 'player:ultRefillRequested',
   
   // Combat events
   ATTACK_PERFORMED: 'combat:attackPerformed',
@@ -111,6 +113,10 @@ export const GameEvents = {
   GAME_RESTART_REQUESTED: 'game:restartRequested',
   CODEX_OPEN_REQUESTED: 'game:codexOpenRequested',
   ROOM_NEXT_REQUESTED: 'room:nextRequested',
+  TUTORIAL_START_REQUESTED: 'game:tutorialStartRequested',
+  TUTORIAL_PHASE_COMPLETED: 'game:tutorialPhaseCompleted',
+  TUTORIAL_END_REQUESTED: 'game:tutorialEndRequested',
+
   
   // UI events
   UI_PAUSE_TOGGLE: 'ui:pauseToggle',
@@ -126,3 +132,4 @@ export const GameEvents = {
   ACHIEVEMENT_UNLOCKED: 'achievement:unlocked',
   ACHIEVEMENT_PROGRESS: 'achievement:progress',
 };
+

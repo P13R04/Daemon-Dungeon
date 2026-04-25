@@ -45,6 +45,10 @@ export interface UltimateSystemCallbacks {
   onTankZoneStarted(radius: number): void;
   onTankZoneUpdated(deltaTime: number): void;
   onTankZoneDisposed(): void;
+  onRogueZoneStarted(radius: number): void;
+  onRogueZoneUpdated(deltaTime: number): void;
+  onRogueTeleport(from: Vector3, to: Vector3, target: Vector3): void;
+  onRogueZoneDisposed(): void;
 }
 
 export class UltimateSystemManager {
@@ -82,6 +86,7 @@ export class UltimateSystemManager {
       timer: 0,
       targetedEnemyIds: new Set<string>(),
     };
+    this.callbacks.onRogueZoneStarted(payload.zoneRadius);
   }
 
   update(deltaTime: number, enemies: EnemyController[]): void {
@@ -96,6 +101,7 @@ export class UltimateSystemManager {
     this.rogueUltimateState = null;
     this.tankUltimateState = null;
     this.callbacks.onTankZoneDisposed();
+    this.callbacks.onRogueZoneDisposed();
   }
 
   private applyTankUltimatePulse(enemies: EnemyController[]): void {
@@ -124,17 +130,21 @@ export class UltimateSystemManager {
     if (!this.rogueUltimateState) return;
 
     const player = this.callbacks.getPlayerController();
-    if (player.getClassId() !== 'rogue') {
+    if (player.getClassId() !== 'rogue' && player.getClassId() !== 'cat') {
       player.setRogueUltimateActive(false);
       this.rogueUltimateState = null;
+      this.callbacks.onRogueZoneDisposed();
       return;
     }
+
+    this.callbacks.onRogueZoneUpdated(deltaTime);
 
     this.rogueUltimateState.remaining -= deltaTime;
     this.rogueUltimateState.timer -= deltaTime;
     if (this.rogueUltimateState.remaining <= 0) {
       player.setRogueUltimateActive(false);
       this.rogueUltimateState = null;
+      this.callbacks.onRogueZoneDisposed();
       return;
     }
     if (this.rogueUltimateState.timer > 0) return;
@@ -166,7 +176,9 @@ export class UltimateSystemManager {
     const teleportDir = toTarget.lengthSquared() > 0.0001 ? toTarget.normalize() : new Vector3(1, 0, 0);
     const newPlayerPos = targetPos.subtract(teleportDir.scale(this.rogueUltimateState.teleportOffset));
     newPlayerPos.y = 1.0;
+    const previousPlayerPos = playerPos.clone();
     player.setPosition(newPlayerPos);
+    this.callbacks.onRogueTeleport(previousPlayerPos, newPlayerPos.clone(), targetPos.clone());
 
     target.takeDamage(player.computeRogueHitDamage(this.rogueUltimateState.hitDamage));
     this.rogueUltimateState.targetedEnemyIds.add(target.getId());

@@ -4,7 +4,7 @@
 
 import { Scene, Engine, ArcRotateCamera, Vector3, HemisphericLight, DirectionalLight, FreeCamera, Color3, Color4 } from '@babylonjs/core';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
-import { createSynthwaveGridBackground } from './SynthwaveBackground';
+import { createMatrixVoidBackground } from './MatrixVoidBackground';
 import { PhysicsBootstrap } from './PhysicsBootstrap';
 
 type SceneWithCameras = Scene & {
@@ -24,9 +24,9 @@ export class SceneBootstrap {
     // Basic isometric camera setup
     const camera = new ArcRotateCamera(
       'mainCamera',
-      Math.PI / 4 - Math.PI / 2 - Math.PI / 12, // Alpha (horizontal rotation)
-      Math.PI / 5,   // Beta (vertical angle)
-      30,            // Radius
+      -76 * (Math.PI / 180), // Alpha (horizontal rotation)
+      54 * (Math.PI / 180),  // Beta (vertical angle)
+      24,                    // Radius
       Vector3.Zero(),
       scene
     );
@@ -51,7 +51,7 @@ export class SceneBootstrap {
     
     // Scene settings
     scene.clearColor = new Color4(0.02, 0.02, 0.06, 1);
-    createSynthwaveGridBackground(scene);
+    createMatrixVoidBackground(scene);
     
     // Store cameras on scene for access by GameManager
     const sceneWithCameras = scene as SceneWithCameras;

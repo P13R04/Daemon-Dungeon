@@ -6,13 +6,15 @@ import { Scene, Engine, Vector3, TransformNode, AbstractMesh, Sound } from '@bab
 import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image } from '@babylonjs/gui';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
-import { VoicelineConfig, AnimationPhase } from '../data/voicelines/VoicelineDefinitions';
+import { VoicelineConfig, AnimationPhase, getVoiceline } from '../data/voicelines/VoicelineDefinitions';
 import { DAEMON_ANIMATION_PRESETS, normalizeDaemonPresetName } from '../data/voicelines/DaemonAnimationPresets';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
-import { GameSettingsStore } from '../settings/GameSettings';
+import { DaemonVoiceSynth } from '../audio/DaemonVoiceSynth';
+import { GameSettingsStore, formatInputKeyLabel } from '../settings/GameSettings';
 import { buildHudAssetUrl, getHudAssetBaseUrl } from './hud/HudAssetPaths';
 import { DaemonAvatarController, type DaemonAnimationPhaseState } from './hud/DaemonAvatarController';
 import { getPauseAtDisplayIndex, stripPauseMarkers } from './hud/DaemonTextUtils';
+import type { BonusSelectionUiState } from './BonusSystemManager';
 import type {
   AudioEngineLike,
   DamageNumber,
@@ -61,6 +63,7 @@ export class HUDManager {
   private daemonAvatarImage: Image | null = null;
   private daemonMessageText: TextBlock | null = null;
   private daemonTypewriterSynth: SciFiTypewriterSynth;
+  private daemonVoiceSynth: DaemonVoiceSynth;
   private uiVolumeMultiplier: number = GameSettingsStore.getEffectiveVolume('ui');
   private voicelineVolumeMultiplier: number = GameSettingsStore.getEffectiveVolume('voice');
   private unsubscribeSettings: (() => void) | null = null;
@@ -84,7 +87,7 @@ export class HUDManager {
   private daemonBaseTop: number = 80;
   private daemonBaseLeft: number = 0;
   private daemonAvatarController: DaemonAvatarController = new DaemonAvatarController();
-  private activeVoicelineAudios: Set<Sound> = new Set();
+  private activeVoicelineAudios: Set<Sound | AudioBufferSourceNode> = new Set();
   
   private waveNumber: number = 0;
   private isEnabled: boolean = true;
@@ -108,13 +111,21 @@ export class HUDManager {
   private bossAlertElapsed: number = 0;
   private bossAlertDuration: number = 3.0;
   private bossAlertPulseCount: number = 3;
+  private lastVoicelineTime: number = 0;
+  private readonly VOICELINE_GLOBAL_COOLDOWN: number = 2.5; // Increased minimum gap
+  private lastHazardVoicelineTime: number = 0;
+  private readonly HAZARD_COOLDOWN: number = 20.0; // Increased hazard cooldown
+  private lastDamageTauntTime: number = 0;
+  private readonly DAMAGE_TAUNT_COOLDOWN: number = 15.0; // Cooldown for general damage taunts
   private avatarImageCache: Map<string, HTMLImageElement> = new Map();
   private avatarPreloadPromise: Promise<void> | null = null;
   private readonly daemonAvatarSets: Record<string, string[]> = DAEMON_ANIMATION_PRESETS;
+  private unsubscribers: Array<() => void> = [];
 
   constructor(private scene: Scene) {
     this.eventBus = EventBus.getInstance();
     this.daemonTypewriterSynth = new SciFiTypewriterSynth(SCI_FI_TYPEWRITER_PRESETS.oldschool_fast);
+    this.daemonVoiceSynth = DaemonVoiceSynth.getInstance();
     this.applyAudioSettingsFromStore();
     this.unsubscribeSettings = GameSettingsStore.subscribe(() => {
       this.applyAudioSettingsFromStore();
@@ -165,64 +176,54 @@ export class HUDManager {
     this.guiClean.renderScale = 1;
 
     // Enemy bars must stay in raw screen space for projection alignment
-    this.enemyGui.renderAtIdealSize = false;
-    this.enemyGui.renderScale = 1;
+    if (this.enemyGui) {
+      this.enemyGui.renderAtIdealSize = false;
+      this.enemyGui.renderScale = 1;
+    }
   }
 
   private setupEventListeners(): void {
-    this.eventBus.on(GameEvents.ENEMY_DAMAGED, (data) => {
+    this.unsubscribers.push(this.eventBus.on(GameEvents.ENEMY_DAMAGED, (data) => {
       this.handleEnemyDamagedEvent(data as EnemyEventPayload);
-    });
-
-    this.eventBus.on(GameEvents.ENEMY_SPAWNED, (data: EnemyEventPayload) => {
+    }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.ENEMY_SPAWNED, (data: EnemyEventPayload) => {
       this.handleEnemySpawnedEvent(data);
-    });
-
-    this.eventBus.on(GameEvents.ENEMY_DIED, (data: EnemyEventPayload) => {
+    }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.ENEMY_DIED, (data: EnemyEventPayload) => {
       this.handleEnemyDiedEvent(data);
-    });
-
-    this.eventBus.on(GameEvents.PLAYER_DAMAGED, async (data: PlayerDamagedPayload) => {
+    }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.PLAYER_DAMAGED, async (data: PlayerDamagedPayload) => {
       await this.handlePlayerDamagedEvent(data);
-    });
-
-    this.eventBus.on(GameEvents.ROOM_CLEARED, async () => {
+    }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.ROOM_CLEARED, async () => {
       await this.handleRoomClearedEvent();
-    });
-
-    this.eventBus.on(GameEvents.ROOM_ENTERED, (data: RoomEnteredPayload) => {
+    }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.ROOM_ENTERED, (data: RoomEnteredPayload) => {
       this.handleRoomEnteredEvent(data);
-    });
-
-    this.eventBus.on(GameEvents.ROOM_TRANSITION_START, () => {
+    }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.ROOM_TRANSITION_START, () => {
       this.clearEnemyHealthBars();
-    });
-
-    this.eventBus.on(GameEvents.GAME_START_REQUESTED, () => {
+    }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.GAME_START_REQUESTED, () => {
       this.clearEnemyHealthBars();
       this.resetWaveCounter();
-    });
-
-    this.eventBus.on(GameEvents.GAME_RESTART_REQUESTED, () => {
+    }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.GAME_RESTART_REQUESTED, () => {
       this.clearEnemyHealthBars();
       this.resetWaveCounter();
-    });
-
-    this.eventBus.on(GameEvents.DAEMON_TAUNT, async (data: DaemonTauntPayload) => {
+    }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.DAEMON_TAUNT, async (data: DaemonTauntPayload) => {
       await this.handleDaemonTauntEvent(data);
-    });
-
-    this.eventBus.on(GameEvents.PLAYER_ULTIMATE_READY, (data: PlayerUltReadyPayload) => {
+    }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.PLAYER_ULTIMATE_READY, (data: PlayerUltReadyPayload) => {
       this.handlePlayerUltimateReadyEvent(data);
-    });
-
-    this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data: UiOptionChangedPayload) => {
+    }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data: UiOptionChangedPayload) => {
       this.handleUiOptionChangedEvent(data);
-    });
-
-    this.eventBus.on(GameEvents.DEV_ROOM_LOAD_REQUESTED, () => {
+    }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.DEV_ROOM_LOAD_REQUESTED, () => {
       this.clearEnemyHealthBars();
-    });
+    }));
   }
 
   private handleEnemyDamagedEvent(enemyEvent: EnemyEventPayload): void {
@@ -247,19 +248,33 @@ export class HUDManager {
   }
 
   private async handlePlayerDamagedEvent(data: PlayerDamagedPayload): Promise<void> {
-    if (!data?.health) return;
-    this.updateHealthDisplay(data.health.current, data.health.max);
-    if (data.damage && data.damage > 0) {
+    const current = data?.health?.current ?? (data as any)?.currentHealth ?? 0;
+    const max = data?.health?.max ?? (data as any)?.maxHealth ?? 100;
+    this.updateHealthDisplay(current, max);
+
+    // Probability and cooldown based taunt on damage
+    const now = Date.now() / 1000;
+    const canTauntDamage = (now - this.lastDamageTauntTime > this.DAMAGE_TAUNT_COOLDOWN) && 
+                          (now - this.lastHazardVoicelineTime > this.HAZARD_COOLDOWN);
+                          
+    if (data.damage && data.damage > 0 && Math.random() < 0.08 && !this.daemonVisible && canTauntDamage) {
       this.addLogMessage('INTEGRITY BREACH DETECTED.');
+      this.lastDamageTauntTime = now;
       const taunt = this.getRandomTaunt('damage');
-      await this.showDaemonMessage(taunt.text, taunt.emotion);
+      this.eventBus.emit(GameEvents.DAEMON_TAUNT, {
+        text: taunt.text,
+        emotion: taunt.emotion
+      });
     }
   }
 
   private async handleRoomClearedEvent(): Promise<void> {
     this.addLogMessage('ROOM STATUS: CLEAR.');
     const taunt = this.getRandomTaunt('clear');
-    await this.showDaemonMessage(taunt.text, taunt.emotion);
+    this.eventBus.emit(GameEvents.DAEMON_TAUNT, {
+      text: taunt.text,
+      emotion: taunt.emotion
+    });
   }
 
   private handleRoomEnteredEvent(data: RoomEnteredPayload): void {
@@ -274,14 +289,12 @@ export class HUDManager {
     }
   }
 
-  private async handleDaemonTauntEvent(data: DaemonTauntPayload): Promise<void> {
-    const message = typeof data?.text === 'string' ? data.text : String(data ?? '...');
-    const emotion = typeof data?.emotion === 'string' ? data.emotion : undefined;
-    const sequence = Array.isArray(data?.sequence) ? data.sequence : undefined;
-    const frameInterval = typeof data?.frameInterval === 'number' ? data.frameInterval : undefined;
-    const holdDuration = typeof data?.holdDuration === 'number' ? data.holdDuration : undefined;
-    const preload = data?.preload !== false;
-    await this.showDaemonMessage(message, emotion, { sequence, frameInterval, holdDuration, preload });
+  private async handleWaveUpdate(data: any): Promise<void> {
+    const roomType = typeof data?.roomType === 'string' ? data.roomType.toLowerCase() : 'normal';
+    if (roomType === 'boss') {
+      const roomName = typeof data?.roomName === 'string' ? data.roomName : 'Unknown Chamber';
+      this.triggerBossRoomAlert(roomName);
+    }
   }
 
   private handlePlayerUltimateReadyEvent(data: PlayerUltReadyPayload): void {
@@ -1013,8 +1026,8 @@ export class HUDManager {
     label.width = '80px';
     label.height = '20px';
 
-    this.enemyGui.addControl(container);
-    this.enemyGui.addControl(label);
+    this.enemyGui?.addControl(container);
+    this.enemyGui?.addControl(label);
 
     if (mesh) {
       container.linkWithMesh(mesh);
@@ -1268,8 +1281,9 @@ export class HUDManager {
     await this.preloadAvatarFrames(Array.from(allFrames));
 
     // Set up voiceline messaging
-    this.daemonFullText = voiceline.message;
-    this.daemonDisplayText = stripPauseMarkers(voiceline.message);
+    const processedMessage = this.replaceKeyPlaceholders(voiceline.message);
+    this.daemonFullText = processedMessage;
+    this.daemonDisplayText = stripPauseMarkers(processedMessage);
     this.daemonTypingIndex = 0;
     this.daemonTypingTimer = 0;
     this.daemonTypingDelayTimer = 0;
@@ -1285,9 +1299,21 @@ export class HUDManager {
 
     this.daemonAvatarController.setPhases(phases, voiceline.audioDuration ?? 0);
     
-    // Load and play audio if provided
+    // Synthesis or play audio if provided
     if (voiceline.audioPath) {
       this.playVoicelineAudio(voiceline.audioPath);
+    } else {
+      // Procedural synthesis fallback
+      void (async () => {
+        try {
+          const { buffer, duration } = await this.daemonVoiceSynth.synthesize(processedMessage, 'cold_dual');
+          this.playDaemonVoiceline(buffer);
+          // Sync animations if not already set by setPhases correctly
+          // For now setPhases handles it but we might want to adjust duration
+        } catch (e) {
+          console.warn('[HUDManager] Daemon taunt synthesis failed:', e);
+        }
+      })();
     }
 
     this.updateDaemonAvatarImage();
@@ -1327,6 +1353,45 @@ export class HUDManager {
     }
   }
 
+  private async handleDaemonTauntEvent(data: DaemonTauntPayload): Promise<void> {
+    if (!this.daemonContainer || !this.daemonMessageText) return;
+    
+    const now = Date.now() / 1000;
+    const isHazard = data?.voicelineId === 'tutorial_hazard' || (data?.text?.toLowerCase().includes('fragile'));
+    
+    // Global cooldown to prevent overlap/echo
+    if (now - this.lastVoicelineTime < this.VOICELINE_GLOBAL_COOLDOWN) {
+      return;
+    }
+    
+    // Specific cooldown for hazard taunts (poison, void falls)
+    if (isHazard && (now - this.lastHazardVoicelineTime < this.HAZARD_COOLDOWN)) {
+      return;
+    }
+
+    if (isHazard) this.lastHazardVoicelineTime = now;
+    this.lastVoicelineTime = now;
+
+    console.log(`[HUDManager] handleDaemonTauntEvent: voicelineId=${data?.voicelineId}, text=${data?.text}`);
+    
+    if (data?.voicelineId) {
+      const voiceline = getVoiceline(data.voicelineId);
+      if (!voiceline) {
+        console.warn(`[HUDManager] Voiceline not found: ${data.voicelineId}`);
+        return;
+      }
+      await this.playVoiceline(voiceline);
+    } else {
+      const message = typeof data?.text === 'string' ? data.text : String(data ?? '...');
+      this.showDaemonMessage(message, data?.emotion as string, { 
+        holdDuration: data?.holdDuration as number,
+        sequence: data?.sequence as string[],
+        frameInterval: data?.frameInterval as number,
+        preload: data?.preload !== false
+      });
+    }
+  }
+
   private async showDaemonMessage(
     message: string,
     emotion?: string,
@@ -1339,8 +1404,9 @@ export class HUDManager {
       await this.preloadAvatarFrames(options.sequence);
     }
     
-    this.daemonFullText = message;
-    this.daemonDisplayText = stripPauseMarkers(message);
+    const processedMessage = this.replaceKeyPlaceholders(message);
+    this.daemonFullText = processedMessage;
+    this.daemonDisplayText = stripPauseMarkers(processedMessage);
     this.daemonTypingIndex = 0;
     this.daemonTypingTimer = 0;
     this.daemonTypingDelayTimer = 0;
@@ -1352,7 +1418,40 @@ export class HUDManager {
     this.daemonContainer.isVisible = true;
     this.primeDaemonTypingAudio();
     this.startDaemonPopupGlitch(0.85);
-    this.setDaemonAvatarAnimation(message, emotion, options?.sequence, options?.frameInterval);
+
+    // Synthesis and sync
+    try {
+      const { buffer, duration } = await this.daemonVoiceSynth.synthesize(processedMessage, 'cold_dual');
+      this.playDaemonVoiceline(buffer);
+      this.setDaemonAvatarAnimation(message, emotion, options?.sequence, options?.frameInterval, duration);
+    } catch (e) {
+      console.warn('Daemon synthesis failed:', e);
+      this.setDaemonAvatarAnimation(message, emotion, options?.sequence, options?.frameInterval);
+    }
+  }
+
+  private playDaemonVoiceline(buffer: AudioBuffer): void {
+    const audioEngine = this.getAudioEngine();
+    if (!audioEngine) return;
+    const ctx = (audioEngine as AudioEngineLike).audioContext;
+    if (!ctx) return;
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    
+    const gain = ctx.createGain();
+    gain.gain.value = 0.8 * this.uiVolumeMultiplier;
+
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    
+    source.start(ctx.currentTime + 0.1);
+    this.activeVoicelineAudios.add(source);
+    source.onended = () => {
+      this.activeVoicelineAudios.delete(source);
+      source.disconnect();
+      gain.disconnect();
+    };
   }
 
   private updateDaemonPopup(deltaTime: number): void {
@@ -1430,20 +1529,48 @@ export class HUDManager {
     const audioEngine = this.getAudioEngine();
     if (!audioEngine) return;
 
+    const ctx = (audioEngine as AudioEngineLike).audioContext;
+    if (!ctx) return;
+
     audioEngine.useCustomUnlockedButton = true;
-    this.daemonTypewriterSynth.attachContext((audioEngine as AudioEngineLike).audioContext);
+    this.daemonTypewriterSynth.attachContext(ctx);
+    this.daemonVoiceSynth.setAudioContext(ctx);
   }
 
   private stopAllVoicelineAudio(): void {
-    for (const sound of this.activeVoicelineAudios) {
+    if (this.activeVoicelineAudios.size === 0) return;
+    
+    this.activeVoicelineAudios.forEach(sound => {
       try {
-        sound.stop();
-      } catch {
-        // Ignore stop errors for already-ended sounds.
+        if (sound) {
+          // Both Sound and AudioBufferSourceNode have stop()
+          if (typeof (sound as any).stop === 'function') {
+            (sound as any).stop();
+          }
+          // Babylon Sound has dispose()
+          if (typeof (sound as any).dispose === 'function') {
+            (sound as any).dispose();
+          }
+          // WebAudio nodes have disconnect()
+          if (typeof (sound as any).disconnect === 'function') {
+            (sound as any).disconnect();
+          }
+        }
+      } catch (e) {
+        // Ignore disposal errors for already cleaned up nodes
       }
-      sound.dispose();
-    }
+    });
     this.activeVoicelineAudios.clear();
+  }
+
+  private replaceKeyPlaceholders(text: string): string {
+    if (!text) return '';
+    const settings = GameSettingsStore.get();
+    const keybindings = settings.controls.keybindings;
+    return text.replace(/\{key:(\w+)\}/g, (match, key) => {
+      const binding = keybindings[key as keyof typeof keybindings];
+      return binding ? formatInputKeyLabel(binding) : match;
+    });
   }
 
   private setupDaemonTypingAudioUnlock(): void {
@@ -1485,9 +1612,9 @@ export class HUDManager {
   }
 
   private startDaemonPopupGlitch(strength: number): void {
-    this.daemonGlitchDuration = 0.18 + Math.min(0.22, strength * 0.1);
+    this.daemonGlitchDuration = 0.08 + Math.min(0.12, strength * 0.05);
     this.daemonGlitchTimer = this.daemonGlitchDuration;
-    this.daemonFlashDuration = 0.2 + Math.min(0.12, strength * 0.06);
+    this.daemonFlashDuration = 0.1 + Math.min(0.08, strength * 0.04);
     this.daemonFlashTimer = this.daemonFlashDuration;
     this.daemonFlashPeakAlpha = Math.min(0.11, 0.06 + strength * 0.025);
 
@@ -1638,7 +1765,8 @@ export class HUDManager {
     message: string,
     preferredEmotion?: string,
     customSequence?: string[],
-    frameInterval?: number
+    frameInterval?: number,
+    audioDuration: number = 0
   ): void {
     if (customSequence && customSequence.length > 0) {
       this.daemonAvatarController.setLoopSequence(customSequence, frameInterval ?? 0.18);
@@ -1649,6 +1777,14 @@ export class HUDManager {
     const emotion = this.resolveDaemonEmotion(message, preferredEmotion);
     const sequence = this.buildAvatarSequence(emotion, message);
     this.daemonAvatarController.setPingPongSequence(sequence, frameInterval ?? this.computeAvatarInterval(message, emotion));
+    
+    // Explicitly set audio duration if provided to sync animation loops
+    if (audioDuration > 0) {
+      this.daemonAvatarController.setPhases([], audioDuration);
+      // Re-apply sequence because setPhases clears it
+      this.daemonAvatarController.setPingPongSequence(sequence, frameInterval ?? this.computeAvatarInterval(message, emotion));
+    }
+    
     this.updateDaemonAvatarImage();
   }
 
@@ -1884,12 +2020,28 @@ export class HUDManager {
     this.setHudVisible(false);
   }
 
-  showBonusChoices(choices: HudBonusChoice[], currency: number, rerollCost: number): void {
+  showBonusChoices(
+    choices: HudBonusChoice[],
+    currency: number,
+    rerollCost: number,
+    selectionState?: BonusSelectionUiState,
+  ): void {
     if (!this.bonusScreen) return;
     this.bonusScreen.isVisible = true;
     this.hideMenuScreens();
     this.setHudVisible(false);
     if (this.topBar) this.topBar.isVisible = true;
+
+    const freePicksRemaining = Math.max(0, Math.floor(selectionState?.freePicksRemaining ?? 1));
+    const paidRareChoice = selectionState?.paidRareChoice ?? null;
+    const paidRareCost = Math.max(1, Math.floor(selectionState?.paidRareCost ?? (rerollCost * 5)));
+    const paidRarePurchased = !!selectionState?.paidRarePurchased;
+    const selectedBonusIds = new Set(selectionState?.selectedBonusIds ?? []);
+    const rerollEnabled = selectionState?.rerollEnabled ?? true;
+    const fullHealCost = Math.max(1, Math.floor(selectionState?.fullHealCost ?? (rerollCost * 3)));
+    const playerHealthCurrent = Math.max(0, Math.floor(selectionState?.playerHealthCurrent ?? 0));
+    const playerHealthMax = Math.max(playerHealthCurrent, Math.floor(selectionState?.playerHealthMax ?? playerHealthCurrent));
+    const missingHealth = Math.max(0, playerHealthMax - playerHealthCurrent);
 
     for (const child of this.bonusScreen.children) {
       if (child.name === 'CHOOSE BONUS_title') {
@@ -1905,7 +2057,7 @@ export class HUDManager {
     this.bonusRerollButton = null;
 
     const subtitle = new TextBlock('bonus_shop_subtitle');
-    subtitle.text = 'PICK 1 BONUS';
+    subtitle.text = freePicksRemaining > 1 ? `PICK ${freePicksRemaining} FREE BONUSES` : 'PICK 1 FREE BONUS';
     subtitle.color = '#FFD782';
     subtitle.fontSize = 20;
     subtitle.fontFamily = 'Consolas';
@@ -1914,114 +2066,271 @@ export class HUDManager {
     this.bonusScreen.addControl(subtitle);
     this.bonusDynamicControls.push(subtitle);
 
-    const cardWidth = 300;
-    const cardHeight = 420;
-    const gap = 24;
-    const safeCount = Math.max(1, choices.length);
-    const totalWidth = (safeCount * cardWidth) + ((safeCount - 1) * gap);
-    const startLeft = -Math.floor(totalWidth / 2) + Math.floor(cardWidth / 2);
+    const paidOfferVisible = !!paidRareChoice;
+    const cards: Array<{
+      id: string;
+      title: string;
+      description: string;
+      rarity: 'common' | 'uncommon' | 'rare' | 'epic';
+      stackLabel: string;
+      isPaid: boolean;
+      isSelected: boolean;
+      isEnabled: boolean;
+      cost?: number;
+    }> = choices.map((choice) => ({
+      id: choice.id,
+      title: choice.title,
+      description: choice.description ?? '',
+      rarity: choice.rarity ?? 'common',
+      stackLabel: choice.stackLabel ?? '',
+      isPaid: false,
+      isSelected: selectedBonusIds.has(choice.id),
+      isEnabled: !selectedBonusIds.has(choice.id),
+    }));
 
-    for (let i = 0; i < choices.length; i++) {
-      const choice = choices[i];
-      const rarity = choice.rarity ?? 'common';
-      const rarityStyle = this.getRarityVisual(rarity);
+    if (paidOfferVisible && paidRareChoice) {
+      const paidAlreadyObtained = selectedBonusIds.has(paidRareChoice.id) || paidRarePurchased;
+      const paidEnabled = currency >= paidRareCost && !paidAlreadyObtained;
+      cards.push({
+        id: paidRareChoice.id,
+        title: paidRareChoice.title,
+        description: paidRareChoice.description ?? '',
+        rarity: paidRareChoice.rarity ?? 'rare',
+        stackLabel: paidRareChoice.stackLabel ?? '',
+        isPaid: true,
+        isSelected: paidAlreadyObtained,
+        isEnabled: paidEnabled,
+        cost: paidRareCost,
+      });
+    }
+
+    const totalCards = Math.max(1, cards.length);
+    const viewportWidth = this.scene.getEngine().getRenderWidth(true);
+    const maxLayoutWidth = Math.max(980, Math.min(1860, Math.floor(viewportWidth * 0.9)));
+    const gap = totalCards >= 6 ? 14 : totalCards >= 5 ? 16 : totalCards >= 4 ? 20 : 24;
+    const cardWidth = Math.max(220, Math.min(300, Math.floor((maxLayoutWidth - ((totalCards - 1) * gap)) / totalCards)));
+    const cardScale = cardWidth / 300;
+    const cardHeight = Math.max(320, Math.floor(cardWidth * 1.38));
+    const totalWidth = (totalCards * cardWidth) + ((totalCards - 1) * gap);
+    const startLeft = -Math.floor(totalWidth / 2) + Math.floor(cardWidth / 2);
+    const cardTop = totalCards >= 5 ? -26 : -10;
+    const titleFontSize = Math.max(18, Math.floor(24 * cardScale));
+    const labelFontSize = Math.max(11, Math.floor(13 * cardScale));
+    const rarityFontSize = Math.max(12, Math.floor(16 * cardScale));
+    const descriptionFontSize = Math.max(12, Math.floor(15 * cardScale));
+    const stackFontSize = Math.max(11, Math.floor(12 * cardScale));
+    const artworkGlowSize = Math.floor(180 * cardScale);
+    const artworkFrameSize = Math.floor(170 * cardScale);
+
+    if (!paidOfferVisible) {
+      const paidHint = new TextBlock('bonus_paid_hint');
+      paidHint.text = paidRarePurchased
+        ? 'EXTRA PAID CARD ALREADY PURCHASED'
+        : 'NO PAID RARE CARD OFFER THIS ROOM';
+      paidHint.color = paidRarePurchased ? '#80FFB0' : '#A3B0BF';
+      paidHint.fontSize = 13;
+      paidHint.fontFamily = 'Consolas';
+      paidHint.top = '-184px';
+      paidHint.height = '20px';
+      this.bonusScreen.addControl(paidHint);
+      this.bonusDynamicControls.push(paidHint);
+    }
+
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+      const rarityStyle = card.isPaid
+        ? { border: '#F3C872', glow: '#8D5E17', glowAlpha: 0.55, thickness: 4 }
+        : this.getRarityVisual(card.rarity);
       const leftPx = startLeft + (i * (cardWidth + gap));
 
-      const btn = Button.CreateSimpleButton(`bonus_${choice.id}`, '');
+      const btn = Button.CreateSimpleButton(`bonus_${card.id}${card.isPaid ? '_paid' : ''}`, '');
       btn.width = `${cardWidth}px`;
       btn.height = `${cardHeight}px`;
       btn.color = rarityStyle.border;
       btn.cornerRadius = 14;
-      btn.background = 'rgba(14, 17, 22, 0.92)';
+      if (card.isPaid) {
+        btn.background = card.isEnabled ? 'rgba(41, 29, 14, 0.94)' : 'rgba(52, 25, 24, 0.92)';
+      } else if (card.isSelected) {
+        btn.background = 'rgba(45, 49, 57, 0.9)';
+      } else {
+        btn.background = 'rgba(14, 17, 22, 0.92)';
+      }
       btn.thickness = rarityStyle.thickness;
+      btn.alpha = card.isSelected ? 0.58 : (card.isEnabled ? 1 : 0.74);
       btn.left = `${leftPx}px`;
-      btn.top = '-10px';
+      btn.top = `${cardTop}px`;
+      btn.isEnabled = card.isEnabled;
       btn.onPointerUpObservable.add(() => {
-        this.eventBus.emit(GameEvents.BONUS_SELECTED, { bonusId: choice.id });
+        if (card.isPaid) {
+          this.eventBus.emit(GameEvents.BONUS_PAID_PICK_REQUESTED, {
+            bonusId: card.id,
+            cost: card.cost,
+          });
+          return;
+        }
+        this.eventBus.emit(GameEvents.BONUS_SELECTED, { bonusId: card.id });
       });
       this.bonusScreen.addControl(btn);
       this.bonusButtons.push(btn);
 
-      const title = new TextBlock(`bonus_title_${choice.id}`);
-      title.text = choice.title;
+      const title = new TextBlock(`bonus_title_${card.id}${card.isPaid ? '_paid' : ''}`);
+      title.text = card.title;
       title.color = '#F7FBFF';
       title.fontFamily = 'Consolas';
-      title.fontSize = 24;
-      title.top = '-168px';
+      title.fontSize = titleFontSize;
+      title.top = `${Math.round(-168 * cardScale)}px`;
       title.height = '30px';
       btn.addControl(title);
 
-      const rarityText = new TextBlock(`bonus_rarity_${choice.id}`);
-      rarityText.text = rarity.toUpperCase();
+      const modeText = new TextBlock(`bonus_mode_${card.id}${card.isPaid ? '_paid' : ''}`);
+      modeText.text = card.isSelected
+        ? 'OBTAINED'
+        : card.isPaid
+          ? `PAID +1 BONUS${card.cost ? `  -  ${card.cost} CREDITS` : ''}`
+          : 'FREE BONUS';
+      modeText.color = card.isSelected ? '#B7C0CD' : (card.isPaid ? '#FFD782' : '#9EF3C4');
+      modeText.fontFamily = 'Consolas';
+      modeText.fontSize = labelFontSize;
+      modeText.top = `${Math.round(-142 * cardScale)}px`;
+      modeText.height = '20px';
+      btn.addControl(modeText);
+
+      const rarityText = new TextBlock(`bonus_rarity_${card.id}${card.isPaid ? '_paid' : ''}`);
+      rarityText.text = card.rarity.toUpperCase();
       rarityText.color = rarityStyle.border;
       rarityText.fontFamily = 'Consolas';
-      rarityText.fontSize = 16;
-      rarityText.top = '-138px';
+      rarityText.fontSize = rarityFontSize;
+      rarityText.top = `${Math.round(-118 * cardScale)}px`;
       rarityText.height = '24px';
       btn.addControl(rarityText);
 
-      const artworkGlow = new Rectangle(`bonus_art_glow_${choice.id}`);
-      artworkGlow.width = '180px';
-      artworkGlow.height = '180px';
+      const artworkGlow = new Rectangle(`bonus_art_glow_${card.id}${card.isPaid ? '_paid' : ''}`);
+      artworkGlow.width = `${artworkGlowSize}px`;
+      artworkGlow.height = `${artworkGlowSize}px`;
       artworkGlow.thickness = 0;
       artworkGlow.background = rarityStyle.glow;
       artworkGlow.alpha = rarityStyle.glowAlpha;
-      artworkGlow.top = '-6px';
+      artworkGlow.top = `${Math.round(-6 * cardScale)}px`;
       btn.addControl(artworkGlow);
 
-      const artworkFrame = new Rectangle(`bonus_art_frame_${choice.id}`);
-      artworkFrame.width = '170px';
-      artworkFrame.height = '170px';
+      const artworkFrame = new Rectangle(`bonus_art_frame_${card.id}${card.isPaid ? '_paid' : ''}`);
+      artworkFrame.width = `${artworkFrameSize}px`;
+      artworkFrame.height = `${artworkFrameSize}px`;
       artworkFrame.thickness = rarityStyle.thickness;
       artworkFrame.color = rarityStyle.border;
       artworkFrame.background = 'rgba(10, 12, 16, 0.9)';
-      artworkFrame.top = '-6px';
+      artworkFrame.top = `${Math.round(-6 * cardScale)}px`;
       btn.addControl(artworkFrame);
 
-      const artworkText = new TextBlock(`bonus_art_text_${choice.id}`);
-      artworkText.text = 'ARTWORK';
-      artworkText.color = '#B8C9D9';
-      artworkText.fontFamily = 'Consolas';
-      artworkText.fontSize = 15;
-      artworkFrame.addControl(artworkText);
+      const artworkImg = new Image(`bonus_art_img_${card.id}`);
+      artworkImg.source = buildHudAssetUrl(`bonuses/${card.id}.png`);
+      artworkImg.width = `${artworkFrameSize}px`;
+      artworkImg.height = `${artworkFrameSize}px`;
+      artworkImg.stretch = Image.STRETCH_UNIFORM;
+      artworkFrame.addControl(artworkImg);
 
-      const description = new TextBlock(`bonus_desc_${choice.id}`);
-      description.text = choice.description ?? '';
+      const description = new TextBlock(`bonus_desc_${card.id}${card.isPaid ? '_paid' : ''}`);
+      description.text = card.description;
       description.color = '#DDE6EF';
       description.fontFamily = 'Consolas';
-      description.fontSize = 15;
+      description.fontSize = descriptionFontSize;
       description.textWrapping = true;
-      description.width = '250px';
-      description.height = '76px';
-      description.top = '122px';
+      description.width = `${Math.max(170, cardWidth - 48)}px`;
+      description.height = `${Math.max(72, Math.floor(86 * cardScale))}px`;
+      description.top = `${Math.round(122 * cardScale)}px`;
       btn.addControl(description);
 
-      const stackText = new TextBlock(`bonus_stack_${choice.id}`);
-      stackText.text = choice.stackLabel ?? '';
-      stackText.color = '#9FB3C6';
+      const stackText = new TextBlock(`bonus_stack_${card.id}${card.isPaid ? '_paid' : ''}`);
+      stackText.text = card.stackLabel;
+      stackText.color = card.isPaid ? '#FFD782' : '#9FB3C6';
       stackText.fontFamily = 'Consolas';
-      stackText.fontSize = 12;
-      stackText.top = '176px';
+      stackText.fontSize = stackFontSize;
+      stackText.top = `${Math.round(176 * cardScale)}px`;
       stackText.height = '18px';
       btn.addControl(stackText);
+
+      if (card.isSelected) {
+        const selectedTag = new TextBlock(`bonus_selected_${card.id}`);
+        selectedTag.text = 'OBTAINED';
+        selectedTag.color = '#D8DFEA';
+        selectedTag.fontFamily = 'Consolas';
+        selectedTag.fontSize = Math.max(12, Math.floor(14 * cardScale));
+        selectedTag.top = `${Math.round(190 * cardScale)}px`;
+        selectedTag.height = '22px';
+        btn.addControl(selectedTag);
+      }
+
+      if (card.isPaid && !card.isEnabled && !card.isSelected) {
+        const lockText = new TextBlock(`bonus_locked_${card.id}`);
+        lockText.text = 'TOO EXPENSIVE';
+        lockText.color = '#FF9A9A';
+        lockText.fontFamily = 'Consolas';
+        lockText.fontSize = Math.max(12, Math.floor(14 * cardScale));
+        lockText.top = `${Math.round(190 * cardScale)}px`;
+        lockText.height = '22px';
+        btn.addControl(lockText);
+      }
     }
 
+    const actionButtonsStacked = viewportWidth < 1300;
+    const actionTop = Math.round((cardHeight / 2) + 52);
+    const actionButtonWidth = actionButtonsStacked ? 380 : 300;
+    const actionSecondRowTop = actionTop + 60;
+
     const rerollButton = Button.CreateSimpleButton('bonus_reroll', `REROLL  -  ${rerollCost} CREDITS`);
-    rerollButton.width = '280px';
+    rerollButton.width = `${actionButtonWidth}px`;
     rerollButton.height = '52px';
     rerollButton.cornerRadius = 8;
     rerollButton.thickness = 2;
-    rerollButton.top = '245px';
+    rerollButton.top = `${actionTop}px`;
+    rerollButton.left = actionButtonsStacked ? '0px' : '-178px';
     rerollButton.color = '#FFFFFF';
     rerollButton.fontFamily = 'Consolas';
-    rerollButton.background = currency >= rerollCost ? '#2F3D55' : '#3B2020';
-    rerollButton.isEnabled = currency >= rerollCost;
+    const rerollButtonEnabled = rerollEnabled && currency >= rerollCost;
+    rerollButton.background = rerollButtonEnabled ? '#2F3D55' : '#3B2020';
+    rerollButton.isEnabled = rerollButtonEnabled;
     rerollButton.onPointerUpObservable.add(() => {
       this.eventBus.emit(GameEvents.BONUS_REROLL_REQUESTED, { cost: rerollCost });
     });
     this.bonusScreen.addControl(rerollButton);
     this.bonusDynamicControls.push(rerollButton);
     this.bonusRerollButton = rerollButton;
+
+    const fullHealEnabled = missingHealth > 0 && currency >= fullHealCost;
+    const fullHealLabel = missingHealth > 0
+      ? `FULL HEAL  -  ${fullHealCost} CREDITS  (${playerHealthCurrent}/${playerHealthMax})`
+      : `FULL HEAL  -  HP FULL  (${playerHealthCurrent}/${playerHealthMax})`;
+    const fullHealButton = Button.CreateSimpleButton('bonus_full_heal', fullHealLabel);
+    fullHealButton.width = `${actionButtonWidth}px`;
+    fullHealButton.height = '52px';
+    fullHealButton.cornerRadius = 8;
+    fullHealButton.thickness = 2;
+    fullHealButton.top = `${actionButtonsStacked ? actionSecondRowTop : actionTop}px`;
+    fullHealButton.left = actionButtonsStacked ? '0px' : '178px';
+    fullHealButton.color = '#FFFFFF';
+    fullHealButton.fontFamily = 'Consolas';
+    fullHealButton.background = fullHealEnabled ? '#2E4A3A' : '#3B2020';
+    fullHealButton.isEnabled = fullHealEnabled;
+    fullHealButton.onPointerUpObservable.add(() => {
+      this.eventBus.emit(GameEvents.SHOP_PURCHASE_REQUESTED, {
+        itemId: 'full_heal',
+        cost: fullHealCost,
+      });
+    });
+    this.bonusScreen.addControl(fullHealButton);
+    this.bonusDynamicControls.push(fullHealButton);
+
+    const paidChoiceCountLabel = new TextBlock('bonus_paid_choice_count_label');
+    paidChoiceCountLabel.text = paidOfferVisible
+      ? 'PAID CARD IS AN EXTRA PICK (+1), NOT A FREE CHOICE'
+      : 'ONLY FREE CHOICES THIS ROOM';
+    paidChoiceCountLabel.color = paidOfferVisible ? '#FFD782' : '#90A2B8';
+    paidChoiceCountLabel.fontSize = 13;
+    paidChoiceCountLabel.fontFamily = 'Consolas';
+    paidChoiceCountLabel.top = `${actionButtonsStacked ? actionSecondRowTop + 56 : actionTop + 56}px`;
+    paidChoiceCountLabel.height = '20px';
+    this.bonusScreen.addControl(paidChoiceCountLabel);
+    this.bonusDynamicControls.push(paidChoiceCountLabel);
   }
 
   hideOverlays(): void {
@@ -2066,8 +2375,15 @@ export class HUDManager {
 
     this.guiFx.dispose();
     this.guiClean.dispose();
-    this.enemyGui.dispose();
+    if (this.enemyGui) {
+      this.enemyGui.dispose();
+      this.enemyGui = null as any;
+    }
     this.enemyHealthBars.clear();
+
+    // Clear event bus listeners to avoid echos on scene restart
+    this.unsubscribers.forEach(unsub => unsub());
+    this.unsubscribers = [];
   }
 
   private clearEnemyHealthBars(): void {
@@ -2084,7 +2400,12 @@ export class HUDManager {
     this.daemonTypewriterSynth.setVolumeMultiplier(this.uiVolumeMultiplier);
 
     for (const audio of this.activeVoicelineAudios) {
-      audio.setVolume(this.voicelineVolumeMultiplier);
+      if ((audio as any).setVolume) {
+        (audio as any).setVolume(this.voicelineVolumeMultiplier);
+      } else if (audio instanceof AudioBufferSourceNode) {
+        // Handle AudioBufferSourceNode volume if it has an associated gain node. 
+        // For now, doing nothing is fine if there is no setVolume method.
+      }
     }
   }
 }

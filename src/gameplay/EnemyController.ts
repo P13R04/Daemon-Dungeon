@@ -2,18 +2,30 @@
  * EnemyController - Controls a single enemy
  */
 
-import { Scene, Mesh, Vector3, SceneLoader, AnimationGroup, TransformNode, AbstractMesh, StandardMaterial, Color3, MeshBuilder } from '@babylonjs/core';
+import { Scene, Mesh, Vector3, SceneLoader, AnimationGroup, TransformNode, StandardMaterial, Color3, MeshBuilder, AbstractMesh } from '@babylonjs/core';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { Health } from '../components/Health';
 import { Knockback } from '../components/Knockback';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { Time } from '../core/Time';
 import { MathUtils } from '../utils/Math';
-import { ConfigLoader } from '../utils/ConfigLoader';
 import type { NavigationCapabilities, RoomManager } from '../systems/RoomManager';
 import type { EnemyRuntimeConfig } from './enemy/EnemyControllerTypes';
 import { EnemyLaserPatternSubsystem } from './enemy/EnemyLaserPatternSubsystem';
 import { EnemySpikeCastSubsystem } from './enemy/EnemySpikeCastSubsystem';
+
+type EnemyControllerSpawnOptions = {
+  suppressSpawnEvent?: boolean;
+  suppressAI?: boolean;
+  suppressRender?: boolean;
+};
+
+type EnemyFogMask = {
+  z: number;
+  direction: number;
+  revealDistance: number;
+  hiddenVisibility: number;
+};
 
 export class EnemyController {
   public mesh!: Mesh; // Public pour DevConsole
@@ -21,6 +33,7 @@ export class EnemyController {
   private eventBus: EventBus;
   private time: Time;
   private static globalHeightOffset: number = 0; // Global height adjustment for all enemies
+  private static bullInstantiationChain: Promise<void> = Promise.resolve();
   private scene: Scene;
   private id: string;
   private typeId: string;
@@ -51,6 +64,7 @@ export class EnemyController {
   private bullAnimGroups: Map<string, AnimationGroup> = new Map();
   private bullModelRoot: TransformNode | null = null;
   private bullAnimState: 'none' | 'start' | 'run' | 'end' = 'none';
+  private bullModelLoadPromise: Promise<void> | null = null;
   private bullModelScale: number = 0.1;
   private knockbackStrength: number = 0;
   private selfKnockbackStrength: number = 0;
@@ -176,9 +190,23 @@ export class EnemyController {
   
   private target: Vector3 | null = null;
   private isAlive: boolean = true;
+  private isDisposed: boolean = false;
+  private suppressSpawnEvent: boolean = false;
+  private aiSuppressed: boolean = false;
+  private renderSuppressed: boolean = false;
   private stunRemaining: number = 0;
+  private fogMask: EnemyFogMask | null = null;
+  private fogRevealProgress: number = 1;
+  private fogScanPulseTimer: number = 0;
+  private fogScanPulseDuration: number = 0.62;
 
-  constructor(scene: Scene, typeId: string, position: Vector3, config: EnemyRuntimeConfig) {
+  constructor(
+    scene: Scene,
+    typeId: string,
+    position: Vector3,
+    config: EnemyRuntimeConfig,
+    options?: EnemyControllerSpawnOptions
+  ) {
     this.scene = scene;
     this.typeId = typeId;
     this.config = config;
@@ -194,6 +222,9 @@ export class EnemyController {
     this.damage = config.baseStats?.damage || 8;
     this.attackRange = config.baseStats?.attackRange || 1.5;
     this.behavior = config.behavior || 'chase';
+    this.suppressSpawnEvent = options?.suppressSpawnEvent === true;
+    this.aiSuppressed = options?.suppressAI === true;
+    this.renderSuppressed = options?.suppressRender === true;
     this.knockbackStrength = config.knockbackStrength ?? 0;
     this.selfKnockbackStrength = config.selfKnockbackStrength ?? 0;
 
@@ -208,6 +239,9 @@ export class EnemyController {
     if (this.behavior === 'bull' && config.knockbackStrength != null) {
       this.bullKnockbackStrength = config.knockbackStrength;
     }
+
+    // Stagger initial nav repath to avoid synchronized CPU spikes on grouped enemy spawns.
+    this.navRepathTimer = this.getJitteredRepathInterval();
 
     this.initialize();
   }
@@ -313,9 +347,8 @@ export class EnemyController {
     this.mesh.rotation = Vector3.Zero();
     // Ensure enemy is at correct height
     this.mesh.position.y = 1.0 + EnemyController.globalHeightOffset;
-    
-    console.log('Enemy initialized:', this.id, 'at position:', this.mesh.position);
-    console.log('Enemy mesh visible:', this.mesh.isVisible, 'enabled:', this.mesh.isEnabled());
+    this.mesh.checkCollisions = true;
+    this.mesh.metadata = { isEnemy: true, enemyId: this.id, typeId: this.typeId };
 
     // Setup health
     const maxHP = this.config.baseStats?.hp || 40;
@@ -327,17 +360,13 @@ export class EnemyController {
     this.attackRange = this.config.baseStats?.attackRange ?? this.attackRange;
     this.attackCooldown = 0;
 
-    this.eventBus.emit(GameEvents.ENEMY_SPAWNED, {
-      entityId: this.id,
-      enemyType: this.typeId,
-      enemyName: this.config?.name ?? this.id,
-      maxHP: maxHP,
-      mesh: this.mesh,
-    });
+    this.emitSpawnEventIfNeeded();
 
     if (this.behavior === 'bull') {
-      this.loadBullModel();
+      this.queueBullModelLoad();
     }
+
+    this.applyRenderSuppressionState();
   }
 
   update(
@@ -346,9 +375,19 @@ export class EnemyController {
     allEnemies: EnemyController[] = [],
     roomManager?: RoomManager,
     playerVelocity: Vector3 = Vector3.Zero(),
-    playerDetected: boolean = true
+    playerDetected: boolean = true,
+    freezeEnemies: boolean = false,
   ): void {
-    if (!this.isAlive || !this.mesh) return;
+    if (this.isDisposed || !this.isAlive || !this.mesh || this.mesh.isDisposed()) return;
+
+    if (this.behavior === 'dummy') {
+      this.previousPosition = this.position.clone();
+      const knock = this.knockback.update(deltaTime);
+      this.position = this.position.add(knock);
+      this.applyMeshPosition();
+      this.checkVoidFallCandidate(roomManager);
+      return;
+    }
 
     if (this.commandRemaining > 0) {
       this.commandRemaining = Math.max(0, this.commandRemaining - deltaTime);
@@ -363,10 +402,7 @@ export class EnemyController {
       return;
     }
 
-    // Check if enemies are frozen via debug flag
-    const configLoader = ConfigLoader.getInstance();
-    const gameplayConfig = configLoader.getGameplayConfig();
-    if (gameplayConfig?.debugConfig?.freezeEnemies) {
+    if (freezeEnemies || this.aiSuppressed) {
       return; // Don't update if frozen
     }
 
@@ -1658,7 +1694,7 @@ export class EnemyController {
       this.navPath = path;
       this.navPathCursor = path.length > 1 ? 1 : 0;
       this.navTargetSnapshot = target.clone();
-      this.navRepathTimer = this.navRepathInterval;
+      this.navRepathTimer = this.getJitteredRepathInterval();
     }
 
     if (this.navPath.length === 0) {
@@ -1687,29 +1723,33 @@ export class EnemyController {
   }
 
   private computeSeparation(allEnemies: EnemyController[]): Vector3 {
-    let force = Vector3.Zero();
+    let forceX = 0;
+    let forceZ = 0;
     let count = 0;
 
     for (const other of allEnemies) {
       if (other === this || !other.isActive()) continue;
-      const otherPos = other.getPosition();
-      const delta = this.position.subtract(otherPos);
-      const distSq = delta.lengthSquared();
+      const otherPos = other.getPositionRef();
+      const deltaX = this.position.x - otherPos.x;
+      const deltaZ = this.position.z - otherPos.z;
+      const distSq = deltaX * deltaX + deltaZ * deltaZ;
       const range = Math.max(this.separationRadius + other.getRadius(), this.crowdMinDistance + other.getRadius());
       if (distSq > 0.0001 && distSq < range * range) {
         const dist = Math.sqrt(distSq);
-        const away = delta.scale(1 / dist);
         const strength = (range - dist) / range;
-        force = force.add(away.scale(strength));
+        const invDist = 1 / dist;
+        forceX += deltaX * invDist * strength;
+        forceZ += deltaZ * invDist * strength;
         count++;
       }
     }
 
     if (count > 0) {
-      force = force.scale(1 / count).scale(this.separationStrength);
+      const scale = (1 / count) * this.separationStrength;
+      return new Vector3(forceX * scale, 0, forceZ * scale);
     }
 
-    return force;
+    return Vector3.Zero();
   }
 
   private avoidWalls(desired: Vector3, roomManager: RoomManager): Vector3 {
@@ -1748,10 +1788,6 @@ export class EnemyController {
       this.stuckTimer = 0;
     }
     this.lastPosition = this.position.clone();
-
-    if (this.stuckTimer < this.stuckTimeToNudge) {
-      return desired;
-    }
 
     if (this.stuckTimer < this.stuckTimeToNudge) {
       return desired;
@@ -1911,6 +1947,12 @@ export class EnemyController {
     return tileType === 'wall' || tileType === 'out';
   }
 
+  private getJitteredRepathInterval(): number {
+    const base = Math.max(0.05, this.navRepathInterval);
+    const jitter = 0.75 + Math.random() * 0.5;
+    return base * jitter;
+  }
+
   private attackPlayerWithDamage(damage: number): void {
     this.eventBus.emit(GameEvents.ATTACK_PERFORMED, {
       attacker: this.id,
@@ -1925,7 +1967,61 @@ export class EnemyController {
     this.attackPlayerWithDamage(this.damage);
   }
 
+  private emitSpawnEventIfNeeded(): void {
+    if (this.suppressSpawnEvent || !this.mesh) {
+      return;
+    }
+
+    const maxHP = this.health?.getMaxHP?.() ?? (this.config.baseStats?.hp || 40);
+    this.eventBus.emit(GameEvents.ENEMY_SPAWNED, {
+      entityId: this.id,
+      enemyType: this.typeId,
+      enemyName: this.config?.name ?? this.id,
+      maxHP,
+      mesh: this.mesh,
+    });
+  }
+
+  revealSpawnEventIfSuppressed(): void {
+    if (!this.suppressSpawnEvent || this.isDisposed || !this.mesh) {
+      return;
+    }
+    this.suppressSpawnEvent = false;
+    this.emitSpawnEventIfNeeded();
+  }
+
+  setAISuppressed(value: boolean): void {
+    this.aiSuppressed = value;
+  }
+
+  setRenderSuppressed(value: boolean): void {
+    this.renderSuppressed = value === true;
+    this.applyRenderSuppressionState();
+  }
+
+  setFogMask(mask: EnemyFogMask | null): void {
+    this.fogMask = mask;
+    this.applyRenderSuppressionState();
+  }
+
+  deactivateForTransition(): void {
+    if (this.isDisposed || !this.isAlive) {
+      return;
+    }
+
+    this.isAlive = false;
+    this.aiSuppressed = true;
+    this.stunRemaining = 0;
+    if (this.mesh) {
+      this.mesh.setEnabled(false);
+    }
+    if (this.bullModelRoot) {
+      this.bullModelRoot.setEnabled(false);
+    }
+  }
+
   takeDamage(amount: number): void {
+    console.log(`[EnemyController] ${this.id} (${this.typeId}) took ${amount} damage at ${this.position}`);
     this.health.takeDamage(amount);
 
     this.eventBus.emit(GameEvents.ENEMY_DAMAGED, {
@@ -1945,9 +2041,15 @@ export class EnemyController {
   }
 
   private die(): void {
+    if (this.isDisposed) {
+      return;
+    }
+    this.isDisposed = true;
     this.isAlive = false;
     this.laserPatternSubsystem.dispose();
     this.spikeCastSubsystem.dispose();
+    this.disposeBullVisuals();
+    this.bullModelLoadPromise = null;
     if (this.mesh) {
       this.mesh.dispose();
     }
@@ -1962,11 +2064,15 @@ export class EnemyController {
     return this.position.clone();
   }
 
+  getPositionRef(): Vector3 {
+    return this.position;
+  }
+
   setPosition(position: Vector3): void {
     this.position = position.clone();
     this.position.y = 1.0 + EnemyController.globalHeightOffset;
     if (!this.falling && this.mesh) {
-      this.mesh.visibility = 1;
+      this.mesh.visibility = this.renderSuppressed ? 0 : 1;
     }
     this.applyMeshPosition();
   }
@@ -2011,19 +2117,56 @@ export class EnemyController {
   }
 
   dispose(): void {
+    if (this.isDisposed) {
+      return;
+    }
+    this.isDisposed = true;
+    this.isAlive = false;
     this.laserPatternSubsystem.dispose();
     this.spikeCastSubsystem.dispose();
+    this.disposeBullVisuals();
+    this.bullModelLoadPromise = null;
+    this.navPath = [];
+    this.navPathCursor = 0;
+    this.navTargetSnapshot = null;
+    this.commandTarget = null;
+    this.commandRemaining = 0;
+    this.commandWeight = 0;
+    this.target = null;
+    this.velocity = Vector3.Zero();
+    this.stunRemaining = 0;
+    this.falling = false;
+    this.fallOffset = 0;
+    this.fallSpeed = 0;
+    this.fallFxTimer = 0;
+    this.bullState = 'chase';
+    this.bullTimer = 0;
+    this.bullAnimState = 'none';
+    this.jumperState = 'chase';
+    this.jumperTimer = 0;
+    this.pongInitialized = false;
+    this.prefireState = 'idle';
+    this.prefireTimer = 0;
+    this.swarmCommandTimer = 0;
+    this.healerTimer = 0;
+    this.artificerTimer = 0;
+    this.bulletHellTimer = 0;
+    this.missileTimer = 0;
+    this.necromancerSummonTimer = 0;
+    if (this.mesh) {
+      this.mesh.dispose();
+    }
+  }
+
+  private disposeBullVisuals(): void {
     for (const group of this.bullAnimGroups.values()) {
       group.stop();
       group.dispose();
     }
     this.bullAnimGroups.clear();
     if (this.bullModelRoot) {
-      this.bullModelRoot.dispose();
+      this.bullModelRoot.dispose(false, false);
       this.bullModelRoot = null;
-    }
-    if (this.mesh) {
-      this.mesh.dispose();
     }
   }
 
@@ -2031,6 +2174,77 @@ export class EnemyController {
     if (!this.mesh) return;
     this.mesh.position = this.position.clone();
     this.mesh.position.y = 1.0 + this.verticalOffset + this.fallOffset + EnemyController.globalHeightOffset;
+    this.applyRenderSuppressionState();
+  }
+
+  private applyRenderSuppressionState(): void {
+    const delta = Math.max(0, this.time.deltaTime || 0);
+    if (this.fogScanPulseTimer > 0) {
+      this.fogScanPulseTimer = Math.max(0, this.fogScanPulseTimer - delta);
+    }
+
+    let baseVisibility = this.renderSuppressed ? 0 : 1;
+    let revealProgressForScan = this.fogRevealProgress;
+
+    // Apply Z-based fog masking
+    if (this.fogMask && !this.renderSuppressed) {
+      const { z, direction, revealDistance, hiddenVisibility } = this.fogMask;
+      const distBehindFog = (this.position.z - z) * direction;
+      const revealRange = Math.max(0.2, revealDistance);
+      const revealProgress = Math.max(0, Math.min(1, (-distBehindFog) / revealRange));
+      revealProgressForScan = revealProgress;
+      if (revealProgress > this.fogRevealProgress + 0.08 && revealProgress > 0.04 && revealProgress < 1.0) {
+        this.fogScanPulseTimer = this.fogScanPulseDuration;
+      }
+      const easedReveal = revealProgress * revealProgress * (3 - (2 * revealProgress));
+      const minVisibility = Math.max(0, Math.min(1, hiddenVisibility));
+      const fogVisibility = minVisibility + ((1 - minVisibility) * easedReveal);
+      baseVisibility = Math.min(baseVisibility, fogVisibility);
+    } else {
+      revealProgressForScan = 1;
+    }
+    this.fogRevealProgress = revealProgressForScan;
+
+    const scanPulse = this.fogScanPulseDuration > 0
+      ? Math.max(0, Math.min(1, this.fogScanPulseTimer / this.fogScanPulseDuration))
+      : 0;
+    const scanEdge = this.fogMask && !this.renderSuppressed
+      ? Math.max(0, 1 - (Math.abs(revealProgressForScan - 0.24) * 3.0)) * 0.82
+      : 0;
+    const visibilityGate = baseVisibility > 0.02 ? 1 : 0;
+    const scanIntensity = Math.max(scanPulse * 1.2, scanEdge) * visibilityGate;
+    this.applyFogScanOverlay(scanIntensity);
+
+    if (this.mesh && !this.mesh.isDisposed()) {
+      if (!this.falling) {
+        this.mesh.visibility = baseVisibility;
+        this.mesh.setEnabled(baseVisibility > 0.01);
+      }
+    }
+
+    if (this.bullModelRoot && !this.bullModelRoot.isDisposed()) {
+      const shouldEnable = baseVisibility > 0.12;
+      this.bullModelRoot.setEnabled(shouldEnable);
+    }
+  }
+
+  private applyFogScanOverlay(intensity: number): void {
+    const overlayIntensity = Math.max(0, Math.min(1, intensity));
+    const applyToMesh = (mesh: AbstractMesh | null | undefined): void => {
+      if (!mesh || mesh.isDisposed()) {
+        return;
+      }
+      mesh.renderOverlay = overlayIntensity > 0.01;
+      mesh.overlayColor = new Color3(0.26, 0.80, 1.0);
+      mesh.overlayAlpha = Math.min(1, overlayIntensity * 0.92);
+    };
+
+    applyToMesh(this.mesh);
+    if (this.mesh && !this.mesh.isDisposed()) {
+      for (const child of this.mesh.getChildMeshes()) {
+        applyToMesh(child);
+      }
+    }
   }
 
   private getNavigationCapabilities(): NavigationCapabilities {
@@ -2068,7 +2282,9 @@ export class EnemyController {
     this.fallOffset -= this.fallSpeed * deltaTime;
     const progress = Math.min(1, Math.abs(this.fallOffset) / this.fallDeathDepth);
     if (this.mesh) {
-      this.mesh.visibility = Math.max(0.04, 1 - progress * 0.96);
+      this.mesh.visibility = this.renderSuppressed
+        ? 0
+        : Math.max(0.04, 1 - progress * 0.96);
     }
 
     this.fallFxTimer -= deltaTime;
@@ -2202,7 +2418,190 @@ export class EnemyController {
     this.bullAnimState = 'none';
   }
 
+  private queueBullModelLoad(): void {
+    if (this.isDisposed || this.mesh.isDisposed() || this.bullModelRoot || this.bullModelLoadPromise) {
+      return;
+    }
+
+    const task = EnemyController.enqueueBullInstantiation(async () => {
+      if (this.isDisposed || !this.isAlive || !this.mesh || this.bullModelRoot) {
+        return;
+      }
+      await this.loadBullModel();
+    });
+
+    this.bullModelLoadPromise = task;
+    task.finally(() => {
+      if (this.bullModelLoadPromise === task) {
+        this.bullModelLoadPromise = null;
+      }
+    });
+  }
+
+  private static enqueueBullInstantiation(run: () => Promise<void>): Promise<void> {
+    const task = this.bullInstantiationChain.then(run, run);
+    this.bullInstantiationChain = task
+      .then(() => this.waitForBullInstantiateTimeslice())
+      .catch(() => this.waitForBullInstantiateTimeslice());
+    return task;
+  }
+
+  private static waitForBullInstantiateTimeslice(): Promise<void> {
+    return new Promise((resolve) => {
+      window.setTimeout(() => resolve(), 0);
+    });
+  }
+
+  private static getBullVisualOwnerId(node: TransformNode): string | null {
+    const metadata = node.metadata;
+    if (!metadata || typeof metadata !== 'object') {
+      return null;
+    }
+
+    const ownerId = (metadata as Record<string, unknown>).bullVisualOwnerId;
+    return typeof ownerId === 'string' ? ownerId : null;
+  }
+
+  private static isBullVisualRootNode(node: TransformNode): boolean {
+    const metadata = node.metadata;
+    if (!metadata || typeof metadata !== 'object') {
+      return false;
+    }
+    return (metadata as Record<string, unknown>).bullVisualRoot === true;
+  }
+
+  private static markBullVisualNode(node: TransformNode, ownerId: string, isRoot: boolean): void {
+    const metadata = (node.metadata && typeof node.metadata === 'object')
+      ? (node.metadata as Record<string, unknown>)
+      : {};
+
+    metadata.bullVisualOwnerId = ownerId;
+    if (isRoot) {
+      metadata.bullVisualRoot = true;
+    } else if (metadata.bullVisualRoot === true) {
+      delete metadata.bullVisualRoot;
+    }
+
+    node.metadata = metadata;
+  }
+
+  private static markBullVisualHierarchy(root: TransformNode, ownerId: string): void {
+    this.markBullVisualNode(root, ownerId, true);
+    for (const child of root.getChildTransformNodes(true)) {
+      this.markBullVisualNode(child, ownerId, false);
+    }
+    for (const childMesh of root.getChildMeshes(true)) {
+      this.markBullVisualNode(childMesh, ownerId, false);
+    }
+  }
+
+  private static dedupeBullVisualRootsForOwner(scene: Scene, ownerId: string): void {
+    const expectedRootName = `bull_root_${ownerId}`;
+    const roots = scene.transformNodes.filter((node) => {
+      if (!node || node.isDisposed()) {
+        return false;
+      }
+      if (node.name === expectedRootName) {
+        return true;
+      }
+      return this.getBullVisualOwnerId(node) === ownerId && this.isBullVisualRootNode(node);
+    });
+
+    if (roots.length <= 1) {
+      return;
+    }
+
+    const keep = roots.reduce((best, current) => {
+      const currentCount = current.getChildMeshes(false).length;
+      const bestCount = best.getChildMeshes(false).length;
+      return currentCount > bestCount ? current : best;
+    }, roots[0]);
+
+    for (const root of roots) {
+      if (root === keep || root.isDisposed()) {
+        continue;
+      }
+      root.dispose(false, false);
+    }
+  }
+
+  static cleanupOrphanBullVisuals(scene: Scene, activeEnemyIds: Set<string>): void {
+    const activeRootsByOwner = new Map<string, TransformNode[]>();
+    const activeRootNames = new Set<string>();
+    for (const activeEnemyId of activeEnemyIds) {
+      activeRootNames.add(`bull_root_${activeEnemyId}`);
+    }
+
+    for (const node of scene.transformNodes) {
+      if (!node || node.isDisposed()) {
+        continue;
+      }
+
+      if (node.name.startsWith('bull_root_') && !activeRootNames.has(node.name)) {
+        node.dispose(false, false);
+        continue;
+      }
+
+      const ownerId = this.getBullVisualOwnerId(node);
+      if (!ownerId) {
+        continue;
+      }
+
+      if (!activeEnemyIds.has(ownerId)) {
+        node.dispose(false, false);
+        continue;
+      }
+
+      if (!this.isBullVisualRootNode(node)) {
+        continue;
+      }
+
+      const list = activeRootsByOwner.get(ownerId);
+      if (list) {
+        list.push(node);
+      } else {
+        activeRootsByOwner.set(ownerId, [node]);
+      }
+    }
+
+    for (const mesh of scene.meshes) {
+      if (!mesh || mesh.isDisposed()) {
+        continue;
+      }
+
+      const ownerId = this.getBullVisualOwnerId(mesh);
+      if (!ownerId || activeEnemyIds.has(ownerId)) {
+        continue;
+      }
+
+      mesh.dispose(false, false);
+    }
+
+    for (const roots of activeRootsByOwner.values()) {
+      if (roots.length <= 1) {
+        continue;
+      }
+
+      const keep = roots.reduce((best, current) => {
+        const currentCount = current.getChildMeshes(false).length;
+        const bestCount = best.getChildMeshes(false).length;
+        return currentCount > bestCount ? current : best;
+      }, roots[0]);
+
+      for (const root of roots) {
+        if (root === keep || root.isDisposed()) {
+          continue;
+        }
+        root.dispose(false, false);
+      }
+    }
+  }
+
   private async loadBullModel(): Promise<void> {
+    if (this.isDisposed || this.bullModelRoot || !this.mesh || this.mesh.isDisposed() || !this.isAlive) {
+      return;
+    }
+
     try {
       const baseUrl = import.meta.env.BASE_URL ?? '/';
       const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
@@ -2211,29 +2610,74 @@ export class EnemyController {
         '',
         rootUrl,
         'bull.glb',
-        this.scene
+        this.scene,
       );
 
+      if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.bullModelRoot) {
+        for (const group of result.animationGroups) {
+          group.dispose();
+        }
+        for (const transformNode of result.transformNodes) {
+          transformNode.dispose(false, false);
+        }
+        for (const importedMesh of result.meshes as AbstractMesh[]) {
+          importedMesh.dispose(false, false);
+        }
+        return;
+      }
+
       const root = new TransformNode(`bull_root_${this.id}`, this.scene);
-      for (const mesh of result.meshes as AbstractMesh[]) {
-        if (mesh) {
-          mesh.parent = root;
+      EnemyController.markBullVisualNode(root, this.id, true);
+
+      // Parent only top-level imported nodes to avoid duplicating hierarchy links.
+      for (const transformNode of result.transformNodes) {
+        if (!transformNode || transformNode.isDisposed()) {
+          continue;
+        }
+        if (transformNode.parent == null) {
+          transformNode.parent = root;
         }
       }
+      for (const importedMesh of result.meshes as AbstractMesh[]) {
+        if (!importedMesh || importedMesh.isDisposed()) {
+          continue;
+        }
+        if (importedMesh.parent == null) {
+          importedMesh.parent = root;
+        }
+      }
+
+      EnemyController.markBullVisualHierarchy(root, this.id);
+
+      if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.bullModelRoot) {
+        root.dispose(false, false);
+        for (const group of result.animationGroups) {
+          group.dispose();
+        }
+        return;
+      }
+
       root.position = Vector3.Zero();
-      root.rotation = new Vector3(0, Math.PI/2, 0);
+      root.rotation = new Vector3(0, -Math.PI / 2, 0);
       root.scaling = new Vector3(this.bullModelScale, this.bullModelScale, this.bullModelScale);
       root.parent = this.mesh;
 
       this.mesh.isVisible = false;
+      this.disposeBullVisuals();
       this.bullModelRoot = root;
-      this.bullAnimGroups.clear();
+      this.applyRenderSuppressionState();
+      EnemyController.dedupeBullVisualRootsForOwner(this.scene, this.id);
       for (const group of result.animationGroups) {
         this.bullAnimGroups.set(group.name, group);
       }
     } catch (error) {
       console.warn('Bull model failed to load, using placeholder.', error);
     }
+  }
+
+  static prewarmBullModel(scene: Scene): void {
+    // Intentionally no-op: shared container prewarm caused source/master visual leaks.
+    void scene;
   }
 
   static setGlobalHeightOffset(offset: number): void {

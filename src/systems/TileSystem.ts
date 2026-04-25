@@ -100,6 +100,9 @@ export class TileSystem {
       grid.set(this.getTileKey(tile.x, tile.z), tile);
     }
 
+    const lightweightMode = ProceduralReliefTheme.isLightweightMode();
+    let prewarmBudget = lightweightMode ? 36 : Number.POSITIVE_INFINITY;
+
     for (const tile of tiles) {
       if (tile.type !== 'floor') continue;
       const adjacencies = this.getAdjacencies(tile.x, tile.z, grid);
@@ -113,6 +116,11 @@ export class TileSystem {
         voidMask: this.maskFromTypes(adjacencies, ['void']),
         voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
       });
+
+      prewarmBudget -= 1;
+      if (prewarmBudget <= 0) {
+        break;
+      }
     }
   }
 
@@ -549,11 +557,13 @@ export class TileSystem {
     }
 
     const useRelief = this.isProceduralReliefProfile();
+    const lightweightRelief = useRelief && ProceduralReliefTheme.isLightweightMode();
+    const shouldDisplaceFloor = useRelief && tile.type === 'floor' && !lightweightRelief;
     const tileMesh = MeshBuilder.CreateGround('tile_' + key, {
       width: this.tileSize,
       height: this.tileSize,
-      subdivisions: useRelief && tile.type !== 'poison' ? 14 : 1,
-      updatable: useRelief && tile.type !== 'poison',
+      subdivisions: useRelief && tile.type === 'floor' ? (lightweightRelief ? 3 : 14) : 1,
+      updatable: shouldDisplaceFloor,
     }, this.scene);
 
     // Center the ground tile on its grid position (CreateGround has centered pivot)
@@ -567,7 +577,9 @@ export class TileSystem {
 
     const adjacencies = this.getAdjacencies(tile.x, tile.z, this.tileGrid);
     if (this.isProceduralReliefProfile() && tile.type === 'floor') {
-      ProceduralReliefTheme.applyFloorDisplacement(tileMesh, tile.x, tile.z, this.tileSize);
+      if (shouldDisplaceFloor) {
+        ProceduralReliefTheme.applyFloorDisplacement(tileMesh, tile.x, tile.z, this.tileSize);
+      }
       tileMesh.material = ProceduralReliefTheme.createFloorMaterial(
         this.scene,
         tile.x,

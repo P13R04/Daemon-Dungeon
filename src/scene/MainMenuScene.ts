@@ -54,6 +54,11 @@ export class MainMenuScene {
   private keyboardOnlyCheckbox: Checkbox | null = null;
   private autoAimCheckbox: Checkbox | null = null;
   private colorFilterButton: Button | null = null;
+  private catGodModeCheckbox: Checkbox | null = null;
+  private lightweightTexturesCheckbox: Checkbox | null = null;
+  private progressiveSpawnCheckbox: Checkbox | null = null;
+  private roomPreloadAheadSlider: Slider | null = null;
+  private roomPreloadAheadValueText: TextBlock | null = null;
   private captureHintText: TextBlock | null = null;
 
   private awaitingRebind: KeybindingAction | null = null;
@@ -86,7 +91,9 @@ export class MainMenuScene {
   constructor(
     private engine: Engine,
     private onPlayRequested: () => void,
-    private onCodexRequested: () => void
+    private onCodexRequested: () => void,
+    private onTutorialRequested: () => void,
+    private onBenchmarkRequested: () => void = () => {}
   ) {
     this.scene = new Scene(engine);
     this.scene.clearColor = new Color4(0.01, 0.01, 0.02, 1);
@@ -155,29 +162,35 @@ export class MainMenuScene {
     this.gui.addControl(panel);
     this.menuPanel = panel;
 
-    const playBtn = this.makeActionButton('menuPlay', 'PLAY', -88, () => {
+    const playBtn = this.makeActionButton('menuPlay', 'PLAY', -104, () => {
       this.hidePanels();
       this.onPlayRequested();
     });
     panel.addControl(playBtn);
 
-    const codexBtn = this.makeActionButton('menuCodex', 'CODEX', -24, () => {
+    const tutorialBtn = this.makeActionButton('menuTutorial', 'TUTORIAL', -40, () => {
+      this.hidePanels();
+      this.onTutorialRequested();
+    });
+    panel.addControl(tutorialBtn);
+
+    const codexBtn = this.makeActionButton('menuCodex', 'CODEX', 24, () => {
       this.hidePanels();
       this.onCodexRequested();
     });
     panel.addControl(codexBtn);
 
-    const settingsBtn = this.makeActionButton('menuSettings', 'SETTINGS', 40, () => {
+    const settingsBtn = this.makeActionButton('menuSettings', 'SETTINGS', 88, () => {
       this.openSettingsOverlay();
     });
     panel.addControl(settingsBtn);
 
     const hint = new TextBlock('menuHint');
-    hint.text = 'SETTINGS: KEYBINDS / AUDIO / ACCESSIBILITY';
+    hint.text = 'SETTINGS: GRAPHICS / KEYBINDS / AUDIO / ACCESSIBILITY';
     hint.color = '#7C9C98';
     hint.fontSize = 12;
     hint.fontFamily = 'Consolas';
-    hint.top = '114px';
+    hint.top = '130px';
     hint.isHitTestVisible = false;
     panel.addControl(hint);
     this.menuHint = hint;
@@ -212,7 +225,7 @@ export class MainMenuScene {
     windowPanel.addControl(title);
 
     const subtitle = new TextBlock('settingsSubtitle');
-    subtitle.text = 'TUNE CONTROLS, AUDIO, ACCESSIBILITY // ESC TO CANCEL A REBIND';
+    subtitle.text = 'TUNE GRAPHICS, CONTROLS, AUDIO, ACCESSIBILITY // ESC TO CANCEL A REBIND';
     subtitle.color = '#9FEFE1';
     subtitle.fontSize = 12;
     subtitle.fontFamily = 'Consolas';
@@ -291,9 +304,67 @@ export class MainMenuScene {
     content.width = 1;
     scroll.addControl(content);
 
+    this.addGraphicsSection(content);
     this.addControlsSection(content);
     this.addAudioSection(content);
     this.addAccessibilitySection(content);
+  }
+
+  private addGraphicsSection(parent: StackPanel): void {
+    parent.addControl(this.makeSectionHeader('GRAPHICS // PERFORMANCE'));
+    parent.addControl(this.makeSectionSubText('Use lightweight procedural textures and progressive enemy spawn to reduce loading stalls.'));
+
+    parent.addControl(this.makeToggleRow(
+      'Lightweight Procedural Texture Mode',
+      'Uses lighter procedural texture generation and reduced relief density (recommended for smooth room transitions).',
+      (checkbox) => {
+        this.lightweightTexturesCheckbox = checkbox;
+        checkbox.onIsCheckedChangedObservable.add((isChecked) => {
+          if (this.isRefreshingUi) return;
+          GameSettingsStore.updateGraphics({ lightweightTexturesMode: !!isChecked });
+        });
+      }
+    ));
+
+    parent.addControl(this.makeToggleRow(
+      'Progressive Enemy Spawning',
+      'Spawns enemies in small batches over frames to avoid spikes in rooms with many enemies.',
+      (checkbox) => {
+        this.progressiveSpawnCheckbox = checkbox;
+        checkbox.onIsCheckedChangedObservable.add((isChecked) => {
+          if (this.isRefreshingUi) return;
+          GameSettingsStore.updateGraphics({ progressiveEnemySpawning: !!isChecked });
+        });
+      }
+    ));
+
+    parent.addControl(this.makeGraphicsNumberSliderRow(
+      'Room Preload Ahead Window',
+      'How many next rooms are preloaded asynchronously ahead of the current room (higher = more anticipation, potentially more memory).',
+      1,
+      8,
+      (slider, valueText) => {
+        this.roomPreloadAheadSlider = slider;
+        this.roomPreloadAheadValueText = valueText;
+        slider.onValueChangedObservable.add((value) => {
+          if (this.isRefreshingUi) return;
+          const nextValue = Math.max(1, Math.min(8, Math.round(value)));
+          valueText.text = `${nextValue} rooms`;
+          GameSettingsStore.updateGraphics({ roomPreloadAheadCount: nextValue });
+        });
+      },
+    ));
+
+    parent.addControl(this.makeActionRow(
+      'Automated Benchmark Mode',
+      'Runs a repeatable autoplay benchmark (player + enemies + transitions), then copies full metrics to clipboard.',
+      'RUN BENCHMARK',
+      () => {
+        this.awaitingRebind = null;
+        this.hidePanels();
+        this.onBenchmarkRequested();
+      }
+    ));
   }
 
   private addControlsSection(parent: StackPanel): void {
@@ -383,6 +454,18 @@ export class MainMenuScene {
     parent.addControl(row);
 
     parent.addControl(this.makeSectionSubText('Cycle options: NONE -> PROTANOPIA -> DEUTERANOPIA -> TRITANOPIA -> HIGH CONTRAST.'));
+
+    parent.addControl(this.makeToggleRow(
+      'Enable CAT Easter Egg (God Mode)',
+      'Adds CAT class to selection. CAT takes no damage and deals massive contact retaliation damage.',
+      (checkbox) => {
+        this.catGodModeCheckbox = checkbox;
+        checkbox.onIsCheckedChangedObservable.add((isChecked) => {
+          if (this.isRefreshingUi) return;
+          GameSettingsStore.updateAccessibility({ catGodModeEnabled: !!isChecked });
+        });
+      }
+    ));
   }
 
   private makeSectionHeader(text: string): Rectangle {
@@ -504,6 +587,57 @@ export class MainMenuScene {
     return row;
   }
 
+  private makeActionRow(
+    title: string,
+    details: string,
+    buttonLabel: string,
+    onAction: () => void,
+  ): Rectangle {
+    const row = new Rectangle(`actionRow_${title.replace(/\s+/g, '_')}`);
+    row.width = '820px';
+    row.height = '78px';
+    row.thickness = 1;
+    row.cornerRadius = 4;
+    row.color = '#285148';
+    row.background = 'rgba(8, 19, 24, 0.9)';
+
+    const titleText = new TextBlock(`actionTitle_${title.replace(/\s+/g, '_')}`);
+    titleText.text = title;
+    titleText.color = '#B9F9E8';
+    titleText.fontSize = 15;
+    titleText.fontFamily = 'Consolas';
+    titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    titleText.paddingLeft = '14px';
+    titleText.top = '-16px';
+    row.addControl(titleText);
+
+    const detailText = new TextBlock(`actionDetails_${title.replace(/\s+/g, '_')}`);
+    detailText.text = details;
+    detailText.color = '#86B9AE';
+    detailText.fontSize = 11;
+    detailText.fontFamily = 'Consolas';
+    detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    detailText.paddingLeft = '14px';
+    detailText.top = '16px';
+    row.addControl(detailText);
+
+    const actionButton = Button.CreateSimpleButton(`actionButton_${title.replace(/\s+/g, '_')}`, buttonLabel);
+    actionButton.width = '220px';
+    actionButton.height = '36px';
+    actionButton.color = '#E3FFF7';
+    actionButton.cornerRadius = 4;
+    actionButton.background = 'rgba(22,48,44,0.95)';
+    actionButton.thickness = 1;
+    actionButton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    actionButton.left = '-10px';
+    this.bindButtonAction(actionButton, onAction);
+    row.addControl(actionButton);
+
+    return row;
+  }
+
   private makeAudioSliderRow(channel: AudioChannel, labelText: string): Rectangle {
     const row = new Rectangle(`audioRow_${channel}`);
     row.width = '820px';
@@ -559,6 +693,71 @@ export class MainMenuScene {
     return row;
   }
 
+  private makeGraphicsNumberSliderRow(
+    title: string,
+    details: string,
+    min: number,
+    max: number,
+    onReady: (slider: Slider, valueText: TextBlock) => void,
+  ): Rectangle {
+    const row = new Rectangle(`graphicsNumberRow_${title.replace(/\s+/g, '_')}`);
+    row.width = '820px';
+    row.height = '82px';
+    row.thickness = 1;
+    row.cornerRadius = 4;
+    row.color = '#285148';
+    row.background = 'rgba(8, 19, 24, 0.9)';
+
+    const titleText = new TextBlock(`graphicsNumberTitle_${title.replace(/\s+/g, '_')}`);
+    titleText.text = title;
+    titleText.color = '#B9F9E8';
+    titleText.fontSize = 15;
+    titleText.fontFamily = 'Consolas';
+    titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    titleText.paddingLeft = '14px';
+    titleText.top = '-20px';
+    row.addControl(titleText);
+
+    const detailText = new TextBlock(`graphicsNumberDetails_${title.replace(/\s+/g, '_')}`);
+    detailText.text = details;
+    detailText.color = '#86B9AE';
+    detailText.fontSize = 11;
+    detailText.fontFamily = 'Consolas';
+    detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    detailText.paddingLeft = '14px';
+    detailText.top = '2px';
+    row.addControl(detailText);
+
+    const slider = new Slider(`graphicsNumberSlider_${title.replace(/\s+/g, '_')}`);
+    slider.minimum = min;
+    slider.maximum = max;
+    slider.height = '14px';
+    slider.width = '520px';
+    slider.color = '#52EDC5';
+    slider.background = '#153A36';
+    slider.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    slider.left = '12px';
+    slider.top = '26px';
+    row.addControl(slider);
+
+    const valueText = new TextBlock(`graphicsNumberValue_${title.replace(/\s+/g, '_')}`);
+    valueText.text = `${min}`;
+    valueText.color = '#DFFEF6';
+    valueText.fontSize = 14;
+    valueText.fontFamily = 'Consolas';
+    valueText.width = '120px';
+    valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    valueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    valueText.left = '-12px';
+    valueText.top = '26px';
+    row.addControl(valueText);
+
+    onReady(slider, valueText);
+    return row;
+  }
+
   private refreshSettingsUi(): void {
     this.isRefreshingUi = true;
 
@@ -591,6 +790,22 @@ export class MainMenuScene {
       this.autoAimCheckbox.isChecked = this.settingsSnapshot.controls.autoAimTowardMovement;
     }
 
+    if (this.lightweightTexturesCheckbox) {
+      this.lightweightTexturesCheckbox.isChecked = this.settingsSnapshot.graphics.lightweightTexturesMode;
+    }
+
+    if (this.progressiveSpawnCheckbox) {
+      this.progressiveSpawnCheckbox.isChecked = this.settingsSnapshot.graphics.progressiveEnemySpawning;
+    }
+
+    if (this.roomPreloadAheadSlider) {
+      const nextValue = Math.max(1, Math.min(8, Math.round(this.settingsSnapshot.graphics.roomPreloadAheadCount ?? 2)));
+      this.roomPreloadAheadSlider.value = nextValue;
+      if (this.roomPreloadAheadValueText) {
+        this.roomPreloadAheadValueText.text = `${nextValue} rooms`;
+      }
+    }
+
     const channels: AudioChannel[] = ['master', 'music', 'sfx', 'ui', 'voice'];
     for (const channel of channels) {
       const slider = this.audioSliders[channel];
@@ -604,10 +819,18 @@ export class MainMenuScene {
       this.colorFilterButton.textBlock.text = this.getFilterLabel(this.settingsSnapshot.accessibility.colorFilter);
     }
 
+    if (this.catGodModeCheckbox) {
+      this.catGodModeCheckbox.isChecked = this.settingsSnapshot.accessibility.catGodModeEnabled;
+    }
+
     if (this.menuHint) {
-      this.menuHint.text = this.settingsSnapshot.controls.keyboardOnlyMode
-        ? 'KEYBOARD MODE ACTIVE // AUTO-AIM AVAILABLE IN SETTINGS'
-        : 'SETTINGS: KEYBINDS / AUDIO / ACCESSIBILITY';
+      if (this.settingsSnapshot.controls.keyboardOnlyMode) {
+        this.menuHint.text = 'KEYBOARD MODE ACTIVE // AUTO-AIM AVAILABLE IN SETTINGS';
+      } else if (this.settingsSnapshot.graphics.lightweightTexturesMode) {
+        this.menuHint.text = 'PERFORMANCE MODE ACTIVE // LIGHTWEIGHT TEXTURES ENABLED';
+      } else {
+        this.menuHint.text = 'SETTINGS: GRAPHICS / KEYBINDS / AUDIO / ACCESSIBILITY';
+      }
     }
 
     this.isRefreshingUi = false;

@@ -1,0 +1,26 @@
+{
+  "zombie_slayer": {
+    "name": "Process Terminator",
+    "description": "Defeat 100 zombies",
+    "type": "incremental",
+    "target": 100
+  },
+  "room_10": {
+    "name": "System Defender",
+    "description": "Reach room 10",
+    "type": "oneTime",
+    "target": 1
+  },
+  "no_damage": {
+    "name": "Ghost in the Shell",
+    "description": "Complete a run without taking damage",
+    "type": "oneTime",
+    "target": 1
+  },
+  "perfect_build": {
+    "name": "Optimized Runtime",
+    "description": "Collect 20 bonuses in a single run",
+    "type": "oneTime",
+    "target": 1
+  }
+}

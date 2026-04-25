@@ -11,6 +11,21 @@ import { UltimateSystemManager } from '../systems/UltimateSystemManager';
 
 export type RuntimeFrameGameState = 'menu' | 'playing' | 'roomclear' | 'bonus' | 'transition' | 'gameover';
 
+export interface RuntimeFrameProfileSection {
+  name: string;
+  ms: number;
+}
+
+export interface RuntimeFrameProfileSnapshot {
+  totalMs: number;
+  sections: RuntimeFrameProfileSection[];
+}
+
+export interface RuntimeFrameProfiler {
+  mark(name: string): void;
+  finish(): RuntimeFrameProfileSnapshot;
+}
+
 export type GameRuntimeFrameContext = {
   playerController: PlayerController;
   enemySpawner: EnemySpawner;
@@ -25,6 +40,7 @@ export type GameRuntimeFrameContext = {
   currentRoomIndex: number;
   gameState: RuntimeFrameGameState;
   roomCleared: boolean;
+  isTutorialRun: boolean;
   getCurrency: () => number;
   getConsumableStatusLabel: () => string;
   applyPassiveIncome: (deltaTime: number) => void;
@@ -36,9 +52,15 @@ export type GameRuntimeFrameContext = {
   applyHazardDamage: (deltaTime: number) => void;
   updateDaemonIdleTest: (deltaTime: number, enemyCount: number) => void;
   resolveSecondaryBurst: (burst: NonNullable<ReturnType<PlayerController['consumePendingSecondaryBurst']>>, enemies: EnemyController[]) => void;
+  resolveMageReactiveBurst: (burst: NonNullable<ReturnType<PlayerController['consumePendingMageReactiveBurst']>>, enemies: EnemyController[]) => void;
   resolveTankSweep: (sweep: NonNullable<ReturnType<PlayerController['consumePendingTankSweep']>>, enemies: EnemyController[]) => void;
   resolveTankShieldBash: (bash: NonNullable<ReturnType<PlayerController['consumePendingTankShieldBash']>>, enemies: EnemyController[]) => void;
   resolveRogueStrike: (strike: NonNullable<ReturnType<PlayerController['consumePendingRogueStrike']>>, enemies: EnemyController[]) => void;
+  resolveRogueDashTrailSegment: (segment: {
+    from: Vector3;
+    to: Vector3;
+    radius: number;
+  }) => void;
   resolveRogueDashAttack: (dash: NonNullable<ReturnType<PlayerController['consumePendingRogueDashAttack']>>, enemies: EnemyController[]) => void;
   setRoomCleared: (value: boolean) => void;
   onRoomCleared: (roomId: string) => void;
@@ -46,14 +68,47 @@ export type GameRuntimeFrameContext = {
   renderScene: () => void;
 };
 
+export function createRuntimeFrameProfiler(): RuntimeFrameProfiler {
+  const sections: RuntimeFrameProfileSection[] = [];
+  const startAt = performance.now();
+  let lastMark = startAt;
+
+  return {
+    mark(name: string): void {
+      const now = performance.now();
+      sections.push({ name, ms: now - lastMark });
+      lastMark = now;
+    },
+    finish(): RuntimeFrameProfileSnapshot {
+      const now = performance.now();
+      return {
+        totalMs: now - startAt,
+        sections: [...sections],
+      };
+    },
+  };
+}
+
 export class GameRuntimeOrchestrator {
-  updatePlayingFrame(context: GameRuntimeFrameContext, deltaTime: number): boolean {
+  updatePlayingFrame(
+    context: GameRuntimeFrameContext,
+    deltaTime: number,
+    profiler?: RuntimeFrameProfiler | null,
+  ): boolean {
     const enemies = context.enemySpawner.getEnemies();
+    const hasPendingSpawns = context.enemySpawner.hasPendingSpawns();
+    const frameProfiler = profiler ?? null;
+
     context.applyPassiveIncome(deltaTime);
+    frameProfiler?.mark('applyPassiveIncome');
+
     context.updateConsumablesFromInput();
+    frameProfiler?.mark('updateConsumables');
+
     context.playerController.setGameplayActive(true);
-    context.playerController.setEnemiesPresent(enemies.length > 0);
+    context.playerController.setEnemiesPresent(enemies.length > 0 || hasPendingSpawns);
     context.playerController.update(deltaTime);
+    frameProfiler?.mark('playerUpdate');
 
     context.detectAndStartPlayerVoidFall();
     const playerFalling = context.updatePlayerVoidFall(deltaTime);
@@ -62,6 +117,7 @@ export class GameRuntimeOrchestrator {
         context.tileFloorManager.update(deltaTime);
       }
       this.updateHudFrame(context, deltaTime);
+      frameProfiler?.mark('hudUpdate');
       context.renderScene();
       return true;
     }
@@ -72,7 +128,8 @@ export class GameRuntimeOrchestrator {
     const playerPosForSecondary = context.playerController.getPosition();
     const isMageSecondary = context.playerController.getClassId() === 'mage' && secondaryActive;
     const rogueStealthRange =
-      context.playerController.getClassId() === 'rogue' && context.playerController.isSecondaryActive()
+      (context.playerController.getClassId() === 'rogue' || context.playerController.getClassId() === 'cat') &&
+      context.playerController.isSecondaryActive()
         ? context.playerController.getRogueStealthRadius()
         : undefined;
 
@@ -81,6 +138,7 @@ export class GameRuntimeOrchestrator {
         ? { center: playerPosForSecondary, radius: secondaryRadius, multiplier: secondarySlow }
         : null
     );
+    frameProfiler?.mark('setProjectileSlowZone');
 
     context.enemySpawner.update(
       deltaTime,
@@ -89,34 +147,49 @@ export class GameRuntimeOrchestrator {
       context.playerController.getVelocity(),
       rogueStealthRange
     );
+    frameProfiler?.mark('enemySpawnerUpdate');
 
     if (isMageSecondary) {
       context.applySecondaryEnemySlow(enemies, playerPosForSecondary, secondaryRadius, secondarySlow);
+      frameProfiler?.mark('applySecondaryEnemySlow');
     }
 
     context.roomManager.updateDynamicHazards(deltaTime);
+    frameProfiler?.mark('roomHazardsUpdate');
 
     const tankShieldBash = context.playerController.consumePendingTankShieldBash();
     if (tankShieldBash) {
       context.resolveTankShieldBash(tankShieldBash, enemies);
     }
+    frameProfiler?.mark('tankShieldBash');
 
     context.resolveEntityCollisions(enemies, deltaTime);
+    frameProfiler?.mark('resolveEntityCollisions');
 
     if (context.tilesEnabled) {
       context.tileFloorManager.update(deltaTime);
     }
+    frameProfiler?.mark('tileFloorUpdate');
 
     context.applyHazardDamage(deltaTime);
+    frameProfiler?.mark('applyHazardDamage');
     context.projectileManager.update(deltaTime, enemies, context.playerController, context.roomManager);
+    frameProfiler?.mark('projectileUpdate');
 
     this.resolvePendingPlayerActions(context, enemies);
+    frameProfiler?.mark('resolvePendingPlayerActions');
     context.ultimateSystemManager.update(deltaTime, enemies);
+    frameProfiler?.mark('ultimateSystemUpdate');
     context.ultimateManager.update(deltaTime, enemies, context.playerController);
+    frameProfiler?.mark('ultimateManagerUpdate');
     this.updateHudFrame(context, deltaTime);
+    frameProfiler?.mark('hudUpdate');
     context.updateDaemonIdleTest(deltaTime, enemies.length);
+    frameProfiler?.mark('daemonIdleUpdate');
     this.updateEnemyHealthBars(context, enemies);
-    this.checkRoomCompletionAndBonusDoor(context, enemies);
+    frameProfiler?.mark('enemyHealthBarUpdate');
+    this.checkRoomCompletionAndBonusDoor(context, enemies, hasPendingSpawns);
+    frameProfiler?.mark('checkRoomCompletion');
     return false;
   }
 
@@ -132,6 +205,11 @@ export class GameRuntimeOrchestrator {
       context.resolveSecondaryBurst(secondaryBurst, enemies);
     }
 
+    const mageReactiveBurst = context.playerController.consumePendingMageReactiveBurst();
+    if (mageReactiveBurst) {
+      context.resolveMageReactiveBurst(mageReactiveBurst, enemies);
+    }
+
     const tankSweep = context.playerController.consumePendingTankSweep();
     if (tankSweep) {
       context.resolveTankSweep(tankSweep, enemies);
@@ -145,6 +223,11 @@ export class GameRuntimeOrchestrator {
     const rogueStrike = context.playerController.consumePendingRogueStrike();
     if (rogueStrike) {
       context.resolveRogueStrike(rogueStrike, enemies);
+    }
+
+    const rogueDashTrailSegments = context.playerController.consumePendingRogueDashTrailSegments();
+    for (const segment of rogueDashTrailSegments) {
+      context.resolveRogueDashTrailSegment(segment);
     }
 
     const rogueDashAttack = context.playerController.consumePendingRogueDashAttack();
@@ -179,14 +262,20 @@ export class GameRuntimeOrchestrator {
     }
   }
 
-  private checkRoomCompletionAndBonusDoor(context: GameRuntimeFrameContext, enemies: EnemyController[]): void {
+  private checkRoomCompletionAndBonusDoor(
+    context: GameRuntimeFrameContext,
+    enemies: EnemyController[],
+    hasPendingSpawns: boolean,
+  ): void {
     let roomCleared = context.roomCleared;
 
-    if (!roomCleared && enemies.length === 0) {
-      roomCleared = true;
-      context.setRoomCleared(true);
-      context.roomManager.setDoorActive(true);
-      context.onRoomCleared(context.roomOrder[context.currentRoomIndex]);
+    if (!roomCleared && enemies.length === 0 && !hasPendingSpawns) {
+      if (!context.isTutorialRun) {
+        roomCleared = true;
+        context.setRoomCleared(true);
+        context.roomManager.setDoorActive(true);
+        context.onRoomCleared(context.roomOrder[context.currentRoomIndex]);
+      }
     }
 
     if (!roomCleared || context.gameState !== 'playing') return;

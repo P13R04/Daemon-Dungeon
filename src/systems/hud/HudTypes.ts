@@ -41,6 +41,7 @@ export interface RoomEnteredPayload {
 
 export interface DaemonTauntPayload {
   text?: string;
+  voicelineId?: string;
   emotion?: string;
   sequence?: string[];
   frameInterval?: number;

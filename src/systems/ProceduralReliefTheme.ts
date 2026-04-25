@@ -89,6 +89,10 @@ function hash2(x: number, y: number, seed: number = 0): number {
   return s - Math.floor(s);
 }
 
+function frac01(value: number): number {
+  return value - Math.floor(value);
+}
+
 function mossBlobAt(gx: number, gy: number): number {
   const sx = gx * 2.2;
   const sy = gy * 2.2;
@@ -119,8 +123,8 @@ function floorHeightAt(gx: number, gy: number): number {
   const stoneY = 2.35;
   const seamW = 0.032;
 
-  const cellX = (gx * stoneX) % 1;
-  const cellY = (gy * stoneY) % 1;
+  const cellX = frac01(gx * stoneX);
+  const cellY = frac01(gy * stoneY);
   const border = Math.min(Math.min(cellX, 1 - cellX), Math.min(cellY, 1 - cellY));
 
   const stoneIdX = Math.floor(gx * stoneX);
@@ -136,8 +140,8 @@ function floorHeightAt(gx: number, gy: number): number {
 function wallHeightAt(gu: number, gv: number, bricksY: number = WALL_BRICKS_Y): number {
   const row = Math.floor(gv * bricksY);
   const stagger = (row % 2) * 0.5;
-  const cellX = (gu * WALL_BRICKS_X + stagger) % 1;
-  const cellY = (gv * bricksY) % 1;
+  const cellX = frac01(gu * WALL_BRICKS_X + stagger);
+  const cellY = frac01(gv * bricksY);
   const border = Math.min(Math.min(cellX, 1 - cellX), Math.min(cellY, 1 - cellY));
 
   const brickIdX = Math.floor(gu * WALL_BRICKS_X + stagger);
@@ -445,9 +449,20 @@ function ensurePoisonShader(): void {
 export class ProceduralReliefTheme {
   private static sceneCaches: Map<string, SceneCache> = new Map();
   private static quality: ProceduralReliefQuality = 'medium';
+  private static lightweightMode: boolean = false;
 
   static getQuality(): ProceduralReliefQuality {
     return this.quality;
+  }
+
+  static isLightweightMode(): boolean {
+    return this.lightweightMode;
+  }
+
+  static setLightweightMode(enabled: boolean): void {
+    if (this.lightweightMode === enabled) return;
+    this.lightweightMode = enabled;
+    this.disposeAllCaches();
   }
 
   static setQuality(quality: ProceduralReliefQuality): void {
@@ -496,11 +511,10 @@ export class ProceduralReliefTheme {
   static prewarm(scene: Scene): void {
     ensurePoisonShader();
     const cache = this.getSceneCache(scene);
-    const quality = QUALITY_SETTINGS[this.quality];
     if (cache.wallFaceMats.size === 0) {
       cache.wallFaceMats.set('warmup', this.makeWallMaterial(scene, 'warmup', 0, 0, false, WALL_BRICKS_Y, false, 1));
     }
-    if (cache.floorMats.size === 0) {
+    if (!this.lightweightMode && cache.floorMats.size === 0) {
       cache.floorMats.set(
         'warmup',
         this.makeFloorMaterial(scene, 'warmup', 0, 0, {
@@ -539,6 +553,7 @@ export class ProceduralReliefTheme {
   static createFloorMaterial(scene: Scene, tileX: number, tileZ: number, neighbors: ProceduralReliefNeighborMasks): StandardMaterial {
     const cache = this.getSceneCache(scene);
     const k = [
+      this.lightweightMode ? 'lite' : 'full',
       tileX,
       tileZ,
       neighbors.wallMask,
@@ -604,6 +619,12 @@ export class ProceduralReliefTheme {
 
     const cache = this.getSceneCache(scene);
     const quality = QUALITY_SETTINGS[this.quality];
+    const faceSubdivisions = this.lightweightMode
+      ? Math.max(8, Math.floor(quality.faceSubdivisions * 0.45))
+      : quality.faceSubdivisions;
+    const topSubdivisions = this.lightweightMode
+      ? Math.max(6, Math.floor(quality.topSubdivisions * 0.45))
+      : quality.topSubdivisions;
 
     const getFaceMat = (
       hOffset: number,
@@ -613,7 +634,15 @@ export class ProceduralReliefTheme {
       allowPartialEdgeHighlights = false,
       uScale = 1.0
     ): StandardMaterial => {
-      const key = `${axisSeed}_${hOffset.toFixed(4)}_${flipU ? 1 : 0}_${bricksY.toFixed(2)}_${allowPartialEdgeHighlights ? 1 : 0}_${uScale.toFixed(4)}`;
+      const key = [
+        this.lightweightMode ? 'lite' : 'full',
+        axisSeed.toFixed(4),
+        hOffset.toFixed(4),
+        flipU ? 1 : 0,
+        bricksY.toFixed(2),
+        allowPartialEdgeHighlights ? 1 : 0,
+        uScale.toFixed(4),
+      ].join('_');
       const existing = cache.wallFaceMats.get(key);
       if (existing) return existing;
       const created = this.makeWallMaterial(scene, key, hOffset, axisSeed, flipU, bricksY, allowPartialEdgeHighlights, uScale);
@@ -659,7 +688,7 @@ export class ProceduralReliefTheme {
       const face = MeshBuilder.CreateGround(`${name}_${faceName}`, {
         width: faceWidth,
         height: faceHeight,
-        subdivisions: quality.faceSubdivisions,
+        subdivisions: faceSubdivisions,
         updatable: true,
       }, scene);
 
@@ -712,25 +741,28 @@ export class ProceduralReliefTheme {
     const openE = (wallNeighborMask & E) === 0;
     const openS = (wallNeighborMask & S) === 0;
     const openW = (wallNeighborMask & W) === 0;
+    const axisSeedNS = seedZ * 0.173 + 0.11;
+    const axisSeedEW = seedX * 0.173 + 0.29;
+    const axisSeedCorner = seedX * 0.113 + seedZ * 0.197 + 0.37;
 
     const northCornerCap = (openN && openW ? 1 : 0) | (openN && openE ? 2 : 0);
     const southCornerCap = (openS && openE ? 1 : 0) | (openS && openW ? 2 : 0);
     const eastCornerCap = (openE && openN ? 1 : 0) | (openE && openS ? 2 : 0);
     const westCornerCap = (openW && openS ? 1 : 0) | (openW && openN ? 2 : 0);
 
-    const northFace = makeFace('north', 0, 0, 0, baseSize * 0.5 - facePlaneInset, seedX, 0, false, baseSize, wallHeight, WALL_BRICKS_Y, true, northCornerCap, false);
-    const southFace = makeFace('south', Math.PI, 0, 0, -baseSize * 0.5 + facePlaneInset, seedX, 0, true, baseSize, wallHeight, WALL_BRICKS_Y, true, southCornerCap, false);
-    const eastFace = makeFace('east', Math.PI / 2, baseSize * 0.5 - facePlaneInset, 0, 0, seedZ, 0, true, baseSize, wallHeight, WALL_BRICKS_Y, true, eastCornerCap, false);
-    const westFace = makeFace('west', -Math.PI / 2, -baseSize * 0.5 + facePlaneInset, 0, 0, seedZ, 0, false, baseSize, wallHeight, WALL_BRICKS_Y, true, westCornerCap, false);
+    const northFace = makeFace('north', 0, 0, 0, baseSize * 0.5 - facePlaneInset, seedX, axisSeedNS, false, baseSize, wallHeight, WALL_BRICKS_Y, true, northCornerCap, false);
+    const southFace = makeFace('south', Math.PI, 0, 0, -baseSize * 0.5 + facePlaneInset, seedX, axisSeedNS, true, baseSize, wallHeight, WALL_BRICKS_Y, true, southCornerCap, false);
+    const eastFace = makeFace('east', Math.PI / 2, baseSize * 0.5 - facePlaneInset, 0, 0, seedZ, axisSeedEW, true, baseSize, wallHeight, WALL_BRICKS_Y, true, eastCornerCap, false);
+    const westFace = makeFace('west', -Math.PI / 2, -baseSize * 0.5 + facePlaneInset, 0, 0, seedZ, axisSeedEW, false, baseSize, wallHeight, WALL_BRICKS_Y, true, westCornerCap, false);
 
-    if (openN && openW) this.stabilizeCornerVerticalEdges(northFace, baseSize, wallHeight, seedX, 0, false, WALL_BRICKS_Y, true, 1.0, 1.0);
-    if (openN && openE) this.stabilizeCornerVerticalEdges(northFace, baseSize, wallHeight, seedX, 0, false, WALL_BRICKS_Y, false, 1.0, 1.0);
-    if (openS && openE) this.stabilizeCornerVerticalEdges(southFace, baseSize, wallHeight, seedX, 0, true, WALL_BRICKS_Y, true, 1.0, 1.0);
-    if (openS && openW) this.stabilizeCornerVerticalEdges(southFace, baseSize, wallHeight, seedX, 0, true, WALL_BRICKS_Y, false, 1.0, 1.0);
-    if (openE && openN) this.stabilizeCornerVerticalEdges(eastFace, baseSize, wallHeight, seedZ, 0, true, WALL_BRICKS_Y, true, 1.0, 1.0);
-    if (openE && openS) this.stabilizeCornerVerticalEdges(eastFace, baseSize, wallHeight, seedZ, 0, true, WALL_BRICKS_Y, false, 1.0, 1.0);
-    if (openW && openS) this.stabilizeCornerVerticalEdges(westFace, baseSize, wallHeight, seedZ, 0, false, WALL_BRICKS_Y, true, 1.0, 1.0);
-    if (openW && openN) this.stabilizeCornerVerticalEdges(westFace, baseSize, wallHeight, seedZ, 0, false, WALL_BRICKS_Y, false, 1.0, 1.0);
+    if (openN && openW) this.stabilizeCornerVerticalEdges(northFace, baseSize, wallHeight, seedX, axisSeedNS, false, WALL_BRICKS_Y, true, 1.0, 1.0);
+    if (openN && openE) this.stabilizeCornerVerticalEdges(northFace, baseSize, wallHeight, seedX, axisSeedNS, false, WALL_BRICKS_Y, false, 1.0, 1.0);
+    if (openS && openE) this.stabilizeCornerVerticalEdges(southFace, baseSize, wallHeight, seedX, axisSeedNS, true, WALL_BRICKS_Y, true, 1.0, 1.0);
+    if (openS && openW) this.stabilizeCornerVerticalEdges(southFace, baseSize, wallHeight, seedX, axisSeedNS, true, WALL_BRICKS_Y, false, 1.0, 1.0);
+    if (openE && openN) this.stabilizeCornerVerticalEdges(eastFace, baseSize, wallHeight, seedZ, axisSeedEW, true, WALL_BRICKS_Y, true, 1.0, 1.0);
+    if (openE && openS) this.stabilizeCornerVerticalEdges(eastFace, baseSize, wallHeight, seedZ, axisSeedEW, true, WALL_BRICKS_Y, false, 1.0, 1.0);
+    if (openW && openS) this.stabilizeCornerVerticalEdges(westFace, baseSize, wallHeight, seedZ, axisSeedEW, false, WALL_BRICKS_Y, true, 1.0, 1.0);
+    if (openW && openN) this.stabilizeCornerVerticalEdges(westFace, baseSize, wallHeight, seedZ, axisSeedEW, false, WALL_BRICKS_Y, false, 1.0, 1.0);
 
     const cornerPos = baseSize * 0.5 + baseSize * 0.005;
     const cornerOffsetSeed = (seedX + seedZ) * 0.5;
@@ -742,15 +774,15 @@ export class ProceduralReliefTheme {
     const top = MeshBuilder.CreateGround(`${name}_top_flat`, {
       width: baseSize,
       height: baseSize,
-      subdivisions: quality.topSubdivisions,
+      subdivisions: topSubdivisions,
       updatable: true,
     }, scene);
 
     const exposedTopMask = (~wallNeighborMask) & (N | E | S | W);
-    this.applyWallFaceDisplacement(top, baseSize, baseSize, seedX, seedZ / 1000.0, false, 3.0, false, 0, 1.0, 1.0);
-    this.stabilizeTopOpenEdgeHalfBricks(top, baseSize, baseSize, seedX, seedZ / 1000.0, false, exposedTopMask, 3.0);
+    this.applyWallFaceDisplacement(top, baseSize, baseSize, seedX, axisSeedCorner, false, 3.0, false, 0, 1.0, 1.0);
+    this.stabilizeTopOpenEdgeHalfBricks(top, baseSize, baseSize, seedX, axisSeedCorner, false, exposedTopMask, 3.0);
     top.position.set(0, wallHeight * 0.5 + 0.001, 0);
-    top.material = getFaceMat(seedX, seedZ / 1000.0, false, 3.0, true, 1.0);
+    top.material = getFaceMat(seedX, axisSeedCorner, false, 3.0, true, 1.0);
     top.parent = block;
 
     return block;
@@ -810,7 +842,7 @@ export class ProceduralReliefTheme {
             h = h * (1.0 - edgeBlend) + hRefCorner * edgeBlend;
           }
 
-          const fracY = (v * bricksY) % 1.0;
+          const fracY = frac01(v * bricksY);
           const diagL = 1.0 - smoothstep(0.0, 0.24, Math.abs(fracY - uRaw * 0.62));
           const diagR = 1.0 - smoothstep(0.0, 0.24, Math.abs(fracY - (1.0 - uRaw) * 0.62));
           const cap = Math.max(edgeL * diagL, edgeR * diagR);
@@ -882,8 +914,8 @@ export class ProceduralReliefTheme {
       const gu = hOffset + u + axisSeed * 1000.0;
       const row = Math.floor(v * bricksY);
       const stagger = (row % 2) * 0.5;
-      const cellX = (gu * WALL_BRICKS_X + stagger) % 1;
-      const cellY = (v * bricksY) % 1;
+      const cellX = frac01(gu * WALL_BRICKS_X + stagger);
+      const cellY = frac01(v * bricksY);
       const border = Math.min(Math.min(cellX, 1 - cellX), Math.min(cellY, 1 - cellY));
       const brickMask = smoothstep(WALL_MORTAR_W * 0.82, WALL_MORTAR_W * 1.22, border);
       const halfBrickZone = 1.0 - smoothstep(0.78, 0.98, brickMask);
@@ -970,8 +1002,8 @@ export class ProceduralReliefTheme {
       const gu = hOffset + u * uScale + axisSeed * 1000.0;
       const row = Math.floor(v * bricksY);
       const stagger = (row % 2) * 0.5;
-      const cellX = (gu * WALL_BRICKS_X + stagger) % 1;
-      const cellY = (v * bricksY) % 1;
+      const cellX = frac01(gu * WALL_BRICKS_X + stagger);
+      const cellY = frac01(v * bricksY);
       const border = Math.min(Math.min(cellX, 1 - cellX), Math.min(cellY, 1 - cellY));
       const brickMask = smoothstep(WALL_MORTAR_W * 0.82, WALL_MORTAR_W * 1.22, border);
       const halfBrickZone = 1.0 - smoothstep(0.78, 0.98, brickMask);
@@ -995,7 +1027,10 @@ export class ProceduralReliefTheme {
     tileZ: number,
     neighbors: ProceduralReliefNeighborMasks
   ): StandardMaterial {
-    const size = QUALITY_SETTINGS[this.quality].floorTextureSize;
+    const configuredSize = QUALITY_SETTINGS[this.quality].floorTextureSize;
+    const size = this.lightweightMode
+      ? Math.max(56, Math.floor(configuredSize * 0.62))
+      : configuredSize;
     const invSize = 1 / Math.max(1, size - 1);
     const tex = new DynamicTexture(`f_tex_${key}`, { width: size, height: size }, scene, false);
     const bump = new DynamicTexture(`f_bump_${key}`, { width: size, height: size }, scene, false);
@@ -1013,8 +1048,8 @@ export class ProceduralReliefTheme {
         const gx = tileX + u;
         const gy = tileZ + v;
 
-        const cellX = (gx * stoneX) % 1;
-        const cellY = (gy * stoneY) % 1;
+        const cellX = frac01(gx * stoneX);
+        const cellY = frac01(gy * stoneY);
         const border = Math.min(Math.min(cellX, 1 - cellX), Math.min(cellY, 1 - cellY));
 
         const stoneIdX = Math.floor(gx * stoneX);
@@ -1099,10 +1134,14 @@ export class ProceduralReliefTheme {
     allowPartialEdgeHighlights = false,
     uScale = 1.0
   ): StandardMaterial {
-    const size = QUALITY_SETTINGS[this.quality].wallTextureSize;
+    const configuredSize = QUALITY_SETTINGS[this.quality].wallTextureSize;
+    const size = this.lightweightMode
+      ? Math.max(72, Math.floor(configuredSize * 0.58))
+      : configuredSize;
     const invSize = 1 / Math.max(1, size - 1);
-    const tex = new DynamicTexture(`w_tex_${key}`, { width: size, height: size }, scene, true);
-    const bump = new DynamicTexture(`w_bump_${key}`, { width: size, height: size }, scene, true);
+    const useMipMaps = !this.lightweightMode;
+    const tex = new DynamicTexture(`w_tex_${key}`, { width: size, height: size }, scene, useMipMaps);
+    const bump = new DynamicTexture(`w_bump_${key}`, { width: size, height: size }, scene, useMipMaps);
     const ctx = tex.getContext() as Canvas2DRenderingContext;
     const bctx = bump.getContext() as Canvas2DRenderingContext;
 
@@ -1116,8 +1155,8 @@ export class ProceduralReliefTheme {
 
         const row = Math.floor(gy * bricksY);
         const stagger = (row % 2) * 0.5;
-        const cellX = (gx * WALL_BRICKS_X + stagger) % 1;
-        const cellY = (gy * bricksY) % 1;
+        const cellX = frac01(gx * WALL_BRICKS_X + stagger);
+        const cellY = frac01(gy * bricksY);
         const md = Math.min(Math.min(cellX, 1 - cellX), Math.min(cellY, 1 - cellY));
         const mortar = 1.0 - smoothstep(0, WALL_MORTAR_W, md);
 
@@ -1159,14 +1198,14 @@ export class ProceduralReliefTheme {
 
     tex.update(false);
     bump.update(false);
-    tex.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
-    bump.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
+    tex.updateSamplingMode(this.lightweightMode ? Texture.BILINEAR_SAMPLINGMODE : Texture.TRILINEAR_SAMPLINGMODE);
+    bump.updateSamplingMode(this.lightweightMode ? Texture.BILINEAR_SAMPLINGMODE : Texture.TRILINEAR_SAMPLINGMODE);
     tex.wrapU = Texture.CLAMP_ADDRESSMODE;
     tex.wrapV = Texture.CLAMP_ADDRESSMODE;
     bump.wrapU = Texture.CLAMP_ADDRESSMODE;
     bump.wrapV = Texture.CLAMP_ADDRESSMODE;
-    tex.anisotropicFilteringLevel = 8;
-    bump.anisotropicFilteringLevel = 8;
+    tex.anisotropicFilteringLevel = this.lightweightMode ? 2 : 8;
+    bump.anisotropicFilteringLevel = this.lightweightMode ? 2 : 8;
 
     const mat = new StandardMaterial(`w_mat_${key}`, scene);
     mat.diffuseTexture = tex;

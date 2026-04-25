@@ -1,0 +1,45 @@
+{
+  "damage_boost": {
+    "name": "Damage Overflow",
+    "description": "+10% damage",
+    "type": "stat",
+    "stackable": true,
+    "effect": {
+      "stat": "damage",
+      "value": 0.1,
+      "type": "multiplier"
+    }
+  },
+  "fire_rate": {
+    "name": "Clock Speed Up",
+    "description": "+15% fire rate",
+    "type": "stat",
+    "stackable": true,
+    "effect": {
+      "stat": "fireRate",
+      "value": 0.15,
+      "type": "multiplier"
+    }
+  },
+  "piercing_shot": {
+    "name": "Pierce Protocol",
+    "description": "Attacks pierce through 1 enemy",
+    "type": "modifier",
+    "stackable": true,
+    "effect": {
+      "modifier": "pierce",
+      "value": 1
+    }
+  },
+  "burn": {
+    "name": "Memory Burn",
+    "description": "Attacks apply burn DoT",
+    "type": "modifier",
+    "stackable": false,
+    "effect": {
+      "modifier": "dot",
+      "damagePerTick": 5,
+      "duration": 3
+    }
+  }
+}

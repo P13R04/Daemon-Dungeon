@@ -15,8 +15,12 @@ export interface DaemonTauntEventPayload {
 export class GameEventCoordinator {
   constructor(private readonly eventBus: EventBus = EventBus.getInstance()) {}
 
-  emitGameStartRequested(classId: 'mage' | 'firewall' | 'rogue'): void {
+  emitGameStartRequested(classId: 'mage' | 'firewall' | 'rogue' | 'cat'): void {
     this.eventBus.emit(GameEvents.GAME_START_REQUESTED, { classId });
+  }
+
+  emitTutorialStartRequested(classId: 'mage' | 'firewall' | 'rogue' | 'cat'): void {
+    this.eventBus.emit(GameEvents.TUTORIAL_START_REQUESTED, { classId, mode: 'tutorial' });
   }
 
   emitRoomCleared(roomId: string): void {

@@ -13,6 +13,7 @@ export enum AnimationState {
   IDLE = 'idle',
   WALKING = 'walking',
   ATTACKING = 'attacking',
+  DASH = 'dash',
   ULTIMATE = 'ultimate',
   SHIELD_BASH = 'shield_bash',
   SHIELD_ACTIVATE = 'shield_activate',
@@ -27,7 +28,7 @@ export interface AnimationTransition {
   useIntro?: boolean;
 }
 
-export type PlayerClass = 'mage' | 'firewall' | 'rogue';
+export type PlayerClass = 'mage' | 'firewall' | 'rogue' | 'cat';
 
 export class PlayerAnimationController {
   private mesh: Mesh | null = null;
@@ -60,6 +61,7 @@ export class PlayerAnimationController {
   // Walking state tracking
   private isWalking: boolean = false;
   private hasStartedWalking: boolean = false;
+  private rogueIdleLoopToken: number = 0;
 
   // Animation transition settings
   private readonly FADE_DURATION = 0.1; // seconds
@@ -85,7 +87,11 @@ export class PlayerAnimationController {
     if (playerClass === 'firewall') {
       this.rotationOffsetY = Math.PI;
     } else if (playerClass === 'rogue') {
-      // Cat rig has a different origin than mage/tank; keep it above floor.
+      // Rogue rig forward axis is inverted; keep a persistent 180° correction.
+      this.rotationOffsetY = Math.PI;
+      this.heightOffset = 0;
+    } else if (playerClass === 'cat') {
+      // Rogue/cat rigs need to sit slightly higher than mage/tank in current scene setup.
       this.heightOffset = 0;
     }
   }
@@ -99,7 +105,9 @@ export class PlayerAnimationController {
         this.playerClass === 'firewall'
           ? 'tank.glb'
           : this.playerClass === 'rogue'
-            ? 'cat.glb'
+            ? 'rogue.glb'
+            : this.playerClass === 'cat'
+              ? 'cat.glb'
             : 'mage.glb';
       const result = await SceneLoader.ImportMeshAsync('', modelPath, modelFile, this.scene);
 
@@ -109,7 +117,7 @@ export class PlayerAnimationController {
       // Scale model to a class-specific target height for reliable visibility.
       const bounds = this.mesh.getHierarchyBoundingVectors(true);
       const currentHeight = Math.max(0.001, bounds.max.y - bounds.min.y);
-      const targetHeight = this.playerClass === 'rogue' ? 1.9 : 2.0;
+      const targetHeight = 2.0;
       const modelScale = targetHeight / currentHeight;
       this.mesh.scaling.scaleInPlace(modelScale);
 
@@ -178,24 +186,183 @@ export class PlayerAnimationController {
       this._playTankAnimation(state, speedMultiplier);
     } else if (this.playerClass === 'rogue') {
       this._playRogueAnimation(state, speedMultiplier);
+    } else if (this.playerClass === 'cat') {
+      this._playCatAnimation(state, speedMultiplier);
     } else {
-      // Rogue or other classes (not yet implemented)
       console.warn(`Animation not yet implemented for class: ${this.playerClass}`);
     }
   }
 
+  private _findAnimationByName(name: string): AnimationGroup | null {
+    const direct = this.animationGroups.get(name);
+    if (direct) return direct;
+
+    const lower = name.toLowerCase();
+    for (const [key, group] of this.animationGroups.entries()) {
+      if (key.toLowerCase() === lower) {
+        return group;
+      }
+    }
+    return null;
+  }
+
+  private _playRogueIdleVariantLoop(token: number, speedMultiplier: number): void {
+    if (token !== this.rogueIdleLoopToken) {
+      return;
+    }
+
+    const idle2 = this._findAnimationByName('idle2');
+    const idle3 = this._findAnimationByName('idle3');
+    const variants = [idle2, idle3].filter((group): group is AnimationGroup => !!group);
+
+    if (variants.length === 0) {
+      const idle = this._findAnimationByName('idle');
+      if (idle) {
+        this._playAnimationLoop(idle.name, speedMultiplier);
+      } else {
+        console.warn('No rogue idle animation found');
+      }
+      return;
+    }
+
+    const picked = variants[Math.floor(Math.random() * variants.length)];
+    this._playAnimationOnce(picked.name, () => {
+      this._playRogueIdleVariantLoop(token, speedMultiplier);
+    }, speedMultiplier);
+  }
+
   /**
-   * Play rogue (cat placeholder) animations.
-   * Uses Take 001 as a generic loop/one-shot until dedicated rogue clips are provided.
+   * Play rogue animations using dedicated clips from rogue.glb.
    */
   private _playRogueAnimation(state: AnimationState, speedMultiplier: number = 1.0): void {
+    const idle = this._findAnimationByName('idle');
+    const startWalking = this._findAnimationByName('start_walking');
+    const walking = this._findAnimationByName('walking');
+    const attack1 = this._findAnimationByName('attack1');
+    const attack2 = this._findAnimationByName('attack2');
+    const dash = this._findAnimationByName('dash');
+
+    switch (state) {
+      case AnimationState.IDLE: {
+        this.currentState = AnimationState.IDLE;
+        this.isWalking = false;
+        this.hasStartedWalking = false;
+
+        const token = ++this.rogueIdleLoopToken;
+        if (idle) {
+          this._playAnimationOnce(idle.name, () => {
+            this._playRogueIdleVariantLoop(token, speedMultiplier);
+          }, speedMultiplier);
+        } else {
+          this._playRogueIdleVariantLoop(token, speedMultiplier);
+        }
+        return;
+      }
+
+      case AnimationState.WALKING: {
+        this.rogueIdleLoopToken++;
+        this.currentState = AnimationState.WALKING;
+        this.isWalking = true;
+
+        if (!this.hasStartedWalking && startWalking) {
+          this.hasStartedWalking = true;
+          this._playAnimationOnce(startWalking.name, () => {
+            if (this.currentState !== AnimationState.WALKING) return;
+
+            if (walking) {
+              this._playAnimationLoop(walking.name, speedMultiplier);
+              return;
+            }
+
+            this._playAnimationLoop(startWalking.name, speedMultiplier);
+          }, speedMultiplier);
+          return;
+        }
+
+        this.hasStartedWalking = true;
+        if (walking) {
+          this._playAnimationLoop(walking.name, speedMultiplier);
+        } else if (startWalking) {
+          this._playAnimationLoop(startWalking.name, speedMultiplier);
+        } else if (idle) {
+          this._playAnimationLoop(idle.name, speedMultiplier);
+        } else {
+          console.warn('No rogue walking animation found');
+        }
+        return;
+      }
+
+      case AnimationState.DASH: {
+        this.rogueIdleLoopToken++;
+        this.currentState = AnimationState.DASH;
+        const dashClip = dash ?? attack1 ?? attack2 ?? idle;
+        if (!dashClip) {
+          console.warn('No rogue dash animation found');
+          return;
+        }
+
+        // Dash is a strict one-shot; PlayerController will choose the next state
+        // when gameplay dash movement actually ends.
+        this._playAnimationOnce(dashClip.name, undefined, speedMultiplier);
+        return;
+      }
+
+      case AnimationState.ATTACKING:
+      case AnimationState.ULTIMATE: {
+        this.rogueIdleLoopToken++;
+
+        let attackClip: AnimationGroup | null = null;
+        if (attack1 && attack2) {
+          this.lastAttackWasAttack1 = !this.lastAttackWasAttack1;
+          attackClip = this.lastAttackWasAttack1 ? attack1 : attack2;
+        } else {
+          attackClip = attack1 ?? attack2 ?? dash ?? idle;
+        }
+
+        if (!attackClip) {
+          console.warn('No rogue attack animation found');
+          return;
+        }
+
+        this.currentState = state;
+        const attackSpeedVariation = this.attackSpeedVariation[this.lastAttackSpeedIndex];
+        this.lastAttackSpeedIndex = (this.lastAttackSpeedIndex + 1) % this.attackSpeedVariation.length;
+        const playbackSpeed =
+          state === AnimationState.ATTACKING
+            ? Math.max(0.01, attackSpeedVariation * speedMultiplier)
+            : speedMultiplier;
+
+        this._playAnimationOnce(attackClip.name, () => {
+          if (state === AnimationState.ULTIMATE && this.onUltimateAnimationFinished) {
+            this.onUltimateAnimationFinished();
+            this.onUltimateAnimationFinished = null;
+          }
+          if (this.isWalking) {
+            this.playAnimation(AnimationState.WALKING);
+          } else {
+            this.playAnimation(AnimationState.IDLE);
+          }
+        }, playbackSpeed);
+        return;
+      }
+
+      default:
+        this.playAnimation(AnimationState.IDLE);
+        return;
+    }
+  }
+
+  /**
+   * Play cat easter-egg animations with legacy placeholder behavior.
+   */
+  private _playCatAnimation(state: AnimationState, speedMultiplier: number = 1.0): void {
     const fallbackClip =
       this.animationGroups.get('Take 001') ??
       this.animationGroups.get('take 001') ??
       this.animationGroups.values().next().value;
 
     if (!fallbackClip) {
-      console.warn('No rogue animation group found');
+      console.warn('No cat animation group found');
       return;
     }
 
@@ -203,6 +370,7 @@ export class PlayerAnimationController {
 
     switch (state) {
       case AnimationState.ATTACKING:
+      case AnimationState.DASH:
       case AnimationState.ULTIMATE:
         this.currentState = state;
         this._playAnimationOnce(clipName, () => {
@@ -278,6 +446,7 @@ export class PlayerAnimationController {
         // Vary speed to avoid repetition
         const speedVariation = this.attackSpeedVariation[this.lastAttackSpeedIndex];
         this.lastAttackSpeedIndex = (this.lastAttackSpeedIndex + 1) % this.attackSpeedVariation.length;
+        const playbackSpeed = Math.max(0.01, speedVariation * speedMultiplier);
 
         this.currentState = AnimationState.ATTACKING;
         this._playAnimationOnce(animationName, () => {
@@ -287,7 +456,7 @@ export class PlayerAnimationController {
           } else {
             this.playAnimation(AnimationState.IDLE);
           }
-        }, speedVariation);
+        }, playbackSpeed);
         return;
 
       case AnimationState.ULTIMATE:
@@ -357,6 +526,7 @@ export class PlayerAnimationController {
 
         const speedVariation = this.attackSpeedVariation[this.lastAttackSpeedIndex];
         this.lastAttackSpeedIndex = (this.lastAttackSpeedIndex + 1) % this.attackSpeedVariation.length;
+        const playbackSpeed = Math.max(0.01, speedVariation * speedMultiplier);
 
         this.currentState = AnimationState.ATTACKING;
         this._playAnimationOnce(animationName, () => {
@@ -366,7 +536,7 @@ export class PlayerAnimationController {
           } else {
             this.playAnimation(AnimationState.IDLE);
           }
-        }, speedVariation);
+        }, playbackSpeed);
         return;
 
       case AnimationState.ULTIMATE:
@@ -391,10 +561,13 @@ export class PlayerAnimationController {
         animationName = 'Shield_BASH';
         this.currentState = AnimationState.SHIELD_BASH;
         this._playAnimationOnce(animationName, () => {
-          // After shield bash, return to shield loop (shield is still active)
-          this._playAnimationLoop('Shield', 1.0);
-          this.currentState = AnimationState.SHIELD_LOOP;
-          this.isShieldActive = true; // Shield remains active after bash
+          // Shield bash is a burst move and should not loop shield stance.
+          this.isShieldActive = false;
+          if (this.isWalking) {
+            this.playAnimation(AnimationState.WALKING);
+          } else {
+            this.playAnimation(AnimationState.IDLE);
+          }
         }, 4.0);
         return;
 
@@ -552,13 +725,26 @@ export class PlayerAnimationController {
       return;
     }
 
+    if (this.currentState === AnimationState.DASH && this.isAnimationCurrentlyPlaying()) {
+      return;
+    }
+
+    if (
+      (this.currentState === AnimationState.SHIELD_BASH ||
+        this.currentState === AnimationState.SHIELD_ACTIVATE ||
+        this.currentState === AnimationState.SHIELD_DEACTIVATE) &&
+      this.isAnimationCurrentlyPlaying()
+    ) {
+      return;
+    }
+
     // If attacking just finished, check movement state
     if (isMoving && this.currentState !== AnimationState.WALKING) {
       this.playAnimation(AnimationState.WALKING);
       return;
     }
 
-    if (!isMoving && this.currentState !== AnimationState.IDLE && this.currentState !== AnimationState.ATTACKING && !this.isShieldActive) {
+    if (!isMoving && this.currentState !== AnimationState.IDLE && this.currentState !== AnimationState.ATTACKING && this.currentState !== AnimationState.DASH && !this.isShieldActive) {
         this.updateTankThrusterSceneScale();
         this.applyTankThrusterTuning(this.loadTankThrusterTuningFromConfig());
       this.playAnimation(AnimationState.IDLE);
@@ -778,6 +964,67 @@ export class PlayerAnimationController {
     const frameSpan = Math.max(1, to - from);
     const fps = firstTarget?.framePerSecond ?? 60;
     return frameSpan / Math.max(1, fps);
+  }
+
+  private getAnimationGroupBaseDuration(group: AnimationGroup | null | undefined): number {
+    if (!group) {
+      return 0.5;
+    }
+    const firstTarget = group.targetedAnimations?.[0]?.animation;
+    const from = typeof group.from === 'number' ? group.from : 0;
+    const to = typeof group.to === 'number' ? group.to : from + 1;
+    const frameSpan = Math.max(1, to - from);
+    const fps = firstTarget?.framePerSecond ?? 60;
+    return frameSpan / Math.max(1, fps);
+  }
+
+  getPrimaryAttackBaseDurationSeconds(): number {
+    if (this.playerClass === 'mage') {
+      const a = this.getAnimationBaseDuration('Attack_1');
+      const b = this.getAnimationBaseDuration('Attack_2');
+      return Math.max(0.05, (a + b) * 0.5);
+    }
+
+    if (this.playerClass === 'firewall') {
+      const a = this.getAnimationBaseDuration('Normal_attack_1');
+      const b = this.getAnimationBaseDuration('Normal_attack_2');
+      return Math.max(0.05, (a + b) * 0.5);
+    }
+
+    if (this.playerClass === 'rogue') {
+      const a = this._findAnimationByName('attack1');
+      const b = this._findAnimationByName('attack2');
+      const da = this.getAnimationGroupBaseDuration(a);
+      const db = this.getAnimationGroupBaseDuration(b);
+      return Math.max(0.05, (da + db) * 0.5);
+    }
+
+    if (this.playerClass === 'cat') {
+      const fallbackClip =
+        this.animationGroups.get('Take 001') ??
+        this.animationGroups.get('take 001') ??
+        this.animationGroups.values().next().value;
+      return this.getAnimationGroupBaseDuration(fallbackClip);
+    }
+
+    return 0.5;
+  }
+
+  getDashBaseDurationSeconds(): number {
+    if (this.playerClass === 'rogue') {
+      const dash = this._findAnimationByName('dash') ?? this._findAnimationByName('attack1') ?? this._findAnimationByName('attack2');
+      return this.getAnimationGroupBaseDuration(dash);
+    }
+
+    if (this.playerClass === 'cat') {
+      const fallbackClip =
+        this.animationGroups.get('Take 001') ??
+        this.animationGroups.get('take 001') ??
+        this.animationGroups.values().next().value;
+      return this.getAnimationGroupBaseDuration(fallbackClip);
+    }
+
+    return this.getPrimaryAttackBaseDurationSeconds();
   }
 
   /**

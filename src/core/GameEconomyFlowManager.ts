@@ -54,7 +54,9 @@ export class GameEconomyFlowManager {
   }
 
   trySpendCurrency(cost: number): boolean {
-    const spent = this.runEconomy.trySpendCurrency(cost);
+    const discountMultiplier = this.bonusSystemManager.getShopDiscountMultiplier();
+    const adjustedCost = Math.max(1, Math.ceil(cost * discountMultiplier));
+    const spent = this.runEconomy.trySpendCurrency(adjustedCost);
     if (!spent) return false;
     this.hudManager.updateCurrency(this.runEconomy.getCurrency());
     return true;

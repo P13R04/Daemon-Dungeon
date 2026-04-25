@@ -23,9 +23,9 @@ export class ConfigLoader {
 
   async loadAllConfigs(): Promise<void> {
     try {
-      this.playerConfig = await this.loadJSON<PlayerConfig>('/src/data/config/player.json');
-      this.enemiesConfig = await this.loadJSON<EnemiesConfig>('/src/data/config/enemies.json');
-      this.gameplayConfig = await this.loadJSON<GameplayConfig>('/src/data/config/gameplay.json');
+      this.playerConfig = await this.loadJSON<PlayerConfig>('/data/config/player.json');
+      this.enemiesConfig = await this.loadJSON<EnemiesConfig>('/data/config/enemies.json');
+      this.gameplayConfig = await this.loadJSON<GameplayConfig>('/data/config/gameplay.json');
 
       const roomModules = import.meta.glob('../data/rooms/room_*.json', { eager: true }) as Record<
         string,
@@ -38,7 +38,7 @@ export class ConfigLoader {
       if (loadedRooms.length > 0) {
         this.roomsConfig = loadedRooms.sort((a, b) => a.id.localeCompare(b.id));
       } else {
-        this.roomsConfig = await this.loadJSON<RoomsConfig>('/src/data/config/rooms.json');
+        this.roomsConfig = await this.loadJSON<RoomsConfig>('/data/config/rooms.json');
       }
 
       console.log('All configs loaded successfully');
