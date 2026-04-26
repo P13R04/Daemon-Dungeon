@@ -2287,6 +2287,53 @@ export class PlayerController {
     this.rogueOpeningStrikeWindow += BONUS_TUNING.rogue.backdoorWindowBonusPerStack;
   }
 
+  public resetBonuses(): void {
+    const classConfig = this.getCurrentClassConfig();
+    if (!classConfig) return;
+
+    // Reset base stats
+    this.fireRate = classConfig.baseStats.fireRate;
+    this.baseFireRate = this.fireRate;
+    this.speed = classConfig.baseStats.speed;
+    
+    // Reset general bonus variables
+    this.bonusDodgeChance = 0;
+    this.bonusCritChance = 0;
+    this.bonusCritMultiplier = 1.0;
+    this.bonusUltChargeRateMultiplier = 1.0;
+    this.bonusUltDurationMultiplier = 1.0;
+    this.bonusStanceEfficiencyMultiplier = 1.0;
+    this.poisonBonusPercent = 0;
+    this.poisonDuration = 0;
+    
+    // Reset class specific bonus variables
+    this.mageArcMultishotStacks = 0;
+    this.mageDualBurstStacks = 0;
+    this.mageBounceStacks = 0;
+    this.magePierceStacks = 0;
+    this.mageReactiveAoeStacks = 0;
+    this.mageImpactAoeStacks = 0;
+    this.mageAutolockEnabled = false;
+    
+    this.firewallThornsDamageRatio = 0;
+    this.firewallDamageReductionRatio = 0;
+    
+    this.rogueLifestealRatio = 0;
+    this.rogueChainDamageRatio = 0;
+    this.rogueChainRadius = 0;
+    this.rogueChainMaxTargets = 1; // Default is usually 1 target
+
+    // Re-apply class config to restore specific values that might have been modified by stacks
+    if (this.classId === 'mage') this.applySecondaryConfig();
+    if (this.classId === 'firewall') this.applyTankConfig();
+    if (this.isRogueLikeClass()) this.applyRogueConfig();
+    
+    // Reset HP to base
+    if (this.health) {
+      this.health.setMaxHP(classConfig.baseStats.hp, true);
+    }
+  }
+
   onPlayerDealtDamage(damage: number): void {
     if (!Number.isFinite(damage) || damage <= 0) return;
     if (!this.isRogueLikeClass() || this.rogueLifestealRatio <= 0) return;

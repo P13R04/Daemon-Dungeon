@@ -3,7 +3,7 @@
  */
 
 import { Scene, Engine, Vector3, TransformNode, AbstractMesh, Sound } from '@babylonjs/core';
-import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image } from '@babylonjs/gui';
+import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image, StackPanel } from '@babylonjs/gui';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { VoicelineConfig, AnimationPhase, getVoiceline } from '../data/voicelines/VoicelineDefinitions';
@@ -53,7 +53,7 @@ export class HUDManager {
   private logPanel: Rectangle | null = null;
   private logLines: TextBlock[] = [];
   private logMessages: string[] = [];
-  private statusPanel: Rectangle | null = null;
+  private statusPanel: Rectangle | StackPanel | null = null;
   private secondaryStatusText: TextBlock | null = null;
   private secondaryResourceBarFill: Rectangle | null = null;
   private itemStatusText: TextBlock | null = null;
@@ -70,8 +70,8 @@ export class HUDManager {
   private daemonAudioUnlockHandler: (() => void) | null = null;
   private daemonTypingIndex: number = 0;
   private daemonTypingTimer: number = 0;
-  private daemonTypingSpeed: number = 55;
-  private daemonTypingDelay: number = 0.8; // Delay before typing starts
+  private daemonTypingSpeed: number = 220;
+  private daemonTypingDelay: number = 0.01; // Delay before typing starts
   private daemonTypingDelayTimer: number = 0;
   private daemonPauseEndTime: number = 0; // For mid-text pauses
   private daemonFullText: string = '';
@@ -120,6 +120,11 @@ export class HUDManager {
   private avatarImageCache: Map<string, HTMLImageElement> = new Map();
   private avatarPreloadPromise: Promise<void> | null = null;
   private readonly daemonAvatarSets: Record<string, string[]> = DAEMON_ANIMATION_PRESETS;
+  private scoreText!: TextBlock;
+  private comboText!: TextBlock;
+  private comboMultiplierText!: TextBlock;
+  private comboTimerFill!: Rectangle;
+  private comboContainer!: Rectangle;
   private unsubscribers: Array<() => void> = [];
 
   constructor(private scene: Scene) {
@@ -146,7 +151,7 @@ export class HUDManager {
     this.guiClean.useInvalidateRectOptimization = false;
     this.guiClean.background = 'transparent';
     this.enemyGui = AdvancedDynamicTexture.CreateFullscreenUI('EnemyHUD', true, scene);
-    if (this.enemyGui.layer) this.enemyGui.layer.layerMask = SCENE_LAYER;
+    if (this.enemyGui.layer) this.enemyGui.layer.layerMask = UI_LAYER;
     this.enemyGui.useInvalidateRectOptimization = false;
     this.enemyGui.background = 'transparent';
     
@@ -224,6 +229,9 @@ export class HUDManager {
     this.unsubscribers.push(this.eventBus.on(GameEvents.DEV_ROOM_LOAD_REQUESTED, () => {
       this.clearEnemyHealthBars();
     }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.SCORE_CHANGED, (data: any) => this.updateScore(data)));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.SCORE_COMBO_CHANGED, (data: any) => this.updateCombo(data)));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.HIGH_SCORE_BEATEN, () => this.handleHighScoreBeaten()));
   }
 
   private handleEnemyDamagedEvent(enemyEvent: EnemyEventPayload): void {
@@ -330,12 +338,12 @@ export class HUDManager {
     // Top bar
     this.topBar = new Rectangle('hud_top_bar');
     this.topBar.width = 1;
-    this.topBar.height = '60px';
+    this.topBar.height = '80px';
     this.topBar.thickness = 0;
     this.topBar.background = 'rgba(0, 0, 0, 0.45)';
     this.topBar.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.topBar.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.guiFx.addControl(this.topBar);
+    this.guiClean.addControl(this.topBar);
 
     const integrityLabel = new TextBlock('integrity_label');
     integrityLabel.text = 'INTEGRITY:';
@@ -392,7 +400,7 @@ export class HUDManager {
     this.waveText.fontSize = 18;
     this.waveText.fontFamily = fontFamily;
     this.waveText.color = '#7CFFEA';
-    this.waveText.topInPixels = 8;
+    this.waveText.topInPixels = 32;
     this.waveText.width = '160px';
     this.waveText.height = '24px';
     this.waveText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -406,7 +414,7 @@ export class HUDManager {
     this.currencyText.fontSize = 16;
     this.currencyText.fontFamily = fontFamily;
     this.currencyText.color = '#FFD782';
-    this.currencyText.topInPixels = 32;
+    this.currencyText.topInPixels = 54;
     this.currencyText.width = '220px';
     this.currencyText.height = '22px';
     this.currencyText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -414,6 +422,51 @@ export class HUDManager {
     this.currencyText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.currencyText.left = '-20px';
     this.topBar.addControl(this.currencyText);
+
+    // Score Display (Top Right)
+    this.scoreText = new TextBlock('score_text');
+    this.scoreText.text = 'SCORE: 00000000';
+    this.scoreText.fontSize = 18;
+    this.scoreText.fontFamily = fontFamily;
+    this.scoreText.color = '#7CFFEA';
+    this.scoreText.left = '-20px';
+    this.scoreText.width = '240px';
+    this.scoreText.height = '40px';
+    this.scoreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.scoreText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.scoreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.scoreText.topInPixels = 8;
+    this.topBar.addControl(this.scoreText);
+
+    // Combo Container
+    this.comboContainer = new Rectangle('combo_container');
+    this.comboContainer.width = '140px';
+    this.comboContainer.height = '60px';
+    this.comboContainer.left = -20;
+    this.comboContainer.top = 85;
+    this.comboContainer.thickness = 0;
+    this.comboContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.comboContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.comboContainer.isVisible = false;
+    this.guiClean.addControl(this.comboContainer);
+
+    this.comboText = new TextBlock('combo_text');
+    this.comboText.text = 'COMBO X0';
+    this.comboText.fontSize = 16;
+    this.comboText.fontFamily = fontFamily;
+    this.comboText.color = '#FFD782';
+    this.comboText.top = '-10px';
+    this.comboText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.comboContainer.addControl(this.comboText);
+
+    this.comboMultiplierText = new TextBlock('combo_multiplier_text');
+    this.comboMultiplierText.text = '1.0X';
+    this.comboMultiplierText.fontSize = 24;
+    this.comboMultiplierText.fontFamily = fontFamily;
+    this.comboMultiplierText.color = '#FFFFFF';
+    this.comboMultiplierText.top = '15px';
+    this.comboMultiplierText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.comboContainer.addControl(this.comboMultiplierText);
 
     // Bottom-left command feed
     this.logPanel = new Rectangle('log_panel');
@@ -426,7 +479,7 @@ export class HUDManager {
     this.logPanel.top = -16;
     this.logPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.logPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    this.guiFx.addControl(this.logPanel);
+    this.guiClean.addControl(this.logPanel);
 
     const logsStack = new Rectangle('log_stack_container');
     logsStack.width = 1;
@@ -461,7 +514,7 @@ export class HUDManager {
     this.statusPanel.top = -16;
     this.statusPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.statusPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    this.guiFx.addControl(this.statusPanel);
+    this.guiClean.addControl(this.statusPanel);
 
     this.playerUltDisplay = new TextBlock('ultimate_status');
     this.playerUltDisplay.text = 'ULTI: 0%';
@@ -653,9 +706,7 @@ export class HUDManager {
     this.codexScreen = null;
     this.settingsScreen = null;
 
-    this.gameOverScreen = this.createOverlay('GAME OVER', 'RESTART', () => {
-      this.eventBus.emit(GameEvents.GAME_RESTART_REQUESTED);
-    });
+    this.gameOverScreen = this.createGameOverScreenPlaceholder();
     this.gameOverScreen.isVisible = false;
 
     this.roomClearScreen = this.createOverlay('ROOM CLEARED', 'NEXT ROOM', () => {
@@ -997,6 +1048,154 @@ export class HUDManager {
     return container;
   }
 
+  private createGameOverScreenPlaceholder(): Rectangle {
+    const container = new Rectangle('gameover_screen');
+    container.width = 1;
+    container.height = 1;
+    container.thickness = 0;
+    container.background = 'rgba(0,0,0,0.85)';
+    container.isVisible = false;
+    container.isPointerBlocker = true;
+    this.guiClean.addControl(container);
+    return container;
+  }
+
+  public showGameOverScreen(stats: { score: number; highScore: number; roomReached: number; isNewHighScore: boolean }): void {
+    if (!this.gameOverScreen) return;
+    this.gameOverScreen.isVisible = true;
+    this.gameOverScreen.clearControls();
+    
+    const container = this.gameOverScreen;
+    const fontFamily = 'Consolas, monospace';
+
+    // Title
+    const title = new TextBlock('go_title');
+    title.text = 'SYSTEM FAILURE';
+    title.color = '#FF3B5C';
+    title.fontSize = 52;
+    title.fontFamily = fontFamily;
+    title.top = '-220px';
+    title.shadowBlur = 10;
+    title.shadowColor = '#FF0000';
+    container.addControl(title);
+
+    // Score Info
+    const scoreLabel = new TextBlock('go_score_label');
+    scoreLabel.text = 'FINAL SCORE';
+    scoreLabel.color = '#9FEFE1';
+    scoreLabel.fontSize = 18;
+    scoreLabel.fontFamily = fontFamily;
+    scoreLabel.top = '-140px';
+    container.addControl(scoreLabel);
+
+    const scoreValue = new TextBlock('go_score_value');
+    scoreValue.text = stats.score.toLocaleString('en-US').padStart(8, '0');
+    scoreValue.color = '#FFFFFF';
+    scoreValue.fontSize = 42;
+    scoreValue.fontFamily = fontFamily;
+    scoreValue.top = '-90px';
+    container.addControl(scoreValue);
+
+    if (stats.isNewHighScore) {
+      const newRecord = new TextBlock('go_new_record');
+      newRecord.text = '!!! NEW HIGH SCORE !!!';
+      newRecord.color = '#FFD782';
+      newRecord.fontSize = 20;
+      newRecord.fontFamily = fontFamily;
+      newRecord.top = '-50px';
+      container.addControl(newRecord);
+    } else {
+      const best = new TextBlock('go_best');
+      best.text = `BEST: ${stats.highScore.toLocaleString('en-US').padStart(8, '0')}`;
+      best.color = '#647D7D';
+      best.fontSize = 16;
+      best.fontFamily = fontFamily;
+      best.top = '-50px';
+      container.addControl(best);
+    }
+
+    // Room Info
+    const roomInfo = new TextBlock('go_room');
+    roomInfo.text = `REACHED SECTOR: ${stats.roomReached}`;
+    roomInfo.color = '#7CFFEA';
+    roomInfo.fontSize = 22;
+    roomInfo.fontFamily = fontFamily;
+    roomInfo.top = '10px';
+    container.addControl(roomInfo);
+
+    // Buttons
+    const buttonPanel = new StackPanel('go_buttons');
+    buttonPanel.width = '240px';
+    buttonPanel.top = '140px';
+    container.addControl(buttonPanel);
+
+    const createButton = (text: string, color: string, onClick: () => void) => {
+      const btn = Button.CreateSimpleButton(`go_btn_${text}`, text);
+      btn.height = '42px';
+      btn.width = '240px';
+      btn.color = color;
+      btn.background = 'rgba(20, 30, 35, 0.8)';
+      btn.thickness = 1;
+      btn.cornerRadius = 4;
+      btn.fontSize = 16;
+      btn.fontFamily = fontFamily;
+      btn.paddingTop = '8px';
+      btn.onPointerUpObservable.add(() => onClick());
+      buttonPanel.addControl(btn);
+      return btn;
+    };
+
+    createButton('RETRY RUN', '#B8FFE6', () => {
+      this.eventBus.emit(GameEvents.GAME_RESTART_REQUESTED);
+    });
+
+    createButton('CHANGE CLASS', '#9FEFE1', () => {
+      this.hideOverlays();
+      this.eventBus.emit(GameEvents.CLASS_SELECT_REQUESTED);
+    });
+
+    createButton('MAIN MENU', '#647D7D', () => {
+      this.hideOverlays();
+      this.eventBus.emit(GameEvents.MAIN_MENU_REQUESTED);
+    });
+  }
+
+  private updateScore(data: any): void {
+    if (this.scoreText) {
+      this.scoreText.text = `SCORE: ${Math.round(data.score).toString().padStart(8, '0')}`;
+    }
+  }
+
+  private updateCombo(data: any): void {
+    if (!this.comboContainer) return;
+    
+    if (data.combo > 1) {
+      this.comboContainer.isVisible = true;
+      this.comboText.text = `COMBO X${data.combo}`;
+      this.comboMultiplierText.text = `${data.multiplier.toFixed(1)}X`;
+      
+      // Pulse effect
+      this.comboMultiplierText.scaleX = 1.3;
+      this.comboMultiplierText.scaleY = 1.3;
+      setTimeout(() => {
+        this.comboMultiplierText.scaleX = 1.0;
+        this.comboMultiplierText.scaleY = 1.0;
+      }, 100);
+    } else {
+      this.comboContainer.isVisible = false;
+    }
+  }
+
+  private handleHighScoreBeaten(): void {
+    // Show a small notification or visual effect on the score
+    if (this.scoreText) {
+      this.scoreText.color = '#FFD782';
+      setTimeout(() => {
+        this.scoreText.color = '#7CFFEA';
+      }, 2000);
+    }
+  }
+
   private createEnemyHealthBar(enemyId: string, enemyName?: string, mesh?: AbstractMesh): void {
     const existing = this.enemyHealthBars.get(enemyId);
     if (existing) {
@@ -1073,7 +1272,7 @@ export class HUDManager {
     text.alpha = 1.0;
     text.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     text.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.guiFx.addControl(text);
+    this.enemyGui?.addControl(text);
 
     const jitter = new Vector3(
       (Math.random() - 0.5) * 0.35,
@@ -1290,7 +1489,7 @@ export class HUDManager {
     this.daemonHoldTimer = 0;
     this.daemonPauseEndTime = 0;
     this.daemonHoldDuration = voiceline.holdDuration ?? 3.5;
-    this.daemonTypingSpeed = voiceline.typingSpeed ?? 55;
+    this.daemonTypingSpeed = voiceline.typingSpeed ?? 120;
     this.daemonMessageText.text = '';
     this.daemonVisible = true;
     this.daemonContainer.isVisible = true;
@@ -1838,12 +2037,12 @@ export class HUDManager {
 
   private computeAvatarInterval(message: string, emotion: string): number {
     const length = message.length;
-    let interval = 0.12;
-    if (length <= 20) interval = 0.08;
-    if (length >= 80) interval = 0.15;
-    if (message.includes('!') || message.includes('?')) interval = 0.07;
-    if (emotion === 'rire' || emotion === 'goofy') interval = 0.08;
-    if (emotion === 'bsod' || emotion === 'error') interval = 0.1;
+    let interval = 0.08;
+    if (length <= 20) interval = 0.06;
+    if (length >= 80) interval = 0.12;
+    if (message.includes('!') || message.includes('?')) interval = 0.05;
+    if (emotion === 'rire' || emotion === 'goofy') interval = 0.07;
+    if (emotion === 'bsod' || emotion === 'error') interval = 0.08;
     return interval;
   }
 
@@ -1900,10 +2099,8 @@ export class HUDManager {
     }
   }
 
-  private getAvatarFrameSrc(fileName: string, normalization: 'NFC' | 'NFD' = 'NFD'): string {
+  private getAvatarFrameSrc(fileName: string, normalization: 'NFC' | 'NFD' = 'NFC'): string {
     const normalizedBase = getHudAssetBaseUrl();
-    // Normalize to specified form and encode for URL
-    // macOS uses NFD (decomposed) while JavaScript uses NFC (composed) by default
     const normalizedFileName = fileName.normalize(normalization);
     const encodedFileName = encodeURIComponent(normalizedFileName);
     return `${normalizedBase}avatar_frames_cutout2/${encodedFileName}`;
@@ -2008,11 +2205,7 @@ export class HUDManager {
     this.setHudVisible(false);
   }
 
-  showGameOverScreen(): void {
-    if (this.gameOverScreen) this.gameOverScreen.isVisible = true;
-    this.hideMenuScreens();
-    this.setHudVisible(false);
-  }
+
 
   showRoomClearScreen(): void {
     if (this.roomClearScreen) this.roomClearScreen.isVisible = true;

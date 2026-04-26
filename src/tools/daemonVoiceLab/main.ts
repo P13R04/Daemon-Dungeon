@@ -1411,16 +1411,17 @@ function getRuntimeBaseUrl(): string {
 
 function buildAvatarBaseCandidates(): string[] {
   const runtimeBase = getRuntimeBaseUrl();
-  const fromRuntimeBase = new URL('assets/avatar_frames_cutout2/', `${window.location.origin}${runtimeBase}`).href;
-  const fromOriginRoot = new URL('assets/avatar_frames_cutout2/', `${window.location.origin}/`).href;
-  const fromDocumentBase = new URL('assets/avatar_frames_cutout2/', document.baseURI).href;
-  const fromScriptSibling = new URL('./assets/avatar_frames_cutout2/', import.meta.url).href;
-  const fromScriptParent = new URL('../assets/avatar_frames_cutout2/', import.meta.url).href;
+  const fromRuntimeBase = new URL('avatar_frames_cutout2/', `${window.location.origin}${runtimeBase}`).href;
+  const fromOriginRoot = new URL('avatar_frames_cutout2/', `${window.location.origin}/`).href;
+  const fromDocumentBase = new URL('avatar_frames_cutout2/', document.baseURI).href;
+  const fromScriptSibling = new URL('./avatar_frames_cutout2/', import.meta.url).href;
+  const fromScriptParent = new URL('../avatar_frames_cutout2/', import.meta.url).href;
 
   return Array.from(
     new Set([
       fromRuntimeBase,
       fromOriginRoot,
+      new URL('/avatar_frames_cutout2/', window.location.origin).href,
       fromDocumentBase,
       fromScriptSibling,
       fromScriptParent,
@@ -1428,7 +1429,7 @@ function buildAvatarBaseCandidates(): string[] {
   );
 }
 
-function buildAvatarFrameUrlCandidates(fileName: string, normalization: 'NFD' | 'NFC' = 'NFD'): string[] {
+function buildAvatarFrameUrlCandidates(fileName: string, normalization: 'NFD' | 'NFC' = 'NFC'): string[] {
   const normalized = fileName.normalize(normalization);
   const encoded = encodeURIComponent(normalized);
   return buildAvatarBaseCandidates().map((base) => `${base}${encoded}`);

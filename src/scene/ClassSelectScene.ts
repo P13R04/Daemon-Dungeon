@@ -89,10 +89,10 @@ export class ClassSelectScene {
   private classAmbientTextures: DynamicTexture[] = [];
   private classAmbientAnchors: TransformNode[] = [];
   private tankVisualTuning: TankVisualTuning = {
-    height: 0.57,
-    lateral: 0.13,
-    depth: -1.48,
-    size: 0.7,
+    height: 0.43,
+    lateral: 0.1,
+    depth: -1.11,
+    size: 0.52,
   };
   private rogueModelContainer: TransformNode | null = null;
   private rogueRawBounds: {
@@ -238,7 +238,7 @@ export class ClassSelectScene {
   }
 
   private setupCameraAndLights(): void {
-    const camera = new ArcRotateCamera('classSelectCamera', Math.PI / 2, 1.15, 11.5, new Vector3(0, 1.3, 0), this.scene);
+    const camera = new ArcRotateCamera('classSelectCamera', Math.PI / 2, 1.30, 11.5, new Vector3(0, 1.3, 0), this.scene);
     camera.lowerRadiusLimit = 8;
     camera.upperRadiusLimit = 14;
     camera.wheelPrecision = 0;
@@ -636,7 +636,7 @@ export class ClassSelectScene {
       candidateRoot.parent = root;
       const bounds = candidateRoot.getHierarchyBoundingVectors(true);
       const currentHeight = Math.max(0.001, bounds.max.y - bounds.min.y);
-      const targetHeight = 2.4;
+      const targetHeight = 3.75;
       const modelScale = targetHeight / currentHeight;
       candidateRoot.scaling.scaleInPlace(modelScale);
       candidateRoot.position = Vector3.Zero();
@@ -669,7 +669,7 @@ export class ClassSelectScene {
     const candidateRoot = result.meshes[0];
     if (candidateRoot) {
       candidateRoot.parent = root;
-      candidateRoot.scaling.scaleInPlace(0.1);
+      candidateRoot.scaling.scaleInPlace(0.075);
       candidateRoot.position = Vector3.Zero();
       candidateRoot.rotation.y = 0;
     }
@@ -704,7 +704,7 @@ export class ClassSelectScene {
       candidateRoot.parent = root;
       const bounds = candidateRoot.getHierarchyBoundingVectors(true);
       const currentHeight = Math.max(0.001, bounds.max.y - bounds.min.y);
-      const targetHeight = 2.5;
+      const targetHeight = 1.9;
       const modelScale = targetHeight / currentHeight;
       candidateRoot.scaling.scaleInPlace(modelScale);
       candidateRoot.position = Vector3.Zero();
@@ -1059,8 +1059,9 @@ export class ClassSelectScene {
 
       const depthFactor = Scalar.Clamp((z + this.radius) / (2 * this.radius), 0, 1);
       const baseScale = 0.8 + depthFactor * 0.45;
-      const catScaleBoost = item.id === 'cat' && i === this.selectedIndex ? this.roguePreviewTuning.selectedScaleMultiplier : 1;
-      const scale = baseScale * catScaleBoost;
+      const isSelected = i === this.selectedIndex;
+      const selectionBoost = isSelected ? 1.35 : 1.0;
+      const scale = baseScale * selectionBoost;
       item.root.scaling.setAll(scale);
 
       item.root.lookAt(new Vector3(0, item.root.position.y, 0));

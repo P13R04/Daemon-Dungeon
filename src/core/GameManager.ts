@@ -57,6 +57,7 @@ import { GameDaemonTestManager } from './GameDaemonTestManager';
 import { GameEconomyFlowManager } from './GameEconomyFlowManager';
 import { GameBenchmarkRunner, type BenchmarkRunResult, type BenchmarkSpikeDiagnostic } from './GameBenchmarkRunner';
 import { GameTutorialManager } from './GameTutorialManager';
+import { ScoreManager } from '../systems/ScoreManager';
 import { BONUS_TUNING } from '../data/bonuses/bonusTuning';
 
 type TextureRenderMode = 'classic' | 'proceduralRelief';
@@ -108,6 +109,7 @@ export class GameManager {
   private daemonTestManager: GameDaemonTestManager | null = null;
   private economyFlowManager: GameEconomyFlowManager | null = null;
   private tutorialManager: GameTutorialManager;
+  private scoreManager: ScoreManager;
   private readonly runtimeOrchestrator = new GameRuntimeOrchestrator();
   
   private isRunning: boolean = false;
@@ -181,9 +183,11 @@ export class GameManager {
     this.time = Time.getInstance();
     this.configLoader = ConfigLoader.getInstance();
     this.codexService = new CodexService();
-    this.eventCoordinator = new GameEventCoordinator(this.eventBus);
+    this.economyFlowManager = new GameEconomyFlowManager();
     this.tutorialManager = new GameTutorialManager();
-    // tutorialManager.initialize will be called in setupGame when roomManager is available
+    this.scoreManager = new ScoreManager();
+    this.eventCoordinator = new GameEventCoordinator(this.eventBus);
+    
     this.ultimateSystemManager = new UltimateSystemManager({
       getPlayerController: () => this.playerController,
       onTankZoneStarted: (radius) => this.combatActionManager?.ensureTankUltimateZoneVisual(radius),
@@ -404,20 +408,7 @@ export class GameManager {
     
     // Dispose gameplay if returning to menu to ensure clean state for replays
     if (this.gameplayInitialized) {
-      if (this.playerController) this.playerController.dispose();
-      if (this.enemySpawner) this.enemySpawner.dispose();
-      if (this.hudManager) this.hudManager.dispose();
-      if (this.inputManager) this.inputManager.dispose();
-      if (this.tutorialManager) this.tutorialManager.dispose();
-      if (this.projectileManager) this.projectileManager.dispose();
-      if (this.ultimateManager) this.ultimateManager.dispose();
-      if (this.worldCollisionHazardManager) this.worldCollisionHazardManager.dispose?.();
-      if (this.playerVoidRecoveryManager) this.playerVoidRecoveryManager.dispose?.();
-      
-      if (this.scene && this.scene !== this.mainMenuScene?.getScene()) {
-        this.scene.dispose();
-      }
-      this.gameplayInitialized = false;
+      this.disposeGameplay();
     }
 
     this.disposeFrontendScenes();
@@ -455,6 +446,9 @@ export class GameManager {
   }
 
   private async openClassSelectScene(isTutorial: boolean = false): Promise<void> {
+    if (this.gameplayInitialized) {
+      this.disposeGameplay();
+    }
     this.disposeFrontendScenes();
 
     const classSelectPostFx = this.configLoader.getGameplayConfig()?.postProcessing;
@@ -469,6 +463,24 @@ export class GameManager {
     }, classSelectPostFx);
     this.scene = this.classSelectScene.getScene();
   }
+
+  private disposeGameplay(): void {
+    if (this.playerController) this.playerController.dispose();
+    if (this.enemySpawner) this.enemySpawner.dispose();
+    if (this.hudManager) this.hudManager.dispose();
+    if (this.inputManager) this.inputManager.dispose();
+    if (this.tutorialManager) this.tutorialManager.dispose();
+    if (this.projectileManager) this.projectileManager.dispose();
+    if (this.ultimateManager) this.ultimateManager.dispose();
+    if (this.worldCollisionHazardManager) this.worldCollisionHazardManager.dispose?.();
+    if (this.playerVoidRecoveryManager) this.playerVoidRecoveryManager.dispose?.();
+    
+    if (this.scene && this.scene !== this.mainMenuScene?.getScene() && this.scene !== this.classSelectScene?.getScene()) {
+      this.scene.dispose();
+    }
+    this.gameplayInitialized = false;
+  }
+
 
   private async initializeGameplayScene(): Promise<void> {
     if (this.gameplayInitialized) return;
@@ -696,9 +708,16 @@ export class GameManager {
           });
           return;
         }
-        this.codexService.endRunTracking();
+        const finalScore = this.scoreManager.getScore();
+        const highScore = this.scoreManager.getHighScore();
+        const roomReached = this.currentRoomIndex + 1;
         this.transitionGameState('gameover');
-        this.hudManager.showGameOverScreen();
+        this.hudManager.showGameOverScreen({
+          score: finalScore,
+          highScore: highScore,
+          roomReached: roomReached,
+          isNewHighScore: finalScore >= highScore && finalScore > 0
+        });
       },
       onEnemySpawned: (data) => {
         const enemyType = data?.enemyType;
@@ -769,6 +788,13 @@ export class GameManager {
       onPlayerUltimateRefillRequested: () => {
         this.playerController?.refillUltimate();
       },
+      onMainMenuRequested: () => {
+        void this.openMainMenuScene();
+      },
+      onClassSelectRequested: () => {
+        void this.openClassSelectScene(false);
+      },
+
     });
 
     this.eventBusUnsubscribers = bindings.bind();
@@ -963,6 +989,15 @@ export class GameManager {
       const rawFrameMs = Math.max(0, currentTime - lastTime);
       const deltaTime = Math.min(rawFrameMs / 1000, 0.016); // Cap at 60fps for gameplay simulation
       lastTime = currentTime;
+
+      // Sync UI camera with main camera for correct HUD projection on UI_LAYER
+      if (this.gameplayInitialized && this.scene) {
+        const sc = this.scene as any;
+        if (sc.mainCamera && sc.uiCamera) {
+          sc.uiCamera.position.copyFrom(sc.mainCamera.position);
+          sc.uiCamera.setTarget(sc.mainCamera.target);
+        }
+      }
 
       const allowDeferredRoomLoads =
         !this.gameplayInitialized ||
@@ -1330,6 +1365,8 @@ export class GameManager {
   private resolveEntityCollisions(enemies: EnemyController[], deltaTime: number): void {
     this.worldCollisionHazardManager?.resolveEntityCollisions(enemies, deltaTime);
   }
+
+
 
   private applyHazardDamage(deltaTime: number): void {
     this.worldCollisionHazardManager?.applyHazardDamage(
@@ -1838,6 +1875,10 @@ export class GameManager {
     this.ultimateSystemManager.reset();
     this.bonusSystemManager.resetRun();
     this.runEconomy.resetRun();
+    this.scoreManager.reset();
+    if (this.playerController) {
+      this.playerController.resetBonuses();
+    }
     this.roomElapsedSeconds = 0;
     this.resetPlayerVoidFallState();
     this.playerController.setRogueUltimateActive(false);

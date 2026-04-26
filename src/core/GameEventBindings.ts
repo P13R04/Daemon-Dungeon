@@ -34,6 +34,8 @@ export interface GameEventBindingsCallbacks {
   onTutorialPhaseCompleted(data?: { phaseId?: string }): void;
   onTutorialEndRequested(): void;
   onPlayerUltimateRefillRequested(): void;
+  onMainMenuRequested(): void;
+  onClassSelectRequested(): void;
 }
 
 export class GameEventBindings {
@@ -134,6 +136,14 @@ export class GameEventBindings {
 
     onEvent(GameEvents.PLAYER_ULTIMATE_REFILL_REQUESTED, () => {
       if (this.callbacks.onPlayerUltimateRefillRequested) this.callbacks.onPlayerUltimateRefillRequested();
+    });
+
+    onEvent(GameEvents.MAIN_MENU_REQUESTED, () => {
+      if (this.callbacks.onMainMenuRequested) this.callbacks.onMainMenuRequested();
+    });
+
+    onEvent(GameEvents.CLASS_SELECT_REQUESTED, () => {
+      if (this.callbacks.onClassSelectRequested) this.callbacks.onClassSelectRequested();
     });
 
     return unsubscribers;

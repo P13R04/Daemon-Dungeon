@@ -218,10 +218,5 @@ export class GameTutorialManager {
     }
   }
 
-  dispose(): void {
-    this.stopTutorial();
-    this.unsubscribers.forEach(unsub => unsub());
-    this.unsubscribers = [];
-  }
 }
 

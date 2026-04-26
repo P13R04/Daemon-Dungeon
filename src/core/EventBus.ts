@@ -111,6 +111,8 @@ export const GameEvents = {
   // Game flow events
   GAME_START_REQUESTED: 'game:startRequested',
   GAME_RESTART_REQUESTED: 'game:restartRequested',
+  MAIN_MENU_REQUESTED: 'game:mainMenuRequested',
+  CLASS_SELECT_REQUESTED: 'game:classSelectRequested',
   CODEX_OPEN_REQUESTED: 'game:codexOpenRequested',
   ROOM_NEXT_REQUESTED: 'room:nextRequested',
   TUTORIAL_START_REQUESTED: 'game:tutorialStartRequested',
@@ -131,5 +133,10 @@ export const GameEvents = {
   CODEX_ENTRY_UNLOCKED: 'codex:entryUnlocked',
   ACHIEVEMENT_UNLOCKED: 'achievement:unlocked',
   ACHIEVEMENT_PROGRESS: 'achievement:progress',
+  
+  // Score events
+  SCORE_CHANGED: 'score:changed',
+  SCORE_COMBO_CHANGED: 'score:comboChanged',
+  HIGH_SCORE_BEATEN: 'score:highScoreBeaten',
 };
 
