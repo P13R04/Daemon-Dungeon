@@ -192,7 +192,7 @@ export class GameManager {
     this.time = Time.getInstance();
     this.configLoader = ConfigLoader.getInstance();
     this.codexService = new CodexService();
-    this.economyFlowManager = new GameEconomyFlowManager();
+    // this.economyFlowManager initialized later when dependencies ready
     this.tutorialManager = new GameTutorialManager();
     this.scoreManager = new ScoreManager();
     this.eventCoordinator = new GameEventCoordinator(this.eventBus);
@@ -823,7 +823,7 @@ export class GameManager {
         this.tutorialManager = new GameTutorialManager();
         this.tutorialManager.startTutorial(this.selectedClassId as any || 'mage');
         this.tutorialManager.initialize({
-          getRoomCenter: () => this.roomManager.getRoomCenterWorld(),
+          getRoomCenter: () => this.roomManager.getCurrentRoomCenter(),
           getRoomIndex: () => this.currentRoomIndex
         });
 
@@ -834,8 +834,9 @@ export class GameManager {
         if (!this.gameplayInitialized || !this.isTutorialRun) return;
         if (data?.phaseId === 'shop_start') {
           this.enemySpawner.dispose();
-          if (data?.gold) {
-            this.runEconomy.addCurrency(data.gold);
+          const tutorialData = data as any;
+          if (tutorialData?.gold) {
+            this.runEconomy.addCurrency(tutorialData.gold);
             this.hudManager.updateCurrency(this.runEconomy.getCurrency());
           }
           this.roomCleared = true;
@@ -972,7 +973,7 @@ export class GameManager {
     }
 
     if (data?.attacker === 'player') {
-      this.tryTriggerDaemonTestOnFire();
+      // Legacy trigger removed - now handled in DaemonVoicelineManager
     }
     this.resetDaemonIdleTimer();
   }
@@ -1347,7 +1348,6 @@ export class GameManager {
       applySecondaryEnemySlow: (enemies, center, radius, speedMultiplier) => this.applySecondaryEnemySlow(enemies, center, radius, speedMultiplier),
       resolveEntityCollisions: (enemies, frameDelta) => this.resolveEntityCollisions(enemies, frameDelta),
       applyHazardDamage: (frameDelta) => this.applyHazardDamage(frameDelta),
-      updateDaemonIdleTest: (frameDelta, enemyCount) => this.updateDaemonIdleTest(frameDelta, enemyCount),
       resolveSecondaryBurst: (burst, enemies) => this.resolveSecondaryBurst(burst, enemies),
       resolveMageReactiveBurst: (burst, enemies) => this.resolveMageReactiveBurst(burst, enemies),
       resolveTankSweep: (sweep, enemies) => this.resolveTankSweep(sweep, enemies),
@@ -1377,17 +1377,6 @@ export class GameManager {
     this.dispose();
   }
 
-  private updateDaemonIdleTest(deltaTime: number, enemyCount: number): void {
-    this.daemonTestManager?.updateIdle(
-      deltaTime,
-      enemyCount,
-      this.gameState,
-      this.roomManager.getCurrentRoom()?.id,
-      this.hudManager.isDaemonMessageActive(),
-      this.isDaemonTestEnabled(),
-    );
-  }
-
   private resetDaemonIdleTimer(): void {
     // Legacy call removed - now handled in DaemonVoicelineManager.update
   }
@@ -1395,18 +1384,6 @@ export class GameManager {
   private isDaemonTestEnabled(): boolean {
     const gameplayConfig = this.configLoader.getGameplayConfig();
     return !!gameplayConfig?.debugConfig?.daemonVoicelineTest;
-  }
-
-  private triggerDaemonTestVoiceline(): void {
-    this.daemonTestManager?.tryTriggerOnFire(
-      this.roomManager.getCurrentRoom()?.id,
-      this.isDaemonTestEnabled(),
-      this.hudManager.isDaemonMessageActive(),
-    );
-  }
-
-  private tryTriggerDaemonTestOnFire(): void {
-    this.triggerDaemonTestVoiceline();
   }
 
   private dispose(): void {
@@ -1466,7 +1443,6 @@ export class GameManager {
     this.combatActionManager = null;
     this.playerVoidRecoveryManager?.reset();
     this.playerVoidRecoveryManager = null;
-    this.daemonTestManager = null;
     this.economyFlowManager = null;
     this.roomStreamingManager = null;
     this.worldCollisionHazardManager = null;

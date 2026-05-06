@@ -125,4 +125,8 @@ export class GamePlayerVoidRecoveryManager {
       }, 16);
     }
   }
+
+  dispose(): void {
+    this.reset();
+  }
 }

@@ -1703,7 +1703,7 @@ export class HUDManager {
     // Set up voiceline messaging
     const processedMessage = this.replaceKeyPlaceholders(voiceline.message);
     this.daemonFullText = processedMessage;
-    this.daemonDisplayText = stripPauseMarkers(processedMessage);
+    this.daemonDisplayText = stripAllSpecialMarkers(processedMessage);
     this.daemonTypingIndex = 0;
     this.daemonTypingTimer = 0;
     this.daemonTypingDelayTimer = 0;
@@ -1812,7 +1812,7 @@ export class HUDManager {
     }
   }
 
-  private async showDaemonMessage(
+  public async showDaemonMessage(
     message: string,
     emotion?: string,
     options?: {

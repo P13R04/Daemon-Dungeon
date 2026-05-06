@@ -189,4 +189,8 @@ export class GameWorldCollisionHazardManager {
 
     return new Vector3(pos.x + nx * push, pos.y, pos.z + nz * push);
   }
+
+  dispose(): void {
+    // No specific cleanup needed yet
+  }
 }

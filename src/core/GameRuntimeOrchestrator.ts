@@ -50,7 +50,6 @@ export type GameRuntimeFrameContext = {
   applySecondaryEnemySlow: (enemies: EnemyController[], center: Vector3, radius: number, speedMultiplier: number) => void;
   resolveEntityCollisions: (enemies: EnemyController[], deltaTime: number) => void;
   applyHazardDamage: (deltaTime: number) => void;
-  updateDaemonIdleTest: (deltaTime: number, enemyCount: number) => void;
   resolveSecondaryBurst: (burst: NonNullable<ReturnType<PlayerController['consumePendingSecondaryBurst']>>, enemies: EnemyController[]) => void;
   resolveMageReactiveBurst: (burst: NonNullable<ReturnType<PlayerController['consumePendingMageReactiveBurst']>>, enemies: EnemyController[]) => void;
   resolveTankSweep: (sweep: NonNullable<ReturnType<PlayerController['consumePendingTankSweep']>>, enemies: EnemyController[]) => void;
@@ -184,8 +183,6 @@ export class GameRuntimeOrchestrator {
     frameProfiler?.mark('ultimateManagerUpdate');
     this.updateHudFrame(context, deltaTime);
     frameProfiler?.mark('hudUpdate');
-    context.updateDaemonIdleTest(deltaTime, enemies.length);
-    frameProfiler?.mark('daemonIdleUpdate');
     this.updateEnemyHealthBars(context, enemies);
     frameProfiler?.mark('enemyHealthBarUpdate');
     this.checkRoomCompletionAndBonusDoor(context, enemies, hasPendingSpawns);

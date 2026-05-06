@@ -2,7 +2,7 @@
  * EnemyController - Controls a single enemy
  */
 
-import { Scene, Mesh, Vector3, SceneLoader, AnimationGroup, TransformNode, StandardMaterial, Color3, MeshBuilder, AbstractMesh } from '@babylonjs/core';
+import { Scene, Mesh, Vector3, SceneLoader, AnimationGroup, TransformNode, StandardMaterial, Color3, MeshBuilder, AbstractMesh, Node } from '@babylonjs/core';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { Health } from '../components/Health';
 import { Knockback } from '../components/Knockback';
@@ -2144,6 +2144,11 @@ export class EnemyController {
 
   getBehavior(): string {
     return this.behavior;
+  }
+
+  public isStationary(): boolean {
+    const stationary = ['turret', 'bullet_hell', 'mage_missile', 'missile'];
+    return stationary.includes(this.behavior) || this.behavior === 'pong';
   }
 
   isSlowable(): boolean {

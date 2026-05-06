@@ -97,7 +97,7 @@ export class CodexService {
     classHighestRoom: {},
     uniqueBonusesSelectedLifetime: [],
   };
-  private catalogState: CodexSnapshot['catalog'] = {
+  private catalogState: { runEnemyTypes: string[] } = {
     runEnemyTypes: [],
   };
   private devUnlockCodexEntries: boolean = false;
@@ -641,8 +641,7 @@ export class CodexService {
         ...(parsed.stats ?? {}),
       };
       this.catalogState = {
-        ...this.catalogState,
-        ...(parsed.catalog ?? {}),
+        runEnemyTypes: parsed.catalog?.runEnemyTypes ?? [],
       };
       this.devUnlockCodexEntries = parsed.dev?.unlockCodexEntries ?? false;
 
