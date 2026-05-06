@@ -1,0 +1,40 @@
+name: Build & Deploy to itch.io
+
+on:
+  push:
+    branches: [main]
+  # or use releases instead:
+  # release:
+  #   types: [published]
+
+jobs:
+  build-and-upload:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: npm run build
+
+
+      - name: Download Butler
+        run: |
+          curl -L -o butler.zip https://broth.itch.ovh/butler/darwin-amd64/LATEST/archive/default
+          unzip butler.zip
+          chmod +x butler
+
+      - name: Upload to itch.io
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          ./butler push dist/ yourname/your-game:html --userversion ${GITHUB_SHA}
