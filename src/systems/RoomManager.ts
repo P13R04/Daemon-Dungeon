@@ -1033,6 +1033,22 @@ export class RoomManager {
     return this.wallsVisible;
   }
 
+  /**
+   * Returns all wall meshes of the currently active room instance.
+   * Only includes meshes tagged `isRoomWall: true` and excludes pushable crates,
+   * so WallOcclusionManager can safely animate their `mesh.visibility`.
+   */
+  public getCurrentRoomWallMeshes(): AbstractMesh[] {
+    if (!this.currentRoomKey) return [];
+    const meshes = this.roomMeshes.get(this.currentRoomKey);
+    if (!meshes) return [];
+    return meshes.filter((mesh) => {
+      if (mesh.isDisposed()) return false;
+      const meta = mesh.metadata as { isRoomWall?: boolean; isPushableCrate?: boolean } | undefined;
+      return meta?.isRoomWall === true && meta?.isPushableCrate !== true;
+    });
+  }
+
   getDoorPosition(): Vector3 | null {
     if (!this.currentRoomKey) return null;
     const door = this.roomDoors.get(this.currentRoomKey);

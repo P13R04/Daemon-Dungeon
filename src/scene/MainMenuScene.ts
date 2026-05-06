@@ -9,6 +9,7 @@ import {
   Slider,
   StackPanel,
   TextBlock,
+  Image,
 } from '@babylonjs/gui';
 import { UI_LAYER } from '../ui/uiLayers';
 import {
@@ -20,6 +21,12 @@ import {
   KeybindingAction,
   normalizeInputKey,
 } from '../settings/GameSettings';
+import { EventBus, GameEvents } from '../core/EventBus';
+import { HUDManager } from '../systems/HUDManager';
+import { buildHudAssetUrl } from '../systems/hud/HudAssetPaths';
+import { UIFactory } from '../ui/UIFactory';
+import { UITheme } from '../ui/UITheme';
+import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 
 type AudioChannel = keyof AudioSettings;
 
@@ -42,6 +49,8 @@ export class MainMenuScene {
   private gui: AdvancedDynamicTexture;
   private menuPanel: Rectangle | null = null;
   private menuHint: TextBlock | null = null;
+  private glitchFx!: DaemonGlitchFx;
+  private titleFlickerTime = 0;
   private settingsOverlay: Rectangle | null = null;
 
   private settingsSnapshot: GameSettings = GameSettingsStore.get();
@@ -57,11 +66,21 @@ export class MainMenuScene {
   private catGodModeCheckbox: Checkbox | null = null;
   private lightweightTexturesCheckbox: Checkbox | null = null;
   private progressiveSpawnCheckbox: Checkbox | null = null;
+  private wallOcclusionCheckbox: Checkbox | null = null;
   private roomPreloadAheadSlider: Slider | null = null;
   private roomPreloadAheadValueText: TextBlock | null = null;
   private captureHintText: TextBlock | null = null;
 
   private awaitingRebind: KeybindingAction | null = null;
+  private readonly eventBus: EventBus = EventBus.getInstance();
+  private achievementToast: Rectangle | null = null;
+  private achievementToastTitle: TextBlock | null = null;
+  private achievementToastDescription: TextBlock | null = null;
+  private achievementToastTimer: number = 0;
+  private achievementToastObserver: any = null;
+  private unsubscribeAchievementToast: (() => void) | null = null;
+  private achievementIconPlaceholder: Rectangle | null = null;
+  private achievementToastArtwork: Image | null = null;
 
   private readonly keyCaptureHandler = (event: KeyboardEvent) => {
     if (event.key === 'Escape') {
@@ -96,7 +115,7 @@ export class MainMenuScene {
     private onBenchmarkRequested: () => void = () => {}
   ) {
     this.scene = new Scene(engine);
-    this.scene.clearColor = new Color4(0.01, 0.01, 0.02, 1);
+    this.scene.clearColor = Color4.FromHexString(UITheme.colors.bgVoid);
 
     const camera = new FreeCamera('mainMenuCamera', new Vector3(0, 0, -10), this.scene);
     camera.setTarget(Vector3.Zero());
@@ -109,7 +128,33 @@ export class MainMenuScene {
 
     this.createMainButtons();
     this.createSettingsOverlay();
+    this.glitchFx = new DaemonGlitchFx();
+    this.createAchievementToast();
     this.refreshSettingsUi();
+
+    this.unsubscribeAchievementToast = this.eventBus.on(GameEvents.ACHIEVEMENT_UNLOCKED, (data?: { name?: string; achievementId?: string; description?: string }) => {
+      const id = data?.achievementId || 'unknown';
+      const name = typeof data?.name === 'string' && data.name.trim().length > 0
+        ? data.name.trim()
+        : id;
+      const description = typeof data?.description === 'string' ? data.description.trim() : '';
+      
+      HUDManager.achievementToastQueue.push({ id, name, description });
+      
+      if (!HUDManager.achievementToastActive) {
+        this.showNextAchievementToast();
+      }
+    });
+
+    this.achievementToastObserver = this.scene.onBeforeRenderObservable.add(() => {
+      const deltaTime = this.engine.getDeltaTime() / 1000;
+      this.updateAchievementToast(deltaTime);
+    });
+
+    // Resume displaying achievements if queue is not empty and no toast is active
+    if (HUDManager.achievementToastQueue.length > 0 && !HUDManager.achievementToastActive) {
+      this.showNextAchievementToast();
+    }
 
     this.unsubscribeSettings = GameSettingsStore.subscribe((settings) => {
       this.settingsSnapshot = settings;
@@ -124,40 +169,201 @@ export class MainMenuScene {
   }
 
   dispose(): void {
+    if (HUDManager.currentAchievement) {
+      HUDManager.achievementToastQueue.unshift(HUDManager.currentAchievement);
+      HUDManager.currentAchievement = null;
+      HUDManager.achievementToastActive = false;
+    }
     if (this.unsubscribeSettings) {
       this.unsubscribeSettings();
       this.unsubscribeSettings = null;
     }
+    if (this.unsubscribeAchievementToast) {
+      this.unsubscribeAchievementToast();
+      this.unsubscribeAchievementToast = null;
+    }
+    if (this.achievementToastObserver) {
+      this.scene.onBeforeRenderObservable.remove(this.achievementToastObserver);
+      this.achievementToastObserver = null;
+    }
+    if (this.achievementToastArtwork) {
+      this.achievementToastArtwork.dispose();
+      this.achievementToastArtwork = null;
+    }
     window.removeEventListener('keydown', this.keyCaptureHandler, true);
+    this.glitchFx.dispose();
     this.gui.dispose();
     this.scene.dispose();
   }
 
-  private createMainButtons(): void {
-    const title = new TextBlock('menuTitle');
-    title.text = 'DAEMON DUNGEON';
+  private createAchievementToast(): void {
+    const toast = new Rectangle('menuAchievementToast');
+    toast.width = '360px';
+    toast.height = '88px';
+    toast.thickness = 1;
+    toast.color = '#7CFFEA';
+    toast.background = 'rgba(4, 24, 28, 0.88)';
+    toast.left = 16;
+    toast.top = 20;
+    toast.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    toast.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    toast.isPointerBlocker = false;
+    toast.isVisible = false;
+    toast.zIndex = 1000;
+    this.gui.addControl(toast);
+    this.achievementToast = toast;
+
+    const title = new TextBlock('menuAchievementToastTitle');
+    title.text = 'ACHIEVEMENT UNLOCKED';
     title.color = '#7CFFEA';
-    title.fontSize = 56;
     title.fontFamily = 'Consolas';
+    title.fontSize = 16;
+    title.left = 88;
+    title.top = 10;
+    title.width = '260px';
+    title.height = '24px';
+    title.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    title.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    toast.addControl(title);
+    this.achievementToastTitle = title;
+
+    const description = new TextBlock('menuAchievementToastDescription');
+    description.text = '';
+    description.color = '#CFFCF3';
+    description.fontFamily = 'Consolas';
+    description.fontSize = 13;
+    description.left = 88;
+    description.top = 34;
+    description.width = '260px';
+    description.height = '40px';
+    description.textWrapping = true;
+    description.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    description.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    description.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    toast.addControl(description);
+    this.achievementToastDescription = description;
+
+    this.achievementIconPlaceholder = new Rectangle('menuAchievementToastIcon');
+    this.achievementIconPlaceholder.width = '64px';
+    this.achievementIconPlaceholder.height = '64px';
+    this.achievementIconPlaceholder.thickness = 1;
+    this.achievementIconPlaceholder.color = '#5FFFE0';
+    this.achievementIconPlaceholder.background = 'rgba(18, 44, 51, 0.9)';
+    this.achievementIconPlaceholder.left = 12;
+    this.achievementIconPlaceholder.top = 12;
+    this.achievementIconPlaceholder.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementIconPlaceholder.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    toast.addControl(this.achievementIconPlaceholder);
+
+    const achievementIconText = new TextBlock('menuAchievementToastIconText');
+    achievementIconText.text = '?';
+    achievementIconText.fontFamily = 'Consolas';
+    achievementIconText.fontSize = 24;
+    achievementIconText.color = '#B8FFE6';
+    this.achievementIconPlaceholder.addControl(achievementIconText);
+  }
+
+  private showNextAchievementToast(): void {
+    if (HUDManager.currentAchievement) return;
+
+    HUDManager.currentAchievement = HUDManager.achievementToastQueue.shift() || null;
+    if (!HUDManager.currentAchievement || !this.achievementToast) {
+      HUDManager.achievementToastActive = false;
+      return;
+    }
+
+    if (this.achievementToastTitle) {
+      this.achievementToastTitle.text = `UNLOCKED: ${HUDManager.currentAchievement.name}`;
+    }
+    if (this.achievementToastDescription) {
+      this.achievementToastDescription.text = HUDManager.currentAchievement.description;
+    }
+
+    if (this.achievementIconPlaceholder) {
+      if (this.achievementToastArtwork) {
+        this.achievementToastArtwork.dispose();
+      }
+      this.achievementToastArtwork = new Image('menuAchievementToastArtwork', buildHudAssetUrl(`achievements/${HUDManager.currentAchievement.id}.png`));
+      this.achievementToastArtwork.width = '64px';
+      this.achievementToastArtwork.height = '64px';
+      this.achievementToastArtwork.stretch = Image.STRETCH_UNIFORM;
+      this.achievementIconPlaceholder.addControl(this.achievementToastArtwork);
+    }
+
+    HUDManager.achievementToastActive = true;
+    this.achievementToastTimer = 4;
+    this.achievementToast.alpha = 1;
+    this.achievementToast.isVisible = true;
+  }
+
+  private updateAchievementToast(deltaTime: number): void {
+    if (!HUDManager.achievementToastActive) {
+      if (HUDManager.achievementToastQueue.length > 0) {
+        this.showNextAchievementToast();
+      }
+      return;
+    }
+
+    if (!this.achievementToast?.isVisible) {
+      if (this.achievementToastTimer > 0) {
+        this.achievementToast!.isVisible = true;
+      } else {
+        HUDManager.achievementToastActive = false;
+      }
+      return;
+    }
+
+    this.achievementToastTimer -= deltaTime;
+    if (this.achievementToastTimer <= 0) {
+      this.achievementToast.isVisible = false;
+      this.achievementToast.alpha = 1;
+      HUDManager.achievementToastActive = false;
+      HUDManager.currentAchievement = null;
+      if (HUDManager.achievementToastQueue.length > 0) {
+        this.showNextAchievementToast();
+      }
+      return;
+    }
+
+    if (this.achievementToastTimer < 0.35) {
+      this.achievementToast.alpha = Math.max(0, this.achievementToastTimer / 0.35);
+    }
+  }
+
+  private createMainButtons(): void {
+    const title = UIFactory.createText('menuTitle', 'DAEMON DUNGEON', 56, UITheme.colors.textHighlight);
+    title.fontFamily = UITheme.fonts.primary;
     title.top = '-34%';
+    title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.gui.addControl(title);
 
-    const subtitle = new TextBlock('menuSubtitle');
-    subtitle.text = 'SYSTEM READY // MAIN CONSOLE';
-    subtitle.color = '#9FEFE1';
-    subtitle.fontSize = 16;
-    subtitle.fontFamily = 'Consolas';
+    // Title flicker animation — slow oscillation between highlight colors
+    this.scene.onBeforeRenderObservable.add(() => {
+      this.titleFlickerTime += this.scene.getEngine().getDeltaTime();
+      const t = this.titleFlickerTime;
+      // Slow pulse: green → cyan → white, very subtle, period ~6s
+      const phase = (t * 0.001) % (Math.PI * 2);
+      const pulse = Math.sin(phase);
+      if (pulse > 0.7) {
+        title.color = '#FFFFFF';
+      } else if (pulse > 0.2) {
+        title.color = UITheme.colors.borderBright; // cyan
+      } else {
+        title.color = UITheme.colors.textHighlight; // green
+      }
+      // Occasional fast flicker — 1-2 frames, ~every 8s
+      if (Math.random() < 0.0004) {
+        title.color = '#CC00FF'; // daemon magenta flash
+      }
+    });
+
+    const subtitle = UIFactory.createText('menuSubtitle', 'SYSTEM READY // MAIN CONSOLE', 16, UITheme.colors.borderBright);
     subtitle.top = '-27%';
+    subtitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.gui.addControl(subtitle);
 
-    const panel = new Rectangle('menuPanel');
-    panel.width = '460px';
-    panel.height = '300px';
-    panel.thickness = 1;
-    panel.cornerRadius = 8;
-    panel.color = '#2EF9C3';
-    panel.background = 'rgba(0,0,0,0.45)';
-    panel.isPointerBlocker = true;
+    const panel = UIFactory.createPanel('menuPanel', 460, 300);
     panel.top = '-2%';
     this.gui.addControl(panel);
     this.menuPanel = panel;
@@ -201,19 +407,13 @@ export class MainMenuScene {
     overlay.width = 1;
     overlay.height = 1;
     overlay.thickness = 0;
-    overlay.background = 'rgba(0, 0, 0, 0.72)';
+    overlay.background = 'rgba(0, 0, 0, 0.75)';
     overlay.isPointerBlocker = true;
     overlay.isVisible = false;
     this.gui.addControl(overlay);
     this.settingsOverlay = overlay;
 
-    const windowPanel = new Rectangle('settingsWindow');
-    windowPanel.width = '900px';
-    windowPanel.height = '660px';
-    windowPanel.thickness = 2;
-    windowPanel.cornerRadius = 8;
-    windowPanel.color = '#2EF9C3';
-    windowPanel.background = 'rgba(5,12,16,0.92)';
+    const windowPanel = UIFactory.createPanel('settingsWindow', 900, 660);
     overlay.addControl(windowPanel);
 
     const title = new TextBlock('settingsTitle');
@@ -259,6 +459,24 @@ export class MainMenuScene {
     });
     actionRow.addControl(resetBtn);
 
+    const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET CODEX PROGRESSION');
+    resetProgressBtn.width = '250px';
+    resetProgressBtn.height = '34px';
+    resetProgressBtn.color = '#FFE5E5';
+    resetProgressBtn.cornerRadius = 4;
+    resetProgressBtn.background = 'rgba(72,20,20,0.95)';
+    resetProgressBtn.thickness = 1;
+    resetProgressBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    resetProgressBtn.left = '0px';
+    resetProgressBtn.isPointerBlocker = true;
+    resetProgressBtn.isHitTestVisible = true;
+    resetProgressBtn.zIndex = 130;
+    this.bindButtonAction(resetProgressBtn, () => {
+      this.awaitingRebind = null;
+      this.eventBus.emit(GameEvents.CODEX_PROGRESS_RESET_REQUESTED);
+    });
+    actionRow.addControl(resetProgressBtn);
+
     const closeBtn = Button.CreateSimpleButton('settingsCloseButton', 'RETURN TO MAIN MENU');
     closeBtn.width = '220px';
     closeBtn.height = '34px';
@@ -277,25 +495,16 @@ export class MainMenuScene {
     });
     actionRow.addControl(closeBtn);
 
-    this.captureHintText = new TextBlock('settingsCaptureHint');
-    this.captureHintText.text = 'Click a key field to capture input';
-    this.captureHintText.color = '#8CC6BD';
-    this.captureHintText.fontFamily = 'Consolas';
-    this.captureHintText.fontSize = 12;
+    this.captureHintText = UIFactory.createText('settingsCaptureHint', 'Click a key field to capture input', 12, UITheme.colors.textDim);
     this.captureHintText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.captureHintText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.captureHintText.top = '-185px';
     windowPanel.addControl(this.captureHintText);
 
-    const scroll = new ScrollViewer('settingsScroll');
+    const scroll = UIFactory.createScrollViewer('settingsScroll');
     scroll.width = '860px';
     scroll.height = '470px';
-    scroll.thickness = 1;
-    scroll.color = '#2C5950';
-    scroll.background = 'rgba(5, 16, 20, 0.85)';
     scroll.top = '52px';
-    scroll.barColor = '#51E6BE';
-    scroll.barSize = 8;
-    scroll.wheelPrecision = 0.03;
     windowPanel.addControl(scroll);
 
     const content = new StackPanel('settingsStack');
@@ -334,6 +543,18 @@ export class MainMenuScene {
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
           if (this.isRefreshingUi) return;
           GameSettingsStore.updateGraphics({ progressiveEnemySpawning: !!isChecked });
+        });
+      }
+    ));
+
+    parent.addControl(this.makeToggleRow(
+      'Wall Occlusion Transparency',
+      'Renders walls partially transparent when they hide the player, improving gameplay readability.',
+      (checkbox) => {
+        this.wallOcclusionCheckbox = checkbox;
+        checkbox.onIsCheckedChangedObservable.add((isChecked) => {
+          if (this.isRefreshingUi) return;
+          GameSettingsStore.updateGraphics({ wallOcclusionTransparency: !!isChecked });
         });
       }
     ));
@@ -658,13 +879,8 @@ export class MainMenuScene {
     label.top = '-14px';
     row.addControl(label);
 
-    const slider = new Slider(`audioSlider_${channel}`);
-    slider.minimum = 0;
-    slider.maximum = 100;
-    slider.height = '14px';
+    const slider = UIFactory.createSlider(`audioSlider_${channel}`, 0, 100, 100);
     slider.width = '520px';
-    slider.color = '#52EDC5';
-    slider.background = '#153A36';
     slider.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     slider.left = '12px';
     slider.top = '14px';
@@ -730,13 +946,8 @@ export class MainMenuScene {
     detailText.top = '2px';
     row.addControl(detailText);
 
-    const slider = new Slider(`graphicsNumberSlider_${title.replace(/\s+/g, '_')}`);
-    slider.minimum = min;
-    slider.maximum = max;
-    slider.height = '14px';
+    const slider = UIFactory.createSlider(`graphicsNumberSlider_${title.replace(/\s+/g, '_')}`, min, max, min);
     slider.width = '520px';
-    slider.color = '#52EDC5';
-    slider.background = '#153A36';
     slider.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     slider.left = '12px';
     slider.top = '26px';
@@ -798,6 +1009,10 @@ export class MainMenuScene {
       this.progressiveSpawnCheckbox.isChecked = this.settingsSnapshot.graphics.progressiveEnemySpawning;
     }
 
+    if (this.wallOcclusionCheckbox) {
+      this.wallOcclusionCheckbox.isChecked = this.settingsSnapshot.graphics.wallOcclusionTransparency;
+    }
+
     if (this.roomPreloadAheadSlider) {
       const nextValue = Math.max(1, Math.min(8, Math.round(this.settingsSnapshot.graphics.roomPreloadAheadCount ?? 2)));
       this.roomPreloadAheadSlider.value = nextValue;
@@ -850,26 +1065,14 @@ export class MainMenuScene {
   }
 
   private makeActionButton(id: string, label: string, top: number, onClick: () => void): Button {
-    const button = Button.CreateSimpleButton(id, label);
-    button.width = '220px';
-    button.height = '46px';
+    const button = UIFactory.createTerminalButton(id, label, '220px', '46px');
     button.top = `${top}px`;
-    button.color = '#FFFFFF';
-    button.cornerRadius = 6;
-    button.background = '#1D3B3A';
-    button.thickness = 2;
     button.zIndex = 50;
-    button.isEnabled = true;
-    button.isHitTestVisible = true;
     button.isPointerBlocker = true;
+    button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
-    button.onPointerEnterObservable.add(() => {
-      button.background = '#2A5A57';
-    });
-    button.onPointerOutObservable.add(() => {
-      button.background = '#1D3B3A';
-    });
-    this.bindButtonAction(button, onClick);
+    // Inject glitch effects: tear bar + ghost text + click flicker with 220ms delay
+    DaemonGlitchFx.inject(button, label, onClick, 220);
     return button;
   }
 
@@ -877,7 +1080,7 @@ export class MainMenuScene {
     button.isPointerBlocker = true;
     button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
-    button.onPointerUpObservable.add(onAction);
+    button.onPointerClickObservable.add(onAction);
   }
 
   private openSettingsOverlay(): void {
@@ -887,6 +1090,7 @@ export class MainMenuScene {
     if (this.menuPanel) {
       this.menuPanel.isVisible = false;
     }
+    this.eventBus.emit(GameEvents.UI_SETTINGS_OPENED);
   }
 
   private closeSettingsOverlay(): void {

@@ -27,19 +27,35 @@ export interface AchievementProgress extends AchievementDefinition {
 }
 
 interface CodexSnapshot {
-  version: 1;
+  version: 1 | 2;
   encounteredEnemies: string[];
   discoveredBonuses: string[];
   unlockedEntries: string[];
   achievements: Record<string, { progress: number; unlocked: boolean }>;
   run: {
     active: boolean;
+    classId: string;
+    currentRoom: number;
+    roomDamaged: boolean;
+    noDamageRoomStreak: number;
     tookDamage: boolean;
     bonusesCollected: number;
+    uniqueBonusesSelected: string[];
   };
   stats: {
     totalEnemyKills: number;
     highestRoomReached: number;
+    runsStarted: number;
+    bossesKilled: number;
+    highestScore: number;
+    codexOpenCount: number;
+    settingsOpenCount: number;
+    tutorialCompletedByClass: string[];
+    classHighestRoom: Record<string, number>;
+    uniqueBonusesSelectedLifetime: string[];
+  };
+  catalog?: {
+    runEnemyTypes: string[];
   };
   dev: {
     unlockCodexEntries: boolean;
@@ -61,12 +77,28 @@ export class CodexService {
   private achievementState: Map<string, { progress: number; unlocked: boolean }> = new Map();
   private runState: CodexSnapshot['run'] = {
     active: false,
+    classId: 'mage',
+    currentRoom: 0,
+    roomDamaged: false,
+    noDamageRoomStreak: 0,
     tookDamage: false,
     bonusesCollected: 0,
+    uniqueBonusesSelected: [],
   };
   private stats: CodexSnapshot['stats'] = {
     totalEnemyKills: 0,
     highestRoomReached: 0,
+    runsStarted: 0,
+    bossesKilled: 0,
+    highestScore: 0,
+    codexOpenCount: 0,
+    settingsOpenCount: 0,
+    tutorialCompletedByClass: [],
+    classHighestRoom: {},
+    uniqueBonusesSelectedLifetime: [],
+  };
+  private catalogState: CodexSnapshot['catalog'] = {
+    runEnemyTypes: [],
   };
   private devUnlockCodexEntries: boolean = false;
   private syncAdapter?: CodexSyncAdapter;
@@ -75,6 +107,32 @@ export class CodexService {
     this.syncAdapter = syncAdapter;
     this.eventBus = EventBus.getInstance();
     this.loadLocalSnapshot();
+
+    this.eventBus.on(GameEvents.SCORE_CHANGED, (data?: { score?: number }) => {
+      const score = Number(data?.score);
+      if (Number.isFinite(score) && score > 0) {
+        this.recordScore(score);
+      }
+    });
+
+    this.eventBus.on(GameEvents.UI_SETTINGS_OPENED, () => {
+      this.recordSettingsOpened();
+    });
+  }
+
+  configureRunEnemyCatalog(enemyTypes: string[]): void {
+    const unique = new Set<string>();
+    for (const enemyType of enemyTypes) {
+      if (typeof enemyType !== 'string') continue;
+      const id = enemyType.trim();
+      if (!id) continue;
+      if (id.startsWith('tutorial_')) continue;
+      unique.add(id);
+    }
+
+    this.catalogState.runEnemyTypes = [...unique].sort();
+    this.reconcileAchievementState();
+    this.saveLocalSnapshot();
   }
 
   async unlockEntry(entryId: string, entryType: string): Promise<void> {
@@ -123,6 +181,18 @@ export class CodexService {
 
     this.encounteredEnemies.add(enemyTypeId);
     await this.unlockEntry(`enemy:${enemyTypeId}`, 'enemy');
+
+    if (enemyTypeId === 'sentinel') {
+      this.completeAchievement('encounter_sentinel');
+    }
+
+    if (
+      this.catalogState.runEnemyTypes.length > 0 &&
+      this.catalogState.runEnemyTypes.every((enemyType) => this.encounteredEnemies.has(enemyType))
+    ) {
+      this.completeAchievement('scan_complete');
+    }
+
     this.saveLocalSnapshot();
   }
 
@@ -148,6 +218,43 @@ export class CodexService {
     this.saveLocalSnapshot();
   }
 
+  resetProgression(): void {
+    this.unlockedEntries.clear();
+    this.encounteredEnemies.clear();
+    this.discoveredBonuses.clear();
+
+    this.runState = {
+      active: false,
+      classId: 'mage',
+      currentRoom: 0,
+      roomDamaged: false,
+      noDamageRoomStreak: 0,
+      tookDamage: false,
+      bonusesCollected: 0,
+      uniqueBonusesSelected: [],
+    };
+
+    this.stats = {
+      totalEnemyKills: 0,
+      highestRoomReached: 0,
+      runsStarted: 0,
+      bossesKilled: 0,
+      highestScore: 0,
+      codexOpenCount: 0,
+      settingsOpenCount: 0,
+      tutorialCompletedByClass: [],
+      classHighestRoom: {},
+      uniqueBonusesSelectedLifetime: [],
+    };
+
+    this.achievementState.clear();
+    for (const definition of this.achievementDefinitions.values()) {
+      this.achievementState.set(definition.id, { progress: 0, unlocked: false });
+    }
+
+    this.saveLocalSnapshot();
+  }
+
   getAchievementsProgress(): AchievementProgress[] {
     return Array.from(this.achievementDefinitions.values()).map((definition) => {
       const state = this.achievementState.get(definition.id) ?? { progress: 0, unlocked: false };
@@ -159,11 +266,19 @@ export class CodexService {
     });
   }
 
-  startRunTracking(): void {
+  startRunTracking(classId: 'mage' | 'firewall' | 'rogue' | 'cat' = 'mage'): void {
+    this.stats.runsStarted += 1;
+    this.bumpAchievement('run_boot_10', 1);
+
     this.runState = {
       active: true,
+      classId,
+      currentRoom: 0,
+      roomDamaged: false,
+      noDamageRoomStreak: 0,
       tookDamage: false,
       bonusesCollected: 0,
+      uniqueBonusesSelected: [],
     };
     this.saveLocalSnapshot();
   }
@@ -173,34 +288,93 @@ export class CodexService {
     this.saveLocalSnapshot();
   }
 
-  recordEnemyKilled(): void {
+  recordEnemyKilled(enemyTypeId?: string): void {
     this.stats.totalEnemyKills += 1;
-    this.bumpAchievement('zombie_slayer', 1);
-    this.saveLocalSnapshot();
-  }
+    this.bumpAchievement('daemon_slayer_10', 1);
+    this.bumpAchievement('daemon_slayer_100', 1);
 
-  recordRoomReached(roomNumber: number): void {
-    this.stats.highestRoomReached = Math.max(this.stats.highestRoomReached, roomNumber);
-
-    if (roomNumber >= 10) {
-      this.completeAchievement('room_10');
-      if (!this.runState.tookDamage) {
-        this.completeAchievement('no_damage');
-      }
+    if (typeof enemyTypeId === 'string' && enemyTypeId.includes('boss')) {
+      this.stats.bossesKilled += 1;
+      this.completeAchievement('boss_killer');
+      this.bumpAchievement('boss_hunter', 1);
     }
 
     this.saveLocalSnapshot();
   }
 
-  recordBonusCollected(): void {
+  recordRoomReached(roomNumber: number): void {
+    if (this.runState.active && roomNumber > 1) {
+      if (!this.runState.roomDamaged) {
+        this.runState.noDamageRoomStreak += 1;
+      } else {
+        this.runState.noDamageRoomStreak = 0;
+      }
+
+      if (this.runState.noDamageRoomStreak >= 5) {
+        this.completeAchievement('ghost_shell_5');
+      }
+      if (this.runState.noDamageRoomStreak >= 10) {
+        this.completeAchievement('ghost_shell_10');
+      }
+    }
+
+    this.runState.currentRoom = Math.max(this.runState.currentRoom, roomNumber);
+    this.runState.roomDamaged = false;
+    this.stats.highestRoomReached = Math.max(this.stats.highestRoomReached, roomNumber);
+    this.stats.classHighestRoom[this.runState.classId] = Math.max(
+      this.stats.classHighestRoom[this.runState.classId] ?? 0,
+      roomNumber,
+    );
+
+    if (roomNumber >= 10) {
+      this.completeAchievement('room_10');
+      this.completeAchievement(`room_10_${this.runState.classId}`);
+    }
+
+    if (roomNumber >= 20) {
+      this.completeAchievement('room_20');
+    }
+
+    if (
+      (this.stats.classHighestRoom.mage ?? 0) >= 10 &&
+      (this.stats.classHighestRoom.firewall ?? 0) >= 10 &&
+      (this.stats.classHighestRoom.rogue ?? 0) >= 10
+    ) {
+      this.completeAchievement('room_10_trinity');
+    }
+
+    if (roomNumber >= 10 && !this.runState.tookDamage) {
+      this.completeAchievement('no_damage');
+    }
+
+    this.saveLocalSnapshot();
+  }
+
+  recordBonusCollected(bonusId?: string): void {
     if (!this.runState.active) {
       return;
     }
 
     this.runState.bonusesCollected += 1;
+
+    if (typeof bonusId === 'string' && bonusId.trim().length > 0) {
+      const id = bonusId.trim();
+      if (!this.runState.uniqueBonusesSelected.includes(id)) {
+        this.runState.uniqueBonusesSelected.push(id);
+      }
+      if (!this.stats.uniqueBonusesSelectedLifetime.includes(id)) {
+        this.stats.uniqueBonusesSelectedLifetime.push(id);
+      }
+    }
+
     if (this.runState.bonusesCollected >= 20) {
       this.completeAchievement('perfect_build');
     }
+
+    const uniqueSelectedCount = this.stats.uniqueBonusesSelectedLifetime.length;
+    if (uniqueSelectedCount >= 10) this.completeAchievement('bonus_sampler_10');
+    if (uniqueSelectedCount >= 20) this.completeAchievement('bonus_sampler_20');
+    if (uniqueSelectedCount >= 30) this.completeAchievement('bonus_sampler_30');
 
     this.saveLocalSnapshot();
   }
@@ -211,6 +385,113 @@ export class CodexService {
     }
 
     this.runState.tookDamage = true;
+    this.runState.roomDamaged = true;
+    this.saveLocalSnapshot();
+  }
+
+  recordPlayerDied(reason?: string, attackerType?: string): void {
+    if (!this.runState.active) {
+      return;
+    }
+
+    // Death by void
+    if (reason === 'void_fall') {
+      this.completeAchievement('death_void');
+      if (this.runState.classId === 'mage') {
+        this.completeAchievement('death_mage_void');
+      }
+    }
+
+    // Death by poison
+    if (reason === 'poison') {
+      this.completeAchievement('death_poison');
+    }
+
+    // Killed by Boss
+    if (attackerType && attackerType.includes('boss')) {
+      this.completeAchievement('death_boss');
+    }
+
+    // Killed by Sentinel
+    if (attackerType === 'sentinel') {
+      this.completeAchievement('death_sentinel');
+    }
+
+    // Death by Spikes/Traps
+    if (reason === 'hazard' || reason === 'spike') {
+      this.completeAchievement('death_spike');
+      this.completeAchievement('death_trap');
+    }
+
+    // Quick death (Room 1)
+    if (this.runState.currentRoom <= 1) {
+      this.completeAchievement('death_quick');
+    }
+
+    // Class specific death logic
+    if (this.runState.classId === 'firewall' && reason === 'damage') {
+      // Assuming 'damage' is the general reason for being killed by enemies/attacks
+      this.completeAchievement('death_tank_overload');
+    }
+    if (this.runState.classId === 'rogue' || this.runState.classId === 'cat') {
+      this.completeAchievement('death_rogue_caught');
+    }
+
+    this.runState.active = false;
+    this.saveLocalSnapshot();
+  }
+
+  recordScore(score: number): void {
+    if (!Number.isFinite(score)) return;
+    this.stats.highestScore = Math.max(this.stats.highestScore, Math.floor(score));
+
+    if (this.stats.highestScore >= 5000) {
+      this.completeAchievement('stack_overflow_5000');
+    }
+    if (this.stats.highestScore >= 15000) {
+      this.completeAchievement('stack_overflow_15000');
+    }
+
+    this.saveLocalSnapshot();
+  }
+
+  recordCombatSnapshot(moveSpeed: number, attackSpeed: number): void {
+    if (Number.isFinite(moveSpeed) && moveSpeed >= 1.5) {
+      this.completeAchievement('move_speed_1_5');
+    }
+    if (Number.isFinite(attackSpeed) && attackSpeed >= 1.5) {
+      this.completeAchievement('overclocked');
+    }
+  }
+
+  recordCodexOpened(): void {
+    this.stats.codexOpenCount += 1;
+    this.completeAchievement('open_codex');
+    this.saveLocalSnapshot();
+  }
+
+  recordSettingsOpened(): void {
+    this.stats.settingsOpenCount += 1;
+    this.completeAchievement('dont_fix_it');
+    this.saveLocalSnapshot();
+  }
+
+  recordTutorialCompleted(classId: 'mage' | 'firewall' | 'rogue' | 'cat'): void {
+    const classKey = classId === 'cat' ? 'rogue' : classId;
+    if (!this.stats.tutorialCompletedByClass.includes(classKey)) {
+      this.stats.tutorialCompletedByClass.push(classKey);
+    }
+
+    this.completeAchievement(`tutorial_${classKey}`);
+
+    if (
+      this.stats.tutorialCompletedByClass.includes('mage') &&
+      this.stats.tutorialCompletedByClass.includes('firewall') &&
+      this.stats.tutorialCompletedByClass.includes('rogue')
+    ) {
+      this.completeAchievement('tutorial_trinity');
+    }
+
     this.saveLocalSnapshot();
   }
 
@@ -225,7 +506,11 @@ export class CodexService {
     this.achievementState.set(id, { progress: nextProgress, unlocked: nextProgress >= definition.target });
 
     if (nextProgress >= definition.target) {
-      this.eventBus.emit(GameEvents.ACHIEVEMENT_UNLOCKED, { achievementId: id });
+      this.eventBus.emit(GameEvents.ACHIEVEMENT_UNLOCKED, {
+        achievementId: id,
+        name: definition.name,
+        description: definition.description,
+      });
     } else {
       this.eventBus.emit(GameEvents.ACHIEVEMENT_PROGRESS, { achievementId: id, progress: nextProgress });
     }
@@ -239,18 +524,62 @@ export class CodexService {
     if (state.unlocked) return;
 
     this.achievementState.set(id, { progress: definition.target, unlocked: true });
-    this.eventBus.emit(GameEvents.ACHIEVEMENT_UNLOCKED, { achievementId: id });
+    this.eventBus.emit(GameEvents.ACHIEVEMENT_UNLOCKED, {
+      achievementId: id,
+      name: definition.name,
+      description: definition.description,
+    });
   }
 
   private reconcileAchievementState(): void {
-    this.setAchievementProgress('zombie_slayer', Math.max(0, this.stats.totalEnemyKills));
+    this.setAchievementProgress('daemon_slayer_10', Math.max(0, this.stats.totalEnemyKills));
+    this.setAchievementProgress('daemon_slayer_100', Math.max(0, this.stats.totalEnemyKills));
+    this.setAchievementProgress('boss_hunter', Math.max(0, this.stats.bossesKilled));
+    this.setAchievementProgress('run_boot_10', Math.max(0, this.stats.runsStarted));
 
-    if (this.stats.highestRoomReached >= 10) {
-      this.completeAchievement('room_10');
+    if (this.stats.highestRoomReached >= 10) this.completeAchievement('room_10');
+    if (this.stats.highestRoomReached >= 20) this.completeAchievement('room_20');
+
+    if ((this.stats.classHighestRoom.mage ?? 0) >= 10) this.completeAchievement('room_10_mage');
+    if ((this.stats.classHighestRoom.firewall ?? 0) >= 10) this.completeAchievement('room_10_firewall');
+    if ((this.stats.classHighestRoom.rogue ?? 0) >= 10) this.completeAchievement('room_10_rogue');
+
+    if (
+      (this.stats.classHighestRoom.mage ?? 0) >= 10 &&
+      (this.stats.classHighestRoom.firewall ?? 0) >= 10 &&
+      (this.stats.classHighestRoom.rogue ?? 0) >= 10
+    ) {
+      this.completeAchievement('room_10_trinity');
     }
 
-    if (this.stats.highestRoomReached >= 10 && !this.runState.tookDamage && this.runState.active) {
-      this.completeAchievement('no_damage');
+    if (this.stats.highestScore >= 5000) this.completeAchievement('stack_overflow_5000');
+    if (this.stats.highestScore >= 15000) this.completeAchievement('stack_overflow_15000');
+    if (this.stats.codexOpenCount > 0) this.completeAchievement('open_codex');
+    if (this.stats.settingsOpenCount > 0) this.completeAchievement('dont_fix_it');
+
+    if (this.stats.tutorialCompletedByClass.includes('mage')) this.completeAchievement('tutorial_mage');
+    if (this.stats.tutorialCompletedByClass.includes('firewall')) this.completeAchievement('tutorial_firewall');
+    if (this.stats.tutorialCompletedByClass.includes('rogue')) this.completeAchievement('tutorial_rogue');
+    if (
+      this.stats.tutorialCompletedByClass.includes('mage') &&
+      this.stats.tutorialCompletedByClass.includes('firewall') &&
+      this.stats.tutorialCompletedByClass.includes('rogue')
+    ) {
+      this.completeAchievement('tutorial_trinity');
+    }
+
+    if (this.encounteredEnemies.has('sentinel')) this.completeAchievement('encounter_sentinel');
+
+    const uniqueSelectedCount = this.stats.uniqueBonusesSelectedLifetime.length;
+    if (uniqueSelectedCount >= 10) this.completeAchievement('bonus_sampler_10');
+    if (uniqueSelectedCount >= 20) this.completeAchievement('bonus_sampler_20');
+    if (uniqueSelectedCount >= 30) this.completeAchievement('bonus_sampler_30');
+
+    if (
+      this.catalogState.runEnemyTypes.length > 0 &&
+      this.catalogState.runEnemyTypes.every((enemyType) => this.encounteredEnemies.has(enemyType))
+    ) {
+      this.completeAchievement('scan_complete');
     }
   }
 
@@ -266,7 +595,7 @@ export class CodexService {
   private saveLocalSnapshot(): void {
     try {
       const snapshot: CodexSnapshot = {
-        version: 1,
+        version: 2,
         encounteredEnemies: [...this.encounteredEnemies],
         discoveredBonuses: [...this.discoveredBonuses],
         unlockedEntries: [...this.unlockedEntries],
@@ -276,6 +605,7 @@ export class CodexService {
         }, {}),
         run: this.runState,
         stats: this.stats,
+        catalog: this.catalogState,
         dev: {
           unlockCodexEntries: this.devUnlockCodexEntries,
         },
@@ -295,15 +625,25 @@ export class CodexService {
       }
 
       const parsed = JSON.parse(data) as CodexSnapshot;
-      if (!parsed || parsed.version !== 1) {
+      if (!parsed || (parsed.version !== 1 && parsed.version !== 2)) {
         return;
       }
 
       this.encounteredEnemies = new Set(parsed.encounteredEnemies ?? []);
       this.discoveredBonuses = new Set(parsed.discoveredBonuses ?? []);
       this.unlockedEntries = new Set(parsed.unlockedEntries ?? []);
-      this.runState = parsed.run ?? this.runState;
-      this.stats = parsed.stats ?? this.stats;
+      this.runState = {
+        ...this.runState,
+        ...(parsed.run ?? {}),
+      };
+      this.stats = {
+        ...this.stats,
+        ...(parsed.stats ?? {}),
+      };
+      this.catalogState = {
+        ...this.catalogState,
+        ...(parsed.catalog ?? {}),
+      };
       this.devUnlockCodexEntries = parsed.dev?.unlockCodexEntries ?? false;
 
       const achievementEntries = Object.entries(parsed.achievements ?? {});
@@ -313,6 +653,24 @@ export class CodexService {
           unlocked: !!state.unlocked,
         });
       }
+
+      if (!Array.isArray(this.runState.uniqueBonusesSelected)) {
+        this.runState.uniqueBonusesSelected = [];
+      }
+      if (!Array.isArray(this.stats.tutorialCompletedByClass)) {
+        this.stats.tutorialCompletedByClass = [];
+      }
+      if (!this.stats.classHighestRoom || typeof this.stats.classHighestRoom !== 'object') {
+        this.stats.classHighestRoom = {};
+      }
+      if (!Array.isArray(this.stats.uniqueBonusesSelectedLifetime)) {
+        this.stats.uniqueBonusesSelectedLifetime = [];
+      }
+      if (!Array.isArray(this.catalogState.runEnemyTypes)) {
+        this.catalogState.runEnemyTypes = [];
+      }
+
+      this.reconcileAchievementState();
     } catch (error) {
       console.warn('Failed to load codex snapshot:', error);
     }

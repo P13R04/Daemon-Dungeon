@@ -28,6 +28,13 @@ export interface SynthesisPlan {
   glitch?: GlitchPlan;
 }
 
+export interface SynthesisResult {
+  buffer: AudioBuffer;
+  duration: number;
+  /** Start times of each glitch event in seconds (for frame sync) */
+  glitchTimestamps: number[];
+}
+
 interface GlitchEvent {
   startPos: number;
   sliceSeconds: number;
@@ -90,6 +97,38 @@ export const VOICE_PRESETS = {
     reverbMix: 0.34,
     distortion: 0.27
   },
+  daemon_normal: {
+    synthesisMode: "dual-overlay",
+    lowPitch: 22,
+    highPitch: 68,
+    lowSpeed: 190,
+    highSpeed: 190,
+    lowAmplitude: 116,
+    highAmplitude: 94,
+    overlayDelayMs: 16,
+    chunkWordCount: 3,
+    glitchChance: 0.12,
+    glitchReplayWords: 1,
+    wordGap: 1,
+    reverbMix: 0.24,
+    distortion: 0.14
+  },
+  daemon_crash: {
+    synthesisMode: "glitch-switch",
+    lowPitch: 12,
+    highPitch: 90,
+    lowSpeed: 175,
+    highSpeed: 175,
+    lowAmplitude: 140,
+    highAmplitude: 110,
+    overlayDelayMs: 10,
+    chunkWordCount: 2,
+    glitchChance: 0.80,
+    glitchReplayWords: 4,
+    wordGap: 1,
+    reverbMix: 0.40,
+    distortion: 0.32
+  },
   flat_operator: {
     synthesisMode: "single-low",
     lowPitch: 44,
@@ -144,7 +183,7 @@ export class DaemonVoiceSynth {
     this.loadedVoices.add(voiceId);
   }
 
-  public async synthesize(text: string, presetName: keyof typeof VOICE_PRESETS = 'cold_dual'): Promise<{ buffer: AudioBuffer; duration: number }> {
+  public async synthesize(text: string, presetName: keyof typeof VOICE_PRESETS = 'cold_dual'): Promise<SynthesisResult> {
     if (!this.audioContext) {
       throw new Error('AudioContext not attached to DaemonVoiceSynth');
     }
@@ -154,6 +193,9 @@ export class DaemonVoiceSynth {
     const glitchChance = preset.glitchChance;
     const glitchReplayWords = preset.glitchReplayWords;
     const wordGap = preset.wordGap + 0.18; // Slightly tighter word gap for snappiness
+
+    // For daemon_normal: cap max glitch events to 1 for lighter feel
+    const isLightGlitch = presetName === 'daemon_normal';
 
     const plan: SynthesisPlan = {
       layers: [
@@ -204,10 +246,15 @@ export class DaemonVoiceSynth {
     const glitchMap: GlitchEvent[] = [];
     const duration = renderedLayers[0].buffer.duration;
     
-    // Dynamic glitch params from lab logic
-    const glitchSliceSeconds = Math.max(0.03, Math.min(0.22, 0.022 + glitchReplayWords * 0.028));
-    const glitchEventCount = Math.max(1, Math.min(10, Math.round(glitchChance * 7 + (text.split(' ').length) / 20)));
-    const glitchRepeats = Math.max(2, Math.min(6, 1 + Math.floor(glitchReplayWords)));
+    // Dynamic glitch params
+    const glitchSliceSeconds = isLightGlitch
+      ? Math.max(0.03, Math.min(0.08, 0.022 + glitchReplayWords * 0.02))
+      : Math.max(0.03, Math.min(0.22, 0.022 + glitchReplayWords * 0.028));
+    const maxEvents = isLightGlitch ? 1 : 10;
+    const glitchEventCount = Math.max(1, Math.min(maxEvents, Math.round(glitchChance * 7 + (text.split(' ').length) / 20)));
+    const glitchRepeats = isLightGlitch
+      ? Math.max(1, Math.min(2, 1 + Math.floor(glitchReplayWords)))
+      : Math.max(2, Math.min(6, 1 + Math.floor(glitchReplayWords)));
     const glitchGapSeconds = Math.max(0.012, glitchSliceSeconds * 0.4);
 
     const usableStart = 0.08;
@@ -216,7 +263,6 @@ export class DaemonVoiceSynth {
     if (usableEnd > usableStart) {
       const events: GlitchEvent[] = [];
       for (let i = 0; i < glitchEventCount; i++) {
-        // Higher base chance for "glitchy" feel
         if (Math.random() > 0.7) continue; 
         const eventStart = usableStart + Math.random() * (usableEnd - usableStart);
         events.push({
@@ -235,9 +281,12 @@ export class DaemonVoiceSynth {
       }
     }
 
+    // Collect glitch start timestamps for frame sync
+    const glitchTimestamps = glitchMap.map(ev => ev.startPos);
+
     // Combine layers into a single buffer
     const finalBuffer = this.mixLayers(renderedLayers, glitchMap);
-    return { buffer: finalBuffer, duration: finalBuffer.duration };
+    return { buffer: finalBuffer, duration: finalBuffer.duration, glitchTimestamps };
   }
 
   private normalizeRawData(raw: any): ArrayBuffer {

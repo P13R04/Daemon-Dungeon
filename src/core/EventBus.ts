@@ -124,6 +124,8 @@ export const GameEvents = {
   UI_PAUSE_TOGGLE: 'ui:pauseToggle',
   UI_DEV_CONSOLE_TOGGLE: 'ui:devConsoleToggle',
   UI_OPTION_CHANGED: 'ui:optionChanged',
+  UI_SETTINGS_OPENED: 'ui:settingsOpened',
+  CODEX_PROGRESS_RESET_REQUESTED: 'codex:progressResetRequested',
   DEBUG_FLAG_CHANGED: 'debug:flagChanged',
   DEV_ROOM_LOAD_REQUESTED: 'dev:roomLoadRequested',
   DEV_TILE_TOGGLE_REQUESTED: 'dev:tileToggleRequested',

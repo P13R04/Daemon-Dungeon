@@ -1,6 +1,8 @@
 import { ArcRotateCamera, Scene } from '@babylonjs/core';
 import { AdvancedDynamicTexture, Button, Checkbox, Control, Rectangle, ScrollViewer, Slider, StackPanel, TextBlock } from '@babylonjs/gui';
 import { PostProcessManager, PostProcessingConfig } from './PostProcess';
+import { UIFactory } from '../ui/UIFactory';
+import { UITheme } from '../ui/UITheme';
 
 export class ClassSelectDevConsole {
   private gui: AdvancedDynamicTexture;
@@ -33,25 +35,15 @@ export class ClassSelectDevConsole {
   }
 
   private createPanel(): Rectangle {
-    const panel = new Rectangle('classSelectDevPanel');
-    panel.width = '400px';
-    panel.height = '760px';
-    panel.background = 'rgba(15, 15, 35, 0.98)';
-    panel.thickness = 2;
-    panel.cornerRadius = 8;
-    panel.color = '#00FF00';
+    const panel = UIFactory.createPanel('classSelectDevPanel', 400, 760);
     panel.top = '100px';
     panel.left = '10px';
     panel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     panel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
 
-    const scrollViewer = new ScrollViewer('classSelectDevScrollViewer');
+    const scrollViewer = UIFactory.createScrollViewer('classSelectDevScrollViewer');
     scrollViewer.width = '100%';
     scrollViewer.height = '100%';
-    scrollViewer.thickness = 0;
-    scrollViewer.barColor = '#66FFCC';
-    scrollViewer.barSize = 8;
-    scrollViewer.wheelPrecision = 45;
     scrollViewer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     scrollViewer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     panel.addControl(scrollViewer);
@@ -156,21 +148,11 @@ export class ClassSelectDevConsole {
   }
 
   private createToggleButton(): Button {
-    const toggleBtn = new Button('classSelectDevToggle');
-    toggleBtn.width = '58px';
-    toggleBtn.height = '30px';
-    toggleBtn.background = '#004400';
-    toggleBtn.color = '#00FF00';
-    toggleBtn.fontSize = 12;
-    toggleBtn.left = 10;
-    toggleBtn.top = 62;
+    const toggleBtn = UIFactory.createTerminalButton('classSelectDevToggle', 'DEV', '58px', '30px');
+    toggleBtn.left = '10px';
+    toggleBtn.top = '62px';
     toggleBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     toggleBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-
-    const label = new TextBlock('classSelectDevToggleLabel');
-    label.text = 'DEV';
-    label.color = '#00FF00';
-    toggleBtn.addControl(label);
 
     toggleBtn.onPointerUpObservable.add(() => {
       this.isVisible = !this.isVisible;
@@ -196,14 +178,8 @@ export class ClassSelectDevConsole {
     labelBlock.height = '22px';
     parent.addControl(labelBlock);
 
-    const slider = new Slider(`classSelect_${label}_slider`);
-    slider.minimum = min;
-    slider.maximum = max;
-    slider.value = initialValue;
-    slider.height = '20px';
+    const slider = UIFactory.createSlider(`classSelect_${label}_slider`, min, max, initialValue);
     slider.width = '340px';
-    slider.color = '#66FFCC';
-    slider.background = '#444444';
     slider.onValueChangedObservable.add((value) => {
       const stepped = Math.round(value / step) * step;
       labelBlock.text = `${label}: ${stepped.toFixed(2)}`;

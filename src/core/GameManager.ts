@@ -17,6 +17,7 @@ import {
   EnemySpawnedPayload,
   GameEventBindings,
   GameStartRequestedPayload,
+  RoomEnteredPayload,
 } from './GameEventBindings';
 import { RunEconomyManager } from './RunEconomyManager';
 import { Time } from './Time';
@@ -59,6 +60,10 @@ import { GameBenchmarkRunner, type BenchmarkRunResult, type BenchmarkSpikeDiagno
 import { GameTutorialManager } from './GameTutorialManager';
 import { ScoreManager } from '../systems/ScoreManager';
 import { BONUS_TUNING } from '../data/bonuses/bonusTuning';
+import { WallOcclusionManager } from '../systems/WallOcclusionManager';
+import { MusicManager } from '../audio/MusicManager';
+import { DaemonVoicelineManager } from './DaemonVoicelineManager';
+
 
 type TextureRenderMode = 'classic' | 'proceduralRelief';
 type RuntimeGameState = 'menu' | 'playing' | 'roomclear' | 'bonus' | 'transition' | 'gameover';
@@ -106,7 +111,7 @@ export class GameManager {
   private worldCollisionHazardManager: GameWorldCollisionHazardManager | null = null;
   private playerVoidRecoveryManager: GamePlayerVoidRecoveryManager | null = null;
   private roomStreamingManager: GameRoomStreamingManager | null = null;
-  private daemonTestManager: GameDaemonTestManager | null = null;
+  private daemonVoicelineManager: DaemonVoicelineManager | null = null;
   private economyFlowManager: GameEconomyFlowManager | null = null;
   private tutorialManager: GameTutorialManager;
   private scoreManager: ScoreManager;
@@ -176,6 +181,10 @@ export class GameManager {
   private benchmarkPreparationLastPumpMs: number = 0;
   private lastBenchmarkFrameProfile: RuntimeFrameProfileSnapshot | null = null;
   private lastBenchmarkLoopProfile: RuntimeFrameProfileSnapshot | null = null;
+  private lastAttackerType: string | null = null;
+  private wallOcclusionManager: WallOcclusionManager | null = null;
+  private musicManager: MusicManager | null = null;
+
 
   private constructor() {
     this.stateMachine = new StateMachine();
@@ -276,8 +285,8 @@ export class GameManager {
       markBonusDiscovered: (bonusId) => {
         void this.codexService.markBonusDiscovered(bonusId);
       },
-      recordBonusCollected: () => {
-        this.codexService.recordBonusCollected();
+      recordBonusCollected: (bonusId) => {
+        this.codexService.recordBonusCollected(bonusId);
       },
     });
 
@@ -304,8 +313,10 @@ export class GameManager {
     this.canvas = canvas;
     GameSettingsStore.applyRuntimeEffects(this.canvas);
     this.applyGraphicsSettings(GameSettingsStore.get());
+    this.applyAudioSettings(GameSettingsStore.get());
     this.unsubscribeSettings = GameSettingsStore.subscribe((settings) => {
       this.applyGraphicsSettings(settings);
+      this.applyAudioSettings(settings);
     });
 
     // Initialize Babylon.js engine
@@ -317,6 +328,19 @@ export class GameManager {
 
     const gameplayDebug = this.configLoader.getGameplayConfig()?.debug;
     this.codexService.setDevUnlockCodexEntries(!!gameplayDebug?.enabled);
+
+    const rooms = this.configLoader.getRoomsConfig() ?? [];
+    const runEnemyTypes = new Set<string>();
+    for (const room of rooms) {
+      if (!this.shouldIncludeInRunOrder(room)) continue;
+      const spawnPoints = Array.isArray(room.spawnPoints) ? room.spawnPoints : [];
+      for (const spawnPoint of spawnPoints) {
+        const enemyType = typeof spawnPoint?.enemyType === 'string' ? spawnPoint.enemyType.trim() : '';
+        if (!enemyType || enemyType.startsWith('tutorial_')) continue;
+        runEnemyTypes.add(enemyType);
+      }
+    }
+    this.codexService.configureRunEnemyCatalog([...runEnemyTypes]);
 
     // Setup event listeners
     this.setupEventListeners();
@@ -427,6 +451,7 @@ export class GameManager {
 
   private async openCodexScene(): Promise<void> {
     this.disposeFrontendScenes();
+    this.codexService.recordCodexOpened();
 
     try {
       this.codexScene = new CodexScene(
@@ -474,6 +499,9 @@ export class GameManager {
     if (this.ultimateManager) this.ultimateManager.dispose();
     if (this.worldCollisionHazardManager) this.worldCollisionHazardManager.dispose?.();
     if (this.playerVoidRecoveryManager) this.playerVoidRecoveryManager.dispose?.();
+    if (this.wallOcclusionManager) { this.wallOcclusionManager.dispose(); this.wallOcclusionManager = null; }
+    if (this.musicManager) { this.musicManager.dispose(); this.musicManager = null; }
+
     
     if (this.scene && this.scene !== this.mainMenuScene?.getScene() && this.scene !== this.classSelectScene?.getScene()) {
       this.scene.dispose();
@@ -494,6 +522,9 @@ export class GameManager {
       this.classSelectScene = undefined;
     }
 
+    if (this.hudManager) {
+      this.hudManager.dispose();
+    }
     this.scene = await SceneBootstrap.createScene(this.engine, this.canvas);
 
     const camera = (this.scene as SceneWithMainCamera).mainCamera as ArcRotateCamera;
@@ -512,6 +543,13 @@ export class GameManager {
     this.projectileManager = new ProjectileManager(this.scene);
     this.ultimateManager = new UltimateManager(this.scene);
     this.hudManager = new HUDManager(this.scene);
+    this.musicManager = new MusicManager(this.scene);
+    void this.musicManager.loadTrack('bgm', 'music/bgm.mp3').then(() => {
+      if (this.gameState === 'playing' || this.gameState === 'bonus' || this.gameState === 'roomclear') {
+        this.musicManager?.playTrack('bgm', 1.5);
+      }
+    });
+
     this.tileFloorManager = new TileFloorManager(this.scene, 1.2);
     if (this.textureRenderMode === 'proceduralRelief') {
       ProceduralReliefTheme.setLightweightMode(this.lightweightTextureMode);
@@ -564,7 +602,19 @@ export class GameManager {
       this.roomManager,
       (reason) => this.eventCoordinator.emitPlayerDied(reason),
     );
-    this.daemonTestManager = new GameDaemonTestManager((payload) => this.eventCoordinator.emitDaemonTaunt(payload));
+    
+    this.daemonVoicelineManager = new DaemonVoicelineManager(this.eventBus);
+    this.daemonVoicelineManager.setPlayerClass(this.selectedClassId === 'cat' ? 'rogue' : this.selectedClassId as any);
+    this.daemonVoicelineManager.setOnVoicelineSelected((vl, forceCrash) => {
+      this.hudManager.showDaemonMessage(vl.message, vl.animationSequence[0]?.emotion, {
+        holdDuration: vl.holdDuration,
+        voicePreset: vl.voicePreset,
+        canGlitchFrames: vl.canGlitchFrames,
+        canCrash: forceCrash,
+      });
+    });
+    this.daemonVoicelineManager.bind();
+
     this.economyFlowManager = new GameEconomyFlowManager(
       this.configLoader,
       this.runEconomy,
@@ -591,6 +641,10 @@ export class GameManager {
       focusCameraOnRoomBounds: (roomKey) => this.focusCameraOnRoomBounds(roomKey),
     });
     this.devConsole.setPlayer(this.playerController);
+
+    this.wallOcclusionManager = new WallOcclusionManager(
+      GameSettingsStore.get().graphics.wallOcclusionTransparency,
+    );
 
     this.gameplayInitialized = true;
     this.tutorialManager.initialize({
@@ -630,12 +684,12 @@ export class GameManager {
           this.selectedClassId = classId;
         }
         this.isTutorialRun = data?.mode === 'tutorial';
-        this.codexService.startRunTracking();
+        this.codexService.startRunTracking(this.selectedClassId);
         void this.startNewGame();
       },
       onGameRestartRequested: () => {
         this.tryUnlockAudioNow();
-        this.codexService.startRunTracking();
+        this.codexService.startRunTracking(this.selectedClassId);
         this.isTutorialRun = false;
         void this.startNewGame();
       },
@@ -711,6 +765,13 @@ export class GameManager {
         const finalScore = this.scoreManager.getScore();
         const highScore = this.scoreManager.getHighScore();
         const roomReached = this.currentRoomIndex + 1;
+
+        // Record death in CodexService
+        const deathReason = payload?.reason ?? 'unknown';
+        const attackerType = payload?.enemyType ?? this.lastAttackerType ?? undefined;
+        this.codexService.recordPlayerDied(deathReason, attackerType);
+
+        this.codexService.endRunTracking();
         this.transitionGameState('gameover');
         this.hudManager.showGameOverScreen({
           score: finalScore,
@@ -726,7 +787,7 @@ export class GameManager {
         }
       },
       onEnemyDied: (data) => {
-        this.codexService.recordEnemyKilled();
+        this.codexService.recordEnemyKilled(data?.enemyType);
         const reward = this.computeEnemyKillReward(data?.enemyType);
         if (reward > 0) {
           this.addCurrency(reward);
@@ -739,9 +800,10 @@ export class GameManager {
         this.codexService.recordPlayerDamaged();
         this.resetDaemonIdleTimer();
       },
-      onRoomEntered: () => {
+      onRoomEntered: (_data: RoomEnteredPayload) => {
         console.log(`[GameManager] Room entered callback, index: ${this.currentRoomIndex}`);
         this.codexService.recordRoomReached(this.currentRoomIndex + 1);
+        this.daemonVoicelineManager?.setCurrentRoom(this.currentRoomIndex);
       },
       onEnemyDamaged: () => {
         this.resetDaemonIdleTimer();
@@ -765,7 +827,7 @@ export class GameManager {
           getRoomIndex: () => this.currentRoomIndex
         });
 
-        this.codexService.startRunTracking();
+        this.codexService.startRunTracking(this.selectedClassId);
         void this.startNewGame();
       },
       onTutorialPhaseCompleted: (data) => {
@@ -782,6 +844,8 @@ export class GameManager {
       },
       onTutorialEndRequested: () => {
         if (!this.gameplayInitialized || !this.isTutorialRun) return;
+        this.codexService.recordTutorialCompleted(this.selectedClassId);
+        this.codexService.endRunTracking();
         this.isTutorialRun = false;
         void this.openMainMenuScene();
       },
@@ -789,10 +853,15 @@ export class GameManager {
         this.playerController?.refillUltimate();
       },
       onMainMenuRequested: () => {
+        this.codexService.endRunTracking();
         void this.openMainMenuScene();
       },
       onClassSelectRequested: () => {
+        this.codexService.endRunTracking();
         void this.openClassSelectScene(false);
+      },
+      onCodexProgressResetRequested: () => {
+        this.codexService.resetProgression();
       },
 
     });
@@ -800,7 +869,15 @@ export class GameManager {
     this.eventBusUnsubscribers = bindings.bind();
   }
 
+  private applyAudioSettings(settings: GameSettings): void {
+    if (this.musicManager) {
+      this.musicManager.setMusicVolume(settings.audio.music);
+      this.musicManager.setMasterVolume(settings.audio.master);
+    }
+  }
+
   private applyGraphicsSettings(settings: GameSettings): void {
+
     const nextLightweight = !!settings.graphics.lightweightTexturesMode;
     const nextProgressiveSpawning = !!settings.graphics.progressiveEnemySpawning;
     const nextSpawnBatchSize = Math.max(1, Math.min(12, Math.round(settings.graphics.enemySpawnBatchSize || 2)));
@@ -829,6 +906,11 @@ export class GameManager {
         enabled: this.progressiveEnemySpawning,
         batchSize: this.enemySpawnBatchSize,
       });
+    }
+
+    // Apply wall occlusion setting immediately if gameplay is active.
+    if (this.wallOcclusionManager) {
+      this.wallOcclusionManager.setEnabled(!!settings.graphics.wallOcclusionTransparency);
     }
 
     if (!this.gameplayInitialized) return;
@@ -880,6 +962,9 @@ export class GameManager {
 
     if (data?.type === 'melee' && data?.attacker) {
       const rawDamage = data.damage || 0;
+      if (data.attackerType) {
+        this.lastAttackerType = data.attackerType;
+      }
       const finalDamage = this.resolveIncomingMeleeDamage(rawDamage, data.attacker);
       if (finalDamage > 0) {
         this.playerController.applyDamage(finalDamage);
@@ -975,10 +1060,35 @@ export class GameManager {
 
   private transitionGameState(nextState: RuntimeGameState): void {
     if (this.gameState === nextState) return;
+    const prevState = this.gameState;
     this.gameState = nextState;
     this.stateMachine.transition(this.mapRuntimeStateToStateMachine(nextState));
     this.updateFogCurtain();
+    this.updateAudioState(nextState, prevState);
   }
+
+  private updateAudioState(nextState: RuntimeGameState, prevState: RuntimeGameState): void {
+    if (!this.musicManager) return;
+
+    switch (nextState) {
+      case 'playing':
+        // Ensure music is playing and exit the muffled state
+        this.musicManager.playTrack('bgm', 0.8);
+        this.musicManager.setLowPass(false, 0.45);
+        break;
+      case 'bonus':
+      case 'roomclear':
+      case 'transition':
+        // Muffle the audio for the selection/transition phase
+        this.musicManager.setLowPass(true, 0.35);
+        break;
+      case 'menu':
+      case 'gameover':
+        this.musicManager.stop();
+        break;
+    }
+  }
+
 
   private startGameLoop(): void {
     let lastTime = performance.now();
@@ -1051,6 +1161,10 @@ export class GameManager {
       let shouldSkipRender = false;
 
       if (this.gameplayInitialized && this.gameState === 'playing') {
+        const playerIsMoving = this.playerController?.getIsMoving() ?? false;
+        this.daemonVoicelineManager?.update(deltaTime, playerIsMoving);
+        this.daemonVoicelineManager?.setDaemonActive(this.hudManager.isDaemonMessageActive());
+        
         shouldSkipRender = this.updatePlayingFrame(deltaTime);
         loopProfiler?.mark('playingUpdate');
       } else if (this.gameplayInitialized) {
@@ -1123,7 +1237,22 @@ export class GameManager {
     this.roomElapsedSeconds += deltaTime;
     const profiler = this.benchmarkRunner ? createRuntimeFrameProfiler() : null;
     const shouldSkipRender = this.runtimeOrchestrator.updatePlayingFrame(this.createRuntimeFrameContext(), deltaTime, profiler);
+    const moveSpeed = this.playerController?.getMoveSpeed?.() ?? 0;
+    const fireRate = this.playerController?.getCurrentFireRate?.() ?? 0;
+    const attackSpeed = fireRate > 0 ? 1 / fireRate : 0;
+    this.codexService.recordCombatSnapshot(moveSpeed, attackSpeed);
     this.lastBenchmarkFrameProfile = profiler ? profiler.finish() : null;
+
+    // Wall occlusion transparency — update after player update to get fresh position.
+    if (this.wallOcclusionManager?.isEnabled()) {
+      const camera = (this.scene as any)?.mainCamera ?? this.scene?.activeCamera;
+      if (camera) {
+        const wallMeshes = this.roomManager.getCurrentRoomWallMeshes();
+        const playerPos = this.playerController.getPosition();
+        this.wallOcclusionManager.update(deltaTime, wallMeshes, playerPos, camera.globalPosition);
+      }
+    }
+
     return shouldSkipRender;
   }
 
@@ -1260,7 +1389,7 @@ export class GameManager {
   }
 
   private resetDaemonIdleTimer(): void {
-    this.daemonTestManager?.resetIdleTimer();
+    // Legacy call removed - now handled in DaemonVoicelineManager.update
   }
 
   private isDaemonTestEnabled(): boolean {
@@ -1380,7 +1509,7 @@ export class GameManager {
     const clamped = Math.max(0.05, Math.min(1, speedMultiplier));
     for (const enemy of enemies) {
       const current = enemy.getPosition();
-      if (Vector3.Distance(current, center) > radius) continue;
+      if (Vector3.Distance(current, center) > radius || !enemy.isSlowable()) continue;
       const previous = enemy.getPreviousPosition?.() ?? current;
       const slowed = Vector3.Lerp(previous, current, clamped);
       enemy.setPosition(slowed);
@@ -1537,7 +1666,7 @@ export class GameManager {
     this.stopBenchmarkRunner();
 
     this.selectedClassId = 'mage';
-    this.codexService.startRunTracking();
+    this.codexService.startRunTracking(this.selectedClassId);
     await this.startNewGame();
     this.startBenchmarkRun();
   }
@@ -2071,6 +2200,8 @@ export class GameManager {
   }
 
   private finishRoomTransition(nextIndex: number): void {
+    // Reset wall occlusion state between rooms to avoid stale visibility values.
+    this.wallOcclusionManager?.reset();
     this.currentRoomIndex = nextIndex;
     this.loadRoomByIndex(nextIndex, { preferPreparedEnemies: true });
     this.primedTransitionRoomKey = null;
@@ -3299,6 +3430,13 @@ export class GameManager {
 
   public getHUDManager(): HUDManager {
     return this.hudManager;
+  }
+
+  public getDaemonVoicelineManager(): DaemonVoicelineManager {
+    if (!this.daemonVoicelineManager) {
+      throw new Error('DaemonVoicelineManager not initialized');
+    }
+    return this.daemonVoicelineManager;
   }
 
   public isUsingTiles(): boolean {

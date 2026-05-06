@@ -63,9 +63,20 @@ export class EnemyController {
   private bullKnockbackStrength: number = 1.6;
   private bullAnimGroups: Map<string, AnimationGroup> = new Map();
   private bullModelRoot: TransformNode | null = null;
+  private bullMeshes: Array<Mesh | TransformNode> = [];
   private bullAnimState: 'none' | 'start' | 'run' | 'end' = 'none';
   private bullModelLoadPromise: Promise<void> | null = null;
   private bullModelScale: number = 0.1;
+  private jumperAnimGroups: Map<string, AnimationGroup> = new Map();
+  private jumperModelRoot: TransformNode | null = null;
+  private jumperMeshes: Array<Mesh | TransformNode> = [];
+  private jumperModelScale: number = 0.1;
+  private jumperModelLoadPromise: Promise<void> | null = null;
+  private casterAnimGroups: Map<string, AnimationGroup> = new Map();
+  private casterModelRoot: TransformNode | null = null;
+  private casterMeshes: Array<Mesh | TransformNode> = [];
+  private casterModelScale: number = 0.1;
+  private casterModelLoadPromise: Promise<void> | null = null;
   private knockbackStrength: number = 0;
   private selfKnockbackStrength: number = 0;
   private useCrowdSteering: boolean = false;
@@ -364,6 +375,15 @@ export class EnemyController {
 
     if (this.behavior === 'bull') {
       this.queueBullModelLoad();
+    }
+    
+    if (this.behavior === 'jumper') {
+      this.queueJumperModelLoad();
+    }
+    
+    const stationary = ['turret', 'bullet_hell', 'mage_missile', 'missile'];
+    if (stationary.includes(this.behavior)) {
+      this.queueCasterModelLoad();
     }
 
     this.applyRenderSuppressionState();
@@ -2018,6 +2038,12 @@ export class EnemyController {
     if (this.bullModelRoot) {
       this.bullModelRoot.setEnabled(false);
     }
+    if (this.jumperModelRoot) {
+      this.jumperModelRoot.setEnabled(false);
+    }
+    if (this.casterModelRoot) {
+      this.casterModelRoot.setEnabled(false);
+    }
   }
 
   takeDamage(amount: number): void {
@@ -2049,7 +2075,11 @@ export class EnemyController {
     this.laserPatternSubsystem.dispose();
     this.spikeCastSubsystem.dispose();
     this.disposeBullVisuals();
+    this.disposeJumperModel();
+    this.disposeCasterModel();
     this.bullModelLoadPromise = null;
+    this.jumperModelLoadPromise = null;
+    this.casterModelLoadPromise = null;
     if (this.mesh) {
       this.mesh.dispose();
     }
@@ -2116,6 +2146,10 @@ export class EnemyController {
     return this.behavior;
   }
 
+  isSlowable(): boolean {
+    return this.isAlive && !this.isDisposed;
+  }
+
   dispose(): void {
     if (this.isDisposed) {
       return;
@@ -2125,7 +2159,11 @@ export class EnemyController {
     this.laserPatternSubsystem.dispose();
     this.spikeCastSubsystem.dispose();
     this.disposeBullVisuals();
+    this.disposeJumperModel();
+    this.disposeCasterModel();
     this.bullModelLoadPromise = null;
+    this.jumperModelLoadPromise = null;
+    this.casterModelLoadPromise = null;
     this.navPath = [];
     this.navPathCursor = 0;
     this.navTargetSnapshot = null;
@@ -2168,6 +2206,12 @@ export class EnemyController {
       this.bullModelRoot.dispose(false, false);
       this.bullModelRoot = null;
     }
+    this.bullMeshes.forEach((m) => {
+      if (!m.isDisposed()) {
+        m.dispose(false, false);
+      }
+    });
+    this.bullMeshes = [];
   }
 
   private applyMeshPosition(): void {
@@ -2178,6 +2222,24 @@ export class EnemyController {
   }
 
   private applyRenderSuppressionState(): void {
+    // Early return for dead enemies - completely hide them
+    if (!this.isAlive) {
+      if (this.mesh && !this.mesh.isDisposed()) {
+        this.mesh.visibility = 0;
+        this.mesh.setEnabled(false);
+      }
+      if (this.bullModelRoot && !this.bullModelRoot.isDisposed()) {
+        this.bullModelRoot.setEnabled(false);
+      }
+      if (this.jumperModelRoot && !this.jumperModelRoot.isDisposed()) {
+        this.jumperModelRoot.setEnabled(false);
+      }
+      if (this.casterModelRoot && !this.casterModelRoot.isDisposed()) {
+        this.casterModelRoot.setEnabled(false);
+      }
+      return;
+    }
+
     const delta = Math.max(0, this.time.deltaTime || 0);
     if (this.fogScanPulseTimer > 0) {
       this.fogScanPulseTimer = Math.max(0, this.fogScanPulseTimer - delta);
@@ -2225,6 +2287,16 @@ export class EnemyController {
     if (this.bullModelRoot && !this.bullModelRoot.isDisposed()) {
       const shouldEnable = baseVisibility > 0.12;
       this.bullModelRoot.setEnabled(shouldEnable);
+    }
+
+    if (this.jumperModelRoot && !this.jumperModelRoot.isDisposed()) {
+      const shouldEnable = baseVisibility > 0.12;
+      this.jumperModelRoot.setEnabled(shouldEnable);
+    }
+
+    if (this.casterModelRoot && !this.casterModelRoot.isDisposed()) {
+      const shouldEnable = baseVisibility > 0.12;
+      this.casterModelRoot.setEnabled(shouldEnable);
     }
   }
 
@@ -2597,6 +2669,168 @@ export class EnemyController {
     }
   }
 
+  private static getJumperVisualOwnerId(node: TransformNode): string | null {
+    const metadata = node.metadata;
+    if (!metadata || typeof metadata !== 'object') {
+      return null;
+    }
+
+    const ownerId = (metadata as Record<string, unknown>).jumperVisualOwnerId;
+    return typeof ownerId === 'string' ? ownerId : null;
+  }
+
+  private static isJumperVisualRootNode(node: TransformNode): boolean {
+    const metadata = node.metadata;
+    if (!metadata || typeof metadata !== 'object') {
+      return false;
+    }
+    return (metadata as Record<string, unknown>).jumperVisualRoot === true;
+  }
+
+  private static markJumperVisualNode(node: TransformNode, ownerId: string, isRoot: boolean): void {
+    const metadata = (node.metadata && typeof node.metadata === 'object')
+      ? (node.metadata as Record<string, unknown>)
+      : {};
+
+    metadata.jumperVisualOwnerId = ownerId;
+    if (isRoot) {
+      metadata.jumperVisualRoot = true;
+    } else if (metadata.jumperVisualRoot === true) {
+      delete metadata.jumperVisualRoot;
+    }
+
+    node.metadata = metadata;
+  }
+
+  private static markJumperVisualHierarchy(root: TransformNode, ownerId: string): void {
+    this.markJumperVisualNode(root, ownerId, true);
+    for (const child of root.getChildTransformNodes(true)) {
+      this.markJumperVisualNode(child, ownerId, false);
+    }
+    for (const childMesh of root.getChildMeshes(true)) {
+      this.markJumperVisualNode(childMesh, ownerId, false);
+    }
+  }
+
+  private static getCasterVisualOwnerId(node: TransformNode): string | null {
+    const metadata = node.metadata;
+    if (!metadata || typeof metadata !== 'object') {
+      return null;
+    }
+
+    const ownerId = (metadata as Record<string, unknown>).casterVisualOwnerId;
+    return typeof ownerId === 'string' ? ownerId : null;
+  }
+
+  private static isCasterVisualRootNode(node: TransformNode): boolean {
+    const metadata = node.metadata;
+    if (!metadata || typeof metadata !== 'object') {
+      return false;
+    }
+    return (metadata as Record<string, unknown>).casterVisualRoot === true;
+  }
+
+  private static markCasterVisualNode(node: TransformNode, ownerId: string, isRoot: boolean): void {
+    const metadata = (node.metadata && typeof node.metadata === 'object')
+      ? (node.metadata as Record<string, unknown>)
+      : {};
+
+    metadata.casterVisualOwnerId = ownerId;
+    if (isRoot) {
+      metadata.casterVisualRoot = true;
+    } else if (metadata.casterVisualRoot === true) {
+      delete metadata.casterVisualRoot;
+    }
+
+    node.metadata = metadata;
+  }
+
+  private static markCasterVisualHierarchy(root: TransformNode, ownerId: string): void {
+    this.markCasterVisualNode(root, ownerId, true);
+    for (const child of root.getChildTransformNodes(true)) {
+      this.markCasterVisualNode(child, ownerId, false);
+    }
+    for (const childMesh of root.getChildMeshes(true)) {
+      this.markCasterVisualNode(childMesh, ownerId, false);
+    }
+  }
+
+  static cleanupOrphanJumperVisuals(scene: Scene, activeEnemyIds: Set<string>): void {
+    const activeRootNames = new Set<string>();
+    for (const activeEnemyId of activeEnemyIds) {
+      activeRootNames.add(`jumper_root_${activeEnemyId}`);
+    }
+
+    for (const node of scene.transformNodes) {
+      if (!node || node.isDisposed()) {
+        continue;
+      }
+      if (node.name.startsWith('jumper_root_') && !activeRootNames.has(node.name)) {
+        node.dispose(false, false);
+        continue;
+      }
+
+      const ownerId = this.getJumperVisualOwnerId(node);
+      if (ownerId && !activeEnemyIds.has(ownerId)) {
+        node.dispose(false, false);
+      }
+    }
+
+    for (const mesh of scene.meshes) {
+      if (!mesh || mesh.isDisposed()) {
+        continue;
+      }
+
+      if (mesh.name.startsWith('jumper_root_') && !activeRootNames.has(mesh.name)) {
+        mesh.dispose(false, false);
+        continue;
+      }
+
+      const ownerId = this.getJumperVisualOwnerId(mesh);
+      if (ownerId && !activeEnemyIds.has(ownerId)) {
+        mesh.dispose(false, false);
+      }
+    }
+  }
+
+  static cleanupOrphanCasterVisuals(scene: Scene, activeEnemyIds: Set<string>): void {
+    const activeRootNames = new Set<string>();
+    for (const activeEnemyId of activeEnemyIds) {
+      activeRootNames.add(`caster_root_${activeEnemyId}`);
+    }
+
+    for (const node of scene.transformNodes) {
+      if (!node || node.isDisposed()) {
+        continue;
+      }
+      if (node.name.startsWith('caster_root_') && !activeRootNames.has(node.name)) {
+        node.dispose(false, false);
+        continue;
+      }
+
+      const ownerId = this.getCasterVisualOwnerId(node);
+      if (ownerId && !activeEnemyIds.has(ownerId)) {
+        node.dispose(false, false);
+      }
+    }
+
+    for (const mesh of scene.meshes) {
+      if (!mesh || mesh.isDisposed()) {
+        continue;
+      }
+
+      if (mesh.name.startsWith('caster_root_') && !activeRootNames.has(mesh.name)) {
+        mesh.dispose(false, false);
+        continue;
+      }
+
+      const ownerId = this.getCasterVisualOwnerId(mesh);
+      if (ownerId && !activeEnemyIds.has(ownerId)) {
+        mesh.dispose(false, false);
+      }
+    }
+  }
+
   private async loadBullModel(): Promise<void> {
     if (this.isDisposed || this.bullModelRoot || !this.mesh || this.mesh.isDisposed() || !this.isAlive) {
       return;
@@ -2626,15 +2860,29 @@ export class EnemyController {
         return;
       }
 
+      this.disposeBullVisuals();
       const root = new TransformNode(`bull_root_${this.id}`, this.scene);
       EnemyController.markBullVisualNode(root, this.id, true);
 
-      // Parent only top-level imported nodes to avoid duplicating hierarchy links.
+      // Parent top-level imported nodes (no parent or parent not in this import).
+      const importedNodes = new Set<Node>();
+      for (const transformNode of result.transformNodes) {
+        if (transformNode && !transformNode.isDisposed()) {
+          importedNodes.add(transformNode);
+        }
+      }
+      for (const importedMesh of result.meshes as AbstractMesh[]) {
+        if (importedMesh && !importedMesh.isDisposed()) {
+          importedNodes.add(importedMesh);
+        }
+      }
+
       for (const transformNode of result.transformNodes) {
         if (!transformNode || transformNode.isDisposed()) {
           continue;
         }
-        if (transformNode.parent == null) {
+        const parent = transformNode.parent as Node | null | undefined;
+        if (!parent || !importedNodes.has(parent)) {
           transformNode.parent = root;
         }
       }
@@ -2642,10 +2890,15 @@ export class EnemyController {
         if (!importedMesh || importedMesh.isDisposed()) {
           continue;
         }
-        if (importedMesh.parent == null) {
+        const parent = importedMesh.parent as Node | null | undefined;
+        if (!parent || !importedNodes.has(parent)) {
           importedMesh.parent = root;
         }
       }
+
+      this.bullMeshes = [];
+      result.transformNodes.forEach((node) => this.bullMeshes.push(node));
+      result.meshes.forEach((mesh) => this.bullMeshes.push(mesh));
 
       EnemyController.markBullVisualHierarchy(root, this.id);
 
@@ -2663,7 +2916,6 @@ export class EnemyController {
       root.parent = this.mesh;
 
       this.mesh.isVisible = false;
-      this.disposeBullVisuals();
       this.bullModelRoot = root;
       this.applyRenderSuppressionState();
       EnemyController.dedupeBullVisualRootsForOwner(this.scene, this.id);
@@ -2952,5 +3204,245 @@ export class EnemyController {
     }
 
     return axis;
+  }
+
+  private queueJumperModelLoad(): void {
+    if (this.isDisposed || this.mesh?.isDisposed() || this.jumperModelRoot || this.jumperModelLoadPromise) {
+      return;
+    }
+    this.jumperModelLoadPromise = this._loadJumperModel().finally(() => {
+      this.jumperModelLoadPromise = null;
+    });
+  }
+
+  private async _loadJumperModel(): Promise<void> {
+    if (this.isDisposed || this.jumperModelRoot || !this.mesh || this.mesh.isDisposed() || !this.isAlive) {
+      return;
+    }
+
+    try {
+      const baseUrl = import.meta.env.BASE_URL ?? '/';
+      const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+      const rootUrl = `${normalizedBase}models/jumper/`;
+      const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'sauteur.glb', this.scene);
+
+      // Safety check after async load
+      if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.jumperModelRoot) {
+        result.animationGroups.forEach(g => g.dispose());
+        result.transformNodes.forEach(n => n.dispose(false, false));
+        result.meshes.forEach(m => m.dispose(false, false));
+        return;
+      }
+
+      this.disposeJumperModel();
+      const root = new TransformNode(`jumper_root_${this.id}`, this.scene);
+      
+      // Parent top-level imported nodes (no parent or parent not in this import).
+      const importedNodes = new Set<Node>();
+      for (const transformNode of result.transformNodes) {
+        if (transformNode && !transformNode.isDisposed()) {
+          importedNodes.add(transformNode);
+        }
+      }
+      for (const importedMesh of result.meshes as AbstractMesh[]) {
+        if (importedMesh && !importedMesh.isDisposed()) {
+          importedNodes.add(importedMesh);
+        }
+      }
+
+      for (const transformNode of result.transformNodes) {
+        if (!transformNode || transformNode.isDisposed()) {
+          continue;
+        }
+        const parent = transformNode.parent as Node | null | undefined;
+        if (!parent || !importedNodes.has(parent)) {
+          transformNode.parent = root;
+        }
+      }
+      for (const importedMesh of result.meshes as AbstractMesh[]) {
+        if (!importedMesh || importedMesh.isDisposed()) {
+          continue;
+        }
+        const parent = importedMesh.parent as Node | null | undefined;
+        if (!parent || !importedNodes.has(parent)) {
+          importedMesh.parent = root;
+        }
+      }
+
+      // Store all meshes for cleanup
+      this.jumperMeshes = [];
+      result.meshes.forEach(m => this.jumperMeshes.push(m));
+      result.transformNodes.forEach(n => this.jumperMeshes.push(n));
+
+      EnemyController.markJumperVisualHierarchy(root, this.id);
+
+      // Final safety check before assignment
+      if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.jumperModelRoot) {
+        root.dispose(false, false);
+        result.animationGroups.forEach(g => g.dispose());
+        return;
+      }
+
+      root.position = Vector3.Zero();
+      root.rotation = new Vector3(0, 0, 0);
+      root.scaling = new Vector3(this.jumperModelScale, this.jumperModelScale, this.jumperModelScale);
+      root.parent = this.mesh;
+
+      this.mesh.isVisible = false;
+      this.jumperModelRoot = root;
+      
+      // Store animation groups
+      result.animationGroups.forEach(g => {
+        this.jumperAnimGroups.set(g.name, g);
+      });
+
+      this.applyRenderSuppressionState();
+    } catch (error) {
+      console.warn('Jumper model failed to load, using placeholder.', error);
+    }
+  }
+
+  private disposeJumperModel(): void {
+    if (this.jumperModelRoot) {
+      this.jumperModelRoot.dispose(false, false);
+      this.jumperModelRoot = null;
+    }
+    const jumperRootName = `jumper_root_${this.id}`;
+    for (const node of this.scene.transformNodes) {
+      if (!node || node.isDisposed()) {
+        continue;
+      }
+      if (node.name === jumperRootName) {
+        node.dispose(false, false);
+      }
+    }
+    this.jumperMeshes.forEach(m => {
+      if (!m.isDisposed()) {
+        m.dispose(false, false);
+      }
+    });
+    this.jumperMeshes = [];
+    this.jumperAnimGroups.forEach(g => g.dispose());
+    this.jumperAnimGroups.clear();
+  }
+
+  private queueCasterModelLoad(): void {
+    if (this.isDisposed || this.mesh?.isDisposed() || this.casterModelRoot || this.casterModelLoadPromise) {
+      return;
+    }
+    this.casterModelLoadPromise = this._loadCasterModel().finally(() => {
+      this.casterModelLoadPromise = null;
+    });
+  }
+
+  private async _loadCasterModel(): Promise<void> {
+    if (this.isDisposed || this.casterModelRoot || !this.mesh || this.mesh.isDisposed() || !this.isAlive) {
+      return;
+    }
+
+    try {
+      const baseUrl = import.meta.env.BASE_URL ?? '/';
+      const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+      const rootUrl = `${normalizedBase}models/caster/`;
+      const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'caster_socle.glb', this.scene);
+
+      // Safety check after async load
+      if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.casterModelRoot) {
+        result.animationGroups.forEach(g => g.dispose());
+        result.transformNodes.forEach(n => n.dispose(false, false));
+        result.meshes.forEach(m => m.dispose(false, false));
+        return;
+      }
+
+      this.disposeCasterModel();
+      const root = new TransformNode(`caster_root_${this.id}`, this.scene);
+      
+      // Parent top-level imported nodes (no parent or parent not in this import).
+      const importedNodes = new Set<Node>();
+      for (const transformNode of result.transformNodes) {
+        if (transformNode && !transformNode.isDisposed()) {
+          importedNodes.add(transformNode);
+        }
+      }
+      for (const importedMesh of result.meshes as AbstractMesh[]) {
+        if (importedMesh && !importedMesh.isDisposed()) {
+          importedNodes.add(importedMesh);
+        }
+      }
+
+      for (const transformNode of result.transformNodes) {
+        if (!transformNode || transformNode.isDisposed()) {
+          continue;
+        }
+        const parent = transformNode.parent as Node | null | undefined;
+        if (!parent || !importedNodes.has(parent)) {
+          transformNode.parent = root;
+        }
+      }
+      for (const importedMesh of result.meshes as AbstractMesh[]) {
+        if (!importedMesh || importedMesh.isDisposed()) {
+          continue;
+        }
+        const parent = importedMesh.parent as Node | null | undefined;
+        if (!parent || !importedNodes.has(parent)) {
+          importedMesh.parent = root;
+        }
+      }
+
+      // Store all meshes for cleanup
+      this.casterMeshes = [];
+      result.meshes.forEach(m => this.casterMeshes.push(m));
+      result.transformNodes.forEach(n => this.casterMeshes.push(n));
+
+      EnemyController.markCasterVisualHierarchy(root, this.id);
+
+      // Final safety check before assignment
+      if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.casterModelRoot) {
+        root.dispose(false, false);
+        result.animationGroups.forEach(g => g.dispose());
+        return;
+      }
+
+      root.position = Vector3.Zero();
+      root.rotation = new Vector3(0, 0, 0);
+      root.scaling = new Vector3(this.casterModelScale, this.casterModelScale, this.casterModelScale);
+      root.parent = this.mesh;
+
+      this.mesh.isVisible = false;
+      this.casterModelRoot = root;
+      
+      // Store animation groups
+      result.animationGroups.forEach(g => {
+        this.casterAnimGroups.set(g.name, g);
+      });
+
+      this.applyRenderSuppressionState();
+    } catch (error) {
+      console.warn('Caster model failed to load, using placeholder.', error);
+    }
+  }
+
+  private disposeCasterModel(): void {
+    if (this.casterModelRoot) {
+      this.casterModelRoot.dispose(false, false);
+      this.casterModelRoot = null;
+    }
+    const casterRootName = `caster_root_${this.id}`;
+    for (const node of this.scene.transformNodes) {
+      if (!node || node.isDisposed()) {
+        continue;
+      }
+      if (node.name === casterRootName) {
+        node.dispose(false, false);
+      }
+    }
+    this.casterMeshes.forEach(m => {
+      if (!m.isDisposed()) {
+        m.dispose(false, false);
+      }
+    });
+    this.casterMeshes = [];
+    this.casterAnimGroups.forEach(g => g.dispose());
+    this.casterAnimGroups.clear();
   }
 }

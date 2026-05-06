@@ -6,7 +6,41 @@
  * - animationSequence: Array of animation phases to play
  * - typingSpeed: How fast the text appears (characters per second)
  * - holdDuration: How long the message stays after typing is done
+ *
+ * Event-driven fields (optional, used by DaemonVoicelineManager):
+ * - trigger: Which game event fires this voiceline
+ * - weight: Selection priority (higher = more likely)
+ * - requiredClass: Restrict to a specific player class
+ * - canGlitchFrames / canCrash: Allow mid-voiceline visual FX
  */
+
+/** All supported event trigger categories for voicelines */
+export type VoicelineTrigger =
+  | 'player_damaged'
+  | 'player_damaged_zombie'
+  | 'player_damaged_jumper'
+  | 'player_damaged_bull'
+  | 'player_damaged_caster'
+  | 'player_damaged_pong'
+  | 'player_damaged_pattern'
+  | 'player_damaged_hazard'
+  | 'player_died'
+  | 'player_idle'
+  | 'player_low_hp'
+  | 'player_ult_used'
+  | 'enemy_killed'
+  | 'enemy_killed_zombie'
+  | 'room_entered'
+  | 'room_cleared'
+  | 'room_milestone'
+  | 'boss_entered'
+  | 'game_start'
+  | 'game_over'
+  | 'ambient'
+  | 'multi_damage_streak'
+  | 'bonus_selected'
+  | 'dev_test'
+  | 'crash_recovery';
 
 export interface AnimationPhase {
   /** Emotion/animation key from daemonAvatarSets */
@@ -28,7 +62,7 @@ export interface VoicelineConfig {
   message: string;
   /** Animation phases in sequence */
   animationSequence: AnimationPhase[];
-  /** Typing speed in characters per second (default: 55) */
+  /** Typing speed in characters per second (default: 65) */
   typingSpeed?: number;
   /** Hold duration in seconds after typing completes (default: 3.5) */
   holdDuration?: number;
@@ -36,6 +70,29 @@ export interface VoicelineConfig {
   audioPath?: string;
   /** Total duration for audio playback in seconds - animations loop on final phase until this time */
   audioDuration?: number;
+
+  // ─── Event-driven fields (used by DaemonVoicelineManager) ────────
+
+  /** Event trigger category */
+  trigger?: VoicelineTrigger;
+  /** Sub-trigger context (e.g. enemy type, room number) */
+  triggerContext?: string;
+  /** Priority weight for random selection (higher = more likely, default: 1) */
+  weight?: number;
+  /** Required player class (null/undefined = any class) */
+  requiredClass?: 'mage' | 'firewall' | 'rogue' | null;
+  /** Voice synthesis preset override (default: 'daemon_normal') */
+  voicePreset?: string;
+  /** Allow mid-voiceline glitch frames? (default: true) */
+  canGlitchFrames?: boolean;
+  /** Allow crash+reboot scenario? (default: false) */
+  canCrash?: boolean;
+  /** Minimum room number to trigger (for pacing) */
+  minRoom?: number;
+  /** Maximum room number to trigger (for early game/intro specific lines) */
+  maxRoom?: number;
+  /** Tags for deduplication across similar triggers */
+  tags?: string[];
 }
 
 /**

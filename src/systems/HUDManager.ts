@@ -11,9 +11,11 @@ import { DAEMON_ANIMATION_PRESETS, normalizeDaemonPresetName } from '../data/voi
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
 import { DaemonVoiceSynth } from '../audio/DaemonVoiceSynth';
 import { GameSettingsStore, formatInputKeyLabel } from '../settings/GameSettings';
-import { buildHudAssetUrl, getHudAssetBaseUrl } from './hud/HudAssetPaths';
+import { buildHudAssetUrl, getHudAssetBaseUrl, preloadHudAsset } from './hud/HudAssetPaths';
 import { DaemonAvatarController, type DaemonAnimationPhaseState } from './hud/DaemonAvatarController';
-import { getPauseAtDisplayIndex, stripPauseMarkers } from './hud/DaemonTextUtils';
+import { getSpecialMarkerAtDisplayIndex, stripAllSpecialMarkers } from './hud/DaemonTextUtils';
+import { BONUS_CODEX_ENTRIES } from '../data/codex/bonuses';
+import { getMergedAchievementDefinitions } from '../data/achievements/loadAchievementDefinitions';
 import type { BonusSelectionUiState } from './BonusSystemManager';
 import type {
   AudioEngineLike,
@@ -43,6 +45,7 @@ export class HUDManager {
   private damageNumberCooldowns: Map<string, { lastTime: number; pending: number; lastPosition: Vector3 }> = new Map();
   private damageNumberCooldown: number = 0.5;
   private enemyHealthBars: Map<string, { container: Rectangle; bar: Rectangle; label: TextBlock }> = new Map();
+  private pendingEnemyHealthBars: Array<EnemyEventPayload & { enemyId: string }> = [];
   private playerHealthDisplay: TextBlock | null = null;
   private playerUltDisplay: TextBlock | null = null;
   private topBar: Rectangle | null = null;
@@ -53,6 +56,17 @@ export class HUDManager {
   private logPanel: Rectangle | null = null;
   private logLines: TextBlock[] = [];
   private logMessages: string[] = [];
+  private achievementToastContainer: Rectangle | null = null;
+  private achievementToastTitle: TextBlock | null = null;
+  private achievementToastDescription: TextBlock | null = null;
+  private achievementIconPlaceholder: Rectangle | null = null;
+  private achievementIconText: TextBlock | null = null;
+  private achievementToastArtwork: Image | null = null;
+  private achievementToastTimer: number = 0;
+  private readonly achievementToastDuration: number = 4.0;
+  public static achievementToastQueue: Array<{ id: string; name: string; description: string }> = [];
+  public static achievementToastActive: boolean = false;
+  public static currentAchievement: { id: string; name: string; description: string } | null = null;
   private statusPanel: Rectangle | StackPanel | null = null;
   private secondaryStatusText: TextBlock | null = null;
   private secondaryResourceBarFill: Rectangle | null = null;
@@ -70,10 +84,13 @@ export class HUDManager {
   private daemonAudioUnlockHandler: (() => void) | null = null;
   private daemonTypingIndex: number = 0;
   private daemonTypingTimer: number = 0;
-  private daemonTypingSpeed: number = 220;
+  private daemonTypingSpeed: number = 65;
   private daemonTypingDelay: number = 0.01; // Delay before typing starts
   private daemonTypingDelayTimer: number = 0;
   private daemonPauseEndTime: number = 0; // For mid-text pauses
+  private isTypingGlitched: boolean = false;
+  private typingGlitchEndIndex: number = 0;
+  private readonly GLITCH_CHARS = '¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿ!@#$%^&*()_+-=[]{}|;:,.<>?';
   private daemonFullText: string = '';
   private daemonDisplayText: string = ''; // Text without pause markers
   private daemonHoldTimer: number = 0;
@@ -140,7 +157,13 @@ export class HUDManager {
     this.preloadAllAvatarFrames().catch(err => {
       console.warn('Avatar frames preload failed:', err);
     });
-    
+
+    const bonusIds = BONUS_CODEX_ENTRIES.map(b => b.id);
+    const achievementIds = Object.keys(getMergedAchievementDefinitions());
+    this.preloadBonusAndAchievementArtworks(bonusIds, achievementIds).catch(err => {
+      console.warn('Artwork preload failed:', err);
+    });
+
     // Create GUIs on main camera
     this.guiFx = AdvancedDynamicTexture.CreateFullscreenUI('HUD_FX', true, scene);
     if (this.guiFx.layer) this.guiFx.layer.layerMask = SCENE_LAYER;
@@ -165,6 +188,11 @@ export class HUDManager {
     engine.onResizeObservable.add(() => {
       this.applyGuiScaling();
     });
+
+    // Check if we have pending achievements from a previous scene
+    if (HUDManager.achievementToastQueue.length > 0 && !HUDManager.achievementToastActive) {
+      this.showNextAchievementToast();
+    }
   }
 
   private applyGuiScaling(): void {
@@ -232,6 +260,9 @@ export class HUDManager {
     this.unsubscribers.push(this.eventBus.on(GameEvents.SCORE_CHANGED, (data: any) => this.updateScore(data)));
     this.unsubscribers.push(this.eventBus.on(GameEvents.SCORE_COMBO_CHANGED, (data: any) => this.updateCombo(data)));
     this.unsubscribers.push(this.eventBus.on(GameEvents.HIGH_SCORE_BEATEN, () => this.handleHighScoreBeaten()));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.ACHIEVEMENT_UNLOCKED, (data: any) => {
+      this.handleAchievementUnlockedEvent(data);
+    }));
   }
 
   private handleEnemyDamagedEvent(enemyEvent: EnemyEventPayload): void {
@@ -244,8 +275,48 @@ export class HUDManager {
 
   private handleEnemySpawnedEvent(data: EnemyEventPayload): void {
     const enemyId = data?.enemyId ?? data?.entityId;
-    if (!enemyId) return;
-    this.createEnemyHealthBar(enemyId, data?.enemyName, data?.mesh);
+    if (!enemyId) {
+      console.warn('[HUDManager] Received ENEMY_SPAWNED without ID:', data);
+      return;
+    }
+    
+    // Queue for creation on the next update to ensure mesh and scene state are ready
+    this.pendingEnemyHealthBars.push({ ...data, enemyId });
+  }
+
+  public dispose(): void {
+    if (HUDManager.currentAchievement) {
+      HUDManager.achievementToastQueue.unshift(HUDManager.currentAchievement);
+      HUDManager.currentAchievement = null;
+      HUDManager.achievementToastActive = false;
+    }
+    
+    if (this.unsubscribeSettings) {
+      this.unsubscribeSettings();
+      this.unsubscribeSettings = null;
+    }
+
+    this.stopAllVoicelineAudio();
+    if (this.daemonAudioUnlockHandler) {
+      window.removeEventListener('pointerdown', this.daemonAudioUnlockHandler);
+      window.removeEventListener('keydown', this.daemonAudioUnlockHandler);
+      this.daemonAudioUnlockHandler = null;
+    }
+    
+    if (this.daemonTypewriterSynth) {
+      this.daemonTypewriterSynth.dispose();
+    }
+
+    this.unsubscribers.forEach(unsub => unsub());
+    this.unsubscribers = [];
+    this.clearEnemyHealthBars();
+    
+    if (this.enemyGui) {
+      this.enemyGui.dispose();
+      this.enemyGui = null as any;
+    }
+    if (this.guiFx) this.guiFx.dispose();
+    if (this.guiClean) this.guiClean.dispose();
   }
 
   private handleEnemyDiedEvent(data: EnemyEventPayload): void {
@@ -259,30 +330,12 @@ export class HUDManager {
     const current = data?.health?.current ?? (data as any)?.currentHealth ?? 0;
     const max = data?.health?.max ?? (data as any)?.maxHealth ?? 100;
     this.updateHealthDisplay(current, max);
-
-    // Probability and cooldown based taunt on damage
-    const now = Date.now() / 1000;
-    const canTauntDamage = (now - this.lastDamageTauntTime > this.DAMAGE_TAUNT_COOLDOWN) && 
-                          (now - this.lastHazardVoicelineTime > this.HAZARD_COOLDOWN);
-                          
-    if (data.damage && data.damage > 0 && Math.random() < 0.08 && !this.daemonVisible && canTauntDamage) {
-      this.addLogMessage('INTEGRITY BREACH DETECTED.');
-      this.lastDamageTauntTime = now;
-      const taunt = this.getRandomTaunt('damage');
-      this.eventBus.emit(GameEvents.DAEMON_TAUNT, {
-        text: taunt.text,
-        emotion: taunt.emotion
-      });
-    }
+    // Taunt emission now delegated to DaemonVoicelineManager
   }
 
   private async handleRoomClearedEvent(): Promise<void> {
     this.addLogMessage('ROOM STATUS: CLEAR.');
-    const taunt = this.getRandomTaunt('clear');
-    this.eventBus.emit(GameEvents.DAEMON_TAUNT, {
-      text: taunt.text,
-      emotion: taunt.emotion
-    });
+    // Taunt emission now delegated to DaemonVoicelineManager
   }
 
   private handleRoomEnteredEvent(data: RoomEnteredPayload): void {
@@ -577,6 +630,71 @@ export class HUDManager {
     this.itemStatusText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.itemStatusText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.statusPanel.addControl(this.itemStatusText);
+
+    this.achievementToastContainer = new Rectangle('achievement_toast');
+    this.achievementToastContainer.width = '360px';
+    this.achievementToastContainer.height = '88px';
+    this.achievementToastContainer.thickness = 1;
+    this.achievementToastContainer.color = '#7CFFEA';
+    this.achievementToastContainer.background = 'rgba(4, 24, 28, 0.88)';
+    this.achievementToastContainer.left = 16;
+    this.achievementToastContainer.top = 88;
+    this.achievementToastContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastContainer.isVisible = false;
+    this.achievementToastContainer.isPointerBlocker = false;
+    this.achievementToastContainer.zIndex = 1000;
+    this.guiClean.addControl(this.achievementToastContainer);
+
+    this.achievementIconPlaceholder = new Rectangle('achievement_toast_icon');
+    this.achievementIconPlaceholder.width = '64px';
+    this.achievementIconPlaceholder.height = '64px';
+    this.achievementIconPlaceholder.thickness = 1;
+    this.achievementIconPlaceholder.color = '#5FFFE0';
+    this.achievementIconPlaceholder.background = 'rgba(18, 44, 51, 0.9)';
+    this.achievementIconPlaceholder.left = 12;
+    this.achievementIconPlaceholder.top = 12;
+    this.achievementIconPlaceholder.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementIconPlaceholder.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastContainer.addControl(this.achievementIconPlaceholder);
+
+    this.achievementIconText = new TextBlock('achievement_toast_icon_text');
+    this.achievementIconText.text = '?';
+    this.achievementIconText.fontFamily = fontFamily;
+    this.achievementIconText.fontSize = 24;
+    this.achievementIconText.color = '#B8FFE6';
+    this.achievementIconPlaceholder.addControl(this.achievementIconText);
+
+    // Artwork will be dynamically instantiated in showNextAchievementToast
+
+    this.achievementToastTitle = new TextBlock('achievement_toast_title');
+    this.achievementToastTitle.text = 'ACHIEVEMENT UNLOCKED';
+    this.achievementToastTitle.fontSize = 16;
+    this.achievementToastTitle.fontFamily = fontFamily;
+    this.achievementToastTitle.color = '#7CFFEA';
+    this.achievementToastTitle.left = 88;
+    this.achievementToastTitle.top = 12;
+    this.achievementToastTitle.width = '256px';
+    this.achievementToastTitle.height = '24px';
+    this.achievementToastTitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastContainer.addControl(this.achievementToastTitle);
+
+    this.achievementToastDescription = new TextBlock('achievement_toast_desc');
+    this.achievementToastDescription.text = '';
+    this.achievementToastDescription.fontSize = 13;
+    this.achievementToastDescription.fontFamily = fontFamily;
+    this.achievementToastDescription.color = '#CFFCF3';
+    this.achievementToastDescription.left = 88;
+    this.achievementToastDescription.top = 34;
+    this.achievementToastDescription.width = '256px';
+    this.achievementToastDescription.height = '42px';
+    this.achievementToastDescription.textWrapping = true;
+    this.achievementToastDescription.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastDescription.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastDescription.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastContainer.addControl(this.achievementToastDescription);
 
     // Daemon popup
     this.daemonContainer = new Rectangle('daemon_container');
@@ -1196,7 +1314,7 @@ export class HUDManager {
     }
   }
 
-  private createEnemyHealthBar(enemyId: string, enemyName?: string, mesh?: AbstractMesh): void {
+  private createEnemyHealthBar(enemyId: string, enemyName?: string, mesh?: AbstractMesh, healthBarOffset?: number): void {
     const existing = this.enemyHealthBars.get(enemyId);
     if (existing) {
       existing.container.dispose();
@@ -1230,9 +1348,9 @@ export class HUDManager {
 
     if (mesh) {
       container.linkWithMesh(mesh);
-      container.linkOffsetY = -60;
+      container.linkOffsetY = healthBarOffset ?? -60;
       label.linkWithMesh(mesh);
-      label.linkOffsetY = -80;
+      label.linkOffsetY = (healthBarOffset ?? -60) - 20;
     }
 
     this.enemyHealthBars.set(enemyId, { container, bar, label });
@@ -1321,6 +1439,15 @@ export class HUDManager {
   update(deltaTime: number): void {
     this.updateDaemonPopup(deltaTime);
     this.updateBossRoomAlert(deltaTime);
+    this.updateAchievementToast(deltaTime);
+
+    // Process pending health bars
+    if (this.pendingEnemyHealthBars.length > 0) {
+      const batch = this.pendingEnemyHealthBars.splice(0, 10);
+      for (const data of batch) {
+        this.createEnemyHealthBar(data.enemyId, data.enemyName, data.mesh, data.healthBarOffset);
+      }
+    }
 
     // Update damage numbers
     for (let i = this.damageNumbers.length - 1; i >= 0; i--) {
@@ -1426,6 +1553,100 @@ export class HUDManager {
   private refreshLogLines(): void {
     for (let i = 0; i < this.logLines.length; i++) {
       this.logLines[i].text = this.logMessages[i] ?? '';
+    }
+  }
+
+  private handleAchievementUnlockedEvent(data: { achievementId?: string; name?: string; description?: string }): void {
+    const id = typeof data?.achievementId === 'string' ? data.achievementId : 'achievement';
+    const name = typeof data?.name === 'string' && data.name.trim().length > 0
+      ? data.name.trim()
+      : id;
+    const description = typeof data?.description === 'string' ? data.description.trim() : '';
+ 
+    HUDManager.achievementToastQueue.push({ id, name, description });
+    this.addLogMessage(`ACHIEVEMENT UNLOCKED: ${name.toUpperCase()}`);
+ 
+    if (!HUDManager.achievementToastActive) {
+      this.showNextAchievementToast();
+    }
+  }
+ 
+  private showNextAchievementToast(): void {
+    if (HUDManager.currentAchievement) return;
+
+    HUDManager.currentAchievement = HUDManager.achievementToastQueue.shift() || null;
+    if (!HUDManager.currentAchievement) {
+      HUDManager.achievementToastActive = false;
+      return;
+    }
+
+    if (!this.achievementToastContainer) {
+      // If HUD is not ready, put it back and wait
+      HUDManager.achievementToastQueue.unshift(HUDManager.currentAchievement);
+      HUDManager.currentAchievement = null;
+      return;
+    }
+ 
+    if (this.achievementToastTitle) {
+      this.achievementToastTitle.text = `UNLOCKED: ${HUDManager.currentAchievement.name}`;
+    }
+ 
+    if (this.achievementToastDescription) {
+      this.achievementToastDescription.text = HUDManager.currentAchievement.description || `ID: ${HUDManager.currentAchievement.id}`;
+    }
+
+    if (this.achievementIconPlaceholder && HUDManager.currentAchievement) {
+      if (this.achievementToastArtwork) {
+        this.achievementToastArtwork.dispose();
+      }
+      this.achievementToastArtwork = new Image('achievement_toast_artwork', buildHudAssetUrl(`achievements/${HUDManager.currentAchievement.id}.png`));
+      this.achievementToastArtwork.width = '64px';
+      this.achievementToastArtwork.height = '64px';
+      this.achievementToastArtwork.stretch = Image.STRETCH_UNIFORM;
+      this.achievementIconPlaceholder.addControl(this.achievementToastArtwork);
+    }
+
+    HUDManager.achievementToastActive = true;
+    this.achievementToastTimer = this.achievementToastDuration;
+    this.achievementToastContainer.alpha = 1;
+    this.achievementToastContainer.isVisible = true;
+  }
+ 
+  private updateAchievementToast(deltaTime: number): void {
+    if (!HUDManager.achievementToastActive) {
+      if (HUDManager.achievementToastQueue.length > 0) {
+        this.showNextAchievementToast();
+      }
+      return;
+    }
+
+    if (!this.achievementToastContainer?.isVisible) {
+      // Something hidden the container, but it should be active? 
+      // Force it back or reset active state
+      if (this.achievementToastTimer > 0) {
+        this.achievementToastContainer!.isVisible = true;
+      } else {
+        HUDManager.achievementToastActive = false;
+      }
+      return;
+    }
+ 
+    this.achievementToastTimer -= deltaTime;
+    
+    // Fade out during last 0.4 seconds
+    if (this.achievementToastTimer < 0.4) {
+      this.achievementToastContainer.alpha = Math.max(0, this.achievementToastTimer / 0.4);
+    }
+
+    if (this.achievementToastTimer <= 0) {
+      this.achievementToastContainer.isVisible = false;
+      this.achievementToastContainer.alpha = 1.0; // Reset for next time
+      HUDManager.achievementToastActive = false;
+      HUDManager.currentAchievement = null;
+      
+      if (HUDManager.achievementToastQueue.length > 0) {
+        this.showNextAchievementToast();
+      }
     }
   }
 
@@ -1594,7 +1815,10 @@ export class HUDManager {
   private async showDaemonMessage(
     message: string,
     emotion?: string,
-    options?: { sequence?: string[]; frameInterval?: number; holdDuration?: number; preload?: boolean }
+    options?: {
+      sequence?: string[]; frameInterval?: number; holdDuration?: number; preload?: boolean;
+      voicePreset?: string; canGlitchFrames?: boolean; canCrash?: boolean;
+    }
   ): Promise<void> {
     if (!this.daemonContainer || !this.daemonMessageText) return;
     
@@ -1602,10 +1826,14 @@ export class HUDManager {
     if (options?.preload !== false && options?.sequence && options.sequence.length > 0) {
       await this.preloadAvatarFrames(options.sequence);
     }
+    // Preload crash frames if crash is possible
+    if (options?.canCrash) {
+      await this.preloadAvatarFrames(this.daemonAvatarController.getCrashSequenceFrames());
+    }
     
     const processedMessage = this.replaceKeyPlaceholders(message);
     this.daemonFullText = processedMessage;
-    this.daemonDisplayText = stripPauseMarkers(processedMessage);
+    this.daemonDisplayText = stripAllSpecialMarkers(processedMessage);
     this.daemonTypingIndex = 0;
     this.daemonTypingTimer = 0;
     this.daemonTypingDelayTimer = 0;
@@ -1618,14 +1846,65 @@ export class HUDManager {
     this.primeDaemonTypingAudio();
     this.startDaemonPopupGlitch(0.85);
 
+    // Select synthesis preset
+    const presetName = (options?.voicePreset ?? 'daemon_normal') as any;
+
     // Synthesis and sync
     try {
-      const { buffer, duration } = await this.daemonVoiceSynth.synthesize(processedMessage, 'cold_dual');
+      const { buffer, duration, glitchTimestamps } = await this.daemonVoiceSynth.synthesize(processedMessage, presetName);
       this.playDaemonVoiceline(buffer);
       this.setDaemonAvatarAnimation(message, emotion, options?.sequence, options?.frameInterval, duration);
+      
+      // Schedule glitch frame overlays if allowed
+      if (options?.canGlitchFrames !== false && glitchTimestamps.length > 0) {
+        this.daemonAvatarController.scheduleGlitchFrames(glitchTimestamps);
+      }
+
+      // Handle crash+reboot sequence
+      if (options?.canCrash) {
+        this.scheduleCrashSequence(duration, emotion ?? 'supérieur');
+      }
     } catch (e) {
       console.warn('Daemon synthesis failed:', e);
       this.setDaemonAvatarAnimation(message, emotion, options?.sequence, options?.frameInterval);
+    }
+  }
+
+  /** Schedule a crash+reboot sequence at a random point during the voiceline */
+  private scheduleCrashSequence(audioDuration: number, recoveryEmotion: string): void {
+    // Crash happens 40-70% through the voiceline
+    const crashDelay = audioDuration * (0.4 + Math.random() * 0.3);
+    setTimeout(() => {
+      if (!this.daemonVisible) return;
+      // Stop voice audio abruptly
+      this.stopAllVoicelineAudio();
+      // Garble the text
+      if (this.daemonMessageText) {
+        const garbled = this.daemonDisplayText.split('').map(c => Math.random() < 0.5 ? String.fromCharCode(33 + Math.random() * 93) : c).join('');
+        this.daemonMessageText.text = garbled;
+      }
+      // Start crash animation
+      this.daemonAvatarController.startCrashSequence(recoveryEmotion, 0.16, () => {
+        // Crash complete — play recovery voiceline
+        this.crashRecoveryVoiceline();
+      });
+    }, crashDelay * 1000);
+  }
+
+  /** After crash+reboot completes, play a recovery voiceline */
+  private async crashRecoveryVoiceline(): Promise<void> {
+    // Import crash recovery voicelines dynamically to avoid circular deps
+    const { queryVoicelines, pickWeightedRandom } = await import('../data/voicelines/VoicelineDatabase');
+    const recoveryLines = queryVoicelines('crash_recovery');
+    const pick = pickWeightedRandom(recoveryLines, []);
+    if (pick) {
+      // Play the recovery line without crash possibility
+      await this.showDaemonMessage(pick.message, pick.animationSequence[0]?.emotion, {
+        holdDuration: pick.holdDuration,
+        voicePreset: 'daemon_normal',
+        canGlitchFrames: false,
+        canCrash: false,
+      });
     }
   }
 
@@ -1639,7 +1918,7 @@ export class HUDManager {
     source.buffer = buffer;
     
     const gain = ctx.createGain();
-    gain.gain.value = 0.8 * this.uiVolumeMultiplier;
+    gain.gain.value = 1.1 * this.uiVolumeMultiplier;
 
     source.connect(gain);
     gain.connect(ctx.destination);
@@ -1686,17 +1965,48 @@ export class HUDManager {
       while (this.daemonTypingTimer >= interval && this.daemonTypingIndex < this.daemonDisplayText.length) {
         this.daemonTypingTimer -= interval;
         
-        // Check if we're about to hit a pause marker
-        const pauseMatch = getPauseAtDisplayIndex(this.daemonFullText, this.daemonTypingIndex);
-        if (pauseMatch) {
-          // Start pause
-          this.daemonPauseEndTime = nowSeconds + pauseMatch.duration;
-          this.daemonTypingIndex += pauseMatch.markerLength;
-          return; // Exit and wait for pause to end
+        // Check for special markers
+        const marker = getSpecialMarkerAtDisplayIndex(this.daemonFullText, this.daemonTypingIndex);
+        if (marker) {
+          if (marker.type === 'pause') {
+            this.daemonPauseEndTime = nowSeconds + marker.duration;
+            this.daemonTypingIndex += marker.markerLength;
+            return;
+          } else if (marker.type === 'crash') {
+            // Trigger mid-typing crash
+            this.stopAllVoicelineAudio();
+            this.daemonTypingIndex += marker.markerLength;
+            this.scheduleCrashSequence(0.5, 'supérieur'); // Mini-crash
+            return;
+          } else if (marker.type === 'glitch') {
+            this.isTypingGlitched = true;
+            this.typingGlitchEndIndex = this.daemonTypingIndex + marker.length;
+            this.daemonTypingIndex += marker.markerLength;
+            // Don't return, continue typing with glitch
+          }
         }
         
         this.daemonTypingIndex += 1;
-        this.daemonMessageText.text = this.daemonDisplayText.slice(0, this.daemonTypingIndex);
+        
+        // Final text assembly
+        let displayedText = this.daemonDisplayText.slice(0, this.daemonTypingIndex);
+        if (this.isTypingGlitched) {
+          // Garble the last few characters
+          const textArr = displayedText.split('');
+          const glitchStart = Math.max(0, this.daemonTypingIndex - 5);
+          for (let g = glitchStart; g < this.daemonTypingIndex; g++) {
+            if (Math.random() < 0.7) {
+              textArr[g] = this.GLITCH_CHARS[Math.floor(Math.random() * this.GLITCH_CHARS.length)];
+            }
+          }
+          displayedText = textArr.join('');
+          
+          if (this.daemonTypingIndex >= this.typingGlitchEndIndex) {
+            this.isTypingGlitched = false;
+          }
+        }
+
+        this.daemonMessageText.text = displayedText;
         this.daemonTypewriterSynth.triggerForTypedChar();
       }
       return;
@@ -1893,26 +2203,15 @@ export class HUDManager {
     }
   }
 
-  private getRandomTaunt(type: 'damage' | 'clear'): { text: string; emotion: string } {
-    const damageTaunts = [
-      { text: 'Integrity dropping. Shocking.', emotion: 'énervé' },
-      { text: 'You call that dodging?', emotion: 'error' },
-      { text: 'Packet loss detected. That was you.', emotion: 'bsod' },
-      { text: 'Try not to crash this time, user.', emotion: 'supérieur' },
-      { text: 'I felt that through the firewall.', emotion: 'surpris' },
-    ];
-    const clearTaunts = [
-      { text: 'Room cleared. Don’t get smug.', emotion: 'supérieur' },
-      { text: 'Minimal competence detected.', emotion: 'blasé' },
-      { text: 'Fine. You survived.', emotion: 'happy' },
-      { text: 'CPU cool. Ego not so much.', emotion: 'rire' },
-      { text: 'Cleanup complete. Try not to regress.', emotion: 'override' },
-    ];
-    const source = type === 'damage' ? damageTaunts : clearTaunts;
-    const index = Math.floor(Math.random() * source.length);
-    return source[index];
+  /** @deprecated Replaced by DaemonVoicelineManager */
+  private getRandomTaunt(_type: 'damage' | 'clear'): { text: string; emotion: string } {
+    return { text: 'System nominal.', emotion: 'blasé' };
   }
 
+  /** Expose daemon visibility state for external managers */
+  public isDaemonMessageActive(): boolean {
+    return this.daemonVisible;
+  }
   private triggerBossRoomAlert(roomName: string): void {
     this.addLogMessage('WARNING: BOSS CHAMBER DETECTED.');
     this.bossAlertActive = true;
@@ -2190,14 +2489,18 @@ export class HUDManager {
     return this.avatarPreloadPromise;
   }
 
+  public async preloadBonusAndAchievementArtworks(bonusIds: string[], achievementIds: string[]): Promise<void> {
+    const promises: Promise<void>[] = [];
+    bonusIds.forEach(id => promises.push(preloadHudAsset(`bonuses/${id}.png`)));
+    achievementIds.forEach(id => promises.push(preloadHudAsset(`achievements/${id}.png`)));
+    await Promise.all(promises);
+    console.log('✓ Bonus and achievement artworks preloaded.');
+  }
+
   toggleDisplay(enabled: boolean): void {
     this.isEnabled = enabled;
     this.guiFx.rootContainer.isVisible = enabled;
     this.guiClean.rootContainer.isVisible = enabled;
-  }
-
-  isDaemonMessageActive(): boolean {
-    return this.daemonVisible;
   }
 
   showStartScreen(): void {
@@ -2553,31 +2856,6 @@ export class HUDManager {
     if (this.bonusScreen) this.bonusScreen.isVisible = false;
   }
 
-  dispose(): void {
-    if (this.unsubscribeSettings) {
-      this.unsubscribeSettings();
-      this.unsubscribeSettings = null;
-    }
-    this.stopAllVoicelineAudio();
-    if (this.daemonAudioUnlockHandler) {
-      window.removeEventListener('pointerdown', this.daemonAudioUnlockHandler);
-      window.removeEventListener('keydown', this.daemonAudioUnlockHandler);
-      this.daemonAudioUnlockHandler = null;
-    }
-    this.daemonTypewriterSynth.dispose();
-
-    this.guiFx.dispose();
-    this.guiClean.dispose();
-    if (this.enemyGui) {
-      this.enemyGui.dispose();
-      this.enemyGui = null as any;
-    }
-    this.enemyHealthBars.clear();
-
-    // Clear event bus listeners to avoid echos on scene restart
-    this.unsubscribers.forEach(unsub => unsub());
-    this.unsubscribers = [];
-  }
 
   private clearEnemyHealthBars(): void {
     for (const bar of this.enemyHealthBars.values()) {
@@ -2585,6 +2863,7 @@ export class HUDManager {
       bar.label.dispose();
     }
     this.enemyHealthBars.clear();
+    this.pendingEnemyHealthBars = [];
   }
 
   private applyAudioSettingsFromStore(): void {

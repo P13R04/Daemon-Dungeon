@@ -7,6 +7,7 @@ import {
   HemisphericLight,
   Mesh,
   MeshBuilder,
+  PointerEventTypes,
   Scalar,
   Scene,
   SceneLoader,
@@ -15,11 +16,14 @@ import {
   Vector3,
 } from '@babylonjs/core';
 import { AdvancedDynamicTexture, Button, Control, Rectangle, ScrollViewer, StackPanel, TextBlock, Image } from '@babylonjs/gui';
-import { buildHudAssetUrl } from '../systems/hud/HudAssetPaths';
+import { buildHudAssetUrl, preloadHudAsset } from '../systems/hud/HudAssetPaths';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { BONUS_CODEX_ENTRIES, BonusCodexEntry } from '../data/codex/bonuses';
+import { UIFactory } from '../ui/UIFactory';
+import { UITheme } from '../ui/UITheme';
+import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { AchievementProgress, CodexService } from '../services/CodexService';
 import type { EnemyConfigEntry } from '../types/config';
 
@@ -69,6 +73,7 @@ interface TerminalLine {
   burstCount: number;
   burstTarget: number;
   pauseMs: number;
+  showCursor: boolean;
 }
 
 export class CodexScene {
@@ -97,8 +102,9 @@ export class CodexScene {
   private leftPanel: Rectangle;
   private leftTitle: TextBlock;
   private leftDescription: TextBlock;
-  private leftListStack: StackPanel;
-  private leftFilterRow: StackPanel;
+  private leftListStack!: StackPanel;
+  private leftListScroll!: ScrollViewer;
+  private leftFilterRow!: StackPanel;
   private leftFilterNormalBtn: Button;
   private leftFilterBossBtn: Button;
 
@@ -124,6 +130,7 @@ export class CodexScene {
 
   private keyHandler: (event: KeyboardEvent) => void;
   private audioUnlockHandler: (() => void) | null = null;
+  private glitchFx!: DaemonGlitchFx;
 
   constructor(
     private engine: Engine,
@@ -131,11 +138,10 @@ export class CodexScene {
     private enemyConfigs: Record<string, CodexEnemyConfig>,
     private onBackToMenu: () => void
   ) {
-    // Swap preset key to test variants: oldschool_fast | oldschool_arcade | oldschool_crt
     this.synthBeep = new SciFiTypewriterSynth(SCI_FI_TYPEWRITER_PRESETS.oldschool_fast);
 
     this.scene = new Scene(engine);
-    this.scene.clearColor = new Color4(0.008, 0.011, 0.023, 1);
+    this.scene.clearColor = Color4.FromHexString(UITheme.colors.bgVoid);
 
     this.setupAudioUnlock();
 
@@ -143,7 +149,7 @@ export class CodexScene {
     this.camera.lowerRadiusLimit = 12;
     this.camera.upperRadiusLimit = 28;
     this.camera.wheelDeltaPercentage = 0.01;
-    this.camera.attachControl(this.engine.getRenderingCanvas(), true);
+    // We intentionally do NOT attachControl so the user cannot drag/zoom the camera manually
 
     const light = new HemisphericLight('codexLight', new Vector3(0, 1, 0), this.scene);
     light.intensity = 0.95;
@@ -157,6 +163,10 @@ export class CodexScene {
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
+
+    // Preload artworks for better UX
+    BONUS_CODEX_ENTRIES.forEach(b => preloadHudAsset(`bonuses/${b.id}.png`));
+    this.codexService.getAchievementsProgress().forEach(a => preloadHudAsset(`achievements/${a.id}.png`));
 
     const root = new Rectangle('codexRoot');
     root.width = 1;
@@ -222,6 +232,9 @@ export class CodexScene {
 
     this.leftTitle = this.makeTerminalText('leftTitle', 20, '#7DFFE8');
     this.leftTitle.top = '-236px';
+    this.leftTitle.width = '390px';
+    this.leftTitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.leftTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.addControl(this.leftTitle);
 
     this.leftDescription = this.makeTerminalText('leftDescription', 13, '#9EE6DB');
@@ -250,31 +263,22 @@ export class CodexScene {
     this.leftFilterRow.addControl(this.leftFilterNormalBtn);
     this.leftFilterRow.addControl(this.leftFilterBossBtn);
 
-    const leftListFrame = new Rectangle('leftListFrame');
-    leftListFrame.width = '390px';
-    leftListFrame.height = '270px';
-    leftListFrame.thickness = 1;
-    leftListFrame.cornerRadius = 6;
-    leftListFrame.color = '#2DDCC0';
-    leftListFrame.background = 'rgba(6,16,24,0.58)';
+    const leftListFrame = UIFactory.createPanel('leftListFrame', 390, 270);
     leftListFrame.top = '44px';
     this.leftPanel.addControl(leftListFrame);
 
-    const leftScroll = new ScrollViewer('leftListScroll');
-    leftScroll.width = 1;
-    leftScroll.height = 1;
-    leftScroll.thickness = 0;
-    leftScroll.barColor = '#2DDCC0';
-    leftScroll.barSize = 8;
-    leftScroll.wheelPrecision = 24;
-    leftListFrame.addControl(leftScroll);
+    this.leftListScroll = UIFactory.createScrollViewer('leftListScroll');
+    this.leftListScroll.width = '100%';
+    this.leftListScroll.height = '100%';
+    leftListFrame.addControl(this.leftListScroll);
 
     this.leftListStack = new StackPanel('leftListStack');
     this.leftListStack.isVertical = true;
-    this.leftListStack.width = 1;
+    this.leftListStack.width = '100%';
     this.leftListStack.paddingTop = '6px';
     this.leftListStack.paddingBottom = '6px';
-    leftScroll.addControl(this.leftListStack);
+    this.leftListStack.isPointerBlocker = false;
+    this.leftListScroll.addControl(this.leftListStack);
 
     this.rightPanel = this.makeTerminalPanel('codexRightPanel', 430, 530);
     this.rightPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -330,6 +334,8 @@ export class CodexScene {
     this.bestiaryFogLeft.background = 'rgba(8,14,24,0.53)';
     this.bestiaryFogLeft.left = '-270px';
     this.bestiaryFogLeft.top = '44px';
+    this.bestiaryFogLeft.isPointerBlocker = false;
+    this.bestiaryFogLeft.isHitTestVisible = false;
     root.addControl(this.bestiaryFogLeft);
 
     this.bestiaryFogRight = new Rectangle('bestiaryFogRight');
@@ -339,6 +345,8 @@ export class CodexScene {
     this.bestiaryFogRight.background = 'rgba(8,14,24,0.53)';
     this.bestiaryFogRight.left = '270px';
     this.bestiaryFogRight.top = '44px';
+    this.bestiaryFogRight.isPointerBlocker = false;
+    this.bestiaryFogRight.isHitTestVisible = false;
     root.addControl(this.bestiaryFogRight);
 
     const navRow = new StackPanel('codexBottomNav');
@@ -348,24 +356,12 @@ export class CodexScene {
     navRow.top = '42%';
     root.addControl(navRow);
 
-    const leftNavBtn = Button.CreateSimpleButton('codexNavLeft', '<');
-    leftNavBtn.width = '110px';
-    leftNavBtn.height = '46px';
-    leftNavBtn.thickness = 1;
-    leftNavBtn.cornerRadius = 7;
-    leftNavBtn.color = '#C5FFF4';
-    leftNavBtn.background = 'rgba(10,24,34,0.92)';
-    leftNavBtn.onPointerUpObservable.add(() => this.navigateBy(-1));
+    const leftNavBtn = UIFactory.createTerminalButton('codexNavLeft', '<', '110px', '46px');
+    DaemonGlitchFx.inject(leftNavBtn, '<', () => this.navigateBy(-1), 0);
     navRow.addControl(leftNavBtn);
 
-    const rightNavBtn = Button.CreateSimpleButton('codexNavRight', '>');
-    rightNavBtn.width = '110px';
-    rightNavBtn.height = '46px';
-    rightNavBtn.thickness = 1;
-    rightNavBtn.cornerRadius = 7;
-    rightNavBtn.color = '#C5FFF4';
-    rightNavBtn.background = 'rgba(10,24,34,0.92)';
-    rightNavBtn.onPointerUpObservable.add(() => this.navigateBy(1));
+    const rightNavBtn = UIFactory.createTerminalButton('codexNavRight', '>', '110px', '46px');
+    DaemonGlitchFx.inject(rightNavBtn, '>', () => this.navigateBy(1), 0);
     navRow.addControl(rightNavBtn);
 
     const navHint = this.makeTerminalText('navHint', 13, '#8FD9CE');
@@ -396,6 +392,16 @@ export class CodexScene {
         const lerpAmount = Math.min(1, dt * 0.01);
         this.carouselRotation = Scalar.Lerp(this.carouselRotation, this.carouselTargetRotation, lerpAmount);
         this.updateBestiaryCarouselLayout();
+      }
+    });
+
+    this.scene.onPrePointerObservable.add((info) => {
+      if (info.type === PointerEventTypes.POINTERWHEEL) {
+        if (this.leftListScroll && this.leftListScroll.verticalBar) {
+          const event = info.event as WheelEvent;
+          this.leftListScroll.verticalBar.value += Math.sign(event.deltaY) * 0.08;
+          this.leftListScroll.verticalBar.value = Scalar.Clamp(this.leftListScroll.verticalBar.value, 0, 1);
+        }
       }
     });
   }
@@ -452,64 +458,37 @@ export class CodexScene {
   }
 
   private makeTopButton(id: string, label: string, alignment: number, onClick: () => void): Button {
-    const btn = Button.CreateSimpleButton(id, label);
-    btn.width = '160px';
-    btn.height = '36px';
-    btn.cornerRadius = 6;
-    btn.thickness = 1;
-    btn.color = '#B8FFE6';
-    btn.background = 'rgba(13,26,34,0.86)';
+    const btn = UIFactory.createTerminalButton(id, label, '160px', '36px');
     btn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     btn.horizontalAlignment = alignment;
     btn.top = '20px';
-    btn.onPointerUpObservable.add(onClick);
+    btn.onPointerClickObservable.add(onClick);
     return btn;
   }
 
   private makeTabButton(label: string, onClick: () => void): Button {
-    const btn = Button.CreateSimpleButton(`tab_${label}`, label);
-    btn.width = '246px';
-    btn.height = '40px';
-    btn.thickness = 1;
-    btn.cornerRadius = 5;
-    btn.color = '#C6FFF3';
-    btn.background = 'rgba(8,20,28,0.9)';
-    btn.onPointerUpObservable.add(onClick);
+    const btn = UIFactory.createTerminalButton(`tab_${label}`, label, '246px', '40px');
+    DaemonGlitchFx.inject(btn, label, onClick, 0);
     return btn;
   }
 
   private makeFilterButton(label: string, active: boolean, onClick: () => void): Button {
-    const btn = Button.CreateSimpleButton(`bestiary_filter_${label}`, label);
-    btn.width = '190px';
-    btn.height = '34px';
-    btn.thickness = 1;
-    btn.cornerRadius = 5;
-    btn.color = active ? '#E5FFFA' : '#90CFC7';
-    btn.background = active ? 'rgba(46,249,195,0.35)' : 'rgba(9,27,33,0.82)';
-    btn.onPointerUpObservable.add(onClick);
+    const btn = UIFactory.createTerminalButton(`bestiary_filter_${label}`, label, '190px', '34px');
+    btn.color = active ? UITheme.colors.textHighlight : UITheme.colors.borderBright;
+    btn.background = active ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
+    btn.onPointerClickObservable.add(onClick);
     return btn;
   }
 
   private makeTerminalPanel(id: string, width: number, height: number): Rectangle {
-    const panel = new Rectangle(id);
-    panel.width = `${width}px`;
-    panel.height = `${height}px`;
-    panel.cornerRadius = 10;
-    panel.thickness = 1;
-    panel.color = '#2EF9C3';
-    panel.background = 'rgba(3,11,18,0.74)';
-    return panel;
+    return UIFactory.createPanel(id, width, height);
   }
 
   private makeTerminalText(id: string, size: number, color: string): TextBlock {
-    const text = new TextBlock(id);
-    text.fontFamily = this.terminalFont;
-    text.fontSize = size;
-    text.color = color;
-    return text;
+    return UIFactory.createText(id, '', size, color);
   }
 
-  private setTerminalText(block: TextBlock, text: string, speed = 90): void {
+  private setTerminalText(block: TextBlock, text: string, speed = 220, showCursor = true): void {
     const current = this.terminalLines.find((line) => line.block === block);
     if (current) {
       current.fullText = text;
@@ -518,8 +497,9 @@ export class CodexScene {
       current.timer = 0;
       current.speed = speed;
       current.burstCount = 0;
-      current.burstTarget = 4 + Math.floor(Math.random() * 5);
+      current.burstTarget = 12 + Math.floor(Math.random() * 10);
       current.pauseMs = 0;
+      current.showCursor = showCursor;
       block.text = '';
       return;
     }
@@ -532,8 +512,9 @@ export class CodexScene {
       speed,
       timer: 0,
       burstCount: 0,
-      burstTarget: 4 + Math.floor(Math.random() * 5),
+      burstTarget: 12 + Math.floor(Math.random() * 10),
       pauseMs: 0,
+      showCursor,
     });
     block.text = '';
   }
@@ -559,13 +540,13 @@ export class CodexScene {
 
         line.burstCount++;
         if (line.burstCount >= line.burstTarget && line.index < line.fullText.length) {
-          line.pauseMs = 90 + Math.random() * 130;
+          line.pauseMs = 18 + Math.random() * 28;
           line.burstCount = 0;
-          line.burstTarget = 4 + Math.floor(Math.random() * 5);
+          line.burstTarget = 12 + Math.floor(Math.random() * 10);
         }
       }
 
-      const cursor = this.cursorVisible ? ' _' : '  ';
+      const cursor = line.showCursor ? (this.cursorVisible ? ' _' : '  ') : '';
       line.block.text = `${line.typed}${cursor}`;
     }
   }
@@ -677,7 +658,10 @@ export class CodexScene {
       const label = unlocked ? `${bonus.iconText} ${bonus.name}` : '[LOCKED BONUS]';
       const btn = this.makeLeftListButton(`left_bonus_${bonus.id}`, label, i === this.selectedBonusIndex, () => {
         this.selectedBonusIndex = i;
+        this.clearLeftList();
+        this.populateBonusList();
         this.refreshBonusSelection(false);
+        this.updateListScroll(this.selectedBonusIndex, BONUS_CODEX_ENTRIES.length);
       });
       this.leftListStack.addControl(btn);
     }
@@ -690,7 +674,10 @@ export class CodexScene {
       const status = achievement.unlocked ? '[UNLOCKED]' : `[${achievement.progress}/${achievement.target}]`;
       const btn = this.makeLeftListButton(`left_ach_${achievement.id}`, `${achievement.name} ${status}`, i === this.selectedAchievementIndex, () => {
         this.selectedAchievementIndex = i;
+        this.clearLeftList();
+        this.populateAchievementList();
         this.refreshAchievementSelection(false);
+        this.updateListScroll(this.selectedAchievementIndex, achievements.length);
       });
       this.leftListStack.addControl(btn);
     }
@@ -699,12 +686,18 @@ export class CodexScene {
   private makeLeftListButton(id: string, label: string, active: boolean, onClick: () => void): Button {
     const btn = Button.CreateSimpleButton(id, label);
     btn.width = '382px';
-    btn.height = '36px';
+    btn.height = '38px';
     btn.thickness = 1;
     btn.cornerRadius = 4;
     btn.color = active ? '#F1FFFC' : '#A3DCCF';
     btn.background = active ? 'rgba(26,98,89,0.65)' : 'rgba(10,24,34,0.84)';
-    btn.onPointerUpObservable.add(onClick);
+    btn.isPointerBlocker = true;
+    btn.isHitTestVisible = true;
+    btn.onPointerClickObservable.add(onClick);
+    if (btn.textBlock) {
+      btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      btn.textBlock.paddingLeft = '10px';
+    }
     return btn;
   }
 
@@ -844,10 +837,10 @@ export class CodexScene {
   }
 
   private updateBestiaryCamera(enemyCount: number): void {
+    this.camera.setTarget(new Vector3(0, Scalar.Clamp(1.55 + enemyCount * 0.03, 1.55, 2.25), 0));
     this.camera.alpha = -Math.PI / 2;
     this.camera.beta = Scalar.Clamp(1.40 + enemyCount * 0.006, 1.40, 1.50);
     this.camera.radius = Scalar.Clamp(15.8 + enemyCount * 0.42, 15.8, 24.5);
-    this.camera.setTarget(new Vector3(0, Scalar.Clamp(1.55 + enemyCount * 0.03, 1.55, 2.25), 0));
   }
 
   private updateBestiaryCarouselLayout(): void {
@@ -894,7 +887,10 @@ export class CodexScene {
       const count = BONUS_CODEX_ENTRIES.length;
       if (count === 0) return;
       this.selectedBonusIndex = (this.selectedBonusIndex + step + count) % count;
+      this.clearLeftList();
+      this.populateBonusList();
       this.refreshBonusSelection(false);
+      this.updateListScroll(this.selectedBonusIndex, count);
       return;
     }
 
@@ -902,7 +898,16 @@ export class CodexScene {
     const count = achievements.length;
     if (count === 0) return;
     this.selectedAchievementIndex = (this.selectedAchievementIndex + step + count) % count;
+    this.clearLeftList();
+    this.populateAchievementList();
     this.refreshAchievementSelection(false);
+    this.updateListScroll(this.selectedAchievementIndex, count);
+  }
+
+  private updateListScroll(index: number, total: number): void {
+    if (this.leftListScroll && this.leftListScroll.verticalBar && total > 1) {
+      this.leftListScroll.verticalBar.value = index / (total - 1);
+    }
   }
 
   private selectBestiaryIndex(index: number): void {
@@ -912,9 +917,12 @@ export class CodexScene {
     this.selectedBestiaryIndex = (index + count) % count;
     const step = (Math.PI * 2) / count;
     this.carouselTargetRotation = -this.selectedBestiaryIndex * step;
+    this.carouselTargetRotation = -this.selectedBestiaryIndex * step;
 
+    this.clearLeftList();
     this.populateBestiaryList();
     this.refreshBestiarySelection(false);
+    this.updateListScroll(this.selectedBestiaryIndex, count);
   }
 
   private refreshBestiarySelection(resetTyping: boolean): void {
@@ -933,8 +941,8 @@ export class CodexScene {
       ? '> Bosses are high-threat entities\n> capable of ending a run on their own.'
       : '> Enemies are daemon-aligned\n> execution units testing your resilience.';
 
-    this.setTerminalText(this.leftTitle, this.bestiaryGroup === 'boss' ? '> BESTIARY // BOSSES' : '> BESTIARY // ENEMIES');
-    this.setTerminalText(this.leftDescription, leftDesc);
+    this.setTerminalText(this.leftTitle, this.bestiaryGroup === 'boss' ? '> BESTIARY // BOSSES' : '> BESTIARY // ENEMIES', 220, false);
+    this.setTerminalText(this.leftDescription, leftDesc, 220, false);
 
     if (!selected.isUnlocked) {
       this.setTerminalText(this.rightTitle, '[LOCKED ENTITY]');
@@ -953,15 +961,15 @@ export class CodexScene {
       `Attack Speed: ${e.attackSpeed > 0 ? e.attackSpeed.toFixed(2) + '/s' : 'N/A'}\n\n` +
       `> Runtime\nBehavior ID: ${e.behavior}\nEnemy ID: ${e.id}`;
 
-    this.setTerminalText(this.rightTitle, e.name);
-    this.setTerminalText(this.rightBody, body, 120);
+    this.setTerminalText(this.rightTitle, e.name, 240, false);
+    this.setTerminalText(this.rightBody, body, 280, true);
   }
 
   private refreshBonusSelection(resetTyping: boolean): void {
     this.populateBonusList();
 
-    this.setTerminalText(this.leftTitle, '> BONUS DATABASE');
-    this.setTerminalText(this.leftDescription, '> Select a bonus to inspect effects,\n> category tags and synergy notes.');
+    this.setTerminalText(this.leftTitle, '> BONUS DATABASE', 220, false);
+    this.setTerminalText(this.leftDescription, '> Select a bonus to inspect effects,\n> category tags and synergy notes.', 220, false);
 
     const bonus = BONUS_CODEX_ENTRIES[this.selectedBonusIndex];
     if (!bonus) {
@@ -984,7 +992,8 @@ export class CodexScene {
       return;
     }
 
-    this.centerCardIcon.isVisible = false;
+    // Leave centerCardIcon visible so it serves as a background fallback if the image is transparent
+    this.centerCardIcon.isVisible = true;
     this.centerCardArtwork.isVisible = true;
     this.centerCardArtwork.source = buildHudAssetUrl(`bonuses/${bonus.id}.png`);
 
@@ -998,15 +1007,15 @@ export class CodexScene {
       `> Categories\n${bonus.categories.join(', ')}\n\n` +
       `> ID\n${bonus.id}`;
 
-    this.setTerminalText(this.rightTitle, bonus.name);
-    this.setTerminalText(this.rightBody, body, 120);
+    this.setTerminalText(this.rightTitle, bonus.name, 240, false);
+    this.setTerminalText(this.rightBody, body, 280, true);
   }
 
   private refreshAchievementSelection(resetTyping: boolean): void {
     this.populateAchievementList();
 
-    this.setTerminalText(this.leftTitle, '> ACHIEVEMENTS LOG');
-    this.setTerminalText(this.leftDescription, '> Track completion conditions\n> and current unlock state.');
+    this.setTerminalText(this.leftTitle, '> ACHIEVEMENTS LOG', 220, false);
+    this.setTerminalText(this.leftDescription, '> Track completion conditions\n> and current unlock state.', 220, false);
 
     const achievements = this.codexService.getAchievementsProgress();
     const achievement = achievements[this.selectedAchievementIndex];
@@ -1018,9 +1027,17 @@ export class CodexScene {
       return;
     }
 
-    this.centerCardIcon.isVisible = true;
-    this.centerCardArtwork.isVisible = false;
-    this.centerCardIcon.text = achievement.unlocked ? 'OK' : '...';
+    if (achievement.unlocked) {
+      // Leave centerCardIcon visible so it serves as a background fallback if the image is transparent
+      this.centerCardIcon.isVisible = true;
+      this.centerCardArtwork.isVisible = true;
+      this.centerCardArtwork.source = buildHudAssetUrl(`achievements/${achievement.id}.png`);
+    } else {
+      this.centerCardIcon.isVisible = true;
+      this.centerCardArtwork.isVisible = false;
+      this.centerCardIcon.text = '?';
+    }
+
     this.centerCardTitle.text = achievement.name;
     this.centerCardSubtitle.text = achievement.unlocked ? 'Unlocked' : 'In progress';
 
@@ -1034,8 +1051,8 @@ export class CodexScene {
       `Status: ${achievement.unlocked ? 'Unlocked' : 'Locked'}\n\n` +
       `> ID\n${achievement.id}`;
 
-    this.setTerminalText(this.rightTitle, achievement.name);
-    this.setTerminalText(this.rightBody, body, 120);
+    this.setTerminalText(this.rightTitle, achievement.name, 240, false);
+    this.setTerminalText(this.rightBody, body, 280, true);
   }
 
   private disposeBestiaryCarousel(): void {

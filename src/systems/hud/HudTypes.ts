@@ -27,6 +27,7 @@ export interface EnemyEventPayload {
   currentHP?: number;
   position?: Vector3;
   damage?: number;
+  healthBarOffset?: number;
 }
 
 export interface PlayerDamagedPayload {
@@ -47,6 +48,12 @@ export interface DaemonTauntPayload {
   frameInterval?: number;
   holdDuration?: number;
   preload?: boolean;
+  /** Voice synthesis preset override (e.g. 'daemon_normal', 'daemon_crash') */
+  voicePreset?: string;
+  /** Allow mid-voiceline glitch frames */
+  canGlitchFrames?: boolean;
+  /** Force crash+reboot sequence during this voiceline */
+  canCrash?: boolean;
 }
 
 export interface UiOptionChangedPayload {

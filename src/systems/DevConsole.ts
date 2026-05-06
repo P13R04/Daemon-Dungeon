@@ -9,7 +9,11 @@ import { EventBus, GameEvents } from '../core/EventBus';
 import { PlayerController } from '../gameplay/PlayerController';
 import { UI_LAYER } from '../ui/uiLayers';
 import { listAllVoicelineIds, getVoiceline } from '../data/voicelines/VoicelineDefinitions';
-import type { VoicelineConfig } from '../data/voicelines/VoicelineDefinitions';
+import type { VoicelineConfig, VoicelineTrigger } from '../data/voicelines/VoicelineDefinitions';
+import { listTriggerCategories } from '../data/voicelines/VoicelineDatabase';
+import { UIFactory } from '../ui/UIFactory';
+import { UITheme } from '../ui/UITheme';
+import type { DaemonVoicelineManager } from '../core/DaemonVoicelineManager';
 
 interface UiOptionChangedPayload {
   option?: string;
@@ -26,6 +30,7 @@ interface DevConsoleGameManager {
   setProceduralQuality(quality: string): void;
   getTileStatistics(): { rooms?: number; tiles?: number; obstacles?: number; spawnPoints?: number; [key: string]: unknown };
   getHUDManager(): { playVoiceline(voiceline: VoicelineConfig): Promise<void> };
+  getDaemonVoicelineManager(): DaemonVoicelineManager;
   getCameraAlpha(): number;
   setCameraAlpha(value: number): void;
   getCameraBeta(): number;
@@ -61,12 +66,15 @@ export class DevConsole {
   private voicelineIds: string[] = [];
   private voicelineSelectIndex: number = 0;
   private voicelineSelectLabel: TextBlock | null = null;
+  private triggerCategories: VoicelineTrigger[] = [];
+  private triggerSelectIndex: number = 0;
+  private triggerSelectLabel: TextBlock | null = null;
   private gameManager: DevConsoleGameManager;
   private devScrollViewer?: ScrollViewer;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private devScrollWheelObserver: any = null;
   private devPanelBackground: Rectangle | null = null;
   private devPanelContent: StackPanel | null = null;
-  private devScrollWheelObserver: Parameters<ScrollViewer['onWheelObservable']['remove']>[0] = null;
-  private lastValidDevScrollValue: number = 0;
 
   constructor(private scene: Scene, gameManager: DevConsoleGameManager) {
     this.gameManager = gameManager;
@@ -75,6 +83,8 @@ export class DevConsole {
     
     // Initialize voiceline list
     this.voicelineIds = listAllVoicelineIds();
+    this.triggerCategories = listTriggerCategories();
+    
     if (this.voicelineIds.length === 0) {
       this.voicelineIds = ['error_404_skill_not_found'];
     }
@@ -128,13 +138,7 @@ export class DevConsole {
 
   private createConsoleUI(): void {
     // Background panel
-    const bgPanel = new Rectangle('devConsoleBackground');
-    bgPanel.width = '520px';
-    bgPanel.height = '85%';
-    bgPanel.background = 'rgba(15, 15, 35, 0.98)';
-    bgPanel.thickness = 3;
-    bgPanel.cornerRadius = 8;
-    bgPanel.color = '#00FF00';
+    const bgPanel = UIFactory.createPanel('devConsoleBackground', 520, '85%');
     bgPanel.top = '120px';
     bgPanel.left = '10px';
     bgPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -143,61 +147,12 @@ export class DevConsole {
     this.gui.addControl(bgPanel);
     this.devPanelBackground = bgPanel;
 
-    const scroll = new ScrollViewer('devConsoleScroll');
+    const scroll = UIFactory.createScrollViewer('devConsoleScroll');
     this.devScrollViewer = scroll;
     scroll.width = '100%';
     scroll.height = '100%';
-    scroll.thickness = 0;
-    scroll.background = 'transparent';
     scroll.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     scroll.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    scroll.barColor = '#00FF00';
-    scroll.thumbLength = 0.35;
-    scroll.barSize = 12;
-    scroll.wheelPrecision = 0;
-
-    const verticalBar = scroll.verticalBar;
-    let isInternalDevScrollUpdate = false;
-
-    verticalBar.onValueChangedObservable.add((value) => {
-      const normalized = Number.isFinite(value) ? value : this.lastValidDevScrollValue;
-      const next = this.clamp01(normalized);
-
-      // Reject unexpected large jumps (wrap-like behavior)
-      const jump = Math.abs(next - this.lastValidDevScrollValue);
-      if (!isInternalDevScrollUpdate && jump > 0.2) {
-        isInternalDevScrollUpdate = true;
-        verticalBar.value = this.lastValidDevScrollValue;
-        isInternalDevScrollUpdate = false;
-        return;
-      }
-
-      if (next !== value) {
-        isInternalDevScrollUpdate = true;
-        verticalBar.value = next;
-        isInternalDevScrollUpdate = false;
-        return;
-      }
-
-      this.lastValidDevScrollValue = next;
-    });
-
-    this.devScrollWheelObserver = scroll.onWheelObservable.add((delta) => {
-      const rawY = Number(delta?.y ?? 0);
-      if (!Number.isFinite(rawY) || rawY === 0) return;
-
-      const direction = Math.sign(rawY);
-      const magnitude = Math.min(Math.abs(rawY), 120);
-      const step = 0.002 + magnitude * 0.00008;
-      const current = this.lastValidDevScrollValue;
-      const next = this.clamp01(current + direction * step);
-      if (next === current) return;
-
-      isInternalDevScrollUpdate = true;
-      verticalBar.value = next;
-      isInternalDevScrollUpdate = false;
-      this.lastValidDevScrollValue = next;
-    });
 
     bgPanel.addControl(scroll);
 
@@ -211,11 +166,8 @@ export class DevConsole {
     this.devPanelContent = panel;
 
     // Title
-    const title = new TextBlock('devTitle');
-    title.text = '>>> DEV CONSOLE <<<';
-    title.fontSize = 20;
+    const title = UIFactory.createText('devTitle', '>>> DEV CONSOLE <<<', 20, UITheme.colors.textHighlight);
     title.fontWeight = 'bold';
-    title.color = '#00FF00';
     title.height = '35px';
     panel.addControl(title);
 
@@ -244,21 +196,11 @@ export class DevConsole {
     this.createLiveStatsSection(panel);
 
     // Toggle button
-    const toggleBtn = new Button('devToggleBtn');
-    toggleBtn.width = '60px';
-    toggleBtn.height = '30px';
-    toggleBtn.background = '#004400';
-    toggleBtn.color = '#00FF00';
-    toggleBtn.fontSize = 12;
-    toggleBtn.left = 10;
-    toggleBtn.top = 85;
+    const toggleBtn = UIFactory.createTerminalButton('devToggleBtn', 'DEV', '60px', '30px');
+    toggleBtn.left = '10px';
+    toggleBtn.top = '85px';
     toggleBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     toggleBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    
-    const toggleLabel = new TextBlock('devToggleLabel');
-    toggleLabel.text = 'DEV';
-    toggleLabel.color = '#00FF00';
-    toggleBtn.addControl(toggleLabel);
 
     toggleBtn.onPointerUpObservable.add(() => {
       this.toggleConsole();
@@ -292,14 +234,9 @@ export class DevConsole {
     hpLabel.height = '25px';
     parent.addControl(hpLabel);
 
-    const hpSlider = new Slider('hpSlider');
-    hpSlider.minimum = 10;
-    hpSlider.maximum = 500;
-    hpSlider.value = healthConfig.max;
+    const hpSlider = UIFactory.createSlider('hpSlider', 10, 500, healthConfig.max);
     hpSlider.height = '25px';
     hpSlider.width = '440px';
-    hpSlider.color = '#FF3333';
-    hpSlider.background = '#444444';
     
     hpSlider.onValueChangedObservable.add((value: number) => {
       hpLabel.text = `HP: ${Math.floor(value)}`;
@@ -317,14 +254,9 @@ export class DevConsole {
     dmgLabel.height = '25px';
     parent.addControl(dmgLabel);
 
-    const dmgSlider = new Slider('dmgSlider');
-    dmgSlider.minimum = 1;
-    dmgSlider.maximum = 100;
-    dmgSlider.value = attackConfig.damage;
+    const dmgSlider = UIFactory.createSlider('dmgSlider', 1, 100, attackConfig.damage);
     dmgSlider.height = '25px';
     dmgSlider.width = '440px';
-    dmgSlider.color = '#FF9933';
-    dmgSlider.background = '#444444';
 
     dmgSlider.onValueChangedObservable.add((value: number) => {
       dmgLabel.text = `Damage: ${Math.floor(value)}`;
@@ -342,14 +274,9 @@ export class DevConsole {
     frLabel.height = '25px';
     parent.addControl(frLabel);
 
-    const frSlider = new Slider('frSlider');
-    frSlider.minimum = 0.05;
-    frSlider.maximum = 1.0;
-    frSlider.value = attackConfig.fireRate;
+    const frSlider = UIFactory.createSlider('frSlider', 0.05, 1.0, attackConfig.fireRate);
     frSlider.height = '25px';
     frSlider.width = '440px';
-    frSlider.color = '#00FF00';
-    frSlider.background = '#444444';
 
     frSlider.onValueChangedObservable.add((value: number) => {
       frLabel.text = `Fire Rate: ${value.toFixed(2)}`;
@@ -697,14 +624,9 @@ export class DevConsole {
     labelBlock.height = '25px';
     parent.addControl(labelBlock);
 
-    const slider = new Slider(`pp_${label}_slider`);
-    slider.minimum = min;
-    slider.maximum = max;
-    slider.value = initialValue;
+    const slider = UIFactory.createSlider(`pp_${label}_slider`, min, max, initialValue);
     slider.height = '25px';
     slider.width = '440px';
-    slider.color = '#66FFCC';
-    slider.background = '#444444';
     slider.onValueChangedObservable.add((value: number) => {
       const stepped = Math.round(value / step) * step;
       labelBlock.text = `${label}: ${stepped.toFixed(2)}`;
@@ -990,6 +912,77 @@ export class DevConsole {
     sectionTitle.paddingBottom = 6;
     parent.addControl(sectionTitle);
 
+    // --- TRIGGER CATEGORY SELECTOR ---
+    const triggerLabel = new TextBlock('triggerLabel');
+    triggerLabel.text = 'CATEGORY:';
+    triggerLabel.fontSize = 11;
+    triggerLabel.color = '#AAAAAA';
+    triggerLabel.height = '18px';
+    triggerLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    parent.addControl(triggerLabel);
+
+    const triggerRow = new StackPanel('triggerRow');
+    triggerRow.isVertical = false;
+    triggerRow.height = '30px';
+    triggerRow.width = '440px';
+    triggerRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const tPrevBtn = Button.CreateSimpleButton('triggerPrevBtn', '<');
+    tPrevBtn.width = '30px';
+    tPrevBtn.height = '24px';
+    tPrevBtn.color = '#FF00FF';
+    tPrevBtn.background = '#1A1A2A';
+    tPrevBtn.onPointerUpObservable.add(() => {
+      this.triggerSelectIndex = (this.triggerSelectIndex - 1 + this.triggerCategories.length) % this.triggerCategories.length;
+      this.updateTriggerLabel();
+    });
+
+    this.triggerSelectLabel = new TextBlock('triggerSelectLabel');
+    this.triggerSelectLabel.text = this.triggerCategories[this.triggerSelectIndex] || 'none';
+    this.triggerSelectLabel.fontSize = 13;
+    this.triggerSelectLabel.color = '#FFFFFF';
+    this.triggerSelectLabel.width = '240px';
+    this.triggerSelectLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const tNextBtn = Button.CreateSimpleButton('triggerNextBtn', '>');
+    tNextBtn.width = '30px';
+    tNextBtn.height = '24px';
+    tNextBtn.color = '#FF00FF';
+    tNextBtn.background = '#1A1A2A';
+    tNextBtn.onPointerUpObservable.add(() => {
+      this.triggerSelectIndex = (this.triggerSelectIndex + 1) % this.triggerCategories.length;
+      this.updateTriggerLabel();
+    });
+
+    const triggerPlayBtn = Button.CreateSimpleButton('triggerPlayBtn', 'PLAY CATEGORY');
+    triggerPlayBtn.width = '120px';
+    triggerPlayBtn.height = '24px';
+    triggerPlayBtn.fontSize = 11;
+    triggerPlayBtn.color = '#FFFFFF';
+    triggerPlayBtn.background = '#440044';
+    triggerPlayBtn.onPointerUpObservable.add(() => {
+      const trigger = this.triggerCategories[this.triggerSelectIndex];
+      if (trigger) {
+        this.gameManager.getDaemonVoicelineManager().forceTrigger(trigger);
+      }
+    });
+
+    triggerRow.addControl(tPrevBtn);
+    triggerRow.addControl(this.triggerSelectLabel);
+    triggerRow.addControl(tNextBtn);
+    triggerRow.addControl(triggerPlayBtn);
+    parent.addControl(triggerRow);
+
+    // --- ID-BASED SELECTOR ---
+    const idLabel = new TextBlock('idLabel');
+    idLabel.text = 'INDIVIDUAL ID:';
+    idLabel.fontSize = 11;
+    idLabel.color = '#AAAAAA';
+    idLabel.height = '18px';
+    idLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    idLabel.paddingTop = 4;
+    parent.addControl(idLabel);
+
     const selectorRow = new StackPanel('voicelineSelectorRow');
     selectorRow.isVertical = false;
     selectorRow.height = '34px';
@@ -1011,7 +1004,7 @@ export class DevConsole {
     this.voicelineSelectLabel.text = this.voicelineIds[this.voicelineSelectIndex];
     this.voicelineSelectLabel.fontSize = 13;
     this.voicelineSelectLabel.color = '#FFFFFF';
-    this.voicelineSelectLabel.width = '320px';
+    this.voicelineSelectLabel.width = '240px';
     this.voicelineSelectLabel.height = '26px';
     this.voicelineSelectLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
 
@@ -1026,28 +1019,117 @@ export class DevConsole {
       this.updateVoicelineLabel();
     });
 
-    selectorRow.addControl(prevBtn);
-    selectorRow.addControl(this.voicelineSelectLabel);
-    selectorRow.addControl(nextBtn);
-    parent.addControl(selectorRow);
-
-    const playBtn = Button.CreateSimpleButton('voicelinePlayBtn', 'PLAY VOICELINE');
-    playBtn.width = '200px';
-    playBtn.height = '30px';
+    const playBtn = Button.CreateSimpleButton('voicelinePlayBtn', 'PLAY ID');
+    playBtn.width = '120px';
+    playBtn.height = '26px';
+    playBtn.fontSize = 11;
     playBtn.color = '#FFFFFF';
     playBtn.background = '#440044';
     playBtn.thickness = 1;
-    playBtn.top = '4px';
     playBtn.onPointerUpObservable.add(() => {
       const voicelineId = this.voicelineIds[this.voicelineSelectIndex];
-      const voiceline = getVoiceline(voicelineId);
-      if (voiceline && this.gameManager?.getHUDManager) {
-        this.gameManager.getHUDManager().playVoiceline(voiceline);
-      } else {
-        console.warn(`Voiceline not found or HUD Manager not ready: ${voicelineId}`);
-      }
+      this.gameManager.getDaemonVoicelineManager().forceVoicelineById(voicelineId);
     });
-    parent.addControl(playBtn);
+
+    selectorRow.addControl(prevBtn);
+    selectorRow.addControl(this.voicelineSelectLabel);
+    selectorRow.addControl(nextBtn);
+    selectorRow.addControl(playBtn);
+    parent.addControl(selectorRow);
+
+    // --- SPECIAL SCENARIOS ---
+    const scenariosTitle = new TextBlock('scenariosTitle');
+    scenariosTitle.text = 'SCENARIOS';
+    scenariosTitle.fontSize = 11;
+    scenariosTitle.color = '#AAAAAA';
+    scenariosTitle.height = '24px';
+    scenariosTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    scenariosTitle.paddingTop = 6;
+    parent.addControl(scenariosTitle);
+
+    const scenarioGrid = new StackPanel('scenarioGrid');
+    scenarioGrid.isVertical = false;
+    scenarioGrid.height = '34px';
+    scenarioGrid.width = '440px';
+    scenarioGrid.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const btnWidth = '105px';
+    const btnMargin = '4px';
+
+    const glitchBtn = Button.CreateSimpleButton('glitchBtn', 'GLITCH');
+    glitchBtn.width = btnWidth;
+    glitchBtn.height = '28px';
+    glitchBtn.fontSize = 10;
+    glitchBtn.color = '#FFFFFF';
+    glitchBtn.background = '#660066';
+    glitchBtn.paddingRight = btnMargin;
+    glitchBtn.onPointerUpObservable.add(() => this.gameManager.getDaemonVoicelineManager().forceVoicelineById('dev_test_glitch'));
+    scenarioGrid.addControl(glitchBtn);
+
+    const crashBtn = Button.CreateSimpleButton('crashBtn', 'CRASH+INIT');
+    crashBtn.width = btnWidth;
+    crashBtn.height = '28px';
+    crashBtn.fontSize = 10;
+    crashBtn.color = '#FFFFFF';
+    crashBtn.background = '#660000';
+    crashBtn.paddingRight = btnMargin;
+    crashBtn.onPointerUpObservable.add(() => this.gameManager.getDaemonVoicelineManager().forceVoicelineById('dev_test_crash'));
+    scenarioGrid.addControl(crashBtn);
+
+    const streakBtn = Button.CreateSimpleButton('streakBtn', 'STREAK');
+    streakBtn.width = btnWidth;
+    streakBtn.height = '28px';
+    streakBtn.fontSize = 10;
+    streakBtn.color = '#FFFFFF';
+    streakBtn.background = '#330066';
+    streakBtn.paddingRight = btnMargin;
+    streakBtn.onPointerUpObservable.add(() => this.gameManager.getDaemonVoicelineManager().forceTrigger('multi_damage_streak'));
+    scenarioGrid.addControl(streakBtn);
+
+    const hpBtn = Button.CreateSimpleButton('hpBtn', 'LOW HP');
+    hpBtn.width = btnWidth;
+    hpBtn.height = '28px';
+    hpBtn.fontSize = 10;
+    hpBtn.color = '#FFFFFF';
+    hpBtn.background = '#993300';
+    hpBtn.onPointerUpObservable.add(() => this.gameManager.getDaemonVoicelineManager().forceTrigger('player_low_hp'));
+    scenarioGrid.addControl(hpBtn);
+
+    parent.addControl(scenarioGrid);
+
+    const scenarioGrid2 = new StackPanel('scenarioGrid2');
+    scenarioGrid2.isVertical = false;
+    scenarioGrid2.height = '34px';
+    scenarioGrid2.width = '440px';
+    scenarioGrid2.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    scenarioGrid2.paddingTop = '4px';
+
+    const ambientBtn = Button.CreateSimpleButton('ambientBtn', 'AMBIENT LORE');
+    ambientBtn.width = '214px';
+    ambientBtn.height = '28px';
+    ambientBtn.fontSize = 10;
+    ambientBtn.color = '#FFFFFF';
+    ambientBtn.background = '#004466';
+    ambientBtn.paddingRight = btnMargin;
+    ambientBtn.onPointerUpObservable.add(() => this.gameManager.getDaemonVoicelineManager().forceTrigger('ambient'));
+    scenarioGrid2.addControl(ambientBtn);
+
+    const idleBtn = Button.CreateSimpleButton('idleBtn', 'IDLE TAUNT');
+    idleBtn.width = '214px';
+    idleBtn.height = '28px';
+    idleBtn.fontSize = 10;
+    idleBtn.color = '#FFFFFF';
+    idleBtn.background = '#444444';
+    idleBtn.onPointerUpObservable.add(() => this.gameManager.getDaemonVoicelineManager().forceTrigger('player_idle'));
+    scenarioGrid2.addControl(idleBtn);
+
+    parent.addControl(scenarioGrid2);
+  }
+
+  private updateTriggerLabel(): void {
+    if (this.triggerSelectLabel) {
+      this.triggerSelectLabel.text = this.triggerCategories[this.triggerSelectIndex] || 'none';
+    }
   }
 
   private updateVoicelineLabel(): void {

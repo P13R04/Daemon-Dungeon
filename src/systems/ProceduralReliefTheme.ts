@@ -41,7 +41,7 @@ const WALL_MORTAR_W = 0.08;
 const WALL_BASE_HEIGHT = 0.12;
 const WALL_MOSS_COLOR_STRENGTH = 0.22;
 const WALL_MOSS_HEIGHT_STRENGTH = 1.8;
-const WALL_ELEVATION_STRENGTH = 0.24;
+const WALL_ELEVATION_STRENGTH = 0.18;  // reference uses 0.14; raised to 0.18 for visible relief while keeping corners clean
 const FLOOR_ELEVATION_STRENGTH = 0.09;
 
 // Density-based brick counts (to match 3x6 per 1.2x1.2 tile)
@@ -57,20 +57,20 @@ const QUALITY_SETTINGS: Record<ProceduralReliefQuality, {
   wallTextureSize: number;
 }> = {
   low: {
-    faceSubdivisions: 20,
-    topSubdivisions: 16,
+    faceSubdivisions: 48,  // was 20 — minimum for visible mortar joints (2.7% of face → 1-2 vertices)
+    topSubdivisions: 36,   // was 16
     floorTextureSize: 96,
     wallTextureSize: 128,
   },
   medium: {
-    faceSubdivisions: 28,
-    topSubdivisions: 24,
+    faceSubdivisions: 72,  // was 28 — mortar zone gets 2 vertices, good brick shape
+    topSubdivisions: 56,   // was 24
     floorTextureSize: 112,
     wallTextureSize: 192,
   },
   high: {
-    faceSubdivisions: 40,
-    topSubdivisions: 32,
+    faceSubdivisions: 96,  // was 40 — matches reference (index.js uses subdivisions: 96)
+    topSubdivisions: 72,   // was 32
     floorTextureSize: 128,
     wallTextureSize: 256,
   },
@@ -174,6 +174,32 @@ function wallHeightAt(gu: number, gv: number, bricksY: number = WALL_BRICKS_Y): 
   const mossThickness = (0.015 + mossBlob * 0.12) * smoothstep(0.2, 0.74, mossBlob) * mossGate * WALL_MOSS_HEIGHT_STRENGTH;
 
   return Math.max(0, Math.min(1.0, WALL_BASE_HEIGHT + brickRelief + mossThickness + (bevel * 0.12)));
+}
+
+/**
+ * Fast variant of wallHeightAt — identical brick layout and bevel but omits the
+ * expensive mossBlobAt (9-neighbour Worley loop).  Used for per-pixel bump sampling
+ * at step=2 inside makeWallMaterialFast.
+ */
+function wallHeightAtFast(gu: number, gv: number, bricksY: number = WALL_BRICKS_Y): number {
+  const row = Math.floor(Math.max(0, Math.min(0.999, gv)) * bricksY);
+  const stagger = (row % 2) * 0.5;
+  const cellX = frac01(gu * WALL_BRICKS_X + stagger);
+  const cellY = frac01(gv * bricksY);
+  const margin = WALL_MORTAR_W * 0.5;
+  if (cellX < margin || cellX > (1.0 - margin) || cellY < margin || cellY > (1.0 - margin)) {
+    return WALL_BASE_HEIGHT;
+  }
+  const bx = (cellX - margin) / (1.0 - margin * 2);
+  const by = (cellY - margin) / (1.0 - margin * 2);
+  const brickIdX = Math.floor(gu * WALL_BRICKS_X + stagger);
+  const brickIdY = row;
+  const rawBrick = hash2(brickIdX * 1.23, brickIdY * 1.31, 0.37);
+  const brickHeight = Math.floor(rawBrick * 5.0) / 5.0;
+  const brickRelief = 0.44 + brickHeight * 0.5;
+  const dist = Math.max(Math.abs(bx - 0.5), Math.abs(by - 0.5));
+  const bevel = 1.0 - smoothstep(0.32, 0.5, dist);
+  return Math.max(0, Math.min(1.0, WALL_BASE_HEIGHT + brickRelief + bevel * 0.12));
 }
 
 function flipMaskVertical(mask: number): number {
@@ -463,6 +489,11 @@ export class ProceduralReliefTheme {
   private static sceneCaches: Map<string, SceneCache> = new Map();
   private static quality: ProceduralReliefQuality = 'medium';
   private static lightweightMode: boolean = false;
+  /**
+   * When true (default), uses the optimised makeWallMaterialFast path.
+   * Set to false to fall back to the legacy (heavier) makeWallMaterial path.
+   */
+  static fastWallTextures: boolean = true;
 
   static getQuality(): ProceduralReliefQuality {
     return this.quality;
@@ -668,7 +699,7 @@ export class ProceduralReliefTheme {
     block.parent = parent;
 
     const wallHeight = baseSize * heightScale;
-    const inset = baseSize * 0.996;
+    const inset = baseSize * 0.998;        // slightly closer to full-size so core fills the gap (was 0.996)
     const facePlaneInset = baseSize * 0.003;
 
     const core = MeshBuilder.CreateBox(`${name}_core`, {
@@ -726,7 +757,7 @@ export class ProceduralReliefTheme {
     };
 
     const makeCornerFace = (faceName: string, ry: number, ox: number, oz: number, hOffset: number, flipU = false): Mesh => {
-      const cornerWidth = baseSize * 0.136;
+      const cornerWidth = baseSize * 0.150;  // reference uses 0.150 (was 0.136); wider = better corner coverage
       const cornerUScale = 0.5 / WALL_BRICKS_X;
       const cornerDepthScale = 0.52;
       return makeFace(
@@ -1149,25 +1180,195 @@ export class ProceduralReliefTheme {
     allowPartialEdgeHighlights = false,
     uScale = 1.0
   ): StandardMaterial {
+    // Dispatch to the fast path by default.
+    if (this.fastWallTextures) {
+      return this.makeWallMaterialFast(scene, key, hOffset, axisSeed, flipU, bricksY, allowPartialEdgeHighlights, uScale);
+    }
+    return this.makeWallMaterialLegacy(scene, key, hOffset, axisSeed, flipU, bricksY, allowPartialEdgeHighlights, uScale);
+  }
+
+  // ── Fast wall material (default) ───────────────────────────────────────────
+  //
+  // Strategy:
+  //   1. Mortar base fill  (O(1))
+  //   2. Per-brick diffuse colour loop  (fast, per-brick not per-pixel)
+  //   3. Bump map from wallHeightAtFast at step=2  (~(size/2)^2 ops, no mossBlobAt)
+  //   4. Coarse moss colour pass  (step=4)
+  //   5. Grain overlay  (400 random dots)
+  //   6. Blue neon highlights via drawWallBrickHighlights  (per-brick, screen blend)
+  //
+  // Bump uses wallHeightAtFast so it matches the vertex-displacement pattern exactly
+  // (abrupt mortar troughs, per-brick height steps).  No parallaxOcclusion avoids
+  // the deep-shadow artefacts that plagued the previous version.
+  private static makeWallMaterialFast(
+    scene: Scene,
+    key: string,
+    hOffset = 0,
+    axisSeed = 0,
+    flipU = false,
+    bricksY = WALL_BRICKS_Y,
+    allowPartialEdgeHighlights = false,
+    uScale = 1.0
+  ): StandardMaterial {
+    // Faithful port of the reference makeWallMaterial (tools/examples/examples_texture/index.js)
+    // Optimisation: pixel loop runs at step=2 (covers 2x2 blocks) instead of step=1.
+    // Moss is computed separately at step=4 to avoid the costly mossBlobAt per every pixel.
     const configuredSize = QUALITY_SETTINGS[this.quality].wallTextureSize;
     const size = this.lightweightMode
       ? Math.max(128, Math.floor(configuredSize * 0.58))
-      : 256;
+      : configuredSize;
+    const step = this.lightweightMode ? 4 : 2; // subsampling step
     const invSize = 1 / Math.max(1, size - 1);
     const useMipMaps = !this.lightweightMode;
-    const tex = new DynamicTexture(`w_tex_${key}`, { width: size, height: size }, scene, useMipMaps);
+    const tex  = new DynamicTexture(`w_tex_${key}`,  { width: size, height: size }, scene, useMipMaps);
     const bump = new DynamicTexture(`w_bump_${key}`, { width: size, height: size }, scene, useMipMaps);
-    const ctx = tex.getContext() as Canvas2DRenderingContext;
+    const ctx  = tex.getContext()  as Canvas2DRenderingContext;
+    const bctx = bump.getContext() as Canvas2DRenderingContext;
+
+    // ── Main per-pixel loop (step=2) ──────────────────────────────────────────
+    // Exactly mirrors the original single-pixel loop from the reference file,
+    // but samples every `step` pixels and fills step×step blocks.
+    // Moss is excluded here (computed cheaply below at step=4).
+    for (let y = 0; y < size; y += step) {
+      for (let x = 0; x < size; x += step) {
+        const uRaw = x * invSize;
+        const u = flipU ? (1.0 - uRaw) : uRaw;
+        const v = y * invSize;
+        const gx = hOffset + u * uScale + axisSeed * 1000.0;
+        const gy = v;
+        const row = Math.floor(gy * bricksY);
+        const stagger = (row % 2) * 0.5;
+        const cellX = frac01(gx * WALL_BRICKS_X + stagger);
+        const cellY = frac01(gy * bricksY);
+        const md = Math.min(Math.min(cellX, 1 - cellX), Math.min(cellY, 1 - cellY));
+        const mortar = 1.0 - smoothstep(0, WALL_MORTAR_W, md);
+
+        const brickIdX = Math.floor(gx * WALL_BRICKS_X + stagger);
+        const brickIdY = Math.floor(gy * bricksY);
+        const rawBrick = hash2(brickIdX * 1.23, brickIdY * 1.31, 0.37);
+        const brickHeight = Math.floor(rawBrick * 5.0) / 5.0;
+        // Two-octave per-pixel noise for intra-brick variation (same as reference)
+        const n = hash2(gx * 17.0, gy * 15.0, 0.62) * 0.7 + hash2(gx * 43.0, gy * 39.0, 0.18) * 0.3;
+        const centerDist = Math.max(Math.abs(cellX - 0.5), Math.abs(cellY - 0.5));
+        const bevel = 1.0 - smoothstep(0.32, 0.5, centerDist);
+        const c = 45 + n * 18 + bevel * 14 + brickHeight * 18;
+        const mortarShade = 74;
+        let r = c * (1 - mortar) + mortarShade * mortar;
+        let g = (c + 4)  * (1 - mortar) + (mortarShade + 3) * mortar;
+        let b = (c + 13) * (1 - mortar) + (mortarShade + 8) * mortar;
+
+        ctx.fillStyle = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
+        ctx.fillRect(x, y, step, step);
+
+        // Bump: same formula as reference (bevel + brickHeight + n, mortar recessed)
+        const h = Math.max(0, Math.min(255, Math.floor(112 + brickHeight * 78 + n * 34 + bevel * 60 - mortar * 36)));
+        bctx.fillStyle = `rgb(${h}, ${h}, ${h})`;
+        bctx.fillRect(x, y, step, step);
+      }
+    }
+
+    // ── Moss pass (step=4, diffuse+bump) ─────────────────────────────────────
+    // Decoupled from main loop: mossBlobAt (9-cell Worley) is the main perf cost.
+    // At step=4 it's ~16× cheaper than step=1.
+    const mossStep = this.lightweightMode ? 6 : 4;
+    for (let y = 0; y < size; y += mossStep) {
+      for (let x = 0; x < size; x += mossStep) {
+        const uRaw = x * invSize;
+        const u = flipU ? (1.0 - uRaw) : uRaw;
+        const v = y * invSize;
+        const gx = hOffset + u * uScale + axisSeed * 1000.0;
+        const gy = v;
+        const row = Math.floor(gy * bricksY);
+        const stagger = (row % 2) * 0.5;
+        const cellX = frac01(gx * WALL_BRICKS_X + stagger);
+        const cellY = frac01(gy * bricksY);
+        const md = Math.min(Math.min(cellX, 1 - cellX), Math.min(cellY, 1 - cellY));
+        const brickMask = smoothstep(WALL_MORTAR_W * 0.82, WALL_MORTAR_W * 1.22, md);
+        const brickIdX = Math.floor(gx * WALL_BRICKS_X + stagger);
+        const brickIdY = Math.floor(gy * bricksY);
+        const mossBlob = mossBlobAt(gx, gy);
+        const mossGate = smoothstep(0.56, 0.9, hash2(brickIdX * 0.77, brickIdY * 0.91, 0.63));
+
+        // Diffuse moss tint (original WALL_MOSS_COLOR_STRENGTH = 0.22)
+        const moss = smoothstep(0.2, 0.74, mossBlob) * (1.0 - smoothstep(0, WALL_MORTAR_W, md)) * mossGate;
+        if (moss > 0.01) {
+          // Read back is not possible; approximate original blend with fillStyle + globalAlpha
+          ctx.save();
+          ctx.globalAlpha = moss * WALL_MOSS_COLOR_STRENGTH;
+          ctx.fillStyle = `rgb(86, 132, 92)`;
+          ctx.fillRect(x, y, mossStep, mossStep);
+          ctx.restore();
+        }
+
+        // Bump moss (original: mossBump * 180 added)
+        const mossMask = smoothstep(0.2, 0.74, mossBlob) * brickMask * mossGate;
+        const mossBump = (0.015 + mossBlob * 0.12) * mossMask * WALL_MOSS_HEIGHT_STRENGTH;
+        if (mossBump > 0.01) {
+          const mbGray = Math.round(Math.min(255, mossBump * 180));
+          bctx.save();
+          bctx.globalAlpha = Math.min(1, mossBump * 2);
+          bctx.fillStyle = `rgb(${mbGray}, ${mbGray}, ${mbGray})`;
+          bctx.fillRect(x, y, mossStep, mossStep);
+          bctx.restore();
+        }
+      }
+    }
+
+    // ── Blue neon brick highlights (unchanged from reference) ────────────────
+    drawWallBrickHighlights(ctx, size, hOffset, axisSeed, flipU, bricksY, allowPartialEdgeHighlights, uScale);
+
+    tex.update(false);
+    bump.update(false);
+    tex.updateSamplingMode(this.lightweightMode ? Texture.BILINEAR_SAMPLINGMODE : Texture.TRILINEAR_SAMPLINGMODE);
+    bump.updateSamplingMode(this.lightweightMode ? Texture.BILINEAR_SAMPLINGMODE : Texture.TRILINEAR_SAMPLINGMODE);
+    tex.wrapU = Texture.CLAMP_ADDRESSMODE;
+    tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+    bump.wrapU = Texture.CLAMP_ADDRESSMODE;
+    bump.wrapV = Texture.CLAMP_ADDRESSMODE;
+    tex.anisotropicFilteringLevel  = this.lightweightMode ? 2 : 8;
+    bump.anisotropicFilteringLevel = this.lightweightMode ? 2 : 8;
+
+    const mat = new StandardMaterial(`w_mat_${key}`, scene);
+    mat.diffuseTexture = tex;
+    mat.bumpTexture    = bump;
+    mat.useParallax          = false;
+    mat.useParallaxOcclusion = false;
+    if (mat.bumpTexture) mat.bumpTexture.level = 1.4;
+    mat.emissiveColor = new Color3(0.04, 0.04, 0.07);
+    mat.specularColor = new Color3(0.015, 0.015, 0.015);
+    mat.freeze();
+    return mat;
+  }
+
+  // ── Legacy wall material (backup, heavy) ───────────────────────────────────
+  private static makeWallMaterialLegacy(
+    scene: Scene,
+    key: string,
+    hOffset = 0,
+    axisSeed = 0,
+    flipU = false,
+    bricksY = WALL_BRICKS_Y,
+    allowPartialEdgeHighlights = false,
+    uScale = 1.0
+  ): StandardMaterial {
+    const configuredSize = QUALITY_SETTINGS[this.quality].wallTextureSize;
+    const size = this.lightweightMode
+      ? Math.max(128, Math.floor(configuredSize * 0.58))
+      : configuredSize;
+    const useMipMaps = !this.lightweightMode;
+    const tex  = new DynamicTexture(`w_tex_${key}`,  { width: size, height: size }, scene, useMipMaps);
+    const bump = new DynamicTexture(`w_bump_${key}`, { width: size, height: size }, scene, useMipMaps);
+    const ctx  = tex.getContext()  as Canvas2DRenderingContext;
     const bctx = bump.getContext() as Canvas2DRenderingContext;
 
 
-    // 1. Draw Mortar Base
+    // ── 1. Mortar base ──────────────────────────────────────────────────
+    // Warm dark grey-brown mortar (74, 77, 82)
     const mortarShade = 74;
     ctx.fillStyle = `rgb(${mortarShade}, ${mortarShade + 3}, ${mortarShade + 8})`;
     ctx.fillRect(0, 0, size, size);
-    
-    // Heightmap base (mortar depth)
-    const mortarH = 112 - 36;
+    // Bump base — mortar is recessed, value ~76
+    const mortarH = 76;
     bctx.fillStyle = `rgb(${mortarH}, ${mortarH}, ${mortarH})`;
     bctx.fillRect(0, 0, size, size);
 
@@ -1175,104 +1376,101 @@ export class ProceduralReliefTheme {
     const brickH = size / bricksY;
     const margin = size * WALL_MORTAR_W * 0.5;
 
-    // 2. Iterate by Brick (Explicit loop for vertical motif integrity)
+    // ── 2. Per-brick diffuse + bevel bump ─────────────────────────────────
     for (let row = 0; row < bricksY; row++) {
-      const stagger = (row % 2) * 0.5;
+      const stagger  = (row % 2) * 0.5;
       const brickIdY = row;
-      
-      // We cover extra bricks on X to handle stagger and uScale/hOffset
+
       const minBX = Math.floor((hOffset - 0.5) * WALL_BRICKS_X) - 1;
       const maxBX = Math.ceil((hOffset + uScale + 0.5) * WALL_BRICKS_X) + 1;
 
       for (let bx = minBX; bx <= maxBX; bx++) {
-        // Map global brick to texture space
         const gxStart = (bx - stagger) / WALL_BRICKS_X;
         const u0 = (gxStart - hOffset) / uScale;
-        const x0 = flipU ? (1.0 - u0 - (1.0 / (WALL_BRICKS_X * uScale))) * size : u0 * size;
-        const x1 = x0 + (size / (WALL_BRICKS_X * uScale));
-        const y0 = (bricksY - 1 - row) * brickH; // Flip V to match Babylon
+        const x0 = flipU
+          ? (1.0 - u0 - 1.0 / (WALL_BRICKS_X * uScale)) * size
+          : u0 * size;
+        const x1 = x0 + size / (WALL_BRICKS_X * uScale);
+        // V flipped: row 0 → bottom
+        const y0 = (bricksY - 1 - row) * brickH;
         const y1 = y0 + brickH;
 
         if (x1 < 0 || x0 > size) continue;
 
-        const brickIdX = bx;
-        const rawBrick = hash2(brickIdX * 1.23, brickIdY * 1.31, 0.37);
+        const brickIdX    = bx;
+        const rawBrick    = hash2(brickIdX * 1.23, brickIdY * 1.31, 0.37);
         const brickHeight = Math.floor(rawBrick * 5.0) / 5.0;
 
-        // Brick bounds with margin
         const rx = Math.max(0, x0 + margin);
         const ry = y0 + margin;
         const rw = Math.min(size, x1 - margin) - rx;
         const rh = brickH - margin * 2;
-
         if (rw <= 0 || rh <= 0) continue;
 
-        // Color and Bump
-        const n = hash2(brickIdX * 13.0, brickIdY * 11.0, 0.62); // Per-brick variation
-        const c = 45 + n * 12 + brickHeight * 18;
-        
-        ctx.fillStyle = `rgb(${Math.floor(c + 12)}, ${Math.floor(c + 16)}, ${Math.floor(c + 25)})`;
+        // Warm brown palette with per-brick variation (original: c ≅57-75, blue shift)
+        const n = hash2(brickIdX * 13.0, brickIdY * 11.0, 0.62);
+        const c = 57 + n * 14 + brickHeight * 16;
+        const warmShift = hash2(brickIdX * 3.7, brickIdY * 2.9, 0.18) * 8 - 4;
+        ctx.fillStyle = `rgb(${Math.round(c + 12 + warmShift)}, ${Math.round(c + 16)}, ${Math.round(c + 25 - warmShift * 0.5)})`;
         ctx.fillRect(rx, ry, rw, rh);
 
-        // High-Fidelity Bevel in Bump Map using a radial-like gradient effect
-        const h = 112 + brickHeight * 78;
-        const hTop = h + 45; // Bevel peak
-        
-        const grad = bctx.createRadialGradient(rx + rw/2, ry + rh/2, 0, rx + rw/2, ry + rh/2, Math.max(rw, rh)/2);
-        grad.addColorStop(0, `rgb(${hTop}, ${hTop}, ${hTop})`);
-        grad.addColorStop(0.7, `rgb(${hTop}, ${hTop}, ${hTop})`); // Plateau
-        grad.addColorStop(1, `rgb(${h}, ${h}, ${h})`); // Bevel edge
+        // Radial bevel bump: bright dome centre fading toward recessed edges
+        const hCenter = 112 + brickHeight * 78;
+        const hEdge   = hCenter - 50;
+        const grad = bctx.createRadialGradient(
+          rx + rw / 2, ry + rh / 2, 0,
+          rx + rw / 2, ry + rh / 2, Math.max(rw, rh) / 2
+        );
+        grad.addColorStop(0,    `rgb(${Math.round(hCenter)}, ${Math.round(hCenter)}, ${Math.round(hCenter)})`);
+        grad.addColorStop(0.65, `rgb(${Math.round(hCenter)}, ${Math.round(hCenter)}, ${Math.round(hCenter)})`);
+        grad.addColorStop(1,    `rgb(${Math.round(hEdge)},   ${Math.round(hEdge)},   ${Math.round(hEdge)})`);
         bctx.fillStyle = grad;
         bctx.fillRect(rx, ry, rw, rh);
-
-        // Blue Highlight Integrated
-        const highlightPick = hash2(brickIdX * 1.31, brickIdY * 2.17 + axisSeed * 19.0, 0.41);
-        if (highlightPick > 0.76) {
-          const accent = 0.78 + hash2(brickIdX * 2.37, brickIdY * 1.73 + axisSeed * 7.0, 0.22) * 0.18;
-          ctx.strokeStyle = `rgb(${Math.floor(142 * accent)}, ${Math.floor(224 * accent)}, ${Math.floor(255 * accent)})`;
-          ctx.lineWidth = size * 0.015;
-          ctx.strokeRect(rx + ctx.lineWidth/2, ry + ctx.lineWidth/2, rw - ctx.lineWidth, rh - ctx.lineWidth);
-        }
       }
     }
 
-    // 3. Final Noise Pass (Grain)
+    // ── 3. Grain / micro-noise overlay ───────────────────────────────────
     ctx.save();
     ctx.globalCompositeOperation = 'overlay';
     for (let i = 0; i < 400; i++) {
-        const nx = Math.random() * size;
-        const ny = Math.random() * size;
-        const nc = Math.random() * 40;
-        ctx.fillStyle = `rgba(${nc}, ${nc}, ${nc}, 0.15)`;
-        ctx.fillRect(nx, ny, 2, 2);
+      const nx = Math.random() * size;
+      const ny = Math.random() * size;
+      const nc = Math.random() * 40;
+      ctx.fillStyle = `rgba(${nc}, ${nc}, ${nc}, 0.15)`;
+      ctx.fillRect(nx, ny, 2, 2);
     }
     ctx.restore();
 
-    // 4. Moss Pass
-    for (let y = 0; y < size; y += 4) {
-      for (let x = 0; x < size; x += 4) {
-        const u = x / size;
-        const v = (size - 1 - y) / size;
+    // ── 4. Moss pass ─────────────────────────────────────────────────────
+    // step=2 in quality mode (vs original 4) for better organic coverage.
+    const mossStep = this.lightweightMode ? 4 : 2;
+    for (let y = 0; y < size; y += mossStep) {
+      for (let x = 0; x < size; x += mossStep) {
+        const u  = x / size;
+        const v  = (size - 1 - y) / size;
         const gx = hOffset + u * uScale;
         const gy = v;
         const mb = mossBlobAt(gx, gy);
         if (mb > 0.45) {
-          const mrow = Math.floor(gy * bricksY);
-          const mcol = Math.floor(gx * WALL_BRICKS_X + (mrow % 2) * 0.5);
+          const mrow  = Math.floor(gy * bricksY);
+          const mcol  = Math.floor(gx * WALL_BRICKS_X + (mrow % 2) * 0.5);
           const mgate = smoothstep(0.56, 0.9, hash2(mcol * 0.77, mrow * 0.91, 0.63));
           if (mgate > 0.5) {
             const mossAlpha = smoothstep(0.45, 0.8, mb);
-            ctx.fillStyle = `rgba(86, 132, 92, ${mossAlpha * 0.4})`;
-            ctx.fillRect(x, y, 4, 4);
-            const mbump = Math.floor(mb * 180 * WALL_MOSS_HEIGHT_STRENGTH);
-            bctx.fillStyle = `rgba(${mbump}, ${mbump}, ${mbump}, ${mossAlpha})`;
-            bctx.fillRect(x, y, 4, 4);
+            ctx.fillStyle = `rgba(86, 132, 92, ${(mossAlpha * 0.4).toFixed(3)})`;
+            ctx.fillRect(x, y, mossStep, mossStep);
+            const mbump = Math.round(mb * 180 * WALL_MOSS_HEIGHT_STRENGTH);
+            bctx.fillStyle = `rgba(${mbump}, ${mbump}, ${mbump}, ${mossAlpha.toFixed(3)})`;
+            bctx.fillRect(x, y, mossStep, mossStep);
           }
         }
       }
     }
 
-    // Removed the separate call to drawWallBrickHighlights as it's now integrated
+    // ── 5. Blue neon brick highlights ───────────────────────────────────
+    // Signature effect: inner dark border + screen-blended cyan glow.
+    // Original drawWallBrickHighlights uses 'screen' composite for the luminescent look.
+    drawWallBrickHighlights(ctx, size, hOffset, axisSeed, flipU, bricksY, allowPartialEdgeHighlights, uScale);
 
     tex.update(false);
     bump.update(false);

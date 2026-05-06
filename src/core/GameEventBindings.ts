@@ -9,7 +9,8 @@ export type BonusRerollRequestedPayload = { cost?: number };
 export type ShopPurchaseRequestedPayload = { itemId?: string; cost?: number };
 export type EnemySpawnedPayload = { enemyType?: string };
 export type EnemyDiedPayload = { enemyType?: string };
-export type AttackPerformedPayload = { type?: string; attacker?: string; damage?: number };
+export type AttackPerformedPayload = { type?: string; attacker?: string; attackerType?: string; damage?: number };
+export type RoomEnteredPayload = { roomId?: string; roomName?: string; roomType?: string };
 
 export interface GameEventBindingsCallbacks {
   onGameStartRequested(data: GameStartRequestedPayload): void;
@@ -23,12 +24,12 @@ export interface GameEventBindingsCallbacks {
   onBonusPaidPickRequested(data: BonusPaidPickRequestedPayload): void;
   onBonusRerollRequested(data: BonusRerollRequestedPayload): void;
   onShopPurchaseRequested(data: ShopPurchaseRequestedPayload): void;
-  onPlayerDied(payload?: { reason?: string }): void;
+  onPlayerDied(payload?: { reason?: string; enemyType?: string }): void;
   onEnemySpawned(data: EnemySpawnedPayload): void;
   onEnemyDied(data: EnemyDiedPayload): void;
   onAttackPerformed(data: AttackPerformedPayload): void;
   onPlayerDamaged(): void;
-  onRoomEntered(): void;
+  onRoomEntered(data: RoomEnteredPayload): void;
   onEnemyDamaged(): void;
   onTutorialStartRequested(data: GameStartRequestedPayload): void;
   onTutorialPhaseCompleted(data?: { phaseId?: string }): void;
@@ -36,6 +37,7 @@ export interface GameEventBindingsCallbacks {
   onPlayerUltimateRefillRequested(): void;
   onMainMenuRequested(): void;
   onClassSelectRequested(): void;
+  onCodexProgressResetRequested(): void;
 }
 
 export class GameEventBindings {
@@ -94,7 +96,7 @@ export class GameEventBindings {
       this.callbacks.onShopPurchaseRequested(data);
     });
 
-    onEvent(GameEvents.PLAYER_DIED, (payload?: { reason?: string }) => {
+    onEvent(GameEvents.PLAYER_DIED, (payload?: { reason?: string; enemyType?: string }) => {
       this.callbacks.onPlayerDied(payload);
     });
 
@@ -114,8 +116,8 @@ export class GameEventBindings {
       this.callbacks.onPlayerDamaged();
     });
 
-    onEvent(GameEvents.ROOM_ENTERED, () => {
-      this.callbacks.onRoomEntered();
+    onEvent<[RoomEnteredPayload]>(GameEvents.ROOM_ENTERED, (data) => {
+      this.callbacks.onRoomEntered(data);
     });
 
     onEvent(GameEvents.ENEMY_DAMAGED, () => {
@@ -144,6 +146,10 @@ export class GameEventBindings {
 
     onEvent(GameEvents.CLASS_SELECT_REQUESTED, () => {
       if (this.callbacks.onClassSelectRequested) this.callbacks.onClassSelectRequested();
+    });
+
+    onEvent(GameEvents.CODEX_PROGRESS_RESET_REQUESTED, () => {
+      if (this.callbacks.onCodexProgressResetRequested) this.callbacks.onCodexProgressResetRequested();
     });
 
     return unsubscribers;

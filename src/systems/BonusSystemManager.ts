@@ -35,7 +35,7 @@ export interface BonusSystemCallbacks {
   getCurrentRoomIndex(): number;
   getRoomOrderLength(): number;
   markBonusDiscovered(bonusId: string): void;
-  recordBonusCollected(): void;
+  recordBonusCollected(bonusId: string): void;
 }
 
 export class BonusSystemManager {
@@ -92,7 +92,7 @@ export class BonusSystemManager {
     }
 
     this.callbacks.markBonusDiscovered(bonusId);
-    this.callbacks.recordBonusCollected();
+    this.callbacks.recordBonusCollected(bonusId);
     this.callbacks.applyBonus(bonusId);
     this.selectedChoiceIds.add(bonusId);
 
@@ -145,7 +145,7 @@ export class BonusSystemManager {
     }
 
     this.callbacks.markBonusDiscovered(targetBonusId);
-    this.callbacks.recordBonusCollected();
+    this.callbacks.recordBonusCollected(targetBonusId);
     this.callbacks.applyBonus(targetBonusId);
     this.selectedChoiceIds.add(targetBonusId);
 

@@ -49,6 +49,7 @@ export interface GraphicsSettings {
   progressiveEnemySpawning: boolean;
   enemySpawnBatchSize: number;
   roomPreloadAheadCount: number;
+  wallOcclusionTransparency: boolean;
 }
 
 export interface GameSettings {
@@ -96,6 +97,7 @@ const DEFAULT_SETTINGS: GameSettings = {
     progressiveEnemySpawning: true,
     enemySpawnBatchSize: 2,
     roomPreloadAheadCount: 2,
+    wallOcclusionTransparency: true,
   },
 };
 
@@ -278,6 +280,8 @@ export class GameSettingsStore {
           8,
           DEFAULT_SETTINGS.graphics.roomPreloadAheadCount,
         ),
+        wallOcclusionTransparency:
+          parsed.graphics?.wallOcclusionTransparency ?? DEFAULT_SETTINGS.graphics.wallOcclusionTransparency,
       },
     };
   }

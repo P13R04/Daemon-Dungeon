@@ -32,4 +32,11 @@ export class MathUtils {
     dir.y = 0;
     return dir.normalize();
   }
+
+  static lerpAngle(start: number, end: number, t: number): number {
+    let diff = end - start;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    return start + diff * t;
+  }
 }

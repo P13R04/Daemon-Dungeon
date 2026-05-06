@@ -136,11 +136,12 @@
       "jumpSpeedMultiplier": 2.6,
       "hitRange": 1.0,
       "jumpCooldown": 1.1,
-      "jumpHeight": 2.2
+      "jumpHeight": 2.2,
+      "modelScale": 0.25
     },
     "lootTable": [],
     "appearance": {
-      "size": 0.95,
+      "size": 0.24,
       "color": { "r": 0.9, "g": 0.6, "b": 0.9 }
     }
   },
@@ -522,13 +523,14 @@
       "jumpCooldown": 1.0,
       "jumpHeight": 3.6,
       "shockwaveEnabled": true,
-      "shockwaveRadius": 3.6,
-      "shockwaveDuration": 0.55,
-      "shockwaveDamage": 20
+      "shockwaveRadius": 7.5,
+      "shockwaveDuration": 0.75,
+      "shockwaveDamage": 25,
+      "modelScale": 0.67
     },
     "lootTable": [],
     "appearance": {
-      "size": 1.2,
+      "size": 0.8,
       "color": { "r": 0.95, "g": 0.45, "b": 0.95 }
     }
   },

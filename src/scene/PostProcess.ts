@@ -86,13 +86,15 @@ export class PostProcessManager {
     }
     if (!this.pipeline) return;
 
-    this.pipeline.imageProcessingEnabled = true;
-    this.pipeline.imageProcessing.contrast = 1.08;
-    this.pipeline.imageProcessing.exposure = 1.08;
-    this.pipeline.imageProcessing.vignetteEnabled = this.config.vignetteEnabled;
-    this.pipeline.imageProcessing.vignetteWeight = this.config.vignetteWeight;
-    const [r, g, b, a] = this.config.vignetteColor;
-    this.pipeline.imageProcessing.vignetteColor = new Color4(r, g, b, a);
+    if (this.pipeline.imageProcessing) {
+      this.pipeline.imageProcessingEnabled = true;
+      this.pipeline.imageProcessing.contrast = 1.08;
+      this.pipeline.imageProcessing.exposure = 1.08;
+      this.pipeline.imageProcessing.vignetteEnabled = this.config.vignetteEnabled;
+      this.pipeline.imageProcessing.vignetteWeight = this.config.vignetteWeight;
+      const [r, g, b, a] = this.config.vignetteColor;
+      this.pipeline.imageProcessing.vignetteColor = new Color4(r, g, b, a);
+    }
 
     this.pipeline.chromaticAberrationEnabled = true;
     if (this.pipeline.chromaticAberration) {

@@ -51,9 +51,8 @@ export class EnemySpawner {
   private transitionPreparedEnemies: EnemyController[] = [];
   private deferredEnemyDisposalQueue: EnemyController[] = [];
   private suppressedAIActivationQueue: EnemyController[] = [];
-  private orphanBullCleanupAccumulator: number = 0;
-  private orphanBullCleanupIntervalSeconds: number = 1.0;
   private fogMask: FogMask | null = null;
+  private orphanBullCleanupAccumulator: number = 0;
 
   constructor(
     private scene: Scene,
@@ -193,7 +192,7 @@ export class EnemySpawner {
         difficultyLevelOverride: request.difficultyLevel,
         suppressSpawnEvent: true,
         suppressAI: true,
-        suppressRender: false,
+        suppressRender: true,
         targetCollection: this.transitionPreparedEnemies,
       });
 
@@ -462,6 +461,8 @@ export class EnemySpawner {
     return this.enemies.filter(e => e.isActive());
   }
 
+  private static readonly _zeroVelocity = new Vector3(0, 0, 0);
+
   update(
     deltaTime: number,
     playerPosition: Vector3,
@@ -476,12 +477,15 @@ export class EnemySpawner {
     const gameplayConfig = this.configLoader.getGameplayConfig();
     const freezeEnemies = gameplayConfig?.debugConfig?.freezeEnemies === true;
     const detectionRangeSq = detectionRange == null ? null : detectionRange * detectionRange;
+    // Pre-resolve velocity once outside the loop to avoid per-enemy allocation.
+    const resolvedVelocity = playerVelocity ?? EnemySpawner._zeroVelocity;
 
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
       
       if (!enemy.isActive()) {
         this.enemies.splice(i, 1);
+        enemy.dispose();
         continue;
       }
 
@@ -496,49 +500,40 @@ export class EnemySpawner {
         playerPosition,
         this.enemies,
         roomManager,
-        playerVelocity ?? new Vector3(0, 0, 0),
+        resolvedVelocity,
         detected,
         freezeEnemies,
       );
-
-      enemy.setFogMask(this.fogMask);
+      // fogMask is applied via setFogMask() when it changes — no need to push it every frame.
     }
 
-    this.applyFogMaskToCollection(this.transitionPreparedEnemies);
-    this.applyFogMaskToCollection(this.suppressedAIActivationQueue);
+    // Only iterate transition/suppressed queues when a fog mask is actually active.
+    if (this.fogMask) {
+      this.applyFogMaskToCollection(this.transitionPreparedEnemies);
+      this.applyFogMaskToCollection(this.suppressedAIActivationQueue);
+    }
 
     this.flushSuppressedAIActivationQueue(1);
     this.processDeferredEnemyDisposals(1);
 
     this.orphanBullCleanupAccumulator += deltaTime;
-    if (this.orphanBullCleanupAccumulator >= this.orphanBullCleanupIntervalSeconds) {
+    if (this.orphanBullCleanupAccumulator >= 0.75) {
       this.orphanBullCleanupAccumulator = 0;
-      this.cleanupOrphanBullVisuals();
-    }
-  }
-
-  private cleanupOrphanBullVisuals(): void {
-    const activeEnemyIds = new Set<string>();
-
-    for (const enemy of this.enemies) {
-      if (enemy.isActive()) {
-        activeEnemyIds.add(enemy.getId());
-      }
-    }
-
-    for (const enemy of this.transitionPreparedEnemies) {
-      if (enemy.isActive()) {
-        activeEnemyIds.add(enemy.getId());
-      }
+      const activeEnemyIds = new Set<string>();
+      const addIds = (collection: EnemyController[]): void => {
+        for (const enemy of collection) {
+          activeEnemyIds.add(enemy.getId());
+        }
+      };
+      addIds(this.enemies);
+      addIds(this.transitionPreparedEnemies);
+      addIds(this.suppressedAIActivationQueue);
+      addIds(this.deferredEnemyDisposalQueue);
+      EnemyController.cleanupOrphanBullVisuals(this.scene, activeEnemyIds);
+      EnemyController.cleanupOrphanJumperVisuals(this.scene, activeEnemyIds);
+      EnemyController.cleanupOrphanCasterVisuals(this.scene, activeEnemyIds);
     }
 
-    for (const enemy of this.suppressedAIActivationQueue) {
-      if (enemy.isActive()) {
-        activeEnemyIds.add(enemy.getId());
-      }
-    }
-
-    EnemyController.cleanupOrphanBullVisuals(this.scene, activeEnemyIds);
   }
 
   private processDeferredEnemyDisposals(batchSize: number = 1): void {

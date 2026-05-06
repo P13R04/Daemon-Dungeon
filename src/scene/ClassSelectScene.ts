@@ -27,6 +27,8 @@ import { PostProcessManager, PostProcessingConfig } from './PostProcess';
 import { ClassSelectDevConsole } from './ClassSelectDevConsole';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { GameSettingsStore } from '../settings/GameSettings';
+import { UIFactory } from '../ui/UIFactory';
+import { UITheme } from '../ui/UITheme';
 
 interface ClassCarouselItem {
   id: 'mage' | 'firewall' | 'rogue' | 'cat';
@@ -123,7 +125,7 @@ export class ClassSelectScene {
     postProcessingConfig?: Partial<PostProcessingConfig>
   ) {
     this.scene = new Scene(engine);
-    this.scene.clearColor = new Color4(0.02, 0.02, 0.06, 1);
+    this.scene.clearColor = Color4.FromHexString(UITheme.colors.bgVoid);
 
     this.postProcessConfig = {
       enabled: true,
@@ -285,93 +287,51 @@ export class ClassSelectScene {
   }
 
   private createUi(): { infoText: TextBlock; startButton: Button } {
-    const backBtn = Button.CreateSimpleButton('classSelectBackTopLeft', 'BACK');
-    backBtn.width = '96px';
-    backBtn.height = '36px';
-    backBtn.color = '#B8FFE6';
-    backBtn.cornerRadius = 4;
-    backBtn.background = 'rgba(20,30,35,0.9)';
-    backBtn.thickness = 1;
+    const backBtn = UIFactory.createTerminalButton('classSelectBackTopLeft', 'BACK', '96px', '36px');
     backBtn.left = '20px';
     backBtn.top = '20px';
     backBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     backBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    backBtn.isPointerBlocker = true;
     backBtn.zIndex = 1300;
     backBtn.onPointerClickObservable.add(() => {
       this.navigateBackToTitle();
     });
-    backBtn.onPointerUpObservable.add(() => {
-      this.navigateBackToTitle();
-    });
     this.gui.addControl(backBtn);
 
-    const title = new TextBlock('classSelectTitle');
-    title.text = 'SELECT CLASS';
-    title.color = '#7CFFEA';
-    title.fontSize = 44;
-    title.fontFamily = 'Consolas';
+    const title = UIFactory.createText('classSelectTitle', 'SELECT CLASS', 44, UITheme.colors.textHighlight);
     title.top = '-42%';
+    title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.gui.addControl(title);
 
-    const subtitle = new TextBlock('classSelectSubtitle');
-    subtitle.text = 'LEFT / RIGHT • Q/D • A/D';
-    subtitle.color = '#9FEFE1';
-    subtitle.fontSize = 16;
-    subtitle.fontFamily = 'Consolas';
+    const subtitle = UIFactory.createText('classSelectSubtitle', 'LEFT / RIGHT • Q/D • A/D', 16, UITheme.colors.borderBright);
     subtitle.top = '-36%';
+    subtitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.gui.addControl(subtitle);
 
-    const infoPanel = new Rectangle('classSelectInfoPanel');
-    infoPanel.width = '560px';
-    infoPanel.height = '120px';
-    infoPanel.thickness = 1;
-    infoPanel.cornerRadius = 8;
-    infoPanel.color = '#2EF9C3';
-    infoPanel.background = 'rgba(0,0,0,0.45)';
+    const infoPanel = UIFactory.createPanel('classSelectInfoPanel', 560, 120);
     infoPanel.top = '34%';
     this.gui.addControl(infoPanel);
 
-    const infoText = new TextBlock('classSelectInfoText');
-    infoText.fontSize = 20;
-    infoText.fontFamily = 'Consolas';
-    infoText.color = '#FFFFFF';
+    const infoText = UIFactory.createText('classSelectInfoText', '', 20, '#FFFFFF');
     infoText.top = '-28px';
+    infoText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     infoPanel.addControl(infoText);
 
-    const leftBtn = Button.CreateSimpleButton('classSelectLeft', '<');
-    leftBtn.width = '70px';
-    leftBtn.height = '52px';
-    leftBtn.color = '#B8FFE6';
-    leftBtn.background = 'rgba(20,30,35,0.95)';
-    leftBtn.thickness = 1;
-    leftBtn.cornerRadius = 6;
+    const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', '70px', '52px');
     leftBtn.left = '-210px';
     leftBtn.top = '22px';
-    leftBtn.onPointerUpObservable.add(() => this.rotateCarousel(1));
+    leftBtn.onPointerClickObservable.add(() => this.rotateCarousel(1));
     infoPanel.addControl(leftBtn);
 
-    const rightBtn = Button.CreateSimpleButton('classSelectRight', '>');
-    rightBtn.width = '70px';
-    rightBtn.height = '52px';
-    rightBtn.color = '#B8FFE6';
-    rightBtn.background = 'rgba(20,30,35,0.95)';
-    rightBtn.thickness = 1;
-    rightBtn.cornerRadius = 6;
+    const rightBtn = UIFactory.createTerminalButton('classSelectRight', '>', '70px', '52px');
     rightBtn.left = '210px';
     rightBtn.top = '22px';
-    rightBtn.onPointerUpObservable.add(() => this.rotateCarousel(-1));
+    rightBtn.onPointerClickObservable.add(() => this.rotateCarousel(-1));
     infoPanel.addControl(rightBtn);
 
-    const startButton = Button.CreateSimpleButton('classSelectStart', 'START AS MAGE');
-    startButton.width = '260px';
-    startButton.height = '46px';
-    startButton.color = '#FFFFFF';
-    startButton.cornerRadius = 6;
-    startButton.background = '#1D3B3A';
-    startButton.thickness = 2;
+    const startButton = UIFactory.createTerminalButton('classSelectStart', 'START AS MAGE', '260px', '46px');
     startButton.top = '22px';
-    startButton.onPointerUpObservable.add(() => {
+    startButton.onPointerClickObservable.add(() => {
       this.tryStartSelectedClass();
     });
     infoPanel.addControl(startButton);

@@ -443,11 +443,11 @@ export class PlayerController {
   }
 
   private applyTankConfig(): void {
-    const tank = this.config?.firewall ?? {};
-    const attack = (tank.attack ?? {}) as PlayerFirewallAttackConfig;
-    const shield = (tank.shield ?? {}) as PlayerFirewallShieldConfig;
-    const bash = (tank.shieldBash ?? {}) as PlayerFirewallShieldBashConfig;
-    const passive = (tank.passive ?? {}) as PlayerFirewallPassiveConfig;
+    const tank = this.config.firewall;
+    const attack = tank.attack || {};
+    const shield = tank.shield || {};
+    const bash = tank.shieldBash || {};
+    const passive = tank.passive || {};
 
     this.tankPrimaryRange = this.readPositiveNumber(attack.range, this.tankPrimaryRange);
     this.tankPrimaryConeAngleDeg = this.readPositiveNumber(attack.coneAngleDeg, this.tankPrimaryConeAngleDeg);
@@ -521,12 +521,12 @@ export class PlayerController {
   }
 
   private applyRogueConfig(): void {
-    const rogue = this.config?.rogue ?? {};
-    const attack = (rogue.attack ?? {}) as PlayerRogueAttackConfig;
-    const stealth = (rogue.stealth ?? {}) as PlayerRogueStealthConfig;
-    const dash = (rogue.dashAttack ?? {}) as PlayerRogueDashAttackConfig;
-    const passive = (rogue.passive ?? {}) as PlayerRoguePassiveConfig;
-    const ultimate = (rogue.ultimate ?? {}) as PlayerRogueUltimateConfig;
+    const rogue = this.config.rogue;
+    const attack = rogue.attack || {};
+    const stealth = rogue.stealth || {};
+    const dash = rogue.dashAttack || {};
+    const passive = rogue.passive || {};
+    const ultimate = rogue.ultimate || {};
 
     this.roguePrimaryRange = this.readPositiveNumber(attack.range, this.roguePrimaryRange);
     this.roguePrimaryConeAngleDeg = this.readPositiveNumber(attack.coneAngleDeg, this.roguePrimaryConeAngleDeg);
@@ -629,6 +629,11 @@ export class PlayerController {
 
   isCatGodModeActive(): boolean {
     return this.classId === 'cat' && this.catGodModeEnabled;
+  }
+
+  /** Whether the player is currently moving (input or physics velocity) */
+  public getIsMoving(): boolean {
+    return this.isMoving || this.velocity.length() > 0.1;
   }
 
   getCatContactDamage(): number {

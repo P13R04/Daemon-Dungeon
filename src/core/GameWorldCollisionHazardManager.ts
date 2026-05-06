@@ -29,9 +29,9 @@ export class GameWorldCollisionHazardManager {
           this.playerController.applyKnockback(knockback);
         }
         const push = delta.normalize().scale(minDistance - distance);
-        const isPong = enemy.getBehavior?.() === 'pong';
+        const isStationary = enemy.isStationary?.() || enemy.getBehavior?.() === 'pong';
 
-        if (isPong) {
+        if (isStationary) {
           playerPos = playerPos.subtract(push);
         } else {
           const half = push.scale(0.5);
@@ -52,9 +52,21 @@ export class GameWorldCollisionHazardManager {
         const minDistance = a.getRadius() + b.getRadius();
 
         if (distance > 0 && distance < minDistance) {
-          const push = delta.normalize().scale((minDistance - distance) / 2);
-          a.setPosition(posA.subtract(push));
-          b.setPosition(posB.add(push));
+          const push = delta.normalize().scale(minDistance - distance);
+          const aStationary = a.isStationary?.();
+          const bStationary = b.isStationary?.();
+
+          if (aStationary && bStationary) {
+            // Both stationary, no movement
+          } else if (aStationary) {
+            b.setPosition(posB.add(push));
+          } else if (bStationary) {
+            a.setPosition(posA.subtract(push));
+          } else {
+            const half = push.scale(0.5);
+            a.setPosition(posA.subtract(half));
+            b.setPosition(posB.add(half));
+          }
         }
       }
     }
@@ -72,6 +84,7 @@ export class GameWorldCollisionHazardManager {
     }
 
     for (const enemy of enemies) {
+      if (enemy.isStationary?.()) continue;
       let enemyPos = enemy.getPosition();
       const radius = enemy.getRadius();
       for (const ob of obstacles) {
@@ -81,6 +94,7 @@ export class GameWorldCollisionHazardManager {
     }
 
     for (const enemy of enemies) {
+      if (enemy.isStationary?.()) continue;
       const enemyPos = enemy.getPosition();
       if (!this.roomManager.isWalkable(enemyPos.x, enemyPos.z)) {
         const prevPos = enemy.getPreviousPosition?.() ?? enemyPos;
