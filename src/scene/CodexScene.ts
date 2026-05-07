@@ -19,6 +19,7 @@ import { AdvancedDynamicTexture, Button, Control, Rectangle, ScrollViewer, Stack
 import { buildHudAssetUrl, preloadHudAsset } from '../systems/hud/HudAssetPaths';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
+import { getHudAssetBaseUrl } from '../systems/hud/HudAssetPaths';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { BONUS_CODEX_ENTRIES, BonusCodexEntry } from '../data/codex/bonuses';
 import { UIFactory } from '../ui/UIFactory';
@@ -745,7 +746,7 @@ export class CodexScene {
 
     if (entry.behavior === 'bull') {
       try {
-        const result = await SceneLoader.ImportMeshAsync('', 'models/bull/', 'bull.glb', this.scene);
+        const result = await SceneLoader.ImportMeshAsync('', getHudAssetBaseUrl() + 'models/bull/', 'bull.glb', this.scene);
         const mainRoot = result.meshes[0];
         if (mainRoot) {
           mainRoot.parent = root;

@@ -1,12 +1,7 @@
 function getDetectedBaseUrl(): string {
-  // Get current absolute URL (e.g. https://.../html/1234567/index.html)
-  const href = window.location.href;
-  // Strip filename to get the directory
-  const lastSlash = href.lastIndexOf('/');
-  if (lastSlash !== -1) {
-    return href.substring(0, lastSlash + 1);
-  }
-  return href;
+  // With assetsDir: '.', all files are at root of dist.
+  // Returning empty string ensures all paths like 'models/...' are treated as purely relative.
+  return '';
 }
 
 export function getHudAssetBaseUrl(): string {
