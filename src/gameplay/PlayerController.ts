@@ -382,7 +382,7 @@ export class PlayerController {
     } else if (this.classId === 'cat') {
       this.animationController = new PlayerAnimationController(this.scene, 'cat');
       this.modelLoadingPromise = this.animationController
-        .loadModel('/models/player/')
+        .loadModel('models/player/')
         .then(() => {
           const loadedMesh = this.animationController.getMesh();
           if (loadedMesh) {

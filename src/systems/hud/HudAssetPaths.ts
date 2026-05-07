@@ -1,16 +1,19 @@
 function getImportMetaBaseUrl(): string {
   const meta = import.meta as unknown as { env?: { BASE_URL?: string } };
-  return meta.env?.BASE_URL ?? '/';
+  const base = meta.env?.BASE_URL;
+  // If base is root or explicitly relative-root, treat as empty for pure relative pathing
+  if (!base || base === '/' || base === './') return '';
+  return base.endsWith('/') ? base : `${base}/`;
 }
 
 export function getHudAssetBaseUrl(): string {
-  const baseUrl = getImportMetaBaseUrl();
-  return baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  return getImportMetaBaseUrl();
 }
 
 export function buildHudAssetUrl(relativePath: string): string {
+  const base = getHudAssetBaseUrl();
   // Append ?v=3 to force bypass browser/Vite cache for freshly generated assets
-  return `${getHudAssetBaseUrl()}${relativePath}?v=3`;
+  return `${base}${relativePath}?v=3`;
 }
 
 export function preloadHudAsset(relativePath: string): Promise<void> {

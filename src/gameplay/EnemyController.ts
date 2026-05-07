@@ -2842,8 +2842,8 @@ export class EnemyController {
     }
 
     try {
-      const baseUrl = import.meta.env.BASE_URL ?? '/';
-      const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+      const base = import.meta.env.BASE_URL;
+      const normalizedBase = (!base || base === '/' || base === './') ? '' : (base.endsWith('/') ? base : `${base}/`);
       const rootUrl = `${normalizedBase}models/bull/`;
       const result = await SceneLoader.ImportMeshAsync(
         '',
@@ -3226,8 +3226,8 @@ export class EnemyController {
     }
 
     try {
-      const baseUrl = import.meta.env.BASE_URL ?? '/';
-      const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+      const base = import.meta.env.BASE_URL;
+      const normalizedBase = (!base || base === '/' || base === './') ? '' : (base.endsWith('/') ? base : `${base}/`);
       const rootUrl = `${normalizedBase}models/jumper/`;
       const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'sauteur.glb', this.scene);
 
@@ -3346,8 +3346,8 @@ export class EnemyController {
     }
 
     try {
-      const baseUrl = import.meta.env.BASE_URL ?? '/';
-      const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+      const base = import.meta.env.BASE_URL;
+      const normalizedBase = (!base || base === '/' || base === './') ? '' : (base.endsWith('/') ? base : `${base}/`);
       const rootUrl = `${normalizedBase}models/caster/`;
       const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'caster_socle.glb', this.scene);
 

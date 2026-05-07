@@ -657,7 +657,7 @@ export class ClassSelectScene {
   }
 
   private async loadRoguePlayableModelInto(root: TransformNode): Promise<void> {
-    const result = await SceneLoader.ImportMeshAsync('', '/models/player/', 'rogue.glb', this.scene);
+    const result = await SceneLoader.ImportMeshAsync('', 'models/player/', 'rogue.glb', this.scene);
 
     const candidateRoot = result.meshes[0];
     if (candidateRoot) {
