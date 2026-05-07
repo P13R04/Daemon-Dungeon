@@ -1,13 +1,16 @@
-function getImportMetaBaseUrl(): string {
-  const meta = import.meta as unknown as { env?: { BASE_URL?: string } };
-  const base = meta.env?.BASE_URL;
-  // If base is root or explicitly relative-root, treat as './' for explicit relative pathing
-  const normalizedBase = (!base || base === '/' || base === './') ? './' : (base.endsWith('/') ? base : `${base}/`);
-  return normalizedBase;
+function getDetectedBaseUrl(): string {
+  // Get current path (e.g. /html/1234567/index.html or /)
+  const path = window.location.pathname;
+  // If it's a file, strip it to get the directory
+  const lastSlash = path.lastIndexOf('/');
+  if (lastSlash !== -1) {
+    return path.substring(0, lastSlash + 1);
+  }
+  return '/';
 }
 
 export function getHudAssetBaseUrl(): string {
-  return getImportMetaBaseUrl();
+  return getDetectedBaseUrl();
 }
 
 export function buildHudAssetUrl(relativePath: string): string {

@@ -13,6 +13,7 @@ import type { NavigationCapabilities, RoomManager } from '../systems/RoomManager
 import type { EnemyRuntimeConfig } from './enemy/EnemyControllerTypes';
 import { EnemyLaserPatternSubsystem } from './enemy/EnemyLaserPatternSubsystem';
 import { EnemySpikeCastSubsystem } from './enemy/EnemySpikeCastSubsystem';
+import { getHudAssetBaseUrl } from '../systems/hud/HudAssetPaths';
 
 type EnemyControllerSpawnOptions = {
   suppressSpawnEvent?: boolean;
@@ -2842,8 +2843,7 @@ export class EnemyController {
     }
 
     try {
-      const base = import.meta.env.BASE_URL;
-      const normalizedBase = (!base || base === '/' || base === './') ? './' : (base.endsWith('/') ? base : `${base}/`);
+      const normalizedBase = getHudAssetBaseUrl();
       const rootUrl = `${normalizedBase}models/bull/`;
       const result = await SceneLoader.ImportMeshAsync(
         '',
@@ -3226,8 +3226,7 @@ export class EnemyController {
     }
 
     try {
-      const base = import.meta.env.BASE_URL;
-      const normalizedBase = (!base || base === '/' || base === './') ? './' : (base.endsWith('/') ? base : `${base}/`);
+      const normalizedBase = getHudAssetBaseUrl();
       const rootUrl = `${normalizedBase}models/jumper/`;
       const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'sauteur.glb', this.scene);
 
@@ -3346,8 +3345,7 @@ export class EnemyController {
     }
 
     try {
-      const base = import.meta.env.BASE_URL;
-      const normalizedBase = (!base || base === '/' || base === './') ? './' : (base.endsWith('/') ? base : `${base}/`);
+      const normalizedBase = getHudAssetBaseUrl();
       const rootUrl = `${normalizedBase}models/caster/`;
       const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'caster_socle.glb', this.scene);
 

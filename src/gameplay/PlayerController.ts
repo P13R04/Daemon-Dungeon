@@ -27,6 +27,7 @@ import { ConfigLoader } from '../utils/ConfigLoader';
 import { GameSettings, GameSettingsStore } from '../settings/GameSettings';
 import { BONUS_TUNING } from '../data/bonuses/bonusTuning';
 import { SCENE_LAYER } from '../ui/uiLayers';
+import { getHudAssetBaseUrl } from '../systems/hud/HudAssetPaths';
 import type {
   PlayerConfig,
   PlayerClassConfig,
@@ -350,7 +351,7 @@ export class PlayerController {
     } else if (this.classId === 'firewall') {
       this.animationController = new PlayerAnimationController(this.scene, 'firewall');
       this.modelLoadingPromise = this.animationController
-        .loadModel('./models/player/')
+        .loadModel(getHudAssetBaseUrl() + 'models/player/')
         .then(() => {
           const loadedMesh = this.animationController.getMesh();
           if (loadedMesh) {
@@ -366,7 +367,7 @@ export class PlayerController {
     } else if (this.classId === 'rogue') {
       this.animationController = new PlayerAnimationController(this.scene, 'rogue');
       this.modelLoadingPromise = this.animationController
-        .loadModel('./models/player/')
+        .loadModel(getHudAssetBaseUrl() + 'models/player/')
         .then(() => {
           const loadedMesh = this.animationController.getMesh();
           if (loadedMesh) {

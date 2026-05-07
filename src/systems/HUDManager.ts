@@ -738,6 +738,7 @@ export class HUDManager {
     this.daemonContainer.addControl(avatarBox);
 
     const initialFrame = this.getAvatarFrameSrc('init_01.png');
+    console.log(`[HUDManager] Initializing with detected base URL: ${getHudAssetBaseUrl()}`);
     this.daemonAvatarImage = new Image('daemon_avatar_image', initialFrame);
     this.daemonAvatarImage.width = '90px';
     this.daemonAvatarImage.height = '90px';
