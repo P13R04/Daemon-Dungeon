@@ -24,7 +24,7 @@ jobs:
         run: npm install
 
       - name: Build project
-        run: npm run build
+        run: rm -rf dist && npm run build
 
       - name: Setup Butler
         uses: remarkablegames/setup-butler@v2

@@ -14,6 +14,9 @@ export default defineConfig({
     assetsDir: '.',
     rollupOptions: {
       output: {
+        entryFileNames: `daemon-core.js`,
+        chunkFileNames: `[name].js`,
+        assetFileNames: `[name].[ext]`,
         manualChunks(id) {
           if (id.includes('node_modules/@babylonjs')) return 'vendor-babylon';
           if (id.includes('node_modules')) return 'vendor';
