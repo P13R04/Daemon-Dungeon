@@ -3,13 +3,10 @@ name: Build & Deploy to itch.io
 on:
   push:
     branches: [main]
-  # or use releases instead:
-  # release:
-  #   types: [published]
 
 jobs:
   build-and-upload:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo
@@ -26,15 +23,11 @@ jobs:
       - name: Build project
         run: npm run build
 
-
-      - name: Download Butler
-        run: |
-          curl -L -o butler.zip https://broth.itch.ovh/butler/darwin-amd64/LATEST/archive/default
-          unzip butler.zip
-          chmod +x butler
+      - name: Setup Butler
+        uses: AyanoSora/setup-butler@v1
 
       - name: Upload to itch.io
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
         run: |
-          ./butler push dist/ yourname/your-game:html --userversion ${GITHUB_SHA}
+          butler push dist/ rolling2k/daemon-dungeon:html --userversion ${GITHUB_SHA}
