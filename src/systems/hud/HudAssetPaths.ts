@@ -1,12 +1,12 @@
 function getDetectedBaseUrl(): string {
-  // Get current path (e.g. /html/1234567/index.html or /)
-  const path = window.location.pathname;
-  // If it's a file, strip it to get the directory
-  const lastSlash = path.lastIndexOf('/');
+  // Get current absolute URL (e.g. https://.../html/1234567/index.html)
+  const href = window.location.href;
+  // Strip filename to get the directory
+  const lastSlash = href.lastIndexOf('/');
   if (lastSlash !== -1) {
-    return path.substring(0, lastSlash + 1);
+    return href.substring(0, lastSlash + 1);
   }
-  return '/';
+  return href;
 }
 
 export function getHudAssetBaseUrl(): string {

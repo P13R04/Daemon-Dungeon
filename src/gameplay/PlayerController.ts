@@ -335,7 +335,7 @@ export class PlayerController {
     if (this.classId === 'mage') {
       this.animationController = new PlayerAnimationController(this.scene, 'mage');
       this.modelLoadingPromise = this.animationController
-        .loadModel('models/player/')
+        .loadModel(getHudAssetBaseUrl() + 'models/player/')
         .then(() => {
           const loadedMesh = this.animationController.getMesh();
           if (loadedMesh) {
@@ -383,7 +383,7 @@ export class PlayerController {
     } else if (this.classId === 'cat') {
       this.animationController = new PlayerAnimationController(this.scene, 'cat');
       this.modelLoadingPromise = this.animationController
-        .loadModel('models/player/')
+        .loadModel(getHudAssetBaseUrl() + 'models/player/')
         .then(() => {
           const loadedMesh = this.animationController.getMesh();
           if (loadedMesh) {
