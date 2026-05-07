@@ -1,9 +1,9 @@
 function getImportMetaBaseUrl(): string {
   const meta = import.meta as unknown as { env?: { BASE_URL?: string } };
   const base = meta.env?.BASE_URL;
-  // If base is root or explicitly relative-root, treat as empty for pure relative pathing
-  if (!base || base === '/' || base === './') return '';
-  return base.endsWith('/') ? base : `${base}/`;
+  // If base is root or explicitly relative-root, treat as './' for explicit relative pathing
+  const normalizedBase = (!base || base === '/' || base === './') ? './' : (base.endsWith('/') ? base : `${base}/`);
+  return normalizedBase;
 }
 
 export function getHudAssetBaseUrl(): string {

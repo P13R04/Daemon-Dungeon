@@ -2402,7 +2402,7 @@ export class HUDManager {
     const normalizedBase = getHudAssetBaseUrl();
     const normalizedFileName = fileName.normalize(normalization);
     const encodedFileName = encodeURIComponent(normalizedFileName);
-    return `${normalizedBase}avatar_frames_cutout2/${encodedFileName}`;
+    return `${normalizedBase}avatar_frames_cutout2/${encodedFileName}?v=3`;
   }
 
   /**

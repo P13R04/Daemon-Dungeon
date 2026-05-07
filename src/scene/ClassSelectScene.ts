@@ -589,7 +589,7 @@ export class ClassSelectScene {
   }
 
   private async loadMageModelInto(root: TransformNode): Promise<void> {
-    const result = await SceneLoader.ImportMeshAsync('', 'models/player/', 'mage.glb', this.scene);
+    const result = await SceneLoader.ImportMeshAsync('', './models/player/', 'mage.glb', this.scene);
 
     const candidateRoot = result.meshes[0];
     if (candidateRoot) {
@@ -624,7 +624,7 @@ export class ClassSelectScene {
   }
 
   private async loadTankModelInto(root: TransformNode): Promise<void> {
-    const result = await SceneLoader.ImportMeshAsync('', 'models/player/', 'tank.glb', this.scene);
+    const result = await SceneLoader.ImportMeshAsync('', './models/player/', 'tank.glb', this.scene);
 
     const candidateRoot = result.meshes[0];
     if (candidateRoot) {
@@ -657,7 +657,7 @@ export class ClassSelectScene {
   }
 
   private async loadRoguePlayableModelInto(root: TransformNode): Promise<void> {
-    const result = await SceneLoader.ImportMeshAsync('', 'models/player/', 'rogue.glb', this.scene);
+    const result = await SceneLoader.ImportMeshAsync('', './models/player/', 'rogue.glb', this.scene);
 
     const candidateRoot = result.meshes[0];
     if (candidateRoot) {
@@ -690,7 +690,7 @@ export class ClassSelectScene {
   }
 
   private async loadRogueModelInto(root: TransformNode): Promise<void> {
-    const result = await SceneLoader.ImportMeshAsync('', 'models/player/', 'cat.glb', this.scene);
+    const result = await SceneLoader.ImportMeshAsync('', './models/player/', 'cat.glb', this.scene);
 
     const modelContainer = new TransformNode('classRogueModelContainer', this.scene);
     modelContainer.parent = root;

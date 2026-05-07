@@ -350,7 +350,7 @@ export class PlayerController {
     } else if (this.classId === 'firewall') {
       this.animationController = new PlayerAnimationController(this.scene, 'firewall');
       this.modelLoadingPromise = this.animationController
-        .loadModel('models/player/')
+        .loadModel('./models/player/')
         .then(() => {
           const loadedMesh = this.animationController.getMesh();
           if (loadedMesh) {
@@ -366,7 +366,7 @@ export class PlayerController {
     } else if (this.classId === 'rogue') {
       this.animationController = new PlayerAnimationController(this.scene, 'rogue');
       this.modelLoadingPromise = this.animationController
-        .loadModel('models/player/')
+        .loadModel('./models/player/')
         .then(() => {
           const loadedMesh = this.animationController.getMesh();
           if (loadedMesh) {
