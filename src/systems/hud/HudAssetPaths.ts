@@ -1,5 +1,3 @@
-console.error('>>> VERSION AUTO-DETECT ACTIVE <<<');
-
 function getDetectedBaseUrl(): string {
   // With assetsDir: '.', all files are at root of dist.
   // Returning empty string ensures all paths like 'models/...' are treated as purely relative.

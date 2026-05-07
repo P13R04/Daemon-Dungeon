@@ -33,4 +33,4 @@ jobs:
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
         run: |
-          butler push dist rolling2k/daemon-dungeon:web --userversion ${GITHUB_SHA}
+          butler push dist rolling2k/daemon-dungeon:html --userversion ${GITHUB_SHA}

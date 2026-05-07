@@ -54,7 +54,7 @@ export class DaemonAvatarController {
   private crashActive: boolean = false;
   private crashPhaseIndex: number = 0;
   private crashPhaseElapsed: number = 0;
-  private crashRecoveryEmotion: string = 'supérieur';
+  private crashRecoveryEmotion: string = 'superieur';
   private crashRecoveryInterval: number = 0.16;
   private crashCallback: (() => void) | null = null;
 

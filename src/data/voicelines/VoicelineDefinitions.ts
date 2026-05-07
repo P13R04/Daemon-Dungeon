@@ -202,7 +202,7 @@ export const VOICELINES: Record<string, VoicelineConfig> = {
   'tutorial_ultimate': {
     id: 'tutorial_ultimate',
     message: "Now, let's see some real power. Use your ultimate [{key:ultimate}] on these.",
-    animationSequence: [{ emotion: 'énervé', cycles: 1, frameInterval: 0.14 }],
+    animationSequence: [{ emotion: 'enerve', cycles: 1, frameInterval: 0.14 }],
     typingSpeed: 16,
     holdDuration: 4.0,
   },

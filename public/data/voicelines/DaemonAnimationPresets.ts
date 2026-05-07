@@ -1,13 +1,13 @@
 export const DAEMON_FOUR_FRAME_PRESET_NAMES = [
   'bored',
   'censored',
-  'censuré',
+  'censure',
   'error',
   'happy',
   'init',
   'reboot',
   'rire',
-  'supérieur',
+  'superieur',
   'surpris',
 ] as const;
 
@@ -27,21 +27,21 @@ const fourFramePresets = Object.fromEntries(
 
 export const DAEMON_ANIMATION_PRESETS: Record<string, string[]> = {
   ...fourFramePresets,
-  'blasé': ['blasé_01.png', 'blasé_02.png'],
+  'blase': ['blase_01.png', 'blase_02.png'],
   'bsod': ['bsod_01.png', 'bsod_02.png', 'bsod_03.png', 'bsod_04.png'],
-  'choqué': ['choqué_01.png', 'choqué_02.png'],
+  'choque': ['choque_01.png', 'choque_02.png'],
   'goofy': ['goofy_01.png', 'goofy_02.png', 'goofy_03.png'],
   'loading': ['loading_01.png', 'loading_02.png'],
   'override': ['override_01.png', 'override_02.png', 'override_03.png', 'override_04.png'],
-  'énervé': ['énervé_01.png', 'énervé_02.png', 'énervé_03.png', 'énervé_04.png'],
+  'enerve': ['enerve_01.png', 'enerve_02.png', 'enerve_03.png', 'enerve_04.png'],
 };
 
 const PRESET_ALIASES: Record<string, string> = {
-  blase: 'blasé',
-  censure: 'censuré',
-  choque: 'choqué',
-  enerve: 'énervé',
-  superieur: 'supérieur',
+  blase: 'blase',
+  censure: 'censure',
+  choque: 'choque',
+  enerve: 'enerve',
+  superieur: 'superieur',
 };
 
 export function normalizeDaemonPresetName(name: string): string {

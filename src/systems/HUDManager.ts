@@ -1863,7 +1863,7 @@ export class HUDManager {
 
       // Handle crash+reboot sequence
       if (options?.canCrash) {
-        this.scheduleCrashSequence(duration, emotion ?? 'supérieur');
+        this.scheduleCrashSequence(duration, emotion ?? 'superieur');
       }
     } catch (e) {
       console.warn('Daemon synthesis failed:', e);
@@ -1977,7 +1977,7 @@ export class HUDManager {
             // Trigger mid-typing crash
             this.stopAllVoicelineAudio();
             this.daemonTypingIndex += marker.markerLength;
-            this.scheduleCrashSequence(0.5, 'supérieur'); // Mini-crash
+            this.scheduleCrashSequence(0.5, 'superieur'); // Mini-crash
             return;
           } else if (marker.type === 'glitch') {
             this.isTypingGlitched = true;
@@ -2206,7 +2206,7 @@ export class HUDManager {
 
   /** @deprecated Replaced by DaemonVoicelineManager */
   private getRandomTaunt(_type: 'damage' | 'clear'): { text: string; emotion: string } {
-    return { text: 'System nominal.', emotion: 'blasé' };
+    return { text: 'System nominal.', emotion: 'blase' };
   }
 
   /** Expose daemon visibility state for external managers */
@@ -2301,7 +2301,7 @@ export class HUDManager {
     if (lowered.includes('wait') || lowered.includes('loading')) return 'loading';
     if (lowered.includes('shock') || lowered.includes('?!') || lowered.includes('!?')) return 'surpris';
 
-    const fallback = ['supérieur', 'happy', 'bored', 'goofy'];
+    const fallback = ['superieur', 'happy', 'bored', 'goofy'];
     return fallback[Math.floor(Math.random() * fallback.length)];
   }
 
@@ -2331,7 +2331,7 @@ export class HUDManager {
       return 'error';
     }
     if (primary === 'rire') return 'goofy';
-    if (primary === 'énervé') return 'error';
+    if (primary === 'enerve') return 'error';
     return null;
   }
 
