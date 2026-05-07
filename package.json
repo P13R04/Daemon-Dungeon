@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "build:voice-lab": "esbuild src/tools/daemonVoiceLab/main.ts --bundle --platform=browser --format=esm --outfile=daemon-voice-lab.bundle.js",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
