@@ -14,7 +14,7 @@ export default defineConfig({
     assetsDir: '.',
     rollupOptions: {
       output: {
-        entryFileNames: `daemon-core.js`,
+        entryFileNames: `daemon-v3.js`,
         chunkFileNames: `[name].js`,
         assetFileNames: `[name].[ext]`,
         manualChunks(id) {
