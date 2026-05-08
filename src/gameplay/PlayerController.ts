@@ -1111,6 +1111,11 @@ export class PlayerController {
     this.inputSlot1Pressed = this.inputManager.isAttackSlotPressedThisFrame(1) || leftClicked;
     this.inputSlot2Held = this.inputManager.isAttackSlotHeld(2) || rightHeld;
 
+    // Autofire logic: automatically hold slot 1 (primary attack) in keyboard-only mode with auto-aim when enemies are present
+    if (this.keyboardOnlyMode && this.autoAimTowardMovement && this.enemiesPresent) {
+      this.inputSlot1Held = true;
+    }
+
     const slot1Held = this.inputSlot1Held;
     const slot1Pressed = this.inputSlot1Pressed;
     const slot2Held = this.inputSlot2Held;
