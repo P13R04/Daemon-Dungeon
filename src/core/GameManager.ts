@@ -1355,7 +1355,6 @@ export class GameManager {
       getCurrency: () => this.runEconomy.getCurrency(),
       getConsumableStatusLabel: () => this.getConsumableStatusLabel(),
       applyPassiveIncome: (frameDelta) => this.applyPassiveIncome(frameDelta),
-      updateConsumablesFromInput: () => this.updateConsumablesFromInput(),
       detectAndStartPlayerVoidFall: () => this.detectAndStartPlayerVoidFall(),
       updatePlayerVoidFall: (frameDelta) => this.updatePlayerVoidFall(frameDelta),
       applySecondaryEnemySlow: (enemies, center, radius, speedMultiplier) => this.applySecondaryEnemySlow(enemies, center, radius, speedMultiplier),
@@ -2987,9 +2986,7 @@ export class GameManager {
     return this.economyFlowManager?.trySpendCurrency(cost) ?? false;
   }
 
-  private updateConsumablesFromInput(): void {
-    this.economyFlowManager?.updateConsumablesFromInput();
-  }
+
 
   private getConsumableStatusLabel(): string {
     if (this.economyFlowManager) {

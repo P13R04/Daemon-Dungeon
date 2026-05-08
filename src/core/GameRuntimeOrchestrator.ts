@@ -44,7 +44,6 @@ export type GameRuntimeFrameContext = {
   getCurrency: () => number;
   getConsumableStatusLabel: () => string;
   applyPassiveIncome: (deltaTime: number) => void;
-  updateConsumablesFromInput: () => void;
   detectAndStartPlayerVoidFall: () => void;
   updatePlayerVoidFall: (deltaTime: number) => boolean;
   applySecondaryEnemySlow: (enemies: EnemyController[], center: Vector3, radius: number, speedMultiplier: number) => void;
@@ -100,9 +99,6 @@ export class GameRuntimeOrchestrator {
 
     context.applyPassiveIncome(deltaTime);
     frameProfiler?.mark('applyPassiveIncome');
-
-    context.updateConsumablesFromInput();
-    frameProfiler?.mark('updateConsumables');
 
     context.playerController.setGameplayActive(true);
     context.playerController.setEnemiesPresent(enemies.length > 0 || hasPendingSpawns);

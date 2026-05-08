@@ -62,14 +62,7 @@ export class GameEconomyFlowManager {
     return true;
   }
 
-  updateConsumablesFromInput(): void {
-    if (this.inputManager.isItemPressedThisFrame(1) && this.runEconomy.consumeDamageStim()) {
-      this.playerController.activateDamageBoost(1.7, 5.0);
-    }
-    if (this.inputManager.isItemPressedThisFrame(2) && this.runEconomy.consumeShieldPatch()) {
-      this.playerController.activateDamageReduction(0.5, 5.0);
-    }
-  }
+
 
   getConsumableStatusLabel(): string {
     const damage = this.playerController.getDamageBoostState();
