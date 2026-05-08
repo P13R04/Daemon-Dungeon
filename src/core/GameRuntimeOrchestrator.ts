@@ -102,6 +102,7 @@ export class GameRuntimeOrchestrator {
 
     context.playerController.setGameplayActive(true);
     context.playerController.setEnemiesPresent(enemies.length > 0 || hasPendingSpawns);
+    context.playerController.setEnemies(enemies);
     context.playerController.update(deltaTime);
     frameProfiler?.mark('playerUpdate');
 

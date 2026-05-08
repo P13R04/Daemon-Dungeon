@@ -28,6 +28,7 @@ import { GameSettings, GameSettingsStore } from '../settings/GameSettings';
 import { BONUS_TUNING } from '../data/bonuses/bonusTuning';
 import { SCENE_LAYER } from '../ui/uiLayers';
 import { getHudAssetBaseUrl } from '../systems/hud/HudAssetPaths';
+import type { EnemyController } from './EnemyController';
 import type {
   PlayerConfig,
   PlayerClassConfig,
@@ -318,6 +319,8 @@ export class PlayerController {
   private catContactDamage: number = 260;
   private keyboardOnlyMode: boolean = false;
   private autoAimTowardMovement: boolean = true;
+  private enemies: EnemyController[] = [];
+  private enemiesPresent: boolean = false;
   private unsubscribeSettings: (() => void) | null = null;
 
   constructor(scene: Scene, inputManager: InputManager, config: PlayerConfig, classId: PlayerClassId = 'mage') {
@@ -946,6 +949,22 @@ export class PlayerController {
 
   private updateAimDirection(): void {
     if (this.keyboardOnlyMode && this.autoAimTowardMovement) {
+      // Prioritize nearest enemy for auto-aim
+      const nearest = this.getNearestEnemy(this.enemies);
+      if (nearest) {
+        const enemyPos = nearest.getPosition();
+        const dir = enemyPos.subtract(this.position);
+        dir.y = 0;
+        if (dir.lengthSquared() > 0.0001) {
+          const targetDir = dir.normalize();
+          this.attackDirection = targetDir;
+          this.lastAttackDirection = targetDir.clone();
+          this.attackTargetPoint = this.position.add(targetDir.scale(8));
+          return;
+        }
+      }
+
+      // Fallback to movement-based aim
       this.updateAimDirectionFromMovement();
       return;
     }
@@ -993,6 +1012,25 @@ export class PlayerController {
     this.attackTargetPoint = this.position.add(snappedDirection.scale(8));
   }
 
+  private getNearestEnemy(enemies: EnemyController[]): EnemyController | null {
+    if (!enemies || enemies.length === 0) return null;
+    
+    let nearest: EnemyController | null = null;
+    let minDistSq = Infinity;
+    
+    for (const enemy of enemies) {
+      if (!enemy.isActive()) continue;
+      
+      const distSq = Vector3.DistanceSquared(this.position, enemy.getPosition());
+      if (distSq < minDistSq) {
+        minDistSq = distSq;
+        nearest = enemy;
+      }
+    }
+    
+    return nearest;
+  }
+
   private quantizeToEightDirections(direction: Vector3): Vector3 {
     const flat = new Vector3(direction.x, 0, direction.z);
     if (flat.lengthSquared() < 0.0001) {
@@ -1038,6 +1076,14 @@ export class PlayerController {
     this.keyboardOnlyMode = !!settings.controls.keyboardOnlyMode;
     this.autoAimTowardMovement = !!settings.controls.autoAimTowardMovement;
     this.catGodModeEnabled = !!settings.accessibility.catGodModeEnabled;
+  }
+
+  setEnemies(enemies: EnemyController[]): void {
+    this.enemies = enemies;
+  }
+
+  setEnemiesPresent(present: boolean): void {
+    this.enemiesPresent = present;
   }
 
   private updateFocusFire(deltaTime: number): void {
@@ -1111,8 +1157,8 @@ export class PlayerController {
     this.inputSlot1Pressed = this.inputManager.isAttackSlotPressedThisFrame(1) || leftClicked;
     this.inputSlot2Held = this.inputManager.isAttackSlotHeld(2) || rightHeld;
 
-    // Autofire logic: automatically hold slot 1 (primary attack) in keyboard-only mode with auto-aim
-    if (this.keyboardOnlyMode && this.autoAimTowardMovement) {
+    // Autofire logic: automatically hold slot 1 (primary attack) in keyboard-only mode with auto-aim when enemies are present
+    if (this.keyboardOnlyMode && this.autoAimTowardMovement && this.enemiesPresent) {
       this.inputSlot1Held = true;
     }
 
