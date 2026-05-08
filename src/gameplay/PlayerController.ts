@@ -307,6 +307,12 @@ export class PlayerController {
   private damageBoostMultiplier: number = 1;
   private damageReductionTimer: number = 0;
   private damageReductionRatio: number = 0;
+  
+  // Frame input state
+  private inputSlot1Held: boolean = false;
+  private inputSlot1Pressed: boolean = false;
+  private inputSlot2Held: boolean = false;
+
   private catGodModeEnabled: boolean = false;
   private benchmarkInvulnerable: boolean = false;
   private catContactDamage: number = 260;
@@ -1096,17 +1102,25 @@ export class PlayerController {
 
     void deltaTime;
 
+    // Capture input once per frame (to avoid consuming 'pressed' states multiple times)
     const leftHeld = this.inputManager.isMouseDown();
     const leftClicked = this.inputManager.isMouseClickedThisFrame();
     const rightHeld = this.inputManager.isRightMouseDown();
-    const slot1Held = this.inputManager.isAttackSlotHeld(1) || leftHeld;
-    const slot1Pressed = this.inputManager.isAttackSlotPressedThisFrame(1) || leftClicked;
-    const slot2Held = this.inputManager.isAttackSlotHeld(2) || rightHeld;
+
+    this.inputSlot1Held = this.inputManager.isAttackSlotHeld(1) || leftHeld;
+    this.inputSlot1Pressed = this.inputManager.isAttackSlotPressedThisFrame(1) || leftClicked;
+    this.inputSlot2Held = this.inputManager.isAttackSlotHeld(2) || rightHeld;
+
+    const slot1Held = this.inputSlot1Held;
+    const slot1Pressed = this.inputSlot1Pressed;
+    const slot2Held = this.inputSlot2Held;
 
     if (this.classId === 'firewall') {
       if (this.tankShieldLockUntilRightRelease && !slot2Held) {
         this.tankShieldLockUntilRightRelease = false;
       }
+      
+      // Right Click (or slot 2) to HOLD stance
       if (!this.tankShieldLockUntilRightRelease && slot2Held && this.tankStanceResource >= this.tankStanceActivationThreshold) {
         if (!this.tankShieldActive) {
           this.tankShieldActive = true;
@@ -1117,7 +1131,7 @@ export class PlayerController {
         this.animationController.deactivateShield();
       }
 
-      this.isFiring = slot1Held;
+      // Left Click: Primary Attack (Sweep) or Secondary Attack (Bash) under stance
       if (this.tankShieldActive && slot1Pressed && this.tankShieldBashCooldownTimer <= 0 && this.tankShieldBashRemaining <= 0 && this.tankStanceResource >= this.tankShieldBashCost) {
         this.tankShieldBashDirection = this.attackDirection.clone();
         this.tankShieldBashRemaining = this.tankShieldBashDuration;
@@ -1127,6 +1141,7 @@ export class PlayerController {
         this.tankShieldActive = false;
         this.tankShieldLockUntilRightRelease = true;
         this.animationController.playShieldBash();
+        this.isFiring = false;
       } else if (
         !this.tankShieldActive &&
         this.tankShieldBashRemaining <= 0 &&
@@ -1149,18 +1164,23 @@ export class PlayerController {
         this.tankComboSecondSwingTimer = this.fireRate * 0.5;
         this.timeSinceLastAttack = 0;
         this.animationController.playTankPrimaryCombo(this.fireRate * 0.9);
+        this.isFiring = true;
+      } else {
+        this.isFiring = false;
       }
     } else if (this.isRogueLikeClass()) {
       if (this.rogueStealthLockUntilRightRelease && !slot2Held) {
         this.rogueStealthLockUntilRightRelease = false;
       }
+      
+      // Right Click (or slot 2) to HOLD stance (Stealth)
       if (!this.rogueStealthLockUntilRightRelease && slot2Held && this.rogueStealthResource >= this.rogueStealthActivationThreshold) {
         this.rogueStealthActive = true;
       } else if (!slot2Held) {
         this.rogueStealthActive = false;
       }
 
-      this.isFiring = slot1Held;
+      // Left Click: Primary Attack (Strike) or Secondary Attack (Dash) under stance
       if (
         this.rogueStealthActive &&
         slot1Pressed &&
@@ -1189,6 +1209,7 @@ export class PlayerController {
           AnimationState.DASH,
           this.computeRogueDashAnimationSpeed(actualDistance, maxDashDistance)
         );
+        this.isFiring = false;
       } else if (!this.rogueStealthActive && this.rogueDashRemaining <= 0 && this.timeSinceLastAttack >= this.fireRate && slot1Held) {
         this.pendingRogueStrike = {
           origin: this.position.clone(),
@@ -1204,8 +1225,12 @@ export class PlayerController {
           attacker: 'player',
           type: 'melee',
         });
+        this.isFiring = true;
+      } else {
+        this.isFiring = false;
       }
     } else {
+      // Default / Mage: Primary Attack (Projectiles) or Secondary Attack (Burst handled in updateSecondaryStance)
       this.isFiring = slot1Held && !this.secondaryActive;
       if (this.isFiring) {
         this.wasJustAttacking = true;
@@ -1755,8 +1780,7 @@ export class PlayerController {
     }
 
     const wasSecondaryActive = this.secondaryActive;
-
-    const rightHeld = this.inputManager.isRightMouseDown() || this.inputManager.isAttackSlotHeld(2);
+    const rightHeld = this.inputSlot2Held;
 
     if (!this.gameplayActive) {
       this.secondaryActive = false;
@@ -1778,7 +1802,7 @@ export class PlayerController {
     }
 
     if (this.secondaryActive) {
-      const leftClicked = this.inputManager.isMouseClickedThisFrame() || this.inputManager.isAttackSlotPressedThisFrame(1);
+      const leftClicked = this.inputSlot1Pressed;
       if (leftClicked && this.secondaryResource >= this.secondaryBurstCost) {
         this.triggerSecondaryBurst();
         this.secondaryResource = Math.max(0, this.secondaryResource - this.secondaryBurstCost);
@@ -1823,7 +1847,7 @@ export class PlayerController {
   }
 
   private updateTankStance(deltaTime: number): void {
-    const rightHeld = this.inputManager.isRightMouseDown() || this.inputManager.isAttackSlotHeld(2);
+    const rightHeld = this.inputSlot2Held;
 
     if (!this.gameplayActive) {
       this.tankShieldActive = false;
@@ -1859,7 +1883,7 @@ export class PlayerController {
 
   private updateRogueStealth(deltaTime: number): void {
     const wasStealthActive = this.rogueStealthActive;
-    const rightHeld = this.inputManager.isRightMouseDown() || this.inputManager.isAttackSlotHeld(2);
+    const rightHeld = this.inputSlot2Held;
 
     if (!this.gameplayActive) {
       this.rogueStealthActive = false;

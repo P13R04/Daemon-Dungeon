@@ -38,8 +38,6 @@ const ACTION_LABELS: Array<{ action: KeybindingAction; label: string }> = [
   { action: 'shoot', label: 'Shoot / Primary' },
   { action: 'posture', label: 'Posture / Secondary' },
   { action: 'ultimate', label: 'Ultimate' },
-  { action: 'item1', label: 'Item Slot 1' },
-  { action: 'item2', label: 'Item Slot 2' },
 ];
 
 const FILTER_OPTIONS: ColorVisionFilter[] = ['none', 'protanopia', 'deuteranopia', 'tritanopia', 'highContrast'];
@@ -591,7 +589,7 @@ export class MainMenuScene {
 
   private addControlsSection(parent: StackPanel): void {
     parent.addControl(this.makeSectionHeader('CONTROLS // KEYBINDINGS'));
-    parent.addControl(this.makeSectionSubText('Remap movement, shoot/posture, ultimate and consumables.'));
+    parent.addControl(this.makeSectionSubText('Remap movement, shoot/posture and ultimate abilities.'));
 
     for (const descriptor of ACTION_LABELS) {
       parent.addControl(this.makeKeybindRow(descriptor.action, descriptor.label));

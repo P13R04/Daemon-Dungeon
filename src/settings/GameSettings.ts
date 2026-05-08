@@ -7,9 +7,7 @@ export type KeybindingAction =
   | 'moveRight'
   | 'shoot'
   | 'posture'
-  | 'ultimate'
-  | 'item1'
-  | 'item2';
+  | 'ultimate';
 
 export type ColorVisionFilter = 'none' | 'protanopia' | 'deuteranopia' | 'tritanopia' | 'highContrast';
 
@@ -21,8 +19,6 @@ export interface Keybindings {
   shoot: string;
   posture: string;
   ultimate: string;
-  item1: string;
-  item2: string;
 }
 
 export interface ControlsSettings {
@@ -76,8 +72,6 @@ const DEFAULT_SETTINGS: GameSettings = {
       shoot: 'a',
       posture: 'e',
       ultimate: 'space',
-      item1: '1',
-      item2: '2',
     },
     keyboardOnlyMode: false,
     autoAimTowardMovement: true,
@@ -248,8 +242,6 @@ export class GameSettingsStore {
           shoot: normalizeInputKey(parsed.controls?.keybindings?.shoot ?? DEFAULT_SETTINGS.controls.keybindings.shoot),
           posture: normalizeInputKey(parsed.controls?.keybindings?.posture ?? DEFAULT_SETTINGS.controls.keybindings.posture),
           ultimate: normalizeInputKey(parsed.controls?.keybindings?.ultimate ?? DEFAULT_SETTINGS.controls.keybindings.ultimate),
-          item1: normalizeInputKey(parsed.controls?.keybindings?.item1 ?? DEFAULT_SETTINGS.controls.keybindings.item1),
-          item2: normalizeInputKey(parsed.controls?.keybindings?.item2 ?? DEFAULT_SETTINGS.controls.keybindings.item2),
         },
         keyboardOnlyMode: !!parsed.controls?.keyboardOnlyMode,
         autoAimTowardMovement: parsed.controls?.autoAimTowardMovement ?? DEFAULT_SETTINGS.controls.autoAimTowardMovement,

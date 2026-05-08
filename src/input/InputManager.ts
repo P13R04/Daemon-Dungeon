@@ -256,13 +256,7 @@ export class InputManager {
     return slot === 1 ? this.isActionPressedThisFrame('shoot') : this.isActionPressedThisFrame('posture');
   }
 
-  isItemHeld(slot: 1 | 2): boolean {
-    return slot === 1 ? this.isActionHeld('item1') : this.isActionHeld('item2');
-  }
 
-  isItemPressedThisFrame(slot: 1 | 2): boolean {
-    return slot === 1 ? this.isActionPressedThisFrame('item1') : this.isActionPressedThisFrame('item2');
-  }
 
   setAttackSlotBindings(bindings: Partial<Record<1 | 2, string[]>>): void {
     const slot1 = bindings[1];
@@ -299,7 +293,7 @@ export class InputManager {
     if (key === 'space') return true;
     if (key === 'arrowup' || key === 'arrowdown' || key === 'arrowleft' || key === 'arrowright') return true;
 
-    const actions: KeybindingAction[] = ['moveUp', 'moveDown', 'moveLeft', 'moveRight', 'shoot', 'posture', 'ultimate', 'item1', 'item2'];
+    const actions: KeybindingAction[] = ['moveUp', 'moveDown', 'moveLeft', 'moveRight', 'shoot', 'posture', 'ultimate'];
     return actions.some((action) => this.keybindings[action] === key);
   }
 
