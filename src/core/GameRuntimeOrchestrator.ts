@@ -101,7 +101,7 @@ export class GameRuntimeOrchestrator {
     frameProfiler?.mark('applyPassiveIncome');
 
     context.playerController.setGameplayActive(true);
-    context.playerController.setEnemiesPresent(enemies.length > 0 || hasPendingSpawns);
+    context.playerController.setEnemiesPresent(enemies.some(e => e.isActive()) || hasPendingSpawns);
     context.playerController.setEnemies(enemies);
     context.playerController.update(deltaTime);
     frameProfiler?.mark('playerUpdate');
