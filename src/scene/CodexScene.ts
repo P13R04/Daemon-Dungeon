@@ -196,13 +196,15 @@ export class CodexScene {
     backBtn.left = '24px';
     root.addControl(backBtn);
 
-    const devBtn = this.makeTopButton('codexDev', this.getDevLabel(), Control.HORIZONTAL_ALIGNMENT_RIGHT, () => {
-      this.codexService.setDevUnlockCodexEntries(!this.codexService.getDevUnlockCodexEntries());
-      devBtn.textBlock!.text = this.getDevLabel();
-      this.refreshSection(true);
-    });
-    devBtn.left = '-24px';
-    root.addControl(devBtn);
+    if (!import.meta.env.PROD) {
+      const devBtn = this.makeTopButton('codexDev', this.getDevLabel(), Control.HORIZONTAL_ALIGNMENT_RIGHT, () => {
+        this.codexService.setDevUnlockCodexEntries(!this.codexService.getDevUnlockCodexEntries());
+        devBtn.textBlock!.text = this.getDevLabel();
+        this.refreshSection(true);
+      });
+      devBtn.left = '-24px';
+      root.addControl(devBtn);
+    }
 
     const tabsRow = new StackPanel('codexTabsRow');
     tabsRow.isVertical = false;

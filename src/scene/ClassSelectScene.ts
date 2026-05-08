@@ -114,7 +114,7 @@ export class ClassSelectScene {
     selectedScaleMultiplier: 1.65,
   };
   private postProcessManager: PostProcessManager;
-  private devConsole: ClassSelectDevConsole;
+  private devConsole: ClassSelectDevConsole | null = null;
   private postProcessConfig: PostProcessingConfig;
   private isNavigatingBack: boolean = false;
   private unsubscribeSettings: (() => void) | null = null;
@@ -172,13 +172,16 @@ export class ClassSelectScene {
     this.refreshSelectionUi();
     this.updateCarouselLayout();
 
-    this.devConsole = new ClassSelectDevConsole(
-      this.scene,
-      this.gui,
-      this.camera,
-      this.postProcessManager,
-      this.postProcessConfig
-    );
+    const isDevMode = GameSettingsStore.get().accessibility.devModeEnabled;
+    if (isDevMode) {
+      this.devConsole = new ClassSelectDevConsole(
+        this.scene,
+        this.gui,
+        this.camera,
+        this.postProcessManager,
+        this.postProcessConfig
+      );
+    }
   }
 
   getScene(): Scene {
@@ -209,7 +212,7 @@ export class ClassSelectScene {
       this.scene.onPointerObservable.remove(this.pointerObserver);
       this.pointerObserver = undefined;
     }
-    this.devConsole.dispose();
+    this.devConsole?.dispose();
     for (const ps of this.tankThrusterParticles) {
       ps.stop();
       ps.dispose();

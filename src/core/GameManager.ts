@@ -93,7 +93,7 @@ export class GameManager {
   private projectileManager!: ProjectileManager;
   private ultimateManager!: UltimateManager;
   private hudManager!: HUDManager;
-  private devConsole!: DevConsole;
+  private devConsole: DevConsole | null = null;
   private postProcessManager!: PostProcessManager;
   private tileFloorManager!: TileFloorManager;
   private bootScene?: BootSequenceScene;
@@ -558,7 +558,17 @@ export class GameManager {
     }
     this.roomManager.setFloorRenderingEnabled(!this.tilesEnabled);
     this.tileFloorManager.setRenderProfile(this.getRenderProfileForRoom(''));
-    this.devConsole = new DevConsole(this.scene, this);
+    this.updateDevConsoleVisibility();
+    
+    // Subscribe to settings changes for dev mode
+    GameSettingsStore.subscribe((settings) => {
+      this.updateDevConsoleVisibility();
+      
+      // Update other settings that might have changed
+      if (this.enemySpawner) {
+        this.enemySpawner.setSpawnBatchSize(settings.graphics.enemySpawnBatchSize);
+      }
+    });
 
     this.inputManager.attachMouseListeners();
 
@@ -640,7 +650,9 @@ export class GameManager {
       },
       focusCameraOnRoomBounds: (roomKey) => this.focusCameraOnRoomBounds(roomKey),
     });
-    this.devConsole.setPlayer(this.playerController);
+    if (this.devConsole) {
+      this.devConsole.setPlayer(this.playerController);
+    }
 
     this.wallOcclusionManager = new WallOcclusionManager(
       GameSettingsStore.get().graphics.wallOcclusionTransparency,
@@ -3520,5 +3532,20 @@ export class GameManager {
 
   public areWallsVisible(): boolean {
     return this.roomManager.areWallsVisible();
+  }
+
+  private updateDevConsoleVisibility(): void {
+    const settings = GameSettingsStore.get();
+    const shouldBeVisible = settings.accessibility.devModeEnabled;
+
+    if (shouldBeVisible && !this.devConsole) {
+      this.devConsole = new DevConsole(this.scene, this);
+      if (this.playerController) {
+        this.devConsole.setPlayer(this.playerController);
+      }
+    } else if (!shouldBeVisible && this.devConsole) {
+      this.devConsole.dispose();
+      this.devConsole = null;
+    }
   }
 }

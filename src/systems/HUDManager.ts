@@ -3,7 +3,7 @@
  */
 
 import { Scene, Engine, Vector3, TransformNode, AbstractMesh, Sound } from '@babylonjs/core';
-import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image, StackPanel } from '@babylonjs/gui';
+import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image, StackPanel, Checkbox } from '@babylonjs/gui';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { VoicelineConfig, AnimationPhase, getVoiceline } from '../data/voicelines/VoicelineDefinitions';
@@ -1097,11 +1097,40 @@ export class HUDManager {
     backBtn.cornerRadius = 4;
     backBtn.background = 'rgba(20,30,35,0.85)';
     backBtn.thickness = 1;
-    backBtn.top = '140px';
+    backBtn.top = '180px';
     backBtn.onPointerUpObservable.add(() => {
       this.showMainMenu();
     });
     container.addControl(backBtn);
+
+    // Developer Mode Toggle (Hidden in Production)
+    if (!import.meta.env.PROD) {
+      const devModePanel = new StackPanel('dev_mode_panel');
+      devModePanel.isVertical = false;
+      devModePanel.width = '300px';
+      devModePanel.height = '40px';
+      devModePanel.top = '80px';
+      container.addControl(devModePanel);
+
+      const devModeCheckbox = new Checkbox('dev_mode_checkbox');
+      devModeCheckbox.width = '24px';
+      devModeCheckbox.height = '24px';
+      devModeCheckbox.isChecked = GameSettingsStore.get().accessibility.devModeEnabled;
+      devModeCheckbox.color = '#7CFFEA';
+      devModeCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+        GameSettingsStore.updateAccessibility({ devModeEnabled: isChecked });
+      });
+      devModePanel.addControl(devModeCheckbox);
+
+      const devModeLabel = new TextBlock('dev_mode_label');
+      devModeLabel.text = '  DEVELOPER MODE (LOCAL ONLY)';
+      devModeLabel.color = '#FFD782';
+      devModeLabel.fontSize = 14;
+      devModeLabel.fontFamily = 'Consolas';
+      devModeLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      devModeLabel.width = '260px';
+      devModePanel.addControl(devModeLabel);
+    }
 
     return container;
   }

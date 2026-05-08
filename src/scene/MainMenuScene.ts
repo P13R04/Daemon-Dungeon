@@ -67,6 +67,7 @@ export class MainMenuScene {
   private lightweightTexturesCheckbox: Checkbox | null = null;
   private progressiveSpawnCheckbox: Checkbox | null = null;
   private wallOcclusionCheckbox: Checkbox | null = null;
+  private devModeCheckbox: Checkbox | null = null;
   private roomPreloadAheadSlider: Slider | null = null;
   private roomPreloadAheadValueText: TextBlock | null = null;
   private captureHintText: TextBlock | null = null;
@@ -687,6 +688,21 @@ export class MainMenuScene {
         });
       }
     ));
+
+    // Developer Mode Toggle (Hidden in Production)
+    if (!import.meta.env.PROD) {
+      parent.addControl(this.makeToggleRow(
+        'Enable Developer Mode (Local Only)',
+        'Shows development tools, cheats, and performance metrics.',
+        (checkbox) => {
+          this.devModeCheckbox = checkbox;
+          checkbox.onIsCheckedChangedObservable.add((isChecked) => {
+            if (this.isRefreshingUi) return;
+            GameSettingsStore.updateAccessibility({ devModeEnabled: !!isChecked });
+          });
+        }
+      ));
+    }
   }
 
   private makeSectionHeader(text: string): Rectangle {
@@ -1036,6 +1052,10 @@ export class MainMenuScene {
 
     if (this.catGodModeCheckbox) {
       this.catGodModeCheckbox.isChecked = this.settingsSnapshot.accessibility.catGodModeEnabled;
+    }
+
+    if (this.devModeCheckbox) {
+      this.devModeCheckbox.isChecked = this.settingsSnapshot.accessibility.devModeEnabled;
     }
 
     if (this.menuHint) {

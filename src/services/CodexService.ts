@@ -3,6 +3,7 @@
  */
 
 import { EventBus, GameEvents } from '../core/EventBus';
+import { GameSettingsStore } from '../settings/GameSettings';
 
 export interface CodexEntry {
   id: string;
@@ -151,18 +152,18 @@ export class CodexService {
   }
 
   isUnlocked(entryId: string): boolean {
-    if (this.devUnlockCodexEntries) {
+    if (this.devUnlockCodexEntries && GameSettingsStore.get().accessibility.devModeEnabled) {
       return true;
     }
     return this.unlockedEntries.has(entryId);
   }
 
   isEnemyUnlocked(enemyTypeId: string): boolean {
-    return this.devUnlockCodexEntries || this.encounteredEnemies.has(enemyTypeId);
+    return (this.devUnlockCodexEntries && GameSettingsStore.get().accessibility.devModeEnabled) || this.encounteredEnemies.has(enemyTypeId);
   }
 
   isBonusUnlocked(bonusId: string): boolean {
-    return this.devUnlockCodexEntries || this.discoveredBonuses.has(bonusId);
+    return (this.devUnlockCodexEntries && GameSettingsStore.get().accessibility.devModeEnabled) || this.discoveredBonuses.has(bonusId);
   }
 
   setDevUnlockCodexEntries(enabled: boolean): void {

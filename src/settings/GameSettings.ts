@@ -42,6 +42,7 @@ export interface AudioSettings {
 export interface AccessibilitySettings {
   colorFilter: ColorVisionFilter;
   catGodModeEnabled: boolean;
+  devModeEnabled: boolean;
 }
 
 export interface GraphicsSettings {
@@ -91,6 +92,7 @@ const DEFAULT_SETTINGS: GameSettings = {
   accessibility: {
     colorFilter: 'none',
     catGodModeEnabled: false,
+    devModeEnabled: false,
   },
   graphics: {
     lightweightTexturesMode: true,
@@ -262,6 +264,7 @@ export class GameSettingsStore {
       accessibility: {
         colorFilter: sanitizeFilter(parsed.accessibility?.colorFilter),
         catGodModeEnabled: !!parsed.accessibility?.catGodModeEnabled,
+        devModeEnabled: !!parsed.accessibility?.devModeEnabled,
       },
       graphics: {
         lightweightTexturesMode:

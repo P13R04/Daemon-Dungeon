@@ -3,6 +3,7 @@ import meSpeakConfig from 'mespeak/src/mespeak_config.json';
 import enVoice from 'mespeak/voices/en/en.json';
 import enUsVoice from 'mespeak/voices/en/en-us.json';
 import frVoice from 'mespeak/voices/fr.json';
+import { stripAllSpecialMarkers } from '../systems/hud/DaemonTextUtils';
 
 export interface LayerPlan {
   text: string;
@@ -197,25 +198,30 @@ export class DaemonVoiceSynth {
     // For daemon_normal: cap max glitch events to 1 for lighter feel
     const isLightGlitch = presetName === 'daemon_normal';
 
+    const cleanText = stripAllSpecialMarkers(text);
+    const activeVoiceId = 'en/en-us'; // Force same voice for perfect phoneme sync
+    const activeSpeed = preset.lowSpeed; // Force same speed for both layers
+    const activeWordGap = wordGap; // Force same wordgap for both layers
+
     const plan: SynthesisPlan = {
       layers: [
         {
-          text,
-          voiceId: 'en/en-us',
+          text: cleanText,
+          voiceId: activeVoiceId,
           pitch: preset.lowPitch,
-          speed: preset.lowSpeed,
+          speed: activeSpeed,
           amplitude: preset.lowAmplitude,
-          wordgap: wordGap,
+          wordgap: activeWordGap,
           gain: 0.85,
           delaySeconds: 0,
         },
         {
-          text,
-          voiceId: 'en/en',
+          text: cleanText,
+          voiceId: activeVoiceId,
           pitch: preset.highPitch,
-          speed: preset.highSpeed,
+          speed: activeSpeed,
           amplitude: preset.highAmplitude,
-          wordgap: wordGap + 0.2,
+          wordgap: activeWordGap,
           gain: 0.72,
           delaySeconds: preset.overlayDelayMs / 1000,
         }
