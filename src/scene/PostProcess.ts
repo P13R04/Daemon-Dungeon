@@ -35,6 +35,7 @@ export class PostProcessManager {
   private crtLines?: PostProcess;
   private camera?: Camera;
   private eventBus: EventBus;
+  private unsubscribeOptions: (() => void) | null = null;
   private config: PostProcessingConfig = {
     enabled: true,
     pixelScale: 1.6,
@@ -129,7 +130,8 @@ export class PostProcessManager {
   }
 
   private bindEvents(): void {
-    this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data: UiOptionChangedPayload) => {
+    if (this.unsubscribeOptions) return;
+    this.unsubscribeOptions = this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data: UiOptionChangedPayload) => {
       if (!data?.option) return;
       switch (data.option) {
         case 'postProcessingEnabled':
@@ -276,5 +278,13 @@ export class PostProcessManager {
 
   getPipeline(): DefaultRenderingPipeline | undefined {
     return this.pipeline;
+  }
+
+  dispose(): void {
+    this.disablePipeline();
+    if (this.unsubscribeOptions) {
+      this.unsubscribeOptions();
+      this.unsubscribeOptions = null;
+    }
   }
 }

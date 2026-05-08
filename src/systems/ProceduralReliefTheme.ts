@@ -264,6 +264,51 @@ function drawExteriorCornerTransitions(ctx: Canvas2DRenderingContext, size: numb
   ctx.restore();
 }
 
+function drawSpikeHoles(ctx: Canvas2DRenderingContext, bctx: Canvas2DRenderingContext, size: number): void {
+  const patternCenters = [2.5, 6.5, 10.5];
+  const holeRadius = size * (1.6 / 14);
+  const shadowMax = size * (2.2 / 14); // Reduced to avoid overlapping and darkening the whole tile
+
+  for (const px of patternCenters) {
+    for (const pz of patternCenters) {
+      const cx = (px / 14) * size;
+      const cy = size - (pz / 14) * size;
+
+      // Draw shadow/warning base (localized black dots)
+      ctx.save();
+      const shadowGrad = ctx.createRadialGradient(cx, cy, holeRadius * 0.8, cx, cy, shadowMax);
+      shadowGrad.addColorStop(0, 'rgba(0, 0, 0, 0.9)');
+      shadowGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = shadowGrad;
+      ctx.beginPath();
+      ctx.arc(cx, cy, shadowMax, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Draw in diffuse (dark hole)
+      ctx.save();
+      ctx.fillStyle = 'rgb(10, 12, 15)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, holeRadius, 0, Math.PI * 2);
+      ctx.fill();
+      
+      // Rim highlight
+      ctx.strokeStyle = 'rgba(83, 188, 255, 0.45)';
+      ctx.lineWidth = Math.max(1, size * 0.01);
+      ctx.stroke();
+      ctx.restore();
+
+      // Draw in bump (deeply recessed)
+      bctx.save();
+      bctx.fillStyle = 'rgb(15, 15, 15)';
+      bctx.beginPath();
+      bctx.arc(cx, cy, holeRadius, 0, Math.PI * 2);
+      bctx.fill();
+      bctx.restore();
+    }
+  }
+}
+
 function drawWallBrickHighlights(
   ctx: Canvas2DRenderingContext,
   size: number,
@@ -614,6 +659,31 @@ export class ProceduralReliefTheme {
     if (cached) return cached;
 
     const mat = this.makeFloorMaterial(scene, k, tileX, tileZ, neighbors);
+    cache.floorMats.set(k, mat);
+    return mat;
+  }
+
+  static createSpikeMaterial(scene: Scene, tileX: number, tileZ: number, neighbors: ProceduralReliefNeighborMasks): StandardMaterial {
+    const cache = this.getSceneCache(scene);
+    const k = [
+      this.lightweightMode ? 'lite' : 'full',
+      'spike',
+      tileX,
+      tileZ,
+      neighbors.wallMask,
+      neighbors.wallDiagMask,
+      neighbors.pillarMask,
+      neighbors.pillarDiagMask,
+      neighbors.poisonMask,
+      neighbors.poisonDiagMask,
+      neighbors.voidMask,
+      neighbors.voidDiagMask,
+    ].join('_');
+
+    const cached = cache.floorMats.get(k);
+    if (cached) return cached;
+
+    const mat = this.makeSpikeMaterial(scene, k, tileX, tileZ, neighbors);
     cache.floorMats.set(k, mat);
     return mat;
   }
@@ -1157,6 +1227,114 @@ export class ProceduralReliefTheme {
     bump.wrapV = Texture.CLAMP_ADDRESSMODE;
 
     const mat = new StandardMaterial(`f_mat_${key}`, scene);
+    mat.diffuseTexture = tex;
+    mat.bumpTexture = bump;
+    mat.useParallax = false;
+    mat.useParallaxOcclusion = false;
+    if (mat.bumpTexture) {
+      mat.bumpTexture.level = 1.9;
+    }
+    mat.specularColor = new Color3(0.08, 0.08, 0.1);
+    mat.emissiveColor = new Color3(0.02, 0.02, 0.025);
+    mat.freeze();
+    return mat;
+  }
+
+  private static makeSpikeMaterial(
+    scene: Scene,
+    key: string,
+    tileX: number,
+    tileZ: number,
+    neighbors: ProceduralReliefNeighborMasks
+  ): StandardMaterial {
+    const configuredSize = QUALITY_SETTINGS[this.quality].floorTextureSize;
+    const size = this.lightweightMode
+      ? Math.max(56, Math.floor(configuredSize * 0.62))
+      : configuredSize;
+    const invSize = 1 / Math.max(1, size - 1);
+    const tex = new DynamicTexture(`s_tex_${key}`, { width: size, height: size }, scene, false);
+    const bump = new DynamicTexture(`s_bump_${key}`, { width: size, height: size }, scene, false);
+    const ctx = tex.getContext() as Canvas2DRenderingContext;
+    const bctx = bump.getContext() as Canvas2DRenderingContext;
+
+    const stoneX = 2.35;
+    const stoneY = 2.35;
+    const seamW = 0.05;
+
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const u = x * invSize;
+        const v = (size - 1 - y) * invSize;
+        const gx = tileX + u;
+        const gy = tileZ + v;
+
+        const cellX = frac01(gx * stoneX);
+        const cellY = frac01(gy * stoneY);
+        const border = Math.min(Math.min(cellX, 1 - cellX), Math.min(cellY, 1 - cellY));
+
+        const stoneIdX = Math.floor(gx * stoneX);
+        const stoneIdY = Math.floor(gy * stoneY);
+        const stoneTone = hash2(stoneIdX, stoneIdY, 0.44);
+        const rawStone = hash2(stoneIdX, stoneIdY, 0.12);
+        const stoneHeight = Math.floor(rawStone * 5.0) / 5.0;
+
+        const large = hash2(gx * 1.6, gy * 1.5, 0.23);
+        const medium = hash2(gx * 2.2, gy * 2.1, 0.61);
+
+        let r = 110 + large * 6 + medium * 3 + stoneTone * 4 + stoneHeight * 3;
+        let g = 117 + large * 6 + medium * 3 + stoneTone * 4 + stoneHeight * 3;
+        let b = 128 + large * 7 + medium * 4 + stoneTone * 5 + stoneHeight * 3;
+
+        const seamShade = border < seamW ? 6 : 0;
+        r -= seamShade;
+        g -= seamShade;
+        b -= seamShade;
+
+        ctx.fillStyle = `rgb(${Math.floor(r)}, ${Math.floor(g)}, ${Math.floor(b)})`;
+        ctx.fillRect(x, y, 1, 1);
+
+        const h01 = floorHeightAt(gx, gy);
+        const mortarBump = border < seamW ? 32 : 0;
+        const h = Math.max(0, Math.min(255, Math.floor(116 + h01 * 122 - mortarBump + stoneTone * 8)));
+        bctx.fillStyle = `rgb(${h}, ${h}, ${h})`;
+        bctx.fillRect(x, y, 1, 1);
+      }
+    }
+
+    const wallMask = flipMaskVertical(neighbors.wallMask);
+    const wallDiagMask = flipDiagMaskVertical(neighbors.wallDiagMask);
+    const pillarMask = flipMaskVertical(neighbors.pillarMask);
+    const pillarDiagMask = flipDiagMaskVertical(neighbors.pillarDiagMask);
+    const poisonMask = flipMaskVertical(neighbors.poisonMask);
+    const poisonDiagMask = flipDiagMaskVertical(neighbors.poisonDiagMask);
+    const voidMask = flipMaskVertical(neighbors.voidMask);
+    const voidDiagMask = flipDiagMaskVertical(neighbors.voidDiagMask);
+
+    const poisonMaskFinal = poisonMask & (~voidMask);
+    const poisonDiagFinal = poisonDiagMask & (~voidDiagMask);
+
+    drawCircuit(ctx, size, wallMask, 'rgba(83, 188, 255, 0.95)', 'rgba(168, 113, 255, 0.95)', 0);
+    drawExteriorCornerTransitions(ctx, size, wallMask, wallDiagMask, 'rgba(104, 196, 255, 0.78)', 0);
+
+    if (pillarMask || pillarDiagMask) {
+      drawCircuit(ctx, size, pillarMask, 'rgba(126, 218, 255, 0.95)', 'rgba(170, 128, 255, 0.85)', 8);
+      drawExteriorCornerTransitions(ctx, size, pillarMask, pillarDiagMask, 'rgba(126, 218, 255, 0.9)', 8);
+    }
+
+    applyPoisonTransition(ctx, size, poisonMaskFinal, poisonDiagFinal);
+    applyVoidRim(ctx, size, voidMask, voidDiagMask);
+
+    // DRAW SPIKE HOLES OVER THE NEW FLOOR
+    drawSpikeHoles(ctx, bctx, size);
+
+    tex.update(false);
+    bump.update(false);
+    tex.wrapU = Texture.CLAMP_ADDRESSMODE;
+    tex.wrapV = Texture.CLAMP_ADDRESSMODE;
+    bump.wrapU = Texture.CLAMP_ADDRESSMODE;
+    bump.wrapV = Texture.CLAMP_ADDRESSMODE;
+
+    const mat = new StandardMaterial(`s_mat_${key}`, scene);
     mat.diffuseTexture = tex;
     mat.bumpTexture = bump;
     mat.useParallax = false;

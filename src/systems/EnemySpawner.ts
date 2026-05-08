@@ -53,6 +53,7 @@ export class EnemySpawner {
   private suppressedAIActivationQueue: EnemyController[] = [];
   private fogMask: FogMask | null = null;
   private orphanBullCleanupAccumulator: number = 0;
+  private unsubscriber: (() => void) | null = null;
 
   constructor(
     private scene: Scene,
@@ -60,7 +61,12 @@ export class EnemySpawner {
   ) {
     this.eventBus = EventBus.getInstance();
     this.configLoader = ConfigLoader.getInstance();
-    this.eventBus.on(GameEvents.ENEMY_SPAWN_REQUESTED, (data: EnemySpawnRequestPayload) => {
+    this.setupEventListeners();
+  }
+
+  private setupEventListeners(): void {
+    if (this.unsubscriber) return;
+    this.unsubscriber = this.eventBus.on(GameEvents.ENEMY_SPAWN_REQUESTED, (data: EnemySpawnRequestPayload) => {
       const typeId = data?.typeId;
       const position = data?.position;
       console.log(`[EnemySpawner] ENEMY_SPAWN_REQUESTED: typeId=${typeId}, pos=${position}`);
@@ -565,7 +571,7 @@ export class EnemySpawner {
     }
   }
 
-  dispose(): void {
+  clearForRoomTransition(): void {
     this.enemies.forEach(e => e.dispose());
     this.enemies = [];
     this.pendingRoomSpawnQueue = [];
@@ -578,5 +584,13 @@ export class EnemySpawner {
       window.clearTimeout(this.heavyAssetPrewarmTimer);
       this.heavyAssetPrewarmTimer = null;
     }
+  }
+
+  dispose(): void {
+    if (this.unsubscriber) {
+      this.unsubscriber();
+      this.unsubscriber = null;
+    }
+    this.clearForRoomTransition();
   }
 }

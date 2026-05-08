@@ -239,6 +239,9 @@ export class ClassSelectScene {
       anchor.dispose();
     }
     this.classAmbientAnchors = [];
+    if (this.postProcessManager) {
+      this.postProcessManager.dispose();
+    }
     this.gui.dispose();
     this.scene.dispose();
   }

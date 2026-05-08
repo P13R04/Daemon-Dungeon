@@ -199,9 +199,9 @@ export class ProjectileManager {
   private hostileSlowZone: { center: Vector3; radius: number; multiplier: number } | null = null;
   private currentRoomManager?: RoomManager;
   private readonly aoeVisualY = 0.03;
-  private mageProjectileParticleTexture: DynamicTexture | null = null;
   private projectileParticleEffects: Map<Projectile, ParticleSystem> = new Map();
   private deferredMeshDisposalQueue: Mesh[] = [];
+  private unsubscriber: (() => void) | null = null;
 
   constructor(private scene: Scene, poolSize: number = 20) {
     this.eventBus = EventBus.getInstance();
@@ -210,8 +210,12 @@ export class ProjectileManager {
       () => new Projectile(scene),
       poolSize
     );
+    this.setupEventListeners();
+  }
 
-    this.eventBus.on(GameEvents.PROJECTILE_SPAWNED, (payload: {
+  private setupEventListeners(): void {
+    if (this.unsubscriber) return;
+    this.unsubscriber = this.eventBus.on(GameEvents.PROJECTILE_SPAWNED, (payload: {
       position: Vector3;
       direction: Vector3;
       damage: number;
@@ -1152,6 +1156,10 @@ export class ProjectileManager {
   }
 
   dispose(): void {
+    if (this.unsubscriber) {
+      this.unsubscriber();
+      this.unsubscriber = null;
+    }
     this.resetForRoomTransition();
     for (const mesh of this.deferredMeshDisposalQueue) {
       if (!mesh.isDisposed()) {

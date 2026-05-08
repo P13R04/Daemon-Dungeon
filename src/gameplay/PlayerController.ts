@@ -2337,7 +2337,21 @@ export class PlayerController {
     // Reset HP to base
     if (this.health) {
       this.health.setMaxHP(classConfig.baseStats.hp, true);
+      this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
+        health: {
+          current: this.health.getCurrentHP(),
+          max: this.health.getMaxHP(),
+        }
+      });
     }
+
+    // Reset ultimate
+    this.ultCharge = 0;
+    this.ultCooldown = 0;
+    this.secondaryResource = this.secondaryResourceMax;
+    this.tankStanceResource = this.tankStanceResourceMax;
+    this.rogueStealthResource = this.rogueStealthResourceMax;
+    this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_READY, { charge: this.ultCharge });
   }
 
   onPlayerDealtDamage(damage: number): void {

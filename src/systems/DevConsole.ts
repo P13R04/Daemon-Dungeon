@@ -50,6 +50,7 @@ export class DevConsole {
   private isVisible: boolean = true;
   private eventBus: EventBus;
   private configLoader: ConfigLoader;
+  private unsubscribers: Array<() => void> = [];
   private player: PlayerController | null = null;
   private showLiveStats: boolean = false;
   private statsPanel: StackPanel | null = null;
@@ -100,11 +101,11 @@ export class DevConsole {
     this.setupLiveStats();
     this.applyGuiScaling();
 
-    this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data: UiOptionChangedPayload) => {
+    this.unsubscribers.push(this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data: UiOptionChangedPayload) => {
       if (data?.option === 'postProcessingEnabled' || data?.option === 'postProcessingPixelScale') {
         this.applyGuiScaling();
       }
-    });
+    }));
 
     const engine = this.scene.getEngine();
     engine.onResizeObservable.add(() => {
@@ -1303,11 +1304,11 @@ export class DevConsole {
   }
 
   private setupLiveStats(): void {
-    this.eventBus.on(GameEvents.ENEMY_DAMAGED, (data: { damage?: number }) => {
+    this.unsubscribers.push(this.eventBus.on(GameEvents.ENEMY_DAMAGED, (data: { damage?: number }) => {
       if (typeof data.damage !== 'number') return;
       const now = performance.now() / 1000;
       this.damageEvents.push({ t: now, dmg: data.damage });
-    });
+    }));
 
     this.scene.onBeforeRenderObservable.add(() => {
       if (!this.showLiveStats || !this.player) return;
@@ -1482,6 +1483,11 @@ export class DevConsole {
   }
 
   dispose(): void {
+    for (const unsubscribe of this.unsubscribers) {
+      unsubscribe();
+    }
+    this.unsubscribers = [];
+
     if (this.devScrollViewer && this.devScrollWheelObserver) {
       this.devScrollViewer.onWheelObservable.remove(this.devScrollWheelObserver);
       this.devScrollWheelObserver = null;

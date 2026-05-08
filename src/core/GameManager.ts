@@ -493,6 +493,7 @@ export class GameManager {
     if (this.playerController) this.playerController.dispose();
     if (this.enemySpawner) this.enemySpawner.dispose();
     if (this.hudManager) this.hudManager.dispose();
+    if (this.postProcessManager) this.postProcessManager.dispose();
     if (this.inputManager) this.inputManager.dispose();
     if (this.tutorialManager) this.tutorialManager.dispose();
     if (this.projectileManager) this.projectileManager.dispose();
@@ -2059,7 +2060,7 @@ export class GameManager {
       : false;
 
     if (!preparedActivated) {
-      this.enemySpawner.dispose();
+      this.enemySpawner.clearForRoomTransition();
       this.enemySpawner.prewarmRoomEnemyData(roomId, index, { prewarmHeavyAssets: false });
       if (!this.isTutorialRun) {
         this.enemySpawner.spawnEnemiesForRoom(roomId);

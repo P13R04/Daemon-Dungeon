@@ -66,6 +66,8 @@ export class TileSystem {
   private spikesCycleTimer: number = 1.0;
   private readonly spikesActiveDuration: number = 1.0;
   private readonly spikesInactiveDuration: number = 1.0;
+  private spikesAnimationT: number = 1.0; // 0 = retracted, 1 = extended
+  private readonly spikesAnimationSpeed: number = 5.0;
   private renderProfile: TileRenderProfile = 'classic';
   private poisonShaderMaterials: Set<ShaderMaterial> = new Set();
   private poisonShaderTime: number = 0;
@@ -104,18 +106,32 @@ export class TileSystem {
     let prewarmBudget = lightweightMode ? 36 : Number.POSITIVE_INFINITY;
 
     for (const tile of tiles) {
-      if (tile.type !== 'floor') continue;
+      if (tile.type !== 'floor' && tile.type !== 'spikes') continue;
       const adjacencies = this.getAdjacencies(tile.x, tile.z, grid);
-      ProceduralReliefTheme.createFloorMaterial(this.scene, tile.x, tile.z, {
-        wallMask: this.maskFromTypes(adjacencies, ['wall']),
-        wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
-        pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
-        pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
-        poisonMask: this.maskFromTypes(adjacencies, ['poison']),
-        poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
-        voidMask: this.maskFromTypes(adjacencies, ['void']),
-        voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
-      });
+      
+      if (tile.type === 'floor') {
+        ProceduralReliefTheme.createFloorMaterial(this.scene, tile.x, tile.z, {
+          wallMask: this.maskFromTypes(adjacencies, ['wall']),
+          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
+          pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
+          pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
+          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+          voidMask: this.maskFromTypes(adjacencies, ['void']),
+          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+        });
+      } else {
+        ProceduralReliefTheme.createSpikeMaterial(this.scene, tile.x, tile.z, {
+          wallMask: this.maskFromTypes(adjacencies, ['wall']),
+          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
+          pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
+          pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
+          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+          voidMask: this.maskFromTypes(adjacencies, ['void']),
+          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+        });
+      }
 
       prewarmBudget -= 1;
       if (prewarmBudget <= 0) {
@@ -558,11 +574,12 @@ export class TileSystem {
 
     const useRelief = this.isProceduralReliefProfile();
     const lightweightRelief = useRelief && ProceduralReliefTheme.isLightweightMode();
-    const shouldDisplaceFloor = useRelief && tile.type === 'floor' && !lightweightRelief;
+    const isFloorLike = tile.type === 'floor' || tile.type === 'spikes';
+    const shouldDisplaceFloor = useRelief && isFloorLike && !lightweightRelief;
     const tileMesh = MeshBuilder.CreateGround('tile_' + key, {
       width: this.tileSize,
       height: this.tileSize,
-      subdivisions: useRelief && tile.type === 'floor' ? (lightweightRelief ? 3 : 14) : 1,
+      subdivisions: useRelief && isFloorLike ? (lightweightRelief ? 3 : 14) : 1,
       updatable: shouldDisplaceFloor,
     }, this.scene);
 
@@ -576,25 +593,27 @@ export class TileSystem {
     const renderData = this.getTileRenderData(tile, this.getAdjacencies(tile.x, tile.z, this.tileGrid));
 
     const adjacencies = this.getAdjacencies(tile.x, tile.z, this.tileGrid);
-    if (this.isProceduralReliefProfile() && tile.type === 'floor') {
+    if (this.isProceduralReliefProfile() && isFloorLike) {
       if (shouldDisplaceFloor) {
         ProceduralReliefTheme.applyFloorDisplacement(tileMesh, tile.x, tile.z, this.tileSize);
       }
-      tileMesh.material = ProceduralReliefTheme.createFloorMaterial(
-        this.scene,
-        tile.x,
-        tile.z,
-        {
-          wallMask: this.maskFromTypes(adjacencies, ['wall']),
-          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
-          pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
-          pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
-          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
-          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
-          voidMask: this.maskFromTypes(adjacencies, ['void']),
-          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
-        }
-      );
+      
+      const neighborMasks = {
+        wallMask: this.maskFromTypes(adjacencies, ['wall']),
+        wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
+        pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
+        pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
+        poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+        poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+        voidMask: this.maskFromTypes(adjacencies, ['void']),
+        voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+      };
+
+      if (tile.type === 'spikes') {
+        tileMesh.material = ProceduralReliefTheme.createSpikeMaterial(this.scene, tile.x, tile.z, neighborMasks);
+      } else {
+        tileMesh.material = ProceduralReliefTheme.createFloorMaterial(this.scene, tile.x, tile.z, neighborMasks);
+      }
     } else if (this.renderProfile === 'neoDungeonTest' && tile.type === 'floor') {
       tileMesh.material = ProceduralDungeonTheme.createFloorMaterial(
         this.scene,
@@ -656,6 +675,22 @@ export class TileSystem {
 
     if (this.isProceduralReliefProfile() && tile.type === 'floor') {
       mesh.material = ProceduralReliefTheme.createFloorMaterial(
+        this.scene,
+        tile.x,
+        tile.z,
+        {
+          wallMask: this.maskFromTypes(adjacencies, ['wall']),
+          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
+          pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
+          pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
+          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+          voidMask: this.maskFromTypes(adjacencies, ['void']),
+          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+        }
+      );
+    } else if (this.isProceduralReliefProfile() && tile.type === 'spikes') {
+      mesh.material = ProceduralReliefTheme.createSpikeMaterial(
         this.scene,
         tile.x,
         tile.z,
@@ -754,15 +789,28 @@ export class TileSystem {
     }
 
     this.spikesCycleTimer -= deltaTime;
-    if (this.spikesCycleTimer > 0) return;
+    if (this.spikesCycleTimer <= 0) {
+      this.spikesActive = !this.spikesActive;
+      this.spikesCycleTimer = this.spikesActive ? this.spikesActiveDuration : this.spikesInactiveDuration;
+    }
 
-    this.spikesActive = !this.spikesActive;
-    this.spikesCycleTimer = this.spikesActive ? this.spikesActiveDuration : this.spikesInactiveDuration;
-    this.applySpikeVisualState();
+    // Update animation progress
+    const targetT = this.spikesActive ? 1.0 : 0.0;
+    if (this.spikesAnimationT !== targetT) {
+      const diff = targetT - this.spikesAnimationT;
+      const step = Math.sign(diff) * this.spikesAnimationSpeed * deltaTime;
+      if (Math.abs(step) >= Math.abs(diff)) {
+        this.spikesAnimationT = targetT;
+      } else {
+        this.spikesAnimationT += step;
+      }
+      this.applySpikeVisualState();
+    }
   }
 
   areSpikesActive(): boolean {
-    return this.spikesActive;
+    // Only count as active for damage if they are at least halfway up
+    return this.spikesAnimationT > 0.5;
   }
 
   private setupSpikeTileVisuals(key: string, tile: TileData, tileMesh: Mesh): void {
@@ -812,11 +860,22 @@ export class TileSystem {
       this.applySpikeTileState(key, tileMesh);
     }
   }
-
   private applySpikeTileState(key: string, tileMesh: Mesh): void {
     const meshes = this.spikeMeshes.get(key) ?? [];
+    const spikeHeight = this.tileSize * 0.38;
+    const baseLine = this.origin.y;
+    
+    // Easing for smoother "snap" feel
+    const easedT = this.spikesAnimationT < 0.5 
+      ? 2 * this.spikesAnimationT * this.spikesAnimationT 
+      : 1 - Math.pow(-2 * this.spikesAnimationT + 2, 2) / 2;
+
     for (const spike of meshes) {
-      spike.isVisible = this.spikesActive;
+      // Scale spikes instead of moving them to avoid showing them below the floor
+      spike.scaling.y = easedT;
+      // Adjust position so the base of the cylinder stays at the floor level
+      spike.position.y = baseLine + (spikeHeight * easedT) / 2;
+      spike.isVisible = this.spikesAnimationT > 0.001;
     }
   }
 

@@ -131,6 +131,7 @@ export class UltimateManager {
   private eventBus: EventBus;
   private mageDotParticleTexture: DynamicTexture | null = null;
   private zoneParticleEffects: Map<UltimateZone, ParticleSystem> = new Map();
+  private unsubscriber: (() => void) | null = null;
 
   constructor(private scene: Scene, poolSize: number = 5) {
     this.eventBus = EventBus.getInstance();
@@ -144,7 +145,8 @@ export class UltimateManager {
   }
 
   private setupEventListeners(): void {
-    this.eventBus.on(GameEvents.PLAYER_ULTIMATE_USED, (data: PlayerUltimateUsedPayload) => {
+    if (this.unsubscriber) return;
+    this.unsubscriber = this.eventBus.on(GameEvents.PLAYER_ULTIMATE_USED, (data: PlayerUltimateUsedPayload) => {
       this.spawn(data.position, data.radius, data.damage, data.duration, data.healPerTick ?? 1, data.dotTickRate ?? 0.5);
     });
   }
@@ -320,8 +322,12 @@ export class UltimateManager {
 
     burst.start();
     window.setTimeout(() => {
+      if (this.scene.isDisposed) return;
       burst.stop();
-      window.setTimeout(() => burst.dispose(false), 420);
+      window.setTimeout(() => {
+        if (this.scene.isDisposed) return;
+        burst.dispose(false);
+      }, 420);
     }, 120);
   }
 
@@ -359,8 +365,12 @@ export class UltimateManager {
 
     pulse.start();
     window.setTimeout(() => {
+      if (this.scene.isDisposed) return;
       pulse.stop();
-      window.setTimeout(() => pulse.dispose(false), 260);
+      window.setTimeout(() => {
+        if (this.scene.isDisposed) return;
+        pulse.dispose(false);
+      }, 260);
     }, 90);
   }
 
@@ -395,6 +405,10 @@ export class UltimateManager {
 
   dispose(): void {
     this.resetForRoomTransition();
+    if (this.unsubscriber) {
+      this.unsubscriber();
+      this.unsubscriber = null;
+    }
     if (this.mageDotParticleTexture) {
       this.mageDotParticleTexture.dispose();
       this.mageDotParticleTexture = null;
