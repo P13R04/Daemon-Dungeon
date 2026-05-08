@@ -1171,7 +1171,6 @@ export class PlayerController {
 
     const slot1Held = this.inputSlot1Held;
     const slot1Pressed = this.inputSlot1Pressed;
-    const slot2Held = this.inputSlot2Held;
 
     if (this.classId === 'firewall') {
       if (this.tankShieldLockUntilRightRelease && !slot2Held) {
