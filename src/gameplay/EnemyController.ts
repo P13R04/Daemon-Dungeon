@@ -2,7 +2,7 @@
  * EnemyController - Controls a single enemy
  */
 
-import { Scene, Mesh, Vector3, SceneLoader, AnimationGroup, TransformNode, StandardMaterial, Color3, MeshBuilder, AbstractMesh, Node } from '@babylonjs/core';
+import { Scene, Mesh, Vector3, SceneLoader, AnimationGroup, TransformNode, StandardMaterial, Color3, MeshBuilder, AbstractMesh, Node, ParticleSystem, Color4, DynamicTexture, Texture } from '@babylonjs/core';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { Health } from '../components/Health';
 import { Knockback } from '../components/Knockback';
@@ -13,6 +13,7 @@ import type { NavigationCapabilities, RoomManager } from '../systems/RoomManager
 import type { EnemyRuntimeConfig } from './enemy/EnemyControllerTypes';
 import { EnemyLaserPatternSubsystem } from './enemy/EnemyLaserPatternSubsystem';
 import { EnemySpikeCastSubsystem } from './enemy/EnemySpikeCastSubsystem';
+import { SCENE_LAYER } from '../ui/uiLayers';
 import { getHudAssetBaseUrl } from '../systems/hud/HudAssetPaths';
 
 type EnemyControllerSpawnOptions = {
@@ -71,13 +72,32 @@ export class EnemyController {
   private jumperAnimGroups: Map<string, AnimationGroup> = new Map();
   private jumperModelRoot: TransformNode | null = null;
   private jumperMeshes: Array<Mesh | TransformNode> = [];
-  private jumperModelScale: number = 0.1;
+  private jumperModelScale: number = 0.2;
   private jumperModelLoadPromise: Promise<void> | null = null;
   private casterAnimGroups: Map<string, AnimationGroup> = new Map();
   private casterModelRoot: TransformNode | null = null;
   private casterMeshes: Array<Mesh | TransformNode> = [];
   private casterModelScale: number = 0.1;
   private casterModelLoadPromise: Promise<void> | null = null;
+  private casterMobileModelRoot: TransformNode | null = null;
+  private casterMobileAnimGroups: Map<string, AnimationGroup> = new Map();
+  private casterMobileMeshes: Array<Mesh | TransformNode> = [];
+  private casterMobileModelLoadPromise: Promise<void> | null = null;
+  private casterAnimState: 'idle' | 'move' | 'attack' | 'none' = 'none';
+  private pongModelRoot: TransformNode | null = null;
+  private pongAnimGroups: Map<string, AnimationGroup> = new Map();
+  private pongMeshes: Array<Mesh | TransformNode> = [];
+  private pongModelLoadPromise: Promise<void> | null = null;
+  private missileModelRoot: TransformNode | null = null;
+  private missileMeshes: Array<Mesh | TransformNode> = [];
+  private missileModelLoadPromise: Promise<void> | null = null;
+  private missileTrail: any | null = null; // ParticleSystem
+  private zombieModelRoot: TransformNode | null = null;
+  private zombieAnimGroups: Map<string, AnimationGroup> = new Map();
+  private zombieMeshes: Array<Mesh | TransformNode> = [];
+  private zombieModelLoadPromise: Promise<void> | null = null;
+  private zombieAnimState: 'idle' | 'attack' | 'none' = 'none';
+  private zombieModelScale: number = 0.25;
   private knockbackStrength: number = 0;
   private selfKnockbackStrength: number = 0;
   private useCrowdSteering: boolean = false;
@@ -118,7 +138,12 @@ export class EnemyController {
   private jumperTriggerRange: number = 6.0;
   private jumperAimDuration: number = 0.5;
   private jumperJumpDuration: number = 0.7;
-  private jumperJumpSpeedMultiplier: number = 2.2;
+  private jumperJumpArcHeight: number = 3.0;
+
+  private movementDust: ParticleSystem | null = null;
+  private casterAura: ParticleSystem | null = null;
+  private pongAura: ParticleSystem | null = null;
+  private ephemeralVisuals: { mesh: Mesh; timer: number; duration: number }[] = [];
   private jumperHitRange: number = 1.0;
   private jumperCooldownDuration: number = 1.0;
   private jumperJumpHeight: number = 1.2;
@@ -358,7 +383,8 @@ export class EnemyController {
     this.mesh.position = this.position.clone();
     this.mesh.rotation = Vector3.Zero();
     // Ensure enemy is at correct height
-    this.mesh.position.y = 1.0 + EnemyController.globalHeightOffset;
+    const needsLowHeight = ['chase', 'flee', 'strategist', 'spike_strategist', 'bull', 'pong', 'jumper', 'fuyard'].includes(this.behavior);
+    this.mesh.position.y = (needsLowHeight ? 0.0 : 1.0) + EnemyController.globalHeightOffset;
     this.mesh.checkCollisions = true;
     this.mesh.metadata = { isEnemy: true, enemyId: this.id, typeId: this.typeId };
 
@@ -382,12 +408,127 @@ export class EnemyController {
       this.queueJumperModelLoad();
     }
     
-    const stationary = ['turret', 'bullet_hell', 'mage_missile', 'missile'];
+    if (this.behavior === 'pong') {
+      this.queuePongModelLoad();
+    }
+    
+    const mobileCasters = ['sentinel', 'prefire_sentinel', 'healer', 'artificer', 'necromancer', 'swarm_coordinator'];
+    if (mobileCasters.includes(this.behavior)) {
+      this.queueCasterMobileModelLoad();
+    }
+    
+    const stationary = ['turret', 'bullet_hell', 'mage_missile', 'laser_patterns'];
     if (stationary.includes(this.behavior)) {
       this.queueCasterModelLoad();
     }
 
+    if (this.behavior === 'missile') {
+      this.queueMissileModelLoad();
+    }
+    
+    if (['chase', 'flee', 'strategist', 'spike_strategist', 'fuyard'].includes(this.behavior)) {
+      this.queueZombieModelLoad();
+    }
+
+    this.initParticleEffects();
     this.applyRenderSuppressionState();
+  }
+
+  private initParticleEffects(): void {
+    if (['chase', 'flee', 'strategist', 'spike_strategist', 'bull', 'fuyard'].includes(this.behavior)) {
+      this.movementDust = new ParticleSystem(`dust_${this.id}`, 80, this.scene);
+      this.movementDust.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+      this.movementDust.emitter = this.mesh;
+      this.movementDust.color1 = new Color4(0.6, 0.6, 0.6, 0.2);
+      this.movementDust.color2 = new Color4(0.5, 0.5, 0.5, 0.1);
+      this.movementDust.colorDead = new Color4(0.4, 0.4, 0.4, 0.0);
+      this.movementDust.minSize = 0.05;
+      this.movementDust.maxSize = 0.12;
+      this.movementDust.minLifeTime = 0.1;
+      this.movementDust.maxLifeTime = 0.25;
+      this.movementDust.emitRate = 0; // Managed by movement
+      this.movementDust.blendMode = ParticleSystem.BLENDMODE_STANDARD;
+      this.movementDust.gravity = new Vector3(0, 0.2, 0);
+      this.movementDust.direction1 = new Vector3(-0.3, 0, -0.6); // Push more backward
+      this.movementDust.direction2 = new Vector3(0.3, 0.1, -0.1);
+      this.movementDust.minEmitPower = 0.2;
+      this.movementDust.maxEmitPower = 1.0;
+      this.movementDust.updateSpeed = 0.03;
+      
+      // Significantly wider and longer behind (Local Z- is backward)
+      this.movementDust.createBoxEmitter(
+        new Vector3(-1.2, 0.0, -2.4), // Even wider and deeper trail
+        new Vector3(1.2, 0.05, 0.4),
+        new Vector3(-0.4, 0, -0.4),
+        new Vector3(0.4, 0.1, 0.4)
+      );
+      this.movementDust.renderingGroupId = 0;
+      this.movementDust.layerMask = SCENE_LAYER;
+      this.movementDust.start();
+    }
+
+    const mobileCasters = ['sentinel', 'prefire_sentinel', 'healer', 'artificer', 'necromancer', 'swarm_coordinator'];
+    if (mobileCasters.includes(this.behavior)) {
+      this.casterAura = new ParticleSystem(`aura_${this.id}`, 100, this.scene);
+      this.casterAura.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+      this.casterAura.emitter = this.mesh;
+      
+      if (this.behavior === 'healer') {
+        this.casterAura.color1 = new Color4(1.0, 1.0, 0.6, 0.2);
+        this.casterAura.color2 = new Color4(0.9, 0.8, 0.3, 0.1);
+        this.casterAura.emitRate = 12;
+        this.casterAura.minSize = 0.3;
+        this.casterAura.maxSize = 0.6;
+        this.casterAura.gravity = new Vector3(0, 0.1, 0);
+      } else {
+        this.casterAura.color1 = new Color4(1.0, 0.1, 0.1, 0.7);
+        this.casterAura.color2 = new Color4(0.6, 0.0, 0.0, 0.3);
+      }
+      this.casterAura.colorDead = new Color4(0, 0, 0, 0);
+      this.casterAura.minSize = 0.3;
+      this.casterAura.maxSize = 0.7;
+      this.casterAura.minLifeTime = 0.5;
+      this.casterAura.maxLifeTime = 1.0;
+      this.casterAura.emitRate = 30;
+      this.casterAura.blendMode = ParticleSystem.BLENDMODE_ADD;
+      this.casterAura.gravity = new Vector3(0, 0.5, 0);
+      this.casterAura.layerMask = SCENE_LAYER;
+      this.casterAura.renderingGroupId = 0;
+      
+      // Emit from a box area
+      this.casterAura.createBoxEmitter(
+        new Vector3(-1, 0, -1),
+        new Vector3(1, 0, 1),
+        new Vector3(-0.5, 0, -0.5),
+        new Vector3(0.5, 1, 0.5)
+      );
+      this.casterAura.start();
+    }
+
+    if (this.behavior === 'pong') {
+      this.pongAura = new ParticleSystem(`pongAura_${this.id}`, 200, this.scene);
+      this.pongAura.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+      this.pongAura.emitter = this.mesh;
+      this.pongAura.isLocal = true; // Follow the fast-moving pong model
+      this.pongAura.color1 = new Color4(0.4, 0.7, 1.0, 0.9);
+      this.pongAura.color2 = new Color4(0.1, 0.4, 1.0, 0.7);
+      this.pongAura.colorDead = new Color4(0, 0, 0.4, 0);
+      this.pongAura.minSize = 0.3;
+      this.pongAura.maxSize = 0.7;
+      this.pongAura.minLifeTime = 0.2;
+      this.pongAura.maxLifeTime = 0.5;
+      this.pongAura.emitRate = 120;
+      this.pongAura.blendMode = ParticleSystem.BLENDMODE_ADD;
+      this.pongAura.gravity = new Vector3(0, 0, 0);
+      this.pongAura.direction1 = new Vector3(-1, -1, -1);
+      this.pongAura.direction2 = new Vector3(1, 1, 1);
+      this.pongAura.minEmitPower = 2.0;
+      this.pongAura.maxEmitPower = 5.0;
+      this.pongAura.updateSpeed = 0.04;
+      this.pongAura.layerMask = SCENE_LAYER;
+      this.pongAura.renderingGroupId = 0;
+      this.pongAura.start();
+    }
   }
 
   update(
@@ -470,6 +611,27 @@ export class EnemyController {
 
     this.target = playerPosition;
 
+    if (this.movementDust) {
+      const speed = this.velocity.length();
+      if (speed > 0.1 && !this.falling && this.position.y < 1.5) {
+        this.movementDust.emitRate = Math.min(80, speed * 25);
+      } else {
+        this.movementDust.emitRate = 0;
+      }
+    }
+
+    // Process ephemeral visuals
+    for (let i = this.ephemeralVisuals.length - 1; i >= 0; i--) {
+      const visual = this.ephemeralVisuals[i];
+      visual.timer -= deltaTime;
+      if (visual.timer <= 0) {
+        visual.mesh.dispose();
+        this.ephemeralVisuals.splice(i, 1);
+      } else if (visual.mesh.material && (visual.mesh.material as StandardMaterial).alpha !== undefined) {
+        (visual.mesh.material as StandardMaterial).alpha = Math.max(0, visual.timer / visual.duration);
+      }
+    }
+
     if (this.behavior === 'bull') {
       this.updateBull(deltaTime, playerPosition, allEnemies, roomManager);
     } else if (this.behavior === 'pong') {
@@ -516,6 +678,13 @@ export class EnemyController {
       // Update attack cooldown
       if (this.attackCooldown > 0) {
         this.attackCooldown -= deltaTime;
+      }
+      
+      if (this.velocity.lengthSquared() > 0.0001) {
+        this.rotateToward(this.velocity, deltaTime, 10);
+        this.playZombieAnim('Zombie_attack_1');
+      } else {
+        this.playZombieAnim('Zombie_idle');
       }
     }
 
@@ -568,6 +737,26 @@ export class EnemyController {
         if (this.healerTimer <= 0) {
           target.heal(this.healerAmount);
           this.healerTimer = this.healerCooldown;
+          
+          // Heal ray
+          const distToTarget = target.getPosition().subtract(this.position).length();
+          const healRay = MeshBuilder.CreateCylinder(`heal_ray_${this.id}_${Date.now()}`, {
+            height: distToTarget,
+            diameter: 0.2
+          }, this.scene);
+          healRay.position = this.position.add(target.getPosition()).scale(0.5);
+          healRay.position.y += 1.0; // Crystal height
+          healRay.lookAt(target.getPosition().add(new Vector3(0, 1.0, 0)));
+          healRay.rotate(new Vector3(1, 0, 0), Math.PI / 2);
+          
+          const mat = new StandardMaterial(`heal_ray_mat_${this.id}`, this.scene);
+          mat.emissiveColor = new Color3(1.0, 1.0, 0.2);
+          mat.diffuseColor = new Color3(0, 0, 0);
+          mat.alpha = 0.8;
+          healRay.material = mat;
+          healRay.isPickable = false;
+          
+          this.ephemeralVisuals.push({ mesh: healRay, timer: 0.3, duration: 0.3 });
         }
       }
     }
@@ -576,6 +765,13 @@ export class EnemyController {
     const knock = this.knockback.update(deltaTime);
     this.position = this.position.add(this.velocity.scale(deltaTime)).add(knock);
     this.applyMeshPosition();
+
+    if (this.velocity.lengthSquared() > 0.0001) {
+      this.rotateToward(this.velocity, deltaTime, 10);
+      this.playCasterAnim('forward');
+    } else {
+      this.playCasterAnim('idle');
+    }
   }
 
   private updateArtificer(
@@ -619,8 +815,16 @@ export class EnemyController {
     this.position = this.position.add(this.velocity.scale(deltaTime)).add(knock);
     this.applyMeshPosition();
 
+    if (this.velocity.lengthSquared() > 0.0001) {
+      this.rotateToward(this.velocity, deltaTime, 10);
+      this.playCasterAnim('forward');
+    } else {
+      this.playCasterAnim('idle');
+    }
+
     this.artificerTimer -= deltaTime;
     if (this.artificerTimer <= 0 && distance <= this.artificerMaxRange) {
+      this.playCasterAnim('attack_1');
       this.fireArtificerProjectile(playerPosition, playerVelocity);
       this.artificerTimer = this.artificerCooldown;
       if (this.selfKnockbackStrength > 0) {
@@ -631,13 +835,16 @@ export class EnemyController {
   }
 
   private fireArtificerProjectile(playerPosition: Vector3, playerVelocity: Vector3): void {
+    const spawnPos = this.position.clone();
+    spawnPos.y += 1.0;
+    
     const target = playerPosition.add(playerVelocity.scale(this.leadTime));
-    const dir = target.subtract(this.position);
-    dir.y = 0;
+    target.y = 0.1;
+    const dir = target.subtract(spawnPos);
     if (dir.lengthSquared() <= 0.0001) return;
 
     this.eventBus.emit(GameEvents.PROJECTILE_SPAWNED, {
-      position: this.position.clone(),
+      position: spawnPos,
       direction: dir.normalize(),
       damage: this.damage,
       speed: this.rangedProjectileSpeed,
@@ -681,9 +888,12 @@ export class EnemyController {
   }
 
   private fireBulletHell(playerPosition: Vector3, playerVelocity: Vector3): void {
+    const spawnPos = this.position.clone();
+    spawnPos.y += 1.0; // Adjusted Crystal height
+    
     const target = playerPosition.add(playerVelocity.scale(this.leadTime));
-    const dir = target.subtract(this.position);
-    dir.y = 0;
+    target.y = 0.1; // Aim at the bottom of the player
+    const dir = target.subtract(spawnPos);
     if (dir.lengthSquared() <= 0.0001) return;
 
     const baseDir = dir.normalize();
@@ -696,7 +906,7 @@ export class EnemyController {
       const angle = start + step * i;
       const rotated = this.rotate2D(baseDir, angle);
       this.eventBus.emit(GameEvents.PROJECTILE_SPAWNED, {
-        position: this.position.clone(),
+        position: spawnPos.clone(),
         direction: rotated.normalize(),
         damage: this.damage,
         speed: this.rangedProjectileSpeed,
@@ -717,7 +927,7 @@ export class EnemyController {
 
     this.missileTimer -= deltaTime;
     if (this.missileTimer <= 0) {
-      const spawnPos = this.position.add(new Vector3(0, 0, 0));
+      const spawnPos = this.position.add(new Vector3(0, 1.0, 0));
       this.eventBus.emit(GameEvents.ENEMY_SPAWN_REQUESTED, {
         typeId: 'missile',
         position: spawnPos,
@@ -763,8 +973,11 @@ export class EnemyController {
         return;
       }
     }
-    this.position = candidate;
+    this.position.copyFrom(candidate);
     this.applyMeshPosition();
+    if (this.missileDirection.lengthSquared() > 0.0001) {
+      this.rotateToward(this.missileDirection, deltaTime, 15);
+    }
   }
 
   private explodeMissile(
@@ -938,6 +1151,13 @@ export class EnemyController {
     const knock = this.knockback.update(deltaTime);
     this.position = this.position.add(this.velocity.scale(deltaTime)).add(knock);
     this.applyMeshPosition();
+    
+    if (this.velocity.lengthSquared() > 0.0001) {
+      this.rotateToward(this.velocity, deltaTime, 10);
+      this.playZombieAnim('Zombie_idle'); // Fleeing uses idle animation
+    } else {
+      this.playZombieAnim('Zombie_idle');
+    }
   }
 
   private updateStrategist(
@@ -955,6 +1175,15 @@ export class EnemyController {
     const knock = this.knockback.update(deltaTime);
     this.position = this.position.add(this.velocity.scale(deltaTime)).add(knock);
     this.applyMeshPosition();
+
+    if (['spike_strategist', 'strategist'].includes(this.behavior)) {
+      if (this.velocity.lengthSquared() > 0.0001) {
+        this.rotateToward(this.velocity, deltaTime, 10);
+        this.playZombieAnim('Zombie_idle');
+      } else {
+        this.playZombieAnim('Zombie_idle');
+      }
+    }
 
     if (this.attackCooldown > 0) {
       this.attackCooldown -= deltaTime;
@@ -1049,6 +1278,13 @@ export class EnemyController {
     this.position = this.position.add(this.velocity.scale(deltaTime)).add(knock);
     this.applyMeshPosition();
 
+    if (this.velocity.lengthSquared() > 0.0001) {
+      this.rotateToward(this.velocity, deltaTime, 10);
+      this.playCasterAnim('forward');
+    } else {
+      this.playCasterAnim('idle');
+    }
+
     if (this.attackCooldown > 0) {
       this.attackCooldown -= deltaTime;
     }
@@ -1127,6 +1363,16 @@ export class EnemyController {
     const knock = this.knockback.update(deltaTime);
     this.position = this.position.add(this.velocity.scale(deltaTime)).add(knock);
     this.applyMeshPosition();
+
+    const mobileCasters = ['sentinel', 'swarm_coordinator', 'necromancer'];
+    if (mobileCasters.includes(this.behavior)) {
+      if (this.velocity.lengthSquared() > 0.0001) {
+        this.rotateToward(this.velocity, deltaTime, 10);
+        this.playCasterAnim('forward');
+      } else {
+        this.playCasterAnim('idle');
+      }
+    }
 
     if (this.attackCooldown > 0) {
       this.attackCooldown -= deltaTime;
@@ -1241,30 +1487,41 @@ export class EnemyController {
   }
 
   private fireProjectile(playerPosition: Vector3, playerVelocity: Vector3): void {
+    const spawnPos = this.position.clone();
+    spawnPos.y += 1.0;
+    
     const target = playerPosition.add(playerVelocity.scale(this.leadTime));
-    const dir = target.subtract(this.position);
-    dir.y = 0;
+    target.y = 0.1;
+    const dir = target.subtract(spawnPos);
     if (dir.lengthSquared() <= 0.0001) return;
 
-    this.fireProjectileInDirection(dir.normalize());
+    this.fireProjectileInDirection(dir.normalize(), spawnPos);
   }
 
-  private fireProjectileInDirection(direction: Vector3): void {
+  private fireProjectileInDirection(direction: Vector3, spawnPos?: Vector3): void {
     const dir = direction.lengthSquared() > 0.0001 ? direction.normalize() : Vector3.Zero();
     if (dir.lengthSquared() <= 0.0001) {
       return;
     }
 
+    const startPos = spawnPos ?? this.position.add(new Vector3(0, 1.0, 0));
+
     this.eventBus.emit(GameEvents.PROJECTILE_SPAWNED, {
-      position: this.position.clone(),
+      position: startPos,
       direction: dir,
       damage: this.damage,
       speed: this.rangedProjectileSpeed,
       range: this.rangedProjectileRange,
       friendly: false,
+      projectileType: this.behavior,
       maxBounces: this.rangedProjectileBounces,
       bounceDamping: this.rangedProjectileBounceDamping,
     });
+
+    const mobileCasters = ['sentinel', 'swarm_coordinator', 'necromancer', 'prefire_sentinel'];
+    if (mobileCasters.includes(this.behavior)) {
+      this.playCasterAnim('attack_1');
+    }
 
     this.attackCooldown = this.rangedCooldown;
   }
@@ -1406,6 +1663,11 @@ export class EnemyController {
     this.pongDirection = dir.normalize();
     this.velocity = this.pongDirection.scale(this.speed);
     this.applyMeshPosition();
+
+    const idle = this.pongAnimGroups.get('idle');
+    if (idle && !idle.isPlaying) {
+      idle.start(true, 1.0, idle.from, idle.to, false);
+    }
   }
 
   private updateJumper(
@@ -1493,6 +1755,11 @@ export class EnemyController {
   private handleJumperLandingImpact(playerPosition: Vector3, roomManager?: RoomManager): void {
     const distance = Vector3.Distance(this.position, playerPosition);
 
+    const dustRadius = this.jumperShockwaveEnabled && this.jumperShockwaveRadius > 0
+      ? this.jumperShockwaveRadius * 0.6 // Start smaller for boss
+      : this.jumperHitRange * 0.8;
+    this.triggerStompEffect(this.position, dustRadius);
+
     if (this.jumperShockwaveEnabled && this.jumperShockwaveRadius > 0) {
       const effectiveRadius = roomManager
         ? this.computeMaskedEffectRadius(this.position, this.jumperShockwaveRadius, roomManager)
@@ -1528,8 +1795,7 @@ export class EnemyController {
       const elapsed = Date.now() - startMs;
       const t = Math.min(1, elapsed / totalMs);
       const currentRadius = 0.2 + (radius - 0.2) * t;
-      shockwave.scaling.x = currentRadius / 0.2;
-      shockwave.scaling.z = currentRadius / 0.2;
+      shockwave.scaling.setAll(currentRadius / 0.2);
       material.alpha = 0.45 * (1 - t);
 
       if (t >= 1) {
@@ -2078,9 +2344,16 @@ export class EnemyController {
     this.disposeBullVisuals();
     this.disposeJumperModel();
     this.disposeCasterModel();
+    this.disposeCasterMobileModel();
+    this.disposePongModel();
+    this.disposeMissileModel();
     this.bullModelLoadPromise = null;
     this.jumperModelLoadPromise = null;
     this.casterModelLoadPromise = null;
+    this.casterMobileModelLoadPromise = null;
+    this.pongModelLoadPromise = null;
+    this.missileModelLoadPromise = null;
+    this.stopMissileTrail();
     if (this.mesh) {
       this.mesh.dispose();
     }
@@ -2164,12 +2437,19 @@ export class EnemyController {
     this.isAlive = false;
     this.laserPatternSubsystem.dispose();
     this.spikeCastSubsystem.dispose();
+    this.necromancerSummonTimer = 0;
     this.disposeBullVisuals();
     this.disposeJumperModel();
     this.disposeCasterModel();
+    this.disposeCasterMobileModel();
+    this.disposePongModel();
+    this.disposeMissileModel();
     this.bullModelLoadPromise = null;
     this.jumperModelLoadPromise = null;
     this.casterModelLoadPromise = null;
+    this.casterMobileModelLoadPromise = null;
+    this.pongModelLoadPromise = null;
+    this.missileModelLoadPromise = null;
     this.navPath = [];
     this.navPathCursor = 0;
     this.navTargetSnapshot = null;
@@ -2196,7 +2476,23 @@ export class EnemyController {
     this.artificerTimer = 0;
     this.bulletHellTimer = 0;
     this.missileTimer = 0;
-    this.necromancerSummonTimer = 0;
+    if (this.movementDust) {
+      this.movementDust.dispose();
+      this.movementDust = null;
+    }
+    if (this.casterAura) {
+      this.casterAura.dispose();
+      this.casterAura = null;
+    }
+    if (this.pongAura) {
+      this.pongAura.dispose();
+      this.pongAura = null;
+    }
+    for (const visual of this.ephemeralVisuals) {
+      visual.mesh.dispose();
+    }
+    this.ephemeralVisuals = [];
+
     if (this.mesh) {
       this.mesh.dispose();
     }
@@ -2220,10 +2516,60 @@ export class EnemyController {
     this.bullMeshes = [];
   }
 
+  private triggerStompEffect(position: Vector3, maxRadius: number, duration: number = 0.4): void {
+    const particles = new ParticleSystem(`stomp_dust_${this.id}_${Date.now()}`, 250, this.scene);
+    particles.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+    particles.emitter = position.clone();
+    particles.color1 = new Color4(0.6, 0.6, 0.6, 0.4);
+    particles.color2 = new Color4(0.5, 0.5, 0.5, 0.2);
+    particles.colorDead = new Color4(0.4, 0.4, 0.4, 0.0);
+    particles.minSize = 0.1;
+    particles.maxSize = 0.3;
+    particles.minLifeTime = 0.25;
+    particles.maxLifeTime = 0.5;
+    particles.emitRate = 1200;
+    particles.targetStopDuration = duration * 0.5;
+    particles.disposeOnStop = true;
+    particles.blendMode = ParticleSystem.BLENDMODE_STANDARD;
+    particles.renderingGroupId = 0;
+    particles.layerMask = SCENE_LAYER;
+    particles.gravity = new Vector3(0, -0.5, 0);
+    
+    // Dynamic cylinder emitter that expands
+    const cylinder = particles.createCylinderEmitter(0.2, 0.3, 0, 0);
+    let currentRadius = 0.2;
+    const expansionSpeed = (maxRadius - 0.2) / (duration * 60); // approx 60 fps
+    
+    let systemDisposed = false;
+    particles.onDisposeObservable.add(() => {
+      systemDisposed = true;
+    });
+
+    const obs = this.scene.onBeforeRenderObservable.add(() => {
+      if (systemDisposed || !particles.isStarted()) {
+        this.scene.onBeforeRenderObservable.remove(obs);
+        return;
+      }
+      if (currentRadius < maxRadius) {
+        currentRadius += expansionSpeed;
+        cylinder.radius = currentRadius;
+      }
+    });
+
+    particles.direction1 = new Vector3(-1, 0.5, -1);
+    particles.direction2 = new Vector3(1, 1.5, 1);
+    particles.minEmitPower = 1;
+    particles.maxEmitPower = 2;
+    particles.updateSpeed = 0.02;
+    particles.start();
+  }
+
   private applyMeshPosition(): void {
     if (!this.mesh) return;
     this.mesh.position = this.position.clone();
-    this.mesh.position.y = 1.0 + this.verticalOffset + this.fallOffset + EnemyController.globalHeightOffset;
+    const needsLowHeight = ['chase', 'flee', 'strategist', 'spike_strategist', 'bull', 'pong', 'jumper', 'fuyard'].includes(this.behavior);
+    this.mesh.position.y = (needsLowHeight ? 0.0 : 1.0) + this.verticalOffset + this.fallOffset + EnemyController.globalHeightOffset;
+    this.mesh.computeWorldMatrix(true);
     this.applyRenderSuppressionState();
   }
 
@@ -2298,6 +2644,21 @@ export class EnemyController {
     if (this.jumperModelRoot && !this.jumperModelRoot.isDisposed()) {
       const shouldEnable = baseVisibility > 0.12;
       this.jumperModelRoot.setEnabled(shouldEnable);
+    }
+
+    if (this.casterMobileModelRoot && !this.casterMobileModelRoot.isDisposed()) {
+      const shouldEnable = baseVisibility > 0.12;
+      this.casterMobileModelRoot.setEnabled(shouldEnable);
+    }
+
+    if (this.pongModelRoot && !this.pongModelRoot.isDisposed()) {
+      const shouldEnable = baseVisibility > 0.12;
+      this.pongModelRoot.setEnabled(shouldEnable);
+    }
+
+    if (this.missileModelRoot && !this.missileModelRoot.isDisposed()) {
+      const shouldEnable = baseVisibility > 0.12;
+      this.missileModelRoot.setEnabled(shouldEnable);
     }
 
     if (this.casterModelRoot && !this.casterModelRoot.isDisposed()) {
@@ -2438,6 +2799,44 @@ export class EnemyController {
     const maxStep = turnSpeed * deltaTime;
     const step = Math.abs(delta) <= maxStep ? delta : Math.sign(delta) * maxStep;
     this.mesh.rotation.y = currentYaw + step;
+  }
+
+  private playCasterAnim(name: 'idle' | 'forward' | 'attack_1'): void {
+    if (this.casterAnimState === 'attack' && name !== 'attack_1') {
+      return;
+    }
+
+    const stateMap: Record<string, typeof this.casterAnimState> = {
+      'idle': 'idle',
+      'forward': 'move',
+      'attack_1': 'attack'
+    };
+
+    const newState = stateMap[name];
+    if (this.casterAnimState === newState && name !== 'attack_1') return;
+
+    const anim = this.casterMobileAnimGroups.get(name);
+    if (!anim) return;
+
+    this.stopCasterMobileAnims();
+    this.casterAnimState = newState;
+    
+    const loop = name !== 'attack_1';
+    anim.start(loop, 1.0, anim.from, anim.to, false);
+
+    if (name === 'attack_1') {
+      anim.onAnimationEndObservable.addOnce(() => {
+        this.casterAnimState = 'none';
+        this.playCasterAnim('idle');
+      });
+    }
+  }
+
+  private stopCasterMobileAnims(): void {
+    for (const group of this.casterMobileAnimGroups.values()) {
+      group.stop();
+    }
+    this.casterAnimState = 'none';
   }
 
   private handleBullStateChange(previous: typeof this.bullState, next: typeof this.bullState): void {
@@ -2835,6 +3234,74 @@ export class EnemyController {
         mesh.dispose(false, false);
       }
     }
+  }
+
+  private static getCasterMobileVisualOwnerId(node: TransformNode): string | null {
+    const metadata = node.metadata;
+    if (!metadata || typeof metadata !== 'object') {
+      return null;
+    }
+    const ownerId = (metadata as Record<string, unknown>).casterMobileVisualOwnerId;
+    return typeof ownerId === 'string' ? ownerId : null;
+  }
+
+  private static markCasterMobileVisualNode(node: TransformNode, ownerId: string, isRoot: boolean): void {
+    const metadata = (node.metadata && typeof node.metadata === 'object')
+      ? (node.metadata as Record<string, unknown>)
+      : {};
+    metadata.casterMobileVisualOwnerId = ownerId;
+    if (isRoot) metadata.casterMobileVisualRoot = true;
+    node.metadata = metadata;
+  }
+
+  private static markCasterMobileVisualHierarchy(root: TransformNode, ownerId: string): void {
+    this.markCasterMobileVisualNode(root, ownerId, true);
+    for (const child of root.getChildTransformNodes(true)) this.markCasterMobileVisualNode(child, ownerId, false);
+    for (const childMesh of root.getChildMeshes(true)) this.markCasterMobileVisualNode(childMesh, ownerId, false);
+  }
+
+  private static getPongVisualOwnerId(node: TransformNode): string | null {
+    const metadata = node.metadata;
+    if (!metadata || typeof metadata !== 'object') return null;
+    const ownerId = (metadata as Record<string, unknown>).pongVisualOwnerId;
+    return typeof ownerId === 'string' ? ownerId : null;
+  }
+
+  private static markPongVisualNode(node: TransformNode, ownerId: string, isRoot: boolean): void {
+    const metadata = (node.metadata && typeof node.metadata === 'object')
+      ? (node.metadata as Record<string, unknown>)
+      : {};
+    metadata.pongVisualOwnerId = ownerId;
+    if (isRoot) metadata.pongVisualRoot = true;
+    node.metadata = metadata;
+  }
+
+  private static markPongVisualHierarchy(root: TransformNode, ownerId: string): void {
+    this.markPongVisualNode(root, ownerId, true);
+    for (const child of root.getChildTransformNodes(true)) this.markPongVisualNode(child, ownerId, false);
+    for (const childMesh of root.getChildMeshes(true)) this.markPongVisualNode(childMesh, ownerId, false);
+  }
+
+  private static getMissileVisualOwnerId(node: TransformNode): string | null {
+    const metadata = node.metadata;
+    if (!metadata || typeof metadata !== 'object') return null;
+    const ownerId = (metadata as Record<string, unknown>).missileVisualOwnerId;
+    return typeof ownerId === 'string' ? ownerId : null;
+  }
+
+  private static markMissileVisualNode(node: TransformNode, ownerId: string, isRoot: boolean): void {
+    const metadata = (node.metadata && typeof node.metadata === 'object')
+      ? (node.metadata as Record<string, unknown>)
+      : {};
+    metadata.missileVisualOwnerId = ownerId;
+    if (isRoot) metadata.missileVisualRoot = true;
+    node.metadata = metadata;
+  }
+
+  private static markMissileVisualHierarchy(root: TransformNode, ownerId: string): void {
+    this.markMissileVisualNode(root, ownerId, true);
+    for (const child of root.getChildTransformNodes(true)) this.markMissileVisualNode(child, ownerId, false);
+    for (const childMesh of root.getChildMeshes(true)) this.markMissileVisualNode(childMesh, ownerId, false);
   }
 
   private async loadBullModel(): Promise<void> {
@@ -3289,7 +3756,9 @@ export class EnemyController {
 
       root.position = Vector3.Zero();
       root.rotation = new Vector3(0, 0, 0);
-      root.scaling = new Vector3(this.jumperModelScale, this.jumperModelScale, this.jumperModelScale);
+      const isBoss = this.typeId.includes('boss');
+      const scale = isBoss ? this.jumperModelScale * 3.0 : this.jumperModelScale;
+      root.scaling = new Vector3(scale, scale, scale);
       root.parent = this.mesh;
 
       this.mesh.isVisible = false;
@@ -3406,7 +3875,7 @@ export class EnemyController {
         return;
       }
 
-      root.position = Vector3.Zero();
+      root.position = new Vector3(0, -1.0, 0);
       root.rotation = new Vector3(0, 0, 0);
       root.scaling = new Vector3(this.casterModelScale, this.casterModelScale, this.casterModelScale);
       root.parent = this.mesh;
@@ -3447,5 +3916,344 @@ export class EnemyController {
     this.casterMeshes = [];
     this.casterAnimGroups.forEach(g => g.dispose());
     this.casterAnimGroups.clear();
+  }
+
+  private queueCasterMobileModelLoad(): void {
+    if (this.isDisposed || this.mesh?.isDisposed() || this.casterMobileModelRoot || this.casterMobileModelLoadPromise) return;
+    this.casterMobileModelLoadPromise = this._loadCasterMobileModel().finally(() => {
+      this.casterMobileModelLoadPromise = null;
+    });
+  }
+
+  private async _loadCasterMobileModel(): Promise<void> {
+    if (this.isDisposed || this.casterMobileModelRoot || !this.mesh || this.mesh.isDisposed() || !this.isAlive) return;
+    try {
+      const normalizedBase = getHudAssetBaseUrl();
+      const rootUrl = `${normalizedBase}models/caster/`;
+      const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'caster_mobile.glb', this.scene);
+      if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.casterMobileModelRoot) {
+        result.animationGroups.forEach(g => g.dispose());
+        result.transformNodes.forEach(n => n.dispose(false, false));
+        result.meshes.forEach(m => m.dispose(false, false));
+        return;
+      }
+      this.disposeCasterMobileModel();
+      const root = new TransformNode(`caster_mobile_root_${this.id}`, this.scene);
+      const importedNodes = new Set<Node>();
+      result.transformNodes.forEach(n => importedNodes.add(n));
+      result.meshes.forEach(m => importedNodes.add(m));
+      result.transformNodes.forEach(n => { if (!n.parent || !importedNodes.has(n.parent)) n.parent = root; });
+      result.meshes.forEach(m => { if (!m.parent || !importedNodes.has(m.parent)) m.parent = root; });
+      this.casterMobileMeshes = [];
+      result.meshes.forEach(m => this.casterMobileMeshes.push(m));
+      result.transformNodes.forEach(n => this.casterMobileMeshes.push(n));
+      EnemyController.markCasterMobileVisualHierarchy(root, this.id);
+      root.position = new Vector3(0, -1.0, 0);
+      root.rotation = new Vector3(0, 0, 0);
+      root.scaling = new Vector3(this.casterModelScale, this.casterModelScale, this.casterModelScale);
+      root.parent = this.mesh;
+      this.mesh.isVisible = false;
+      this.casterMobileModelRoot = root;
+      result.animationGroups.forEach(g => this.casterMobileAnimGroups.set(g.name, g));
+      this.playCasterAnim('idle');
+      this.applyRenderSuppressionState();
+    } catch (error) {
+      console.warn('Caster mobile model failed to load', error);
+    }
+  }
+
+  private disposeCasterMobileModel(): void {
+    if (this.casterMobileModelRoot) {
+      this.casterMobileModelRoot.dispose(false, false);
+      this.casterMobileModelRoot = null;
+    }
+    this.casterMobileMeshes.forEach(m => { if (!m.isDisposed()) m.dispose(false, false); });
+    this.casterMobileMeshes = [];
+    this.casterMobileAnimGroups.forEach(g => g.dispose());
+    this.casterMobileAnimGroups.clear();
+  }
+
+  private queuePongModelLoad(): void {
+    if (this.isDisposed || this.mesh?.isDisposed() || this.pongModelRoot || this.pongModelLoadPromise) return;
+    this.pongModelLoadPromise = this._loadPongModel().finally(() => {
+      this.pongModelLoadPromise = null;
+    });
+  }
+
+  private async _loadPongModel(): Promise<void> {
+    if (this.isDisposed || this.pongModelRoot || !this.mesh || this.mesh.isDisposed() || !this.isAlive) return;
+    try {
+      const normalizedBase = getHudAssetBaseUrl();
+      const rootUrl = `${normalizedBase}models/pong/`;
+      const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'pong.glb', this.scene);
+      if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.pongModelRoot) {
+        result.animationGroups.forEach(g => g.dispose());
+        result.transformNodes.forEach(n => n.dispose(false, false));
+        result.meshes.forEach(m => m.dispose(false, false));
+        return;
+      }
+      this.disposePongModel();
+      const root = new TransformNode(`pong_root_${this.id}`, this.scene);
+      const importedNodes = new Set<Node>();
+      result.transformNodes.forEach(n => importedNodes.add(n));
+      result.meshes.forEach(m => importedNodes.add(m));
+      result.transformNodes.forEach(n => { if (!n.parent || !importedNodes.has(n.parent)) n.parent = root; });
+      result.meshes.forEach(m => { if (!m.parent || !importedNodes.has(m.parent)) m.parent = root; });
+      this.pongMeshes = [];
+      result.meshes.forEach(m => this.pongMeshes.push(m));
+      result.transformNodes.forEach(n => this.pongMeshes.push(n));
+      EnemyController.markPongVisualHierarchy(root, this.id);
+      root.position = Vector3.Zero();
+      root.rotation = new Vector3(0, -Math.PI / 2, 0);
+      root.scaling = new Vector3(0.1, 0.1, 0.1);
+      root.parent = this.mesh;
+      this.mesh.isVisible = false;
+      this.pongModelRoot = root;
+      result.animationGroups.forEach(g => this.pongAnimGroups.set(g.name, g));
+      const idle = this.pongAnimGroups.get('idle');
+      if (idle) idle.start(true, 1.0, idle.from, idle.to, false);
+      this.applyRenderSuppressionState();
+    } catch (error) {
+      console.warn('Pong model failed to load', error);
+    }
+  }
+
+  private disposePongModel(): void {
+    if (this.pongModelRoot) {
+      this.pongModelRoot.dispose(false, false);
+      this.pongModelRoot = null;
+    }
+    this.pongMeshes.forEach(m => { if (!m.isDisposed()) m.dispose(false, false); });
+    this.pongMeshes = [];
+    this.pongAnimGroups.forEach(g => g.dispose());
+    this.pongAnimGroups.clear();
+  }
+
+  private queueZombieModelLoad(): void {
+    if (this.isDisposed || this.mesh?.isDisposed() || this.zombieModelRoot || this.zombieModelLoadPromise) return;
+    this.zombieModelLoadPromise = this._loadZombieModel().finally(() => {
+      this.zombieModelLoadPromise = null;
+    });
+  }
+
+  private async _loadZombieModel(): Promise<void> {
+    if (this.isDisposed || this.zombieModelRoot || !this.mesh || this.mesh.isDisposed() || !this.isAlive) return;
+    try {
+      const normalizedBase = getHudAssetBaseUrl();
+      const rootUrl = `${normalizedBase}models/zombie/`;
+      const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'zombie.glb', this.scene);
+      if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.zombieModelRoot) {
+        result.animationGroups.forEach(g => g.dispose());
+        result.transformNodes.forEach(n => n.dispose(false, false));
+        result.meshes.forEach(m => m.dispose(false, false));
+        return;
+      }
+      this.disposeZombieModel();
+      const root = new TransformNode(`zombie_root_${this.id}`, this.scene);
+      const importedNodes = new Set<Node>();
+      result.transformNodes.forEach(n => importedNodes.add(n));
+      result.meshes.forEach(m => importedNodes.add(m));
+      result.transformNodes.forEach(n => { if (!n.parent || !importedNodes.has(n.parent)) n.parent = root; });
+      result.meshes.forEach(m => { if (!m.parent || !importedNodes.has(m.parent)) m.parent = root; });
+      this.zombieMeshes = [];
+      result.transformNodes.forEach(n => this.zombieMeshes.push(n));
+      result.meshes.forEach(m => this.zombieMeshes.push(m));
+      
+      const isBoss = this.typeId.includes('boss');
+      const scale = isBoss ? this.zombieModelScale * 3.0 : this.zombieModelScale;
+      
+      root.position = Vector3.Zero();
+      root.rotation = new Vector3(0, Math.PI / 2, 0);
+      root.scaling = new Vector3(scale, scale, scale);
+      root.parent = this.mesh;
+      this.mesh.isVisible = false;
+      this.zombieModelRoot = root;
+      
+      let zombieColor = new Color3(0.2, 0.8, 0.2); // Default green
+      if (this.typeId.includes('void')) {
+        zombieColor = new Color3(0.4, 0.1, 0.6); // Purple
+      } else if (this.typeId === 'fuyard') {
+        zombieColor = new Color3(0.8, 0.8, 0.2); // Yellow
+      } else if (this.typeId.includes('strategist')) {
+        zombieColor = new Color3(0.9, 0.5, 0.1); // Orange
+      } else if (isBoss) {
+        zombieColor = new Color3(0.8, 0.2, 0.2); // Red
+      }
+
+      result.meshes.forEach(m => {
+        if (m.material && m.material.getClassName() === 'PBRMaterial') {
+          (m.material as any).albedoColor = zombieColor;
+        } else if (m.material && m.material.getClassName() === 'StandardMaterial') {
+          (m.material as any).diffuseColor = zombieColor;
+        }
+      });
+
+      result.animationGroups.forEach(g => {
+        this.zombieAnimGroups.set(g.name, g);
+      });
+      
+      this.applyRenderSuppressionState();
+    } catch (error) {
+      console.warn('Zombie model failed to load', error);
+    }
+  }
+
+  private disposeZombieModel(): void {
+    if (this.zombieModelRoot) {
+      this.zombieModelRoot.dispose(false, false);
+      this.zombieModelRoot = null;
+    }
+    this.zombieMeshes.forEach(m => { if (!m.isDisposed()) m.dispose(false, false); });
+    this.zombieMeshes = [];
+    this.zombieAnimGroups.forEach(g => g.dispose());
+    this.zombieAnimGroups.clear();
+  }
+
+  private playZombieAnim(name: 'Zombie_idle' | 'Zombie_attack_1'): void {
+    const anim = this.zombieAnimGroups.get(name);
+    if (!anim) return;
+
+    if (this.zombieAnimState === 'attack' && name !== 'Zombie_attack_1') {
+      return; // Let attack finish? Wait, we want to loop it if chasing.
+    }
+
+    const stateMap: Record<string, typeof this.zombieAnimState> = {
+      'Zombie_idle': 'idle',
+      'Zombie_attack_1': 'attack'
+    };
+
+    const newState = stateMap[name];
+    if (this.zombieAnimState === newState) return;
+
+    this.zombieAnimGroups.forEach(g => g.stop());
+    this.zombieAnimState = newState;
+    
+    anim.start(true, 1.0, anim.from, anim.to, false); // Loop all movement/idle anims
+  }
+
+  private queueMissileModelLoad(): void {
+    if (this.isDisposed || this.mesh?.isDisposed() || this.missileModelRoot || this.missileModelLoadPromise) return;
+    this.missileModelLoadPromise = this._loadMissileModel().finally(() => {
+      this.missileModelLoadPromise = null;
+    });
+  }
+
+  private async _loadMissileModel(): Promise<void> {
+    if (this.isDisposed || this.missileModelRoot || !this.mesh || this.mesh.isDisposed() || !this.isAlive) return;
+    try {
+      const normalizedBase = getHudAssetBaseUrl();
+      const rootUrl = `${normalizedBase}models/caster/`;
+      const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'missile.glb', this.scene);
+      if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.missileModelRoot) {
+        result.animationGroups.forEach(g => g.dispose());
+        result.transformNodes.forEach(n => n.dispose(false, false));
+        result.meshes.forEach(m => m.dispose(false, false));
+        return;
+      }
+      this.disposeMissileModel();
+      const root = new TransformNode(`missile_root_${this.id}`, this.scene);
+      const importedNodes = new Set<Node>();
+      result.transformNodes.forEach(n => importedNodes.add(n));
+      result.meshes.forEach(m => importedNodes.add(m));
+      result.transformNodes.forEach(n => { if (!n.parent || !importedNodes.has(n.parent)) n.parent = root; });
+      result.meshes.forEach(m => { if (!m.parent || !importedNodes.has(m.parent)) m.parent = root; });
+      this.missileMeshes = [];
+      result.meshes.forEach(m => this.missileMeshes.push(m));
+      result.transformNodes.forEach(n => this.missileMeshes.push(n));
+      EnemyController.markMissileVisualHierarchy(root, this.id);
+      root.position = Vector3.Zero();
+      root.rotation = new Vector3(0, Math.PI / 2, 0);
+      root.scaling = new Vector3(0.05, 0.05, 0.05);
+      root.parent = this.mesh;
+      this.mesh.isVisible = false;
+      this.missileModelRoot = root;
+      this.startMissileTrail();
+      this.applyRenderSuppressionState();
+    } catch (error) {
+      console.warn('Missile model failed to load', error);
+    }
+  }
+
+  private disposeMissileModel(): void {
+    if (this.missileModelRoot) {
+      this.missileModelRoot.dispose(false, false);
+      this.missileModelRoot = null;
+    }
+    this.missileMeshes.forEach(m => { if (!m.isDisposed()) m.dispose(false, false); });
+    this.missileMeshes = [];
+    this.missileModelLoadPromise = null;
+    this.stopMissileTrail();
+  }
+
+  private startMissileTrail(): void {
+    if (this.behavior !== 'missile') return;
+    if (this.missileTrail || this.isDisposed || !this.scene) return;
+
+    // Fire trail
+    const particles = new ParticleSystem(`missile_trail_${this.id}`, 2000, this.scene);
+    
+    const texture = new DynamicTexture(`mt_tex_${this.id}`, { width: 32, height: 32 }, this.scene, false);
+    const ctx = texture.getContext();
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, 32, 32);
+    texture.update();
+    particles.particleTexture = texture;
+    
+    particles.layerMask = SCENE_LAYER;
+    
+    // Find the actual moving visual part of the model
+    let targetEmitter: any = this.mesh;
+    
+    particles.emitter = targetEmitter;
+    
+    // Bulletproof method: manually set the start position to the absolute position of the correct mesh
+    particles.startPositionFunction = (worldMatrix, positionToUpdate) => {
+      if (targetEmitter && targetEmitter.absolutePosition) {
+        positionToUpdate.copyFrom(targetEmitter.absolutePosition);
+        
+        // Offset the particles backwards so they start behind the missile
+        if (this.missileDirection) {
+            positionToUpdate.subtractInPlace(this.missileDirection.scale(0.3));
+        }
+        
+        positionToUpdate.x += (Math.random() - 0.5) * 0.1;
+        positionToUpdate.y += (Math.random() - 0.5) * 0.1;
+        positionToUpdate.z += (Math.random() - 0.5) * 0.1;
+      }
+    };
+    
+    particles.isLocal = false; // World space trail
+    
+    particles.minSize = 0.25;
+    particles.maxSize = 0.6;
+    particles.minLifeTime = 0.5;
+    particles.maxLifeTime = 1.0;
+    
+    particles.emitRate = 200; // Less dense
+    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+    
+    particles.color1 = new Color4(1.0, 0.9, 0.2, 1.0);
+    particles.color2 = new Color4(1.0, 0.4, 0.0, 1.0);
+    particles.colorDead = new Color4(0.2, 0.0, 0.0, 0.0);
+    
+    particles.gravity = new Vector3(0, 0.3, 0);
+    particles.minEmitPower = 0.1;
+    particles.maxEmitPower = 0.3;
+    particles.updateSpeed = 0.012;
+    
+    particles.start();
+    this.missileTrail = particles;
+  }
+
+  private stopMissileTrail(): void {
+    if (this.missileTrail) {
+      const ps = this.missileTrail;
+      ps.stop();
+      // Allow particles to live out their life before disposing
+      setTimeout(() => {
+        if (ps) ps.dispose();
+      }, 3000);
+      this.missileTrail = null;
+    }
   }
 }

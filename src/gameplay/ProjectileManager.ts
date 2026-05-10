@@ -13,6 +13,7 @@ import {
   Color3,
   Color4,
   StandardMaterial,
+  Texture,
 } from '@babylonjs/core';
 import type { RoomManager } from '../systems/RoomManager';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
@@ -123,6 +124,7 @@ class Projectile implements IPoolable {
     }
     
     this.mesh.position = data.position.clone();
+    this.mesh.computeWorldMatrix(true);
     this.mesh.scaling.copyFrom(this.baseScaling);
     this.mesh.rotationQuaternion = null;
     this.mesh.rotation.set(0, 0, 0);
@@ -344,6 +346,44 @@ export class ProjectileManager {
       particles.updateSpeed = 0.016;
       particles.direction1 = new Vector3(-0.2, 0.05, -0.2);
       particles.direction2 = new Vector3(0.2, 0.2, 0.2);
+      particles.start();
+      this.projectileParticleEffects.set(projectile, particles);
+      return;
+    } else if (!projectile.data.friendly) {
+      const isHealer = projectile.data.projectileType === 'healer' || projectile.data.projectileType === 'healer_bolt';
+      const coreColor = isHealer ? new Color3(1.0, 1.0, 0.4) : new Color3(1.0, 0.1, 0.1);
+      
+      material.alpha = 0.5; // Less opaque core
+      material.emissiveColor = coreColor;
+      material.diffuseColor = Color3.Black();
+      if (projectile.mesh) {
+        projectile.mesh.scaling.setAll(0.15); // Smaller core
+      }
+
+      const particles = new ParticleSystem(`${isHealer ? 'healer' : 'enemy'}_projectile_fx_${Date.now()}`, 150, this.scene);
+      particles.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+      particles.layerMask = SCENE_LAYER;
+      particles.emitter = projectile.mesh;
+      particles.minSize = 0.1;
+      particles.maxSize = 0.35;
+      particles.minLifeTime = 0.08;
+      particles.maxLifeTime = 0.22;
+      particles.emitRate = 450;
+      particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+      
+      const pColor = isHealer ? new Color4(1.0, 1.0, 0.4, 0.8) : new Color4(1.0, 0.2, 0.2, 0.8);
+      particles.color1 = pColor;
+      particles.color2 = pColor;
+      particles.colorDead = new Color4(pColor.r * 0.2, pColor.g * 0.2, pColor.b * 0.2, 0);
+      
+      particles.gravity = new Vector3(0, 0, 0);
+      particles.minEmitPower = 1.5;
+      particles.maxEmitPower = 4.0;
+      particles.updateSpeed = 0.02;
+      particles.direction1 = new Vector3(-1, -1, -1);
+      particles.direction2 = new Vector3(1, 1, 1);
+      
+      particles.createBoxEmitter(new Vector3(-0.1, -0.1, -0.1), new Vector3(0.1, 0.1, 0.1), new Vector3(-0.02, -0.02, -0.02), new Vector3(0.02, 0.02, 0.02));
       particles.start();
       this.projectileParticleEffects.set(projectile, particles);
       return;

@@ -1802,7 +1802,7 @@ export class PlayerController {
     const particles = new ParticleSystem(`player_move_dust_${Date.now()}`, 110, this.scene);
     particles.particleTexture = this.getMovementDustParticleTexture();
     particles.layerMask = SCENE_LAYER;
-    particles.emitter = this.position.add(new Vector3(0, 0.04, 0));
+    particles.emitter = this.position.add(new Vector3(0, -0.98, 0));
     particles.minEmitBox = new Vector3(-0.2, -0.01, -0.2);
     particles.maxEmitBox = new Vector3(0.2, 0.01, 0.2);
     particles.minSize = 0.04;

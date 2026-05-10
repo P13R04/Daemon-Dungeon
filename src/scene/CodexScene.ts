@@ -62,6 +62,7 @@ interface BestiaryCarouselItem {
   root: TransformNode;
   animations: AnimationGroup[];
   isUnlocked: boolean;
+  customUpdate?: (dt: number, time: number) => void;
 }
 
 interface TerminalLine {
@@ -395,6 +396,13 @@ export class CodexScene {
         const lerpAmount = Math.min(1, dt * 0.01);
         this.carouselRotation = Scalar.Lerp(this.carouselRotation, this.carouselTargetRotation, lerpAmount);
         this.updateBestiaryCarouselLayout();
+        
+        const time = performance.now() * 0.001;
+        for (const item of this.bestiaryItems) {
+          if (item.customUpdate) {
+            item.customUpdate(dt, time);
+          }
+        }
       }
     });
 
@@ -746,32 +754,135 @@ export class CodexScene {
       return [];
     }
 
+    let urlPath = '';
+    let fileName = '';
+    let scale = entry.isBoss ? 0.18 : 0.13;
+    let rotation = Vector3.Zero();
+    let mainAnimName = '';
+    let useColor = false;
+
     if (entry.behavior === 'bull') {
-      try {
-        const result = await SceneLoader.ImportMeshAsync('', getHudAssetBaseUrl() + 'models/bull/', 'bull.glb', this.scene);
-        const mainRoot = result.meshes[0];
-        if (mainRoot) {
-          mainRoot.parent = root;
-          mainRoot.scaling.setAll(entry.isBoss ? 0.18 : 0.13);
-          mainRoot.position = Vector3.Zero();
-        }
-
-        for (const mesh of result.meshes) {
-          if (mesh !== mainRoot && mesh.parent === null) {
-            mesh.parent = root;
-          }
-          mesh.layerMask = SCENE_LAYER;
-        }
-
-        return result.animationGroups;
-      } catch {
-        this.createEnemyPlaceholder(root, entry.color, entry.behavior, entry.isBoss);
-        return [];
-      }
+      urlPath = 'models/bull/'; fileName = 'bull.glb';
+      mainAnimName = 'charge_run.001';
+      rotation = new Vector3(0, Math.PI, 0); // vers la gauche par rapport à PI/2
+    } else if (entry.behavior === 'jumper') {
+      urlPath = 'models/jumper/'; fileName = 'sauteur.glb';
+      scale = entry.isBoss ? 0.36 : 0.26; // x2
+    } else if (['turret', 'bullet_hell', 'mage_missile'].includes(entry.behavior)) {
+      urlPath = 'models/caster/'; fileName = 'caster_socle.glb';
+      mainAnimName = 'idle';
+    } else if (['sentinel', 'prefire_sentinel', 'healer', 'artificer', 'necromancer', 'swarm_coordinator'].includes(entry.behavior)) {
+      urlPath = 'models/caster/'; fileName = 'caster_mobile.glb';
+      mainAnimName = 'forward';
+      rotation = Vector3.Zero(); // vers la droite par rapport à PI/2
+    } else if (entry.behavior === 'missile') {
+      urlPath = 'models/caster/'; fileName = 'missile.glb';
+      scale = 0.16; // x2
+      rotation = Vector3.Zero();
+    } else if (entry.behavior === 'pong') {
+      urlPath = 'models/pong/'; fileName = 'pong.glb';
+      scale = 0.24; // x6
+      rotation = Vector3.Zero();
+    } else if (['chase', 'flee', 'strategist', 'spike_strategist', 'fuyard'].includes(entry.behavior)) {
+      urlPath = 'models/zombie/'; fileName = 'zombie.glb';
+      scale = entry.isBoss ? 2.25 : 0.75; // x3
+      rotation = Vector3.Zero();
+      mainAnimName = ['flee', 'strategist', 'spike_strategist', 'fuyard'].includes(entry.behavior) ? 'Zombie_idle' : 'Zombie_attack_1';
+      useColor = true;
+    } else {
+      this.createEnemyPlaceholder(root, entry.color, entry.behavior, entry.isBoss);
+      return [];
     }
 
-    this.createEnemyPlaceholder(root, entry.color, entry.behavior, entry.isBoss);
-    return [];
+    try {
+      const result = await SceneLoader.ImportMeshAsync('', getHudAssetBaseUrl() + urlPath, fileName, this.scene);
+      const mainRoot = result.meshes[0];
+      if (mainRoot) {
+        mainRoot.parent = root;
+        mainRoot.scaling.setAll(scale);
+        mainRoot.position = Vector3.Zero();
+        mainRoot.rotation = rotation;
+        
+        const item = this.bestiaryItems.find(i => i.root === root);
+        if (item) {
+          if (entry.behavior === 'missile') {
+            item.customUpdate = (dt, time) => {
+              mainRoot.rotation.y += dt * 0.002;
+              mainRoot.position.y = Math.sin(time * 3) * 0.15;
+            };
+          } else if (entry.behavior === 'jumper') {
+            let state: 'idle' | 'jump' = 'idle';
+            let timer = 0;
+            const cooldown = 1.5;
+            const jumpDuration = 1.4;
+            const jumpAnim = result.animationGroups[0];
+            
+            item.customUpdate = (dt) => {
+              const dtSec = dt * 0.001;
+              timer += dtSec;
+              
+              if (state === 'idle') {
+                mainRoot.position.y = 0;
+                if (timer >= cooldown) {
+                  state = 'jump';
+                  timer = 0;
+                  if (jumpAnim) {
+                    const animLengthSecs = (jumpAnim.to - jumpAnim.from) / 60;
+                    const speed = animLengthSecs / jumpDuration;
+                    jumpAnim.start(false, speed, jumpAnim.from, jumpAnim.to, false);
+                  }
+                }
+              } else if (state === 'jump') {
+                const progress = timer / jumpDuration;
+                if (progress >= 1.0) {
+                  state = 'idle';
+                  timer = 0;
+                  mainRoot.position.y = 0;
+                } else {
+                  mainRoot.position.y = Math.sin(progress * Math.PI) * 0.8;
+                }
+              }
+            };
+          }
+        }
+      }
+
+      for (const mesh of result.meshes) {
+        if (mesh !== mainRoot && mesh.parent === null) {
+          mesh.parent = root;
+        }
+        mesh.layerMask = SCENE_LAYER;
+        
+        if (useColor) {
+          if (mesh.material && mesh.material.getClassName() === 'PBRMaterial') {
+            (mesh.material as any).albedoColor = entry.color;
+          } else if (mesh.material && mesh.material.getClassName() === 'StandardMaterial') {
+            (mesh.material as any).diffuseColor = entry.color;
+          }
+        }
+      }
+
+      if (mainAnimName) {
+        const anim = result.animationGroups.find(g => g.name === mainAnimName);
+        if (anim) {
+          result.animationGroups.forEach(g => {
+            if (g !== anim) g.stop();
+          });
+          return [anim];
+        }
+      }
+
+      if (entry.behavior === 'jumper') {
+        result.animationGroups.forEach(g => g.stop());
+        return [];
+      }
+
+      return result.animationGroups;
+    } catch (error) {
+      console.warn(`Failed to load model for ${entry.id}`, error);
+      this.createEnemyPlaceholder(root, entry.color, entry.behavior, entry.isBoss);
+      return [];
+    }
   }
 
   private createEnemyPlaceholder(root: TransformNode, color: Color3, behavior: string, isBoss: boolean): void {
@@ -882,7 +993,7 @@ export class CodexScene {
 
   private navigateBy(step: number): void {
     if (this.section === 'bestiary') {
-      this.selectBestiaryIndex(this.selectedBestiaryIndex + step);
+      this.selectBestiaryIndex(this.selectedBestiaryIndex - step);
       return;
     }
 
@@ -917,10 +1028,15 @@ export class CodexScene {
     const count = this.bestiaryItems.length;
     if (count === 0) return;
 
-    this.selectedBestiaryIndex = (index + count) % count;
-    const step = (Math.PI * 2) / count;
-    this.carouselTargetRotation = -this.selectedBestiaryIndex * step;
-    this.carouselTargetRotation = -this.selectedBestiaryIndex * step;
+    const oldIndex = this.selectedBestiaryIndex;
+    this.selectedBestiaryIndex = ((index % count) + count) % count;
+    
+    let diff = this.selectedBestiaryIndex - oldIndex;
+    if (diff > count / 2) diff -= count;
+    else if (diff < -count / 2) diff += count;
+
+    const stepAngle = (Math.PI * 2) / count;
+    this.carouselTargetRotation -= diff * stepAngle;
 
     this.clearLeftList();
     this.populateBestiaryList();

@@ -519,7 +519,7 @@
       "jumpDuration": 0.85,
       "jumpSpeedMultiplier": 3.0,
       "hitRange": 1.2,
-      "jumpCooldown": 1.0,
+      "jumpCooldown": 2.5,
       "jumpHeight": 3.6,
       "shockwaveEnabled": true,
       "shockwaveRadius": 3.6,

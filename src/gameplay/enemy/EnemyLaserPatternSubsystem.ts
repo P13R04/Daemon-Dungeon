@@ -1,4 +1,4 @@
-import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial, Vector3 } from '@babylonjs/core';
+import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial, Vector3, Matrix, ParticleSystem, Texture, Color4 } from '@babylonjs/core';
 import type { EnemyRuntimeConfig } from './EnemyControllerTypes';
 import type { BeamSegment } from './EnemyCombatTypes';
 import { disposeMeshesAndMaterials } from './EnemyVisualUtils';
@@ -35,6 +35,8 @@ export class EnemyLaserPatternSubsystem {
   private laserBossAngle: number = 0;
   private laserBossSegments: BeamSegment[] = [];
   private laserBossVisuals: Mesh[] = [];
+  private laserSparks: ParticleSystem | null = null;
+  private beamSparks: ParticleSystem | null = null;
 
   constructor(private readonly scene: Scene, private readonly enemyId: string) {}
 
@@ -97,9 +99,21 @@ export class EnemyLaserPatternSubsystem {
       this.laserBossAngle += angularSpeed * deltaTime;
       const direction = new Vector3(Math.cos(this.laserBossAngle), 0, Math.sin(this.laserBossAngle));
       const end = this.computeBeamEndAtFirstWall(bossCenter, direction, roomManager, isVisionBlockedAt);
-      this.laserBossSegments = [{ start: bossCenter.clone(), end }];
+      
+      const visualCenter = bossCenter.add(new Vector3(0.125, 0, 0.125));
+      const crystalPos = visualCenter.clone();
+      crystalPos.y = visualCenter.y + 1.9;
+      const floorPos = visualCenter.add(direction.scale(1.2));
+      floorPos.y = 0.1;
+      end.y = 0.1;
+      
+      this.laserBossSegments = [
+        { start: crystalPos, end: floorPos },
+        { start: floorPos, end }
+      ];
       this.updateLaserVisualMeshes(this.laserBossSegments, new Color3(1.0, 0.2, 0.2));
-      onRotateToward(direction, deltaTime, 8);
+      this.updateLaserSparks(floorPos, new Color3(1.0, 0.2, 0.2));
+      this.updateBeamSparks(crystalPos, floorPos, new Color3(1.0, 0.2, 0.2));
     }
 
     const previousPlayerPosition = playerPosition.subtract(playerVelocity.scale(deltaTime));
@@ -116,6 +130,8 @@ export class EnemyLaserPatternSubsystem {
 
     if (this.laserBossStateTimer <= 0) {
       this.clearVisuals();
+      this.stopLaserSparks();
+      this.stopBeamSparks();
       this.laserBossSegments = [];
       this.laserBossPattern = 'none';
       this.laserBossState = 'cooldown';
@@ -125,6 +141,14 @@ export class EnemyLaserPatternSubsystem {
 
   dispose(): void {
     this.clearVisuals();
+    if (this.laserSparks) {
+      this.laserSparks.dispose();
+      this.laserSparks = null;
+    }
+    if (this.beamSparks) {
+      this.beamSparks.dispose();
+      this.beamSparks = null;
+    }
   }
 
   private startLaserPattern(
@@ -141,8 +165,21 @@ export class EnemyLaserPatternSubsystem {
       this.laserBossAngle = Math.random() * Math.PI * 2;
       const direction = new Vector3(Math.cos(this.laserBossAngle), 0, Math.sin(this.laserBossAngle));
       const end = this.computeBeamEndAtFirstWall(bossCenter, direction, roomManager, isVisionBlockedAt);
-      this.laserBossSegments = [{ start: bossCenter.clone(), end }];
+      
+      const visualCenter = bossCenter.add(new Vector3(0.125, 0, 0.125));
+      const crystalPos = visualCenter.clone();
+      crystalPos.y = visualCenter.y + 1.9;
+      const floorPos = visualCenter.add(direction.scale(1.2));
+      floorPos.y = 0.1;
+      end.y = 0.1;
+
+      this.laserBossSegments = [
+        { start: crystalPos, end: floorPos },
+        { start: floorPos, end }
+      ];
       this.updateLaserVisualMeshes(this.laserBossSegments, new Color3(1.0, 0.2, 0.2));
+      this.updateLaserSparks(floorPos, new Color3(1.0, 0.2, 0.2));
+      this.updateBeamSparks(crystalPos, floorPos, new Color3(1.0, 0.2, 0.2));
       return;
     }
 
@@ -321,11 +358,22 @@ export class EnemyLaserPatternSubsystem {
       const length = delta.length();
       if (length <= 0.05) continue;
 
-      const beam = MeshBuilder.CreateBox(`laser_${this.enemyId}_${Date.now()}_${i}`, {
-        width: this.laserBossBeamWidth,
-        height: 0.14,
-        depth: 1,
-      }, this.scene);
+      const isDiagonal = segment.start.y > 0.5;
+
+      let beam: Mesh;
+      if (isDiagonal) {
+        beam = MeshBuilder.CreateCylinder(`laser_${this.enemyId}_${Date.now()}_${i}`, {
+          height: length,
+          diameter: this.laserBossBeamWidth * 0.7,
+        }, this.scene);
+        beam.bakeTransformIntoVertices(Matrix.RotationX(Math.PI / 2));
+      } else {
+        beam = MeshBuilder.CreateBox(`laser_${this.enemyId}_${Date.now()}_${i}`, {
+          width: this.laserBossBeamWidth,
+          height: 0.14,
+          depth: length,
+        }, this.scene);
+      }
 
       const material = new StandardMaterial(`laser_mat_${this.enemyId}_${Date.now()}_${i}`, this.scene);
       material.diffuseColor = color.scale(0.55);
@@ -334,9 +382,11 @@ export class EnemyLaserPatternSubsystem {
       beam.material = material;
 
       beam.position = segment.start.add(segment.end).scale(0.5);
-      beam.position.y = 0.1;
-      beam.scaling = new Vector3(1, 1, length);
-      beam.rotation.y = Math.atan2(delta.x, delta.z);
+      if (Math.abs(delta.x) < 0.001 && Math.abs(delta.z) < 0.001) {
+        beam.rotation.x = Math.PI / 2;
+      } else {
+        beam.lookAt(segment.end);
+      }
       beam.isPickable = false;
       this.laserBossVisuals.push(beam);
     }
@@ -396,5 +446,78 @@ export class EnemyLaserPatternSubsystem {
   private clearVisuals(): void {
     disposeMeshesAndMaterials(this.laserBossVisuals);
     this.laserBossVisuals = [];
+  }
+
+  private updateLaserSparks(floorPos: Vector3, color: Color3): void {
+    if (!this.laserSparks) {
+      this.laserSparks = new ParticleSystem(`laser_sparks_${this.enemyId}`, 150, this.scene);
+      this.laserSparks.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+      this.laserSparks.emitter = floorPos.clone();
+      this.laserSparks.color1 = new Color4(color.r, color.g, color.b, 1.0);
+      this.laserSparks.color2 = new Color4(color.r * 0.8, color.g * 0.8, color.b * 0.8, 1.0);
+      this.laserSparks.colorDead = new Color4(color.r * 0.5, color.g * 0.5, color.b * 0.5, 0.0);
+      this.laserSparks.minSize = 0.05;
+      this.laserSparks.maxSize = 0.2;
+      this.laserSparks.minLifeTime = 0.15;
+      this.laserSparks.maxLifeTime = 0.3;
+      this.laserSparks.emitRate = 80;
+      this.laserSparks.blendMode = ParticleSystem.BLENDMODE_ADD;
+      this.laserSparks.gravity = new Vector3(0, -5.81, 0);
+      this.laserSparks.direction1 = new Vector3(-1, 1, -1);
+      this.laserSparks.direction2 = new Vector3(1, 3, 1);
+      this.laserSparks.minEmitPower = 2;
+      this.laserSparks.maxEmitPower = 5;
+      this.laserSparks.updateSpeed = 0.02;
+      this.laserSparks.start();
+    } else {
+      (this.laserSparks.emitter as Vector3).copyFrom(floorPos);
+      if (!this.laserSparks.isStarted()) {
+        this.laserSparks.start();
+      }
+    }
+  }
+
+  private stopLaserSparks(): void {
+    if (this.laserSparks) {
+      this.laserSparks.stop();
+    }
+  }
+
+  private updateBeamSparks(crystalPos: Vector3, floorPos: Vector3, color: Color3): void {
+    const dir = floorPos.subtract(crystalPos).normalize();
+    if (!this.beamSparks) {
+      this.beamSparks = new ParticleSystem(`beam_sparks_${this.enemyId}`, 100, this.scene);
+      this.beamSparks.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+      this.beamSparks.emitter = crystalPos.clone();
+      this.beamSparks.color1 = new Color4(color.r, color.g, color.b, 1.0);
+      this.beamSparks.color2 = new Color4(color.r, color.g, color.b, 0.8);
+      this.beamSparks.colorDead = new Color4(color.r, color.g, color.b, 0.0);
+      this.beamSparks.minSize = 0.08;
+      this.beamSparks.maxSize = 0.15;
+      this.beamSparks.minLifeTime = 0.1;
+      this.beamSparks.maxLifeTime = 0.2;
+      this.beamSparks.emitRate = 40;
+      this.beamSparks.blendMode = ParticleSystem.BLENDMODE_ADD;
+      this.beamSparks.gravity = new Vector3(0, 0, 0);
+      this.beamSparks.direction1 = dir.scale(10).add(new Vector3(-1, -1, -1));
+      this.beamSparks.direction2 = dir.scale(15).add(new Vector3(1, 1, 1));
+      this.beamSparks.minEmitPower = 1;
+      this.beamSparks.maxEmitPower = 2;
+      this.beamSparks.updateSpeed = 0.02;
+      this.beamSparks.start();
+    } else {
+      (this.beamSparks.emitter as Vector3).copyFrom(crystalPos);
+      this.beamSparks.direction1 = dir.scale(10).add(new Vector3(-1, -1, -1));
+      this.beamSparks.direction2 = dir.scale(15).add(new Vector3(1, 1, 1));
+      if (!this.beamSparks.isStarted()) {
+        this.beamSparks.start();
+      }
+    }
+  }
+
+  private stopBeamSparks(): void {
+    if (this.beamSparks) {
+      this.beamSparks.stop();
+    }
   }
 }
