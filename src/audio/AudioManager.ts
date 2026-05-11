@@ -15,6 +15,7 @@ export class AudioManager {
   private masterVolume: number = 1.0;
   private sfxVolume: number = 1.0;
   private activeBeepClones: Sound[] = [];
+  private isMuted: boolean = false;
   private readonly MAX_CONCURRENT_BEEPS = 3;
 
   constructor(scene: Scene) {
@@ -69,9 +70,15 @@ export class AudioManager {
   }
 
   private updateAllVolumes(): void {
+    const effectiveVolume = this.isMuted ? 0 : this.sfxVolume * this.masterVolume;
     this.sounds.forEach(sound => {
-      sound.setVolume(this.sfxVolume * this.masterVolume);
+      sound.setVolume(effectiveVolume);
     });
+  }
+
+  setMuted(muted: boolean): void {
+    this.isMuted = muted;
+    this.updateAllVolumes();
   }
 
   /**

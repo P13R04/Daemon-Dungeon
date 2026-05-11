@@ -38,6 +38,7 @@ export interface GameEventBindingsCallbacks {
   onMainMenuRequested(): void;
   onClassSelectRequested(): void;
   onCodexProgressResetRequested(): void;
+  onPauseToggleRequested(): void;
 }
 
 export class GameEventBindings {
@@ -150,6 +151,10 @@ export class GameEventBindings {
 
     onEvent(GameEvents.CODEX_PROGRESS_RESET_REQUESTED, () => {
       if (this.callbacks.onCodexProgressResetRequested) this.callbacks.onCodexProgressResetRequested();
+    });
+
+    onEvent(GameEvents.UI_PAUSE_TOGGLE, () => {
+      if (this.callbacks.onPauseToggleRequested) this.callbacks.onPauseToggleRequested();
     });
 
     return unsubscribers;

@@ -5,6 +5,7 @@
 import { Scene, Engine, Vector3, TransformNode, AbstractMesh, Sound } from '@babylonjs/core';
 import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image, StackPanel, Checkbox } from '@babylonjs/gui';
 import { EventBus, GameEvents } from '../core/EventBus';
+import { SettingsMenuBuilder } from '../ui/SettingsMenuBuilder';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { VoicelineConfig, AnimationPhase, getVoiceline } from '../data/voicelines/VoicelineDefinitions';
 import { DAEMON_ANIMATION_PRESETS, normalizeDaemonPresetName } from '../data/voicelines/DaemonAnimationPresets';
@@ -105,6 +106,8 @@ export class HUDManager {
   private daemonBaseLeft: number = 0;
   private daemonAvatarController: DaemonAvatarController = new DaemonAvatarController();
   private activeVoicelineAudios: Set<Sound | AudioBufferSourceNode> = new Set();
+  private voicelineGainNode: GainNode | null = null;
+  private isVoicelineMuted: boolean = false;
   
   private waveNumber: number = 0;
   private isEnabled: boolean = true;
@@ -115,6 +118,8 @@ export class HUDManager {
   private classSelectScreen: Rectangle | null = null;
   private codexScreen: Rectangle | null = null;
   private settingsScreen: Rectangle | null = null;
+  private pauseScreen: Rectangle | null = null;
+  private settingsMenuBuilder: SettingsMenuBuilder | null = null;
   private gameOverScreen: Rectangle | null = null;
   private roomClearScreen: Rectangle | null = null;
   private bonusScreen: Rectangle | null = null;
@@ -556,6 +561,21 @@ export class HUDManager {
       this.logLines.push(line);
     }
 
+    const pauseBtn = Button.CreateSimpleButton('pause_btn', '[ || ]');
+    pauseBtn.width = '42px';
+    pauseBtn.height = '42px';
+    pauseBtn.color = '#7CFFEA';
+    pauseBtn.background = 'rgba(10, 30, 35, 0.6)';
+    pauseBtn.thickness = 1;
+    pauseBtn.left = 16;
+    pauseBtn.top = 96;
+    pauseBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    pauseBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    pauseBtn.onPointerUpObservable.add(() => {
+      this.eventBus.emit(GameEvents.UI_PAUSE_TOGGLE);
+    });
+    this.guiClean.addControl(pauseBtn);
+
     // Bottom-right status
     this.statusPanel = new Rectangle('status_panel');
     this.statusPanel.width = '260px';
@@ -823,7 +843,16 @@ export class HUDManager {
     this.startScreen = null;
     this.classSelectScreen = null;
     this.codexScreen = null;
-    this.settingsScreen = null;
+    
+    this.settingsMenuBuilder = new SettingsMenuBuilder(
+      () => this.showPauseMenu(),
+      () => this.eventBus.emit(GameEvents.CODEX_PROGRESS_RESET_REQUESTED),
+      () => {}
+    );
+    this.settingsScreen = this.settingsMenuBuilder.createSettingsOverlay(this.guiClean);
+
+    this.pauseScreen = this.createPauseOverlay();
+    this.pauseScreen.isVisible = false;
 
     this.gameOverScreen = this.createGameOverScreenPlaceholder();
     this.gameOverScreen.isVisible = false;
@@ -837,300 +866,58 @@ export class HUDManager {
     this.bonusScreen.isVisible = false;
   }
 
-  private createMainMenuOverlay(): Rectangle {
-    const container = new Rectangle('main_menu_overlay');
+  private createPauseOverlay(): Rectangle {
+    const container = new Rectangle('pause_overlay');
     container.width = 1;
     container.height = 1;
     container.thickness = 0;
-    container.background = 'rgba(0,0,0,0.75)';
+    container.background = 'rgba(0,0,0,0.85)';
     container.isPointerBlocker = true;
     container.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     container.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    container.zIndex = 2000;
     this.guiClean.addControl(container);
 
-    const title = new TextBlock('main_menu_title');
-    title.text = 'DAEMON DUNGEON';
+    const title = new TextBlock('pause_title');
+    title.text = 'SYSTEM PAUSED';
     title.color = '#7CFFEA';
-    title.fontSize = 44;
+    title.fontSize = 42;
     title.fontFamily = 'Consolas';
-    title.top = '-220px';
+    title.top = '-160px';
     container.addControl(title);
 
-    const subTitle = new TextBlock('main_menu_subtitle');
-    subTitle.text = 'SYSTEM READY // MAIN CONSOLE';
-    subTitle.color = '#9FEFE1';
-    subTitle.fontSize = 16;
-    subTitle.fontFamily = 'Consolas';
-    subTitle.top = '-170px';
-    container.addControl(subTitle);
+    const buttonPanel = new StackPanel('pause_buttons');
+    buttonPanel.width = '240px';
+    buttonPanel.top = '20px';
+    container.addControl(buttonPanel);
 
-    const panel = new Rectangle('main_menu_panel');
-    panel.width = '460px';
-    panel.height = '260px';
-    panel.thickness = 1;
-    panel.color = '#2EF9C3';
-    panel.background = 'rgba(0,0,0,0.35)';
-    panel.top = '-20px';
-    container.addControl(panel);
+    const createButton = (text: string, color: string, onClick: () => void) => {
+      const btn = Button.CreateSimpleButton(`pause_btn_${text}`, text);
+      btn.height = '42px';
+      btn.width = '240px';
+      btn.color = color;
+      btn.background = 'rgba(20, 30, 35, 0.8)';
+      btn.thickness = 1;
+      btn.cornerRadius = 4;
+      btn.fontSize = 16;
+      btn.fontFamily = 'Consolas';
+      btn.paddingTop = '8px';
+      btn.onPointerUpObservable.add(() => onClick());
+      buttonPanel.addControl(btn);
+      return btn;
+    };
 
-    const playBtn = Button.CreateSimpleButton('main_menu_play', 'PLAY');
-    playBtn.width = '220px';
-    playBtn.height = '46px';
-    playBtn.color = '#FFFFFF';
-    playBtn.cornerRadius = 6;
-    playBtn.background = '#1D3B3A';
-    playBtn.thickness = 2;
-    playBtn.top = '-70px';
-    playBtn.hoverCursor = 'pointer';
-    playBtn.onPointerEnterObservable.add(() => {
-      playBtn.background = '#2A5A57';
+    createButton('RESUME', '#B8FFE6', () => {
+      this.eventBus.emit(GameEvents.UI_PAUSE_TOGGLE);
     });
-    playBtn.onPointerOutObservable.add(() => {
-      playBtn.background = '#1D3B3A';
+
+    createButton('OPTIONS', '#9FEFE1', () => {
+      this.showSettingsMenu();
     });
-    playBtn.onPointerUpObservable.add(() => {
-      this.showClassSelectMenu();
+
+    createButton('QUIT TO MAIN MENU', '#B8FFE6', () => {
+      this.eventBus.emit(GameEvents.MAIN_MENU_REQUESTED);
     });
-    panel.addControl(playBtn);
-
-    const codexBtn = Button.CreateSimpleButton('main_menu_codex', 'CODEX');
-    codexBtn.width = '220px';
-    codexBtn.height = '46px';
-    codexBtn.color = '#FFFFFF';
-    codexBtn.cornerRadius = 6;
-    codexBtn.background = '#1D3B3A';
-    codexBtn.thickness = 2;
-    codexBtn.top = '-10px';
-    codexBtn.hoverCursor = 'pointer';
-    codexBtn.onPointerEnterObservable.add(() => {
-      codexBtn.background = '#2A5A57';
-    });
-    codexBtn.onPointerOutObservable.add(() => {
-      codexBtn.background = '#1D3B3A';
-    });
-    codexBtn.onPointerUpObservable.add(() => {
-      this.eventBus.emit(GameEvents.CODEX_OPEN_REQUESTED);
-    });
-    panel.addControl(codexBtn);
-
-    const settingsBtn = Button.CreateSimpleButton('main_menu_settings', 'SETTINGS');
-    settingsBtn.width = '220px';
-    settingsBtn.height = '40px';
-    settingsBtn.color = '#6B8A87';
-    settingsBtn.cornerRadius = 6;
-    settingsBtn.background = 'rgba(20,30,35,0.45)';
-    settingsBtn.thickness = 1;
-    settingsBtn.top = '40px';
-    settingsBtn.isEnabled = false;
-    panel.addControl(settingsBtn);
-
-    const hint = new TextBlock('main_menu_hint');
-    hint.text = 'PLAY → CHOOSE CLASS';
-    hint.color = '#7C9C98';
-    hint.fontSize = 12;
-    hint.fontFamily = 'Consolas';
-    hint.top = '90px';
-    panel.addControl(hint);
-
-    return container;
-  }
-
-  private createClassSelectOverlay(): Rectangle {
-    const container = new Rectangle('class_select_overlay');
-    container.width = 1;
-    container.height = 1;
-    container.thickness = 0;
-    container.background = 'rgba(0,0,0,0.75)';
-    container.isPointerBlocker = true;
-    container.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    container.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.guiClean.addControl(container);
-
-    const title = new TextBlock('class_select_title');
-    title.text = 'SELECT CLASS';
-    title.color = '#7CFFEA';
-    title.fontSize = 34;
-    title.fontFamily = 'Consolas';
-    title.top = '-200px';
-    container.addControl(title);
-
-    const panel = new Rectangle('class_select_panel');
-    panel.width = '560px';
-    panel.height = '280px';
-    panel.thickness = 1;
-    panel.color = '#2EF9C3';
-    panel.background = 'rgba(0,0,0,0.35)';
-    panel.top = '-20px';
-    container.addControl(panel);
-
-    const mageBtn = Button.CreateSimpleButton('class_mage_btn', 'MAGE // READY');
-    mageBtn.width = '260px';
-    mageBtn.height = '48px';
-    mageBtn.color = '#FFFFFF';
-    mageBtn.cornerRadius = 6;
-    mageBtn.background = '#1D3B3A';
-    mageBtn.thickness = 2;
-    mageBtn.top = '-60px';
-    mageBtn.onPointerUpObservable.add(() => {
-      this.eventBus.emit(GameEvents.GAME_START_REQUESTED);
-    });
-    panel.addControl(mageBtn);
-
-    const warriorBtn = Button.CreateSimpleButton('class_warrior_btn', 'WARRIOR // COMING SOON');
-    warriorBtn.width = '260px';
-    warriorBtn.height = '40px';
-    warriorBtn.color = '#7C9C98';
-    warriorBtn.cornerRadius = 6;
-    warriorBtn.background = 'rgba(20,30,35,0.6)';
-    warriorBtn.thickness = 1;
-    warriorBtn.isEnabled = false;
-    warriorBtn.top = '0px';
-    panel.addControl(warriorBtn);
-
-    const rogueBtn = Button.CreateSimpleButton('class_rogue_btn', 'ROGUE // COMING SOON');
-    rogueBtn.width = '260px';
-    rogueBtn.height = '40px';
-    rogueBtn.color = '#7C9C98';
-    rogueBtn.cornerRadius = 6;
-    rogueBtn.background = 'rgba(20,30,35,0.6)';
-    rogueBtn.thickness = 1;
-    rogueBtn.isEnabled = false;
-    rogueBtn.top = '50px';
-    panel.addControl(rogueBtn);
-
-    const backBtn = Button.CreateSimpleButton('class_select_back', 'BACK');
-    backBtn.width = '140px';
-    backBtn.height = '36px';
-    backBtn.color = '#B8FFE6';
-    backBtn.cornerRadius = 4;
-    backBtn.background = 'rgba(20,30,35,0.85)';
-    backBtn.thickness = 1;
-    backBtn.top = '140px';
-    backBtn.onPointerUpObservable.add(() => {
-      this.showMainMenu();
-    });
-    panel.addControl(backBtn);
-
-    return container;
-  }
-
-  private createCodexOverlay(): Rectangle {
-    const container = new Rectangle('codex_overlay');
-    container.width = 1;
-    container.height = 1;
-    container.thickness = 0;
-    container.background = 'rgba(0,0,0,0.75)';
-    container.isPointerBlocker = true;
-    container.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    container.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.guiClean.addControl(container);
-
-    const title = new TextBlock('codex_title');
-    title.text = 'CODEX DATABASE';
-    title.color = '#7CFFEA';
-    title.fontSize = 34;
-    title.fontFamily = 'Consolas';
-    title.top = '-200px';
-    container.addControl(title);
-
-    const body = new TextBlock('codex_body');
-    body.text = 'ENEMIES / BONUSES / CLASSES\nLOCKED ENTRIES WILL APPEAR HERE.';
-    body.color = '#9FEFE1';
-    body.fontSize = 14;
-    body.fontFamily = 'Consolas';
-    body.textWrapping = true;
-    body.width = '520px';
-    body.height = '220px';
-    body.top = '-40px';
-    container.addControl(body);
-
-    const backBtn = Button.CreateSimpleButton('codex_back', 'BACK');
-    backBtn.width = '140px';
-    backBtn.height = '36px';
-    backBtn.color = '#B8FFE6';
-    backBtn.cornerRadius = 4;
-    backBtn.background = 'rgba(20,30,35,0.85)';
-    backBtn.thickness = 1;
-    backBtn.top = '140px';
-    backBtn.onPointerUpObservable.add(() => {
-      this.showMainMenu();
-    });
-    container.addControl(backBtn);
-
-    return container;
-  }
-
-  private createSettingsOverlay(): Rectangle {
-    const container = new Rectangle('settings_overlay');
-    container.width = 1;
-    container.height = 1;
-    container.thickness = 0;
-    container.background = 'rgba(0,0,0,0.75)';
-    container.isPointerBlocker = true;
-    container.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    container.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.guiClean.addControl(container);
-
-    const title = new TextBlock('settings_title');
-    title.text = 'SETTINGS';
-    title.color = '#7CFFEA';
-    title.fontSize = 34;
-    title.fontFamily = 'Consolas';
-    title.top = '-200px';
-    container.addControl(title);
-
-    const body = new TextBlock('settings_body');
-    body.text = 'AUDIO / KEYBINDS / ACCESSIBILITY\nPLACEHOLDERS — COMING SOON.';
-    body.color = '#9FEFE1';
-    body.fontSize = 14;
-    body.fontFamily = 'Consolas';
-    body.textWrapping = true;
-    body.width = '520px';
-    body.height = '220px';
-    body.top = '-40px';
-    container.addControl(body);
-
-    const backBtn = Button.CreateSimpleButton('settings_back', 'BACK');
-    backBtn.width = '140px';
-    backBtn.height = '36px';
-    backBtn.color = '#B8FFE6';
-    backBtn.cornerRadius = 4;
-    backBtn.background = 'rgba(20,30,35,0.85)';
-    backBtn.thickness = 1;
-    backBtn.top = '180px';
-    backBtn.onPointerUpObservable.add(() => {
-      this.showMainMenu();
-    });
-    container.addControl(backBtn);
-
-    // Developer Mode Toggle (Hidden in Production)
-    if (!import.meta.env.PROD) {
-      const devModePanel = new StackPanel('dev_mode_panel');
-      devModePanel.isVertical = false;
-      devModePanel.width = '300px';
-      devModePanel.height = '40px';
-      devModePanel.top = '80px';
-      container.addControl(devModePanel);
-
-      const devModeCheckbox = new Checkbox('dev_mode_checkbox');
-      devModeCheckbox.width = '24px';
-      devModeCheckbox.height = '24px';
-      devModeCheckbox.isChecked = GameSettingsStore.get().accessibility.devModeEnabled;
-      devModeCheckbox.color = '#7CFFEA';
-      devModeCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
-        GameSettingsStore.updateAccessibility({ devModeEnabled: isChecked });
-      });
-      devModePanel.addControl(devModeCheckbox);
-
-      const devModeLabel = new TextBlock('dev_mode_label');
-      devModeLabel.text = '  DEVELOPER MODE (LOCAL ONLY)';
-      devModeLabel.color = '#FFD782';
-      devModeLabel.fontSize = 14;
-      devModeLabel.fontFamily = 'Consolas';
-      devModeLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-      devModeLabel.width = '260px';
-      devModePanel.addControl(devModeLabel);
-    }
 
     return container;
   }
@@ -1140,6 +927,27 @@ export class HUDManager {
     if (this.classSelectScreen) this.classSelectScreen.isVisible = false;
     if (this.codexScreen) this.codexScreen.isVisible = false;
     if (this.settingsScreen) this.settingsScreen.isVisible = false;
+    if (this.pauseScreen) this.pauseScreen.isVisible = false;
+  }
+
+  public showPauseMenu(): void {
+    this.hideMenuScreens();
+    if (this.pauseScreen) this.pauseScreen.isVisible = true;
+    if (this.enemyGui) this.enemyGui.rootContainer.isVisible = false;
+    this.stopAllVoicelineAudio();
+  }
+
+  public hidePauseMenu(): void {
+    if (this.pauseScreen) this.pauseScreen.isVisible = false;
+    if (this.enemyGui) this.enemyGui.rootContainer.isVisible = true;
+  }
+
+  public handleEscapeKey(): void {
+    if (this.settingsScreen && this.settingsScreen.isVisible) {
+      this.showPauseMenu();
+    } else if (this.pauseScreen && this.pauseScreen.isVisible) {
+      this.eventBus.emit(GameEvents.UI_PAUSE_TOGGLE);
+    }
   }
 
   private showMainMenu(): void {
@@ -1160,6 +968,7 @@ export class HUDManager {
   private showSettingsMenu(): void {
     this.hideMenuScreens();
     if (this.settingsScreen) this.settingsScreen.isVisible = true;
+    if (this.settingsMenuBuilder) this.settingsMenuBuilder.refreshSettingsUi();
   }
 
   private createOverlay(titleText: string, buttonText: string, onClick: () => void): Rectangle {
@@ -1951,7 +1760,14 @@ export class HUDManager {
     gain.gain.value = 1.1 * this.uiVolumeMultiplier;
 
     source.connect(gain);
-    gain.connect(ctx.destination);
+    
+    if (!this.voicelineGainNode) {
+      this.voicelineGainNode = ctx.createGain();
+      this.voicelineGainNode.connect(ctx.destination);
+    }
+    this.voicelineGainNode.gain.value = this.isVoicelineMuted ? 0 : 1.0;
+    
+    gain.connect(this.voicelineGainNode);
     
     source.start(ctx.currentTime + 0.1);
     this.activeVoicelineAudios.add(source);
@@ -1960,6 +1776,16 @@ export class HUDManager {
       source.disconnect();
       gain.disconnect();
     };
+  }
+
+  public setVoicelinesMuted(muted: boolean): void {
+    this.isVoicelineMuted = muted;
+    if (this.voicelineGainNode) {
+      this.voicelineGainNode.gain.value = muted ? 0 : 1.0;
+    }
+    if (muted) {
+      this.stopAllVoicelineAudio();
+    }
   }
 
   private updateDaemonPopup(deltaTime: number): void {
@@ -2884,6 +2710,7 @@ export class HUDManager {
     if (this.gameOverScreen) this.gameOverScreen.isVisible = false;
     if (this.roomClearScreen) this.roomClearScreen.isVisible = false;
     if (this.bonusScreen) this.bonusScreen.isVisible = false;
+    if (this.pauseScreen) this.pauseScreen.isVisible = false;
   }
 
 

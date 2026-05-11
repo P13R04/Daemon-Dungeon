@@ -126,6 +126,7 @@ export class GameManager {
   private resizeObserver: ResizeObserver | null = null;
   private selectedClassId: 'mage' | 'firewall' | 'rogue' | 'cat' = 'mage';
   private tilesEnabled: boolean = true;
+  public isPaused: boolean = false;
   private textureRenderMode: TextureRenderMode = 'proceduralRelief';
   private roomLayoutCache: Map<string, RoomLayout> = new Map();
   private proceduralPrewarmPromise: Promise<void> | null = null;
@@ -360,6 +361,20 @@ export class GameManager {
     this.isRunning = true;
   }
 
+  private setupEscapeListener(): void {
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (!this.gameplayInitialized || this.gameState !== 'playing') return;
+        
+        if (!this.isPaused) {
+          this.togglePause();
+        } else if (this.hudManager) {
+          this.hudManager.handleEscapeKey();
+        }
+      }
+    });
+  }
+
   private setupGlobalAudioUnlock(): void {
     const audioEngine = Engine.audioEngine;
     if (!audioEngine) return;
@@ -567,7 +582,7 @@ export class GameManager {
       
       // Update other settings that might have changed
       if (this.enemySpawner) {
-        this.enemySpawner.setSpawnBatchSize(settings.graphics.enemySpawnBatchSize);
+        this.enemySpawner.setSpawnSmoothingConfig({ batchSize: settings.graphics.enemySpawnBatchSize });
       }
     });
 
@@ -689,6 +704,7 @@ export class GameManager {
   private setupEventListeners(): void {
     if (this.eventListenersBound) return;
     this.eventListenersBound = true;
+    this.setupEscapeListener();
     const bindings = new GameEventBindings(this.eventBus, {
       onGameStartRequested: (data) => {
         this.tryUnlockAudioNow();
@@ -867,6 +883,7 @@ export class GameManager {
         this.playerController?.refillUltimate();
       },
       onMainMenuRequested: () => {
+        this.isPaused = false;
         this.codexService.endRunTracking();
         void this.openMainMenuScene();
       },
@@ -877,7 +894,9 @@ export class GameManager {
       onCodexProgressResetRequested: () => {
         this.codexService.resetProgression();
       },
-
+      onPauseToggleRequested: () => {
+        this.togglePause();
+      },
     });
 
     this.eventBusUnsubscribers = bindings.bind();
@@ -1159,7 +1178,9 @@ export class GameManager {
               ? 0.55
               : 0.8;
 
-      this.time.update(deltaTime);
+      if (!this.isPaused) {
+        this.time.update(deltaTime);
+      }
       loopProfiler?.mark('timeUpdate');
 
       if (this.classSelectScene && this.scene === this.classSelectScene.getScene()) {
@@ -1175,11 +1196,19 @@ export class GameManager {
       let shouldSkipRender = false;
 
       if (this.gameplayInitialized && this.gameState === 'playing') {
-        const playerIsMoving = this.playerController?.getIsMoving() ?? false;
-        this.daemonVoicelineManager?.update(deltaTime, playerIsMoving);
-        this.daemonVoicelineManager?.setDaemonActive(this.hudManager.isDaemonMessageActive());
-        
-        shouldSkipRender = this.updatePlayingFrame(deltaTime);
+        // Escape logic moved to global listener for better reliability and focus handling
+      }
+
+      if (this.gameplayInitialized && this.gameState === 'playing') {
+        if (this.isPaused) {
+          shouldSkipRender = this.updatePlayingFrame(0);
+        } else {
+          const playerIsMoving = this.playerController?.getIsMoving() ?? false;
+          this.daemonVoicelineManager?.update(deltaTime, playerIsMoving);
+          this.daemonVoicelineManager?.setDaemonActive(this.hudManager.isDaemonMessageActive());
+          
+          shouldSkipRender = this.updatePlayingFrame(deltaTime);
+        }
         loopProfiler?.mark('playingUpdate');
       } else if (this.gameplayInitialized) {
         this.updateNonPlayingFrame(deltaTime);
@@ -3531,6 +3560,22 @@ export class GameManager {
   public areWallsVisible(): boolean {
     return this.roomManager.areWallsVisible();
   }
+  public togglePause(): void {
+    if (this.gameState !== 'playing') return;
+    this.isPaused = !this.isPaused;
+    if (this.isPaused) {
+      this.hudManager.showPauseMenu();
+      if (this.musicManager) this.musicManager.setLowPass(true);
+      if (this.audioManager) this.audioManager.setMuted(true);
+      if (this.hudManager) this.hudManager.setVoicelinesMuted(true);
+    } else {
+      this.hudManager.hidePauseMenu();
+      if (this.musicManager) this.musicManager.setLowPass(false);
+      if (this.audioManager) this.audioManager.setMuted(false);
+      if (this.hudManager) this.hudManager.setVoicelinesMuted(false);
+    }
+  }
+
 
   private updateDevConsoleVisibility(): void {
     const settings = GameSettingsStore.get();

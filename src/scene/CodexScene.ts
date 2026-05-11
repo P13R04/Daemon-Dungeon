@@ -378,8 +378,11 @@ export class CodexScene {
       if (key === 'arrowleft' || key === 'q' || key === 'a') {
         this.navigateBy(-1);
         event.preventDefault();
-      } else if (key === 'arrowright' || key === 'd') {
+      } else if (key === 'arrowright' || key === 'd' || key === ' ' || key === 'spacebar') {
         this.navigateBy(1);
+        event.preventDefault();
+      } else if (key === 'escape') {
+        this.onBackToMenu();
         event.preventDefault();
       }
     };
