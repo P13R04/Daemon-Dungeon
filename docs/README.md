@@ -4,6 +4,7 @@
 
 ### Project
 
+- [Design Document (DOC_CONCEPTION.md)](DOC_CONCEPTION.md)
 - [Architecture Map](project/ARCHITECTURE_MAP.md)
 - [Architecture Update 2026-04-09](project/ARCHITECTURE_UPDATE_2026-04-09.md)
 - [Bonus Pool Catalog](project/BONUS_POOL_CATALOG.md)
