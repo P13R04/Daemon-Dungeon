@@ -270,8 +270,8 @@ export class RoomManager {
         const row = layout[y] ?? '';
         // Missing cells are treated as walls to avoid geometry holes.
         const char = row[x] ?? '#';
-        // Standard Y to Z mapping (no inversion)
-        const z = y;
+        // Invert Z axis to align with TileFloorManager and correct layout parity
+        const z = height - 1 - y;
         const position = new Vector3(
           origin.x + x * this.tileSize,
           0,
@@ -731,7 +731,7 @@ export class RoomManager {
     yHeight: number
   ): Vector3 {
     const pointY = Number.isFinite(point.y) ? Number(point.y) : Number(point.z);
-    const zValue = pointY;
+    const zValue = layoutHeight - 1 - pointY;
 
     return new Vector3(
       (origin?.x ?? 0) + point.x * this.tileSize + this.tileSize / 2,
@@ -750,10 +750,12 @@ export class RoomManager {
     const tileX = Math.floor(localX / this.tileSize);
     const tileZ = Math.floor(localZ / this.tileSize);
 
-    if (tileZ < 0 || tileZ >= this.currentRoom.layout.length) return false;
+    const layoutHeight = this.currentRoom.layout.length;
+    if (tileZ < 0 || tileZ >= layoutHeight) return false;
     if (tileX < 0 || tileX >= this.currentRoom.layout[0].length) return false;
 
-    const char = this.currentRoom.layout[tileZ][tileX];
+    const invertedY = layoutHeight - 1 - tileZ;
+    const char = this.currentRoom.layout[invertedY][tileX];
     return char !== '#' && char !== 'V';
   }
 
@@ -770,7 +772,8 @@ export class RoomManager {
     const maxWidth = this.currentRoom.layout.reduce((acc, row) => Math.max(acc, row?.length ?? 0), 0);
     if (tileX < 0 || tileZ < 0 || tileX >= maxWidth || tileZ >= maxHeight) return 'out';
 
-    const row = this.currentRoom.layout[tileZ] ?? '';
+    const invertedY = maxHeight - 1 - tileZ;
+    const row = this.currentRoom.layout[invertedY] ?? '';
     const char = row[tileX] ?? '#';
     if (char === '#' || char === 'O') return 'wall';
     if (char === 'V') return 'void';
@@ -811,7 +814,8 @@ export class RoomManager {
     const pathfinder = new Pathfinding(layoutWidth, layoutHeight);
 
     for (let z = 0; z < layoutHeight; z++) {
-      const row = this.currentRoom.layout[z] ?? '';
+      const invertedY = layoutHeight - 1 - z;
+      const row = this.currentRoom.layout[invertedY] ?? '';
       for (let x = 0; x < layoutWidth; x++) {
         const char = row[x] ?? '#';
         const isWall = char === '#' || char === 'O';

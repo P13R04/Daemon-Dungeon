@@ -3815,8 +3815,16 @@ export class EnemyController {
 
     try {
       const normalizedBase = getHudAssetBaseUrl();
-      const rootUrl = `${normalizedBase}models/caster/`;
-      const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'caster_socle.glb', this.scene);
+      let rootUrl = `${normalizedBase}models/caster/`;
+      let fileName = 'caster_socle.glb';
+      if (this.behavior === 'bullet_hell') {
+        rootUrl = `${normalizedBase}models/bullet_hell/`;
+        fileName = 'tde_socle_bullet_hell(crying obsidian).glb';
+      } else if (this.behavior === 'mage_missile') {
+        rootUrl = `${normalizedBase}models/mage_missile/`;
+        fileName = 'tde_socle_red_n_white.glb';
+      }
+      const result = await SceneLoader.ImportMeshAsync('', rootUrl, fileName, this.scene);
 
       // Safety check after async load
       if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.casterModelRoot) {
@@ -3929,8 +3937,13 @@ export class EnemyController {
     if (this.isDisposed || this.casterMobileModelRoot || !this.mesh || this.mesh.isDisposed() || !this.isAlive) return;
     try {
       const normalizedBase = getHudAssetBaseUrl();
-      const rootUrl = `${normalizedBase}models/caster/`;
-      const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'caster_mobile.glb', this.scene);
+      let rootUrl = `${normalizedBase}models/caster/`;
+      let fileName = 'caster_mobile.glb';
+      if (this.behavior === 'healer') {
+        rootUrl = `${normalizedBase}models/healer/`;
+        fileName = 'tde_float_yellow.glb';
+      }
+      const result = await SceneLoader.ImportMeshAsync('', rootUrl, fileName, this.scene);
       if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.casterMobileModelRoot) {
         result.animationGroups.forEach(g => g.dispose());
         result.transformNodes.forEach(n => n.dispose(false, false));

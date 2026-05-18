@@ -1084,6 +1084,7 @@ export class PlayerController {
 
   setEnemiesPresent(present: boolean): void {
     this.enemiesPresent = present;
+    this.hasEnemiesInRoom = present;
   }
 
   private updateFocusFire(deltaTime: number): void {
@@ -2799,9 +2800,6 @@ export class PlayerController {
     return this.computeRogueDamage(baseDamage);
   }
 
-  setEnemiesPresent(hasEnemies: boolean): void {
-    this.hasEnemiesInRoom = hasEnemies;
-  }
 
   setGameplayActive(active: boolean): void {
     this.gameplayActive = active;

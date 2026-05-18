@@ -772,10 +772,25 @@ export class CodexScene {
       urlPath = 'models/jumper/'; fileName = 'sauteur.glb';
       scale = entry.isBoss ? 0.36 : 0.26; // x2
     } else if (['turret', 'bullet_hell', 'mage_missile'].includes(entry.behavior)) {
-      urlPath = 'models/caster/'; fileName = 'caster_socle.glb';
+      if (entry.behavior === 'bullet_hell') {
+        urlPath = 'models/bullet_hell/';
+        fileName = 'tde_socle_bullet_hell(crying obsidian).glb';
+      } else if (entry.behavior === 'mage_missile') {
+        urlPath = 'models/mage_missile/';
+        fileName = 'tde_socle_red_n_white.glb';
+      } else {
+        urlPath = 'models/caster/';
+        fileName = 'caster_socle.glb';
+      }
       mainAnimName = 'idle';
     } else if (['sentinel', 'prefire_sentinel', 'healer', 'artificer', 'necromancer', 'swarm_coordinator'].includes(entry.behavior)) {
-      urlPath = 'models/caster/'; fileName = 'caster_mobile.glb';
+      if (entry.behavior === 'healer') {
+        urlPath = 'models/healer/';
+        fileName = 'tde_float_yellow.glb';
+      } else {
+        urlPath = 'models/caster/';
+        fileName = 'caster_mobile.glb';
+      }
       mainAnimName = 'forward';
       rotation = Vector3.Zero(); // vers la droite par rapport à PI/2
     } else if (entry.behavior === 'missile') {
