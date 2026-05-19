@@ -1,6 +1,7 @@
 import {
   AnimationGroup,
   ArcRotateCamera,
+  FreeCamera,
   Color3,
   Color4,
   Engine,
@@ -16,19 +17,20 @@ import {
   Vector3,
 } from '@babylonjs/core';
 import { AdvancedDynamicTexture, Button, Control, Rectangle, ScrollViewer, StackPanel, TextBlock, Image } from '@babylonjs/gui';
-import { buildHudAssetUrl, preloadHudAsset } from '../systems/hud/HudAssetPaths';
+import { buildHudAssetUrl, preloadHudAsset, getCachedHudAsset } from '../systems/hud/HudAssetPaths';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
+import { PostProcessManager, PostProcessingConfig } from './PostProcess';
 import { getHudAssetBaseUrl } from '../systems/hud/HudAssetPaths';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { BONUS_CODEX_ENTRIES, BonusCodexEntry } from '../data/codex/bonuses';
 import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
-import { AchievementProgress, CodexService } from '../services/CodexService';
+import { CodexService } from '../services/CodexService';
 import type { EnemyConfigEntry } from '../types/config';
 
-type CodexSection = 'bestiary' | 'bonuses' | 'achievements';
+type CodexSection = 'bestiary' | 'bonuses';
 type BestiaryGroup = 'normal' | 'boss';
 
 interface EnemyCodexEntry {
@@ -95,7 +97,6 @@ export class CodexScene {
   private bestiaryItems: BestiaryCarouselItem[] = [];
   private selectedBestiaryIndex: number = 0;
   private selectedBonusIndex: number = 0;
-  private selectedAchievementIndex: number = 0;
 
   private carouselRotation: number = 0;
   private carouselTargetRotation: number = 0;
@@ -120,9 +121,6 @@ export class CodexScene {
   private centerCardSubtitle: TextBlock;
   private centerCardArtwork: Image;
 
-  private bestiaryFogLeft: Rectangle;
-  private bestiaryFogRight: Rectangle;
-
   private headerTitle: TextBlock;
   private headerSubtitle: TextBlock;
 
@@ -133,6 +131,10 @@ export class CodexScene {
   private keyHandler: (event: KeyboardEvent) => void;
   private audioUnlockHandler: (() => void) | null = null;
   private glitchFx!: DaemonGlitchFx;
+
+  private postProcessManager: PostProcessManager;
+  private postProcessConfig: PostProcessingConfig;
+  private resizeObserver: any = null;
 
   constructor(
     private engine: Engine,
@@ -147,11 +149,37 @@ export class CodexScene {
 
     this.setupAudioUnlock();
 
-    this.camera = new ArcRotateCamera('codexCamera', -Math.PI / 2, 1.44, 17.5, new Vector3(0, 1.7, 0), this.scene);
-    this.camera.lowerRadiusLimit = 12;
+    this.postProcessConfig = {
+      enabled: true,
+      pixelScale: 1.6,
+      glowIntensity: 0.8,
+      chromaticAmount: 30,
+      chromaticRadial: 0.8,
+      grainEnabled: false,
+      grainIntensity: 0,
+      grainAnimated: false,
+      crtLinesEnabled: true,
+      crtLineIntensity: 0.35,
+      vignetteEnabled: true,
+      vignetteWeight: 4.0,
+      vignetteColor: [0, 0, 0, 1],
+    };
+
+    this.camera = new ArcRotateCamera('codexCamera', -Math.PI / 2, 1.30, 14.5, new Vector3(0, 1.3, 0), this.scene);
+    this.camera.lowerRadiusLimit = 10;
     this.camera.upperRadiusLimit = 28;
     this.camera.wheelDeltaPercentage = 0.01;
-    // We intentionally do NOT attachControl so the user cannot drag/zoom the camera manually
+    this.camera.layerMask = SCENE_LAYER;
+
+    const uiCamera = new FreeCamera('codexUiCamera', new Vector3(0, 0, -10), this.scene) as FreeCamera & { clear: boolean };
+    uiCamera.layerMask = UI_LAYER;
+    uiCamera.clear = false;
+
+    this.scene.activeCameras = [this.camera, uiCamera];
+    this.scene.activeCamera = this.camera;
+
+    this.postProcessManager = new PostProcessManager(this.scene, this.engine);
+    this.postProcessManager.setupPipeline(this.camera, this.postProcessConfig);
 
     const light = new HemisphericLight('codexLight', new Vector3(0, 1, 0), this.scene);
     light.intensity = 0.95;
@@ -159,16 +187,19 @@ export class CodexScene {
     const fill = new HemisphericLight('codexFill', new Vector3(-1, 1, 0), this.scene);
     fill.intensity = 0.34;
 
-    createSynthwaveGridBackground(this.scene);
+    createSynthwaveGridBackground(this.scene, SCENE_LAYER, true);
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('CodexUI', true, this.scene);
+    this.gui.idealWidth = 1920;
+    this.gui.idealHeight = 1080;
+    this.gui.useSmallestIdeal = true;
+    this.gui.renderAtIdealSize = true;
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
 
     // Preload artworks for better UX
     BONUS_CODEX_ENTRIES.forEach(b => preloadHudAsset(`bonuses/${b.id}.png`));
-    this.codexService.getAchievementsProgress().forEach(a => preloadHudAsset(`achievements/${a.id}.png`));
 
     const root = new Rectangle('codexRoot');
     root.width = 1;
@@ -177,13 +208,33 @@ export class CodexScene {
     root.background = 'rgba(5,8,16,0.15)';
     this.gui.addControl(root);
 
+    const mainLayoutContainer = new Rectangle('mainLayout');
+    mainLayoutContainer.width = '1920px';
+    mainLayoutContainer.height = '1080px';
+    mainLayoutContainer.thickness = 0;
+    mainLayoutContainer.background = 'transparent';
+    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    root.addControl(mainLayoutContainer);
+
+    const updateScale = () => {
+      const size = this.gui.getSize();
+      const scaleX = size.width / 1920;
+      const scaleY = size.height / 1080;
+      const scale = Math.min(1, scaleX, scaleY);
+      mainLayoutContainer.scaleX = scale;
+      mainLayoutContainer.scaleY = scale;
+    };
+    this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
+    updateScale();
+
     this.headerTitle = new TextBlock('codexHeaderTitle');
     this.headerTitle.text = 'NEURAL CODEX';
     this.headerTitle.fontFamily = this.terminalFont;
     this.headerTitle.fontSize = 42;
     this.headerTitle.color = '#7FFFE7';
     this.headerTitle.top = '-44%';
-    root.addControl(this.headerTitle);
+    mainLayoutContainer.addControl(this.headerTitle);
 
     this.headerSubtitle = new TextBlock('codexHeaderSubtitle');
     this.headerSubtitle.text = '> DATABASE TERMINAL';
@@ -191,11 +242,11 @@ export class CodexScene {
     this.headerSubtitle.fontSize = 14;
     this.headerSubtitle.color = '#8FDCCF';
     this.headerSubtitle.top = '-38.7%';
-    root.addControl(this.headerSubtitle);
+    mainLayoutContainer.addControl(this.headerSubtitle);
 
     const backBtn = this.makeTopButton('codexBack', 'BACK TO MENU', Control.HORIZONTAL_ALIGNMENT_LEFT, () => this.onBackToMenu());
     backBtn.left = '24px';
-    root.addControl(backBtn);
+    mainLayoutContainer.addControl(backBtn);
 
     if (!import.meta.env.PROD) {
       const devBtn = this.makeTopButton('codexDev', this.getDevLabel(), Control.HORIZONTAL_ALIGNMENT_RIGHT, () => {
@@ -204,7 +255,7 @@ export class CodexScene {
         this.refreshSection(true);
       });
       devBtn.left = '-24px';
-      root.addControl(devBtn);
+      mainLayoutContainer.addControl(devBtn);
     }
 
     const tabsRow = new StackPanel('codexTabsRow');
@@ -212,7 +263,7 @@ export class CodexScene {
     tabsRow.width = '760px';
     tabsRow.height = '48px';
     tabsRow.top = '-33%';
-    root.addControl(tabsRow);
+    mainLayoutContainer.addControl(tabsRow);
 
     tabsRow.addControl(this.makeTabButton('BESTIARY', () => {
       this.section = 'bestiary';
@@ -222,17 +273,13 @@ export class CodexScene {
       this.section = 'bonuses';
       this.refreshSection(false);
     }));
-    tabsRow.addControl(this.makeTabButton('ACHIEVEMENTS', () => {
-      this.section = 'achievements';
-      this.refreshSection(false);
-    }));
 
     this.leftPanel = this.makeTerminalPanel('codexLeftPanel', 430, 530);
     this.leftPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.leftPanel.left = '24px';
     this.leftPanel.top = '58px';
-    root.addControl(this.leftPanel);
+    mainLayoutContainer.addControl(this.leftPanel);
 
     this.leftTitle = this.makeTerminalText('leftTitle', 20, '#7DFFE8');
     this.leftTitle.top = '-236px';
@@ -289,7 +336,7 @@ export class CodexScene {
     this.rightPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.rightPanel.left = '-24px';
     this.rightPanel.top = '58px';
-    root.addControl(this.rightPanel);
+    mainLayoutContainer.addControl(this.rightPanel);
 
     this.rightTitle = this.makeTerminalText('rightTitle', 34, '#7EFFE7');
     this.rightTitle.top = '-208px';
@@ -309,7 +356,7 @@ export class CodexScene {
     this.centerCard.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.centerCard.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.centerCard.top = '38px';
-    root.addControl(this.centerCard);
+    mainLayoutContainer.addControl(this.centerCard);
 
     this.centerCardIcon = this.makeTerminalText('centerCardIcon', 64, '#8CFFF0');
     this.centerCardIcon.top = '-58px';
@@ -331,34 +378,13 @@ export class CodexScene {
     this.centerCardSubtitle.top = '72px';
     this.centerCard.addControl(this.centerCardSubtitle);
 
-    this.bestiaryFogLeft = new Rectangle('bestiaryFogLeft');
-    this.bestiaryFogLeft.width = '180px';
-    this.bestiaryFogLeft.height = '420px';
-    this.bestiaryFogLeft.thickness = 0;
-    this.bestiaryFogLeft.background = 'rgba(8,14,24,0.53)';
-    this.bestiaryFogLeft.left = '-270px';
-    this.bestiaryFogLeft.top = '44px';
-    this.bestiaryFogLeft.isPointerBlocker = false;
-    this.bestiaryFogLeft.isHitTestVisible = false;
-    root.addControl(this.bestiaryFogLeft);
-
-    this.bestiaryFogRight = new Rectangle('bestiaryFogRight');
-    this.bestiaryFogRight.width = '180px';
-    this.bestiaryFogRight.height = '420px';
-    this.bestiaryFogRight.thickness = 0;
-    this.bestiaryFogRight.background = 'rgba(8,14,24,0.53)';
-    this.bestiaryFogRight.left = '270px';
-    this.bestiaryFogRight.top = '44px';
-    this.bestiaryFogRight.isPointerBlocker = false;
-    this.bestiaryFogRight.isHitTestVisible = false;
-    root.addControl(this.bestiaryFogRight);
 
     const navRow = new StackPanel('codexBottomNav');
     navRow.isVertical = false;
     navRow.width = '260px';
     navRow.height = '56px';
     navRow.top = '42%';
-    root.addControl(navRow);
+    mainLayoutContainer.addControl(navRow);
 
     const leftNavBtn = UIFactory.createTerminalButton('codexNavLeft', '<', '110px', '46px');
     DaemonGlitchFx.inject(leftNavBtn, '<', () => this.navigateBy(-1), 0);
@@ -368,10 +394,6 @@ export class CodexScene {
     DaemonGlitchFx.inject(rightNavBtn, '>', () => this.navigateBy(1), 0);
     navRow.addControl(rightNavBtn);
 
-    const navHint = this.makeTerminalText('navHint', 13, '#8FD9CE');
-    navHint.text = '> navigate: arrows / qd / ad';
-    navHint.top = '35.8%';
-    root.addControl(navHint);
 
     this.keyHandler = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase();
@@ -425,6 +447,10 @@ export class CodexScene {
   }
 
   dispose(): void {
+    if (this.resizeObserver) {
+      this.engine.onResizeObservable.remove(this.resizeObserver);
+      this.resizeObserver = null;
+    }
     window.removeEventListener('keydown', this.keyHandler);
     if (this.audioUnlockHandler) {
       window.removeEventListener('pointerdown', this.audioUnlockHandler);
@@ -433,6 +459,9 @@ export class CodexScene {
     }
     this.synthBeep.dispose();
     this.disposeBestiaryCarousel();
+    if (this.postProcessManager) {
+      this.postProcessManager.dispose();
+    }
     this.gui.dispose();
     this.scene.dispose();
   }
@@ -616,8 +645,6 @@ export class CodexScene {
     if (this.section === 'bestiary') {
       this.leftFilterRow.isVisible = true;
       this.centerCard.isVisible = false;
-      this.bestiaryFogLeft.isVisible = true;
-      this.bestiaryFogRight.isVisible = true;
 
       this.leftFilterNormalBtn.background = this.bestiaryGroup === 'normal' ? 'rgba(46,249,195,0.35)' : 'rgba(9,27,33,0.82)';
       this.leftFilterBossBtn.background = this.bestiaryGroup === 'boss' ? 'rgba(46,249,195,0.35)' : 'rgba(9,27,33,0.82)';
@@ -631,17 +658,12 @@ export class CodexScene {
     this.disposeBestiaryCarousel();
     this.leftFilterRow.isVisible = false;
     this.centerCard.isVisible = true;
-    this.bestiaryFogLeft.isVisible = false;
-    this.bestiaryFogRight.isVisible = false;
 
     if (this.section === 'bonuses') {
       this.populateBonusList();
       this.refreshBonusSelection(resetTyping);
       return;
     }
-
-    this.populateAchievementList();
-    this.refreshAchievementSelection(resetTyping);
   }
 
   private clearLeftList(): void {
@@ -676,22 +698,6 @@ export class CodexScene {
         this.populateBonusList();
         this.refreshBonusSelection(false);
         this.updateListScroll(this.selectedBonusIndex, BONUS_CODEX_ENTRIES.length);
-      });
-      this.leftListStack.addControl(btn);
-    }
-  }
-
-  private populateAchievementList(): void {
-    const achievements = this.codexService.getAchievementsProgress();
-    for (let i = 0; i < achievements.length; i++) {
-      const achievement = achievements[i];
-      const status = achievement.unlocked ? '[UNLOCKED]' : `[${achievement.progress}/${achievement.target}]`;
-      const btn = this.makeLeftListButton(`left_ach_${achievement.id}`, `${achievement.name} ${status}`, i === this.selectedAchievementIndex, () => {
-        this.selectedAchievementIndex = i;
-        this.clearLeftList();
-        this.populateAchievementList();
-        this.refreshAchievementSelection(false);
-        this.updateListScroll(this.selectedAchievementIndex, achievements.length);
       });
       this.leftListStack.addControl(btn);
     }
@@ -969,10 +975,10 @@ export class CodexScene {
   }
 
   private updateBestiaryCamera(enemyCount: number): void {
-    this.camera.setTarget(new Vector3(0, Scalar.Clamp(1.55 + enemyCount * 0.03, 1.55, 2.25), 0));
+    this.camera.setTarget(new Vector3(0, Scalar.Clamp(1.3 + enemyCount * 0.02, 1.3, 1.85), 0));
     this.camera.alpha = -Math.PI / 2;
-    this.camera.beta = Scalar.Clamp(1.40 + enemyCount * 0.006, 1.40, 1.50);
-    this.camera.radius = Scalar.Clamp(15.8 + enemyCount * 0.42, 15.8, 24.5);
+    this.camera.beta = Scalar.Clamp(1.30 + enemyCount * 0.003, 1.30, 1.36);
+    this.camera.radius = Scalar.Clamp(13.5 + enemyCount * 0.35, 13.5, 18.5);
   }
 
   private updateBestiaryCarouselLayout(): void {
@@ -1025,15 +1031,6 @@ export class CodexScene {
       this.updateListScroll(this.selectedBonusIndex, count);
       return;
     }
-
-    const achievements = this.codexService.getAchievementsProgress();
-    const count = achievements.length;
-    if (count === 0) return;
-    this.selectedAchievementIndex = (this.selectedAchievementIndex + step + count) % count;
-    this.clearLeftList();
-    this.populateAchievementList();
-    this.refreshAchievementSelection(false);
-    this.updateListScroll(this.selectedAchievementIndex, count);
   }
 
   private updateListScroll(index: number, total: number): void {
@@ -1132,7 +1129,12 @@ export class CodexScene {
     // Leave centerCardIcon visible so it serves as a background fallback if the image is transparent
     this.centerCardIcon.isVisible = true;
     this.centerCardArtwork.isVisible = true;
-    this.centerCardArtwork.source = buildHudAssetUrl(`bonuses/${bonus.id}.png`);
+    const cachedImg = getCachedHudAsset(`bonuses/${bonus.id}.png`);
+    if (cachedImg) {
+      this.centerCardArtwork.domImage = cachedImg;
+    } else {
+      this.centerCardArtwork.source = buildHudAssetUrl(`bonuses/${bonus.id}.png`);
+    }
 
     this.centerCardTitle.text = bonus.name;
     this.centerCardSubtitle.text = bonus.categories.join(' / ');
@@ -1148,49 +1150,7 @@ export class CodexScene {
     this.setTerminalText(this.rightBody, body, 280, true);
   }
 
-  private refreshAchievementSelection(resetTyping: boolean): void {
-    this.populateAchievementList();
 
-    this.setTerminalText(this.leftTitle, '> ACHIEVEMENTS LOG', 220, false);
-    this.setTerminalText(this.leftDescription, '> Track completion conditions\n> and current unlock state.', 220, false);
-
-    const achievements = this.codexService.getAchievementsProgress();
-    const achievement = achievements[this.selectedAchievementIndex];
-    if (!achievement) {
-      if (resetTyping) {
-        this.setTerminalText(this.rightTitle, 'NO ACHIEVEMENT');
-        this.setTerminalText(this.rightBody, '> No achievement loaded.');
-      }
-      return;
-    }
-
-    if (achievement.unlocked) {
-      // Leave centerCardIcon visible so it serves as a background fallback if the image is transparent
-      this.centerCardIcon.isVisible = true;
-      this.centerCardArtwork.isVisible = true;
-      this.centerCardArtwork.source = buildHudAssetUrl(`achievements/${achievement.id}.png`);
-    } else {
-      this.centerCardIcon.isVisible = true;
-      this.centerCardArtwork.isVisible = false;
-      this.centerCardIcon.text = '?';
-    }
-
-    this.centerCardTitle.text = achievement.name;
-    this.centerCardSubtitle.text = achievement.unlocked ? 'Unlocked' : 'In progress';
-
-    const body =
-      `> Description\n${achievement.description}\n\n` +
-      `> Conditions\n` +
-      `Type: ${achievement.type}\n` +
-      `Target: ${achievement.target}\n\n` +
-      `> State\n` +
-      `Progress: ${achievement.progress}/${achievement.target}\n` +
-      `Status: ${achievement.unlocked ? 'Unlocked' : 'Locked'}\n\n` +
-      `> ID\n${achievement.id}`;
-
-    this.setTerminalText(this.rightTitle, achievement.name, 240, false);
-    this.setTerminalText(this.rightBody, body, 280, true);
-  }
 
   private disposeBestiaryCarousel(): void {
     for (const item of this.bestiaryItems) {

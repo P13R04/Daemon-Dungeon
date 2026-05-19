@@ -133,7 +133,7 @@ export class MusicManager {
 
   private animateLpfVolume(targetMultiplier: number, duration: number): void {
     const startMultiplier = this.lpfVolumeMultiplier;
-    let startTime = performance.now();
+    const startTime = performance.now();
     
     const animate = () => {
       const elapsed = (performance.now() - startTime) / 1000;
@@ -169,7 +169,7 @@ export class MusicManager {
 
   private fadeIn(sound: Sound, duration: number): void {
     const targetVolume = this.musicVolume * this.masterVolume * this.lpfVolumeMultiplier;
-    let startTime = performance.now();
+    const startTime = performance.now();
     const animate = () => {
       const elapsed = (performance.now() - startTime) / 1000;
       const progress = Math.min(elapsed / duration, 1);
@@ -181,7 +181,7 @@ export class MusicManager {
 
   private fadeOut(sound: Sound, duration: number): void {
     const startVolume = sound.getVolume();
-    let startTime = performance.now();
+    const startTime = performance.now();
     const animate = () => {
       const elapsed = (performance.now() - startTime) / 1000;
       const progress = Math.min(elapsed / duration, 1);

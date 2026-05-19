@@ -21,6 +21,16 @@ export class BonusPoolSystem {
     this.stacks.clear();
   }
 
+  getActiveBonuses(): { id: string; stacks: number }[] {
+    const list: { id: string; stacks: number }[] = [];
+    this.stacks.forEach((stacks, id) => {
+      if (stacks > 0) {
+        list.push({ id, stacks });
+      }
+    });
+    return list;
+  }
+
   getDefinition(bonusId: string): BonusDefinition | null {
     return this.definitions.get(bonusId) ?? null;
   }
@@ -76,13 +86,13 @@ export class BonusPoolSystem {
     return this.getStackCount(bonusId) * perStack;
   }
 
-  rollChoices(scope: BonusScope, count: number): BonusChoice[] {
+  rollChoices(scope: BonusScope, count: number, excludeIds?: Set<string>): BonusChoice[] {
     const pool = BONUS_CATALOG.filter((def) => this.isEligible(def, scope));
     if (pool.length === 0) return [];
 
     const offerCount = Math.max(1, count);
     const selected: BonusDefinition[] = [];
-    const blockedIds = new Set<string>();
+    const blockedIds = new Set<string>(excludeIds);
 
     while (selected.length < offerCount) {
       const candidates = pool.filter((def) => !blockedIds.has(def.id));
@@ -98,12 +108,13 @@ export class BonusPoolSystem {
     return selected.map((def) => this.toChoice(def));
   }
 
-  rollRestrictedRareChoice(scope: BonusScope, restrictedPool: readonly string[]): BonusChoice | null {
+  rollRestrictedRareChoice(scope: BonusScope, restrictedPool: readonly string[], excludeIds?: Set<string>): BonusChoice | null {
     const candidates = restrictedPool
       .map((id) => this.definitions.get(id))
       .filter((def): def is BonusDefinition => !!def)
       .filter((def) => this.isEligible(def, scope))
-      .filter((def) => def.rarity === 'rare' || def.rarity === 'epic');
+      .filter((def) => def.rarity === 'rare' || def.rarity === 'epic')
+      .filter((def) => !excludeIds || !excludeIds.has(def.id));
 
     if (candidates.length === 0) return null;
 

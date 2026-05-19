@@ -2,7 +2,7 @@
  * EnemyController - Controls a single enemy
  */
 
-import { Scene, Mesh, Vector3, SceneLoader, AnimationGroup, TransformNode, StandardMaterial, Color3, MeshBuilder, AbstractMesh, Node, ParticleSystem, Color4, DynamicTexture, Texture } from '@babylonjs/core';
+import { Scene, Mesh, Vector3, SceneLoader, AnimationGroup, TransformNode, StandardMaterial, Color3, MeshBuilder, AbstractMesh, Node, ParticleSystem, Color4, DynamicTexture, Texture, AssetContainer } from '@babylonjs/core';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { Health } from '../components/Health';
 import { Knockback } from '../components/Knockback';
@@ -69,12 +69,86 @@ export class EnemyController {
   private bullAnimState: 'none' | 'start' | 'run' | 'end' = 'none';
   private bullModelLoadPromise: Promise<void> | null = null;
   private bullModelScale: number = 0.1;
+  private bullChargeTarget: Vector3 = new Vector3(0, 0, 0);
+  private bullChargeIsDirect: boolean = true;
   private jumperAnimGroups: Map<string, AnimationGroup> = new Map();
   private jumperModelRoot: TransformNode | null = null;
   private jumperMeshes: Array<Mesh | TransformNode> = [];
   private jumperModelScale: number = 0.2;
   private jumperModelLoadPromise: Promise<void> | null = null;
   private casterAnimGroups: Map<string, AnimationGroup> = new Map();
+  private emitterNodes: TransformNode[] = [];
+
+  private static flareTextureCache: Texture | null = null;
+  public static getFlareTexture(scene: Scene): Texture {
+    if (!this.flareTextureCache || this.flareTextureCache.getScene() !== scene) {
+      if (this.flareTextureCache) {
+        try { this.flareTextureCache.dispose(); } catch (e) {}
+      }
+      this.flareTextureCache = new Texture('https://assets.babylonjs.com/textures/flare.png', scene);
+    }
+    return this.flareTextureCache;
+  }
+
+  private static modelCache: Map<string, AssetContainer> = new Map();
+  private static modelLoadingPromises: Map<string, Promise<AssetContainer>> = new Map();
+
+  public static async getOrLoadModelContainer(scene: Scene, rootUrl: string, fileName: string): Promise<AssetContainer> {
+    const key = `${rootUrl}${fileName}`;
+    if (this.modelCache.has(key)) {
+      const cached = this.modelCache.get(key)!;
+      if (cached.scene === scene && !scene.isDisposed) {
+        return cached;
+      } else {
+        this.modelCache.delete(key);
+      }
+    }
+    if (this.modelLoadingPromises.has(key)) {
+      return this.modelLoadingPromises.get(key)!;
+    }
+    const promise = SceneLoader.LoadAssetContainerAsync(rootUrl, fileName, scene).then(container => {
+      this.modelCache.set(key, container);
+      this.modelLoadingPromises.delete(key);
+      return container;
+    }).catch(err => {
+      this.modelLoadingPromises.delete(key);
+      throw err;
+    });
+    this.modelLoadingPromises.set(key, promise);
+    return promise;
+  }
+
+  public static clearModelCache(): void {
+    this.modelCache.forEach(container => {
+      try {
+        if (container.textures) {
+          container.textures.forEach(t => { if (t) t.dispose(); });
+        }
+        if (container.materials) {
+          container.materials.forEach(m => { if (m) m.dispose(); });
+        }
+        if (container.skeletons) {
+          container.skeletons.forEach(s => { if (s) s.dispose(); });
+        }
+        if (container.meshes) {
+          container.meshes.forEach(m => { if (m) m.dispose(false, true); });
+        }
+        if (container.transformNodes) {
+          container.transformNodes.forEach(t => { if (t) t.dispose(false, true); });
+        }
+        if (container.animationGroups) {
+          container.animationGroups.forEach(g => { if (g) g.dispose(); });
+        }
+        container.dispose();
+      } catch (e) {
+        console.warn('Failed to dispose cached model container', e);
+      }
+    });
+    this.modelCache.clear();
+    this.modelLoadingPromises.clear();
+    this.flareTextureCache = null;
+  }
+
   private casterModelRoot: TransformNode | null = null;
   private casterMeshes: Array<Mesh | TransformNode> = [];
   private casterModelScale: number = 0.1;
@@ -97,6 +171,7 @@ export class EnemyController {
   private zombieMeshes: Array<Mesh | TransformNode> = [];
   private zombieModelLoadPromise: Promise<void> | null = null;
   private zombieAnimState: 'idle' | 'attack' | 'none' = 'none';
+  private instantiatedSkeletons: any[] = [];
   private zombieModelScale: number = 0.25;
   private knockbackStrength: number = 0;
   private selfKnockbackStrength: number = 0;
@@ -145,6 +220,7 @@ export class EnemyController {
   private pongAura: ParticleSystem | null = null;
   private ephemeralVisuals: { mesh: Mesh; timer: number; duration: number }[] = [];
   private jumperHitRange: number = 1.0;
+  private jumperJumpSpeedMultiplier: number = 1.0;
   private jumperCooldownDuration: number = 1.0;
   private jumperJumpHeight: number = 1.2;
   private jumperShockwaveEnabled: boolean = false;
@@ -270,6 +346,11 @@ export class EnemyController {
       : (typeof config.behaviorConfig?.preset === 'string' ? config.behaviorConfig.preset : null);
     if (behaviorPreset) {
       this.applyBehaviorPreset(behaviorPreset);
+    }
+    if (this.behavior === 'bull') {
+      this.avoidObstacles = true;
+      this.avoidVoid = true;
+      this.canFallIntoVoid = false;
     }
     this.applyBehaviorConfig(config.behaviorConfig);
 
@@ -437,7 +518,7 @@ export class EnemyController {
   private initParticleEffects(): void {
     if (['chase', 'flee', 'strategist', 'spike_strategist', 'bull', 'fuyard'].includes(this.behavior)) {
       this.movementDust = new ParticleSystem(`dust_${this.id}`, 80, this.scene);
-      this.movementDust.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+      this.movementDust.particleTexture = EnemyController.getFlareTexture(this.scene);
       this.movementDust.emitter = this.mesh;
       this.movementDust.color1 = new Color4(0.6, 0.6, 0.6, 0.2);
       this.movementDust.color2 = new Color4(0.5, 0.5, 0.5, 0.1);
@@ -470,7 +551,7 @@ export class EnemyController {
     const mobileCasters = ['sentinel', 'prefire_sentinel', 'healer', 'artificer', 'necromancer', 'swarm_coordinator'];
     if (mobileCasters.includes(this.behavior)) {
       this.casterAura = new ParticleSystem(`aura_${this.id}`, 100, this.scene);
-      this.casterAura.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+      this.casterAura.particleTexture = EnemyController.getFlareTexture(this.scene);
       this.casterAura.emitter = this.mesh;
       
       if (this.behavior === 'healer') {
@@ -507,7 +588,7 @@ export class EnemyController {
 
     if (this.behavior === 'pong') {
       this.pongAura = new ParticleSystem(`pongAura_${this.id}`, 200, this.scene);
-      this.pongAura.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+      this.pongAura.particleTexture = EnemyController.getFlareTexture(this.scene);
       this.pongAura.emitter = this.mesh;
       this.pongAura.isLocal = true; // Follow the fast-moving pong model
       this.pongAura.color1 = new Color4(0.4, 0.7, 1.0, 0.9);
@@ -755,6 +836,7 @@ export class EnemyController {
           mat.alpha = 0.8;
           healRay.material = mat;
           healRay.isPickable = false;
+          VisualPlaceholder.applyAutoDispose(healRay);
           
           this.ephemeralVisuals.push({ mesh: healRay, timer: 0.3, duration: 0.3 });
         }
@@ -1546,7 +1628,31 @@ export class EnemyController {
         if (distance <= this.bullTriggerRange) {
           this.bullState = 'aim';
           this.bullTimer = this.bullAimDuration;
-          const dir = playerPosition.subtract(this.position);
+
+          let chargeTarget = playerPosition;
+          let isDirect = true;
+          if (roomManager) {
+            const path = roomManager.findPath(this.position, playerPosition, this.getNavigationCapabilities());
+            if (path.length > 1) {
+              if (!this.isStraightPathWalkable(this.position, playerPosition, roomManager)) {
+                isDirect = false;
+                let bestIndex = 1;
+                for (let i = 1; i < path.length; i++) {
+                  if (this.isStraightPathWalkable(this.position, path[i], roomManager)) {
+                    bestIndex = i;
+                  } else {
+                    break;
+                  }
+                }
+                chargeTarget = path[bestIndex];
+              }
+            }
+          }
+
+          this.bullChargeTarget = chargeTarget.clone();
+          this.bullChargeIsDirect = isDirect;
+
+          const dir = this.bullChargeTarget.subtract(this.position);
           dir.y = 0;
           if (dir.lengthSquared() > 0.0001) {
             this.bullLockedDirection = dir.normalize();
@@ -1559,7 +1665,8 @@ export class EnemyController {
       }
       case 'aim': {
         this.velocity = Vector3.Zero();
-        const dir = playerPosition.subtract(this.position);
+        const targetPos = this.bullChargeIsDirect ? playerPosition : this.bullChargeTarget;
+        const dir = targetPos.subtract(this.position);
         dir.y = 0;
         if (dir.lengthSquared() > 0.0001) {
           this.bullLockedDirection = dir.normalize();
@@ -1568,7 +1675,14 @@ export class EnemyController {
         this.bullTimer -= deltaTime;
         if (this.bullTimer <= 0) {
           this.bullState = 'charge';
-          this.bullTimer = this.bullChargeDuration;
+          if (!this.bullChargeIsDirect) {
+            const chargeSpeed = this.speed * this.bullChargeSpeedMultiplier;
+            const dist = Vector3.Distance(this.position, this.bullChargeTarget);
+            const timeNeeded = dist / Math.max(0.1, chargeSpeed);
+            this.bullTimer = Math.min(this.bullChargeDuration, timeNeeded);
+          } else {
+            this.bullTimer = this.bullChargeDuration;
+          }
         }
         break;
       }
@@ -2225,6 +2339,24 @@ export class EnemyController {
     return roomManager.isWalkableFor(position.x, position.z, this.getNavigationCapabilities());
   }
 
+  private isStraightPathWalkable(start: Vector3, end: Vector3, roomManager: RoomManager): boolean {
+    const distance = Vector3.Distance(start, end);
+    if (distance <= 0.05) return true;
+
+    const step = 0.3; // Sample every 30cm
+    const stepsCount = Math.ceil(distance / step);
+    const direction = end.subtract(start).normalize();
+
+    for (let i = 1; i <= stepsCount; i++) {
+      const sampleDist = Math.min(distance, i * step);
+      const samplePoint = start.add(direction.scale(sampleDist));
+      if (!roomManager.isWalkableFor(samplePoint.x, samplePoint.z, this.getNavigationCapabilities())) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   private isVisionBlockedAt(position: Vector3, roomManager: RoomManager): boolean {
     return this.isVisionBlockedAtXZ(position.x, position.z, roomManager);
   }
@@ -2444,12 +2576,26 @@ export class EnemyController {
     this.disposeCasterMobileModel();
     this.disposePongModel();
     this.disposeMissileModel();
+    this.disposeZombieModel();
+    if (this.instantiatedSkeletons) {
+      this.instantiatedSkeletons.forEach(s => {
+        try {
+          if (s && !s.isDisposed()) {
+            s.dispose();
+          }
+        } catch (e) {
+          console.warn("Failed to dispose skeleton clone", e);
+        }
+      });
+      this.instantiatedSkeletons = [];
+    }
     this.bullModelLoadPromise = null;
     this.jumperModelLoadPromise = null;
     this.casterModelLoadPromise = null;
     this.casterMobileModelLoadPromise = null;
     this.pongModelLoadPromise = null;
     this.missileModelLoadPromise = null;
+    this.zombieModelLoadPromise = null;
     this.navPath = [];
     this.navPathCursor = 0;
     this.navTargetSnapshot = null;
@@ -2518,7 +2664,7 @@ export class EnemyController {
 
   private triggerStompEffect(position: Vector3, maxRadius: number, duration: number = 0.4): void {
     const particles = new ParticleSystem(`stomp_dust_${this.id}_${Date.now()}`, 250, this.scene);
-    particles.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+    particles.particleTexture = EnemyController.getFlareTexture(this.scene);
     particles.emitter = position.clone();
     particles.color1 = new Color4(0.6, 0.6, 0.6, 0.4);
     particles.color2 = new Color4(0.5, 0.5, 0.5, 0.2);
@@ -3312,75 +3458,32 @@ export class EnemyController {
     try {
       const normalizedBase = getHudAssetBaseUrl();
       const rootUrl = `${normalizedBase}models/bull/`;
-      const result = await SceneLoader.ImportMeshAsync(
-        '',
-        rootUrl,
-        'bull.glb',
-        this.scene,
-      );
+      const container = await EnemyController.getOrLoadModelContainer(this.scene, rootUrl, 'bull.glb');
 
       if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.bullModelRoot) {
-        for (const group of result.animationGroups) {
-          group.dispose();
-        }
-        for (const transformNode of result.transformNodes) {
-          transformNode.dispose(false, false);
-        }
-        for (const importedMesh of result.meshes as AbstractMesh[]) {
-          importedMesh.dispose(false, false);
-        }
         return;
       }
 
       this.disposeBullVisuals();
+      const result = container.instantiateModelsToScene();
+      if (result.skeletons) {
+        this.instantiatedSkeletons.push(...result.skeletons);
+      }
       const root = new TransformNode(`bull_root_${this.id}`, this.scene);
       EnemyController.markBullVisualNode(root, this.id, true);
 
-      // Parent top-level imported nodes (no parent or parent not in this import).
-      const importedNodes = new Set<Node>();
-      for (const transformNode of result.transformNodes) {
-        if (transformNode && !transformNode.isDisposed()) {
-          importedNodes.add(transformNode);
-        }
-      }
-      for (const importedMesh of result.meshes as AbstractMesh[]) {
-        if (importedMesh && !importedMesh.isDisposed()) {
-          importedNodes.add(importedMesh);
-        }
-      }
-
-      for (const transformNode of result.transformNodes) {
-        if (!transformNode || transformNode.isDisposed()) {
-          continue;
-        }
-        const parent = transformNode.parent as Node | null | undefined;
-        if (!parent || !importedNodes.has(parent)) {
-          transformNode.parent = root;
-        }
-      }
-      for (const importedMesh of result.meshes as AbstractMesh[]) {
-        if (!importedMesh || importedMesh.isDisposed()) {
-          continue;
-        }
-        const parent = importedMesh.parent as Node | null | undefined;
-        if (!parent || !importedNodes.has(parent)) {
-          importedMesh.parent = root;
-        }
-      }
-
       this.bullMeshes = [];
-      result.transformNodes.forEach((node) => this.bullMeshes.push(node));
-      result.meshes.forEach((mesh) => this.bullMeshes.push(mesh));
+      result.rootNodes.forEach(n => {
+        n.parent = root;
+        this.bullMeshes.push(n as Mesh);
+      });
+      const allMeshes = root.getChildMeshes(false);
+      allMeshes.forEach(m => {
+        m.layerMask = SCENE_LAYER;
+        this.bullMeshes.push(m);
+      });
 
       EnemyController.markBullVisualHierarchy(root, this.id);
-
-      if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.bullModelRoot) {
-        root.dispose(false, false);
-        for (const group of result.animationGroups) {
-          group.dispose();
-        }
-        return;
-      }
 
       root.position = Vector3.Zero();
       root.rotation = new Vector3(0, -Math.PI / 2, 0);
@@ -3695,55 +3798,30 @@ export class EnemyController {
     try {
       const normalizedBase = getHudAssetBaseUrl();
       const rootUrl = `${normalizedBase}models/jumper/`;
-      const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'sauteur.glb', this.scene);
+      const container = await EnemyController.getOrLoadModelContainer(this.scene, rootUrl, 'sauteur.glb');
 
       // Safety check after async load
       if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.jumperModelRoot) {
-        result.animationGroups.forEach(g => g.dispose());
-        result.transformNodes.forEach(n => n.dispose(false, false));
-        result.meshes.forEach(m => m.dispose(false, false));
         return;
       }
 
       this.disposeJumperModel();
+      const result = container.instantiateModelsToScene();
+      if (result.skeletons) {
+        this.instantiatedSkeletons.push(...result.skeletons);
+      }
       const root = new TransformNode(`jumper_root_${this.id}`, this.scene);
       
-      // Parent top-level imported nodes (no parent or parent not in this import).
-      const importedNodes = new Set<Node>();
-      for (const transformNode of result.transformNodes) {
-        if (transformNode && !transformNode.isDisposed()) {
-          importedNodes.add(transformNode);
-        }
-      }
-      for (const importedMesh of result.meshes as AbstractMesh[]) {
-        if (importedMesh && !importedMesh.isDisposed()) {
-          importedNodes.add(importedMesh);
-        }
-      }
-
-      for (const transformNode of result.transformNodes) {
-        if (!transformNode || transformNode.isDisposed()) {
-          continue;
-        }
-        const parent = transformNode.parent as Node | null | undefined;
-        if (!parent || !importedNodes.has(parent)) {
-          transformNode.parent = root;
-        }
-      }
-      for (const importedMesh of result.meshes as AbstractMesh[]) {
-        if (!importedMesh || importedMesh.isDisposed()) {
-          continue;
-        }
-        const parent = importedMesh.parent as Node | null | undefined;
-        if (!parent || !importedNodes.has(parent)) {
-          importedMesh.parent = root;
-        }
-      }
-
-      // Store all meshes for cleanup
       this.jumperMeshes = [];
-      result.meshes.forEach(m => this.jumperMeshes.push(m));
-      result.transformNodes.forEach(n => this.jumperMeshes.push(n));
+      result.rootNodes.forEach(n => {
+        n.parent = root;
+        this.jumperMeshes.push(n as Mesh);
+      });
+      const allMeshes = root.getChildMeshes(false);
+      allMeshes.forEach(m => {
+        m.layerMask = SCENE_LAYER;
+        this.jumperMeshes.push(m);
+      });
 
       EnemyController.markJumperVisualHierarchy(root, this.id);
 
@@ -3824,55 +3902,30 @@ export class EnemyController {
         rootUrl = `${normalizedBase}models/mage_missile/`;
         fileName = 'tde_socle_red_n_white.glb';
       }
-      const result = await SceneLoader.ImportMeshAsync('', rootUrl, fileName, this.scene);
+      const container = await EnemyController.getOrLoadModelContainer(this.scene, rootUrl, fileName);
 
       // Safety check after async load
       if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.casterModelRoot) {
-        result.animationGroups.forEach(g => g.dispose());
-        result.transformNodes.forEach(n => n.dispose(false, false));
-        result.meshes.forEach(m => m.dispose(false, false));
         return;
       }
 
       this.disposeCasterModel();
+      const result = container.instantiateModelsToScene();
+      if (result.skeletons) {
+        this.instantiatedSkeletons.push(...result.skeletons);
+      }
       const root = new TransformNode(`caster_root_${this.id}`, this.scene);
       
-      // Parent top-level imported nodes (no parent or parent not in this import).
-      const importedNodes = new Set<Node>();
-      for (const transformNode of result.transformNodes) {
-        if (transformNode && !transformNode.isDisposed()) {
-          importedNodes.add(transformNode);
-        }
-      }
-      for (const importedMesh of result.meshes as AbstractMesh[]) {
-        if (importedMesh && !importedMesh.isDisposed()) {
-          importedNodes.add(importedMesh);
-        }
-      }
-
-      for (const transformNode of result.transformNodes) {
-        if (!transformNode || transformNode.isDisposed()) {
-          continue;
-        }
-        const parent = transformNode.parent as Node | null | undefined;
-        if (!parent || !importedNodes.has(parent)) {
-          transformNode.parent = root;
-        }
-      }
-      for (const importedMesh of result.meshes as AbstractMesh[]) {
-        if (!importedMesh || importedMesh.isDisposed()) {
-          continue;
-        }
-        const parent = importedMesh.parent as Node | null | undefined;
-        if (!parent || !importedNodes.has(parent)) {
-          importedMesh.parent = root;
-        }
-      }
-
-      // Store all meshes for cleanup
       this.casterMeshes = [];
-      result.meshes.forEach(m => this.casterMeshes.push(m));
-      result.transformNodes.forEach(n => this.casterMeshes.push(n));
+      result.rootNodes.forEach(n => {
+        n.parent = root;
+        this.casterMeshes.push(n as Mesh);
+      });
+      const allMeshes = root.getChildMeshes(false);
+      allMeshes.forEach(m => {
+        m.layerMask = SCENE_LAYER;
+        this.casterMeshes.push(m);
+      });
 
       EnemyController.markCasterVisualHierarchy(root, this.id);
 
@@ -3943,23 +3996,26 @@ export class EnemyController {
         rootUrl = `${normalizedBase}models/healer/`;
         fileName = 'tde_float_yellow.glb';
       }
-      const result = await SceneLoader.ImportMeshAsync('', rootUrl, fileName, this.scene);
+      const container = await EnemyController.getOrLoadModelContainer(this.scene, rootUrl, fileName);
       if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.casterMobileModelRoot) {
-        result.animationGroups.forEach(g => g.dispose());
-        result.transformNodes.forEach(n => n.dispose(false, false));
-        result.meshes.forEach(m => m.dispose(false, false));
         return;
       }
       this.disposeCasterMobileModel();
+      const result = container.instantiateModelsToScene();
+      if (result.skeletons) {
+        this.instantiatedSkeletons.push(...result.skeletons);
+      }
       const root = new TransformNode(`caster_mobile_root_${this.id}`, this.scene);
-      const importedNodes = new Set<Node>();
-      result.transformNodes.forEach(n => importedNodes.add(n));
-      result.meshes.forEach(m => importedNodes.add(m));
-      result.transformNodes.forEach(n => { if (!n.parent || !importedNodes.has(n.parent)) n.parent = root; });
-      result.meshes.forEach(m => { if (!m.parent || !importedNodes.has(m.parent)) m.parent = root; });
       this.casterMobileMeshes = [];
-      result.meshes.forEach(m => this.casterMobileMeshes.push(m));
-      result.transformNodes.forEach(n => this.casterMobileMeshes.push(n));
+      result.rootNodes.forEach(n => {
+        n.parent = root;
+        this.casterMobileMeshes.push(n as Mesh);
+      });
+      const allMeshes = root.getChildMeshes(false);
+      allMeshes.forEach(m => {
+        m.layerMask = SCENE_LAYER;
+        this.casterMobileMeshes.push(m);
+      });
       EnemyController.markCasterMobileVisualHierarchy(root, this.id);
       root.position = new Vector3(0, -1.0, 0);
       root.rotation = new Vector3(0, 0, 0);
@@ -3998,23 +4054,26 @@ export class EnemyController {
     try {
       const normalizedBase = getHudAssetBaseUrl();
       const rootUrl = `${normalizedBase}models/pong/`;
-      const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'pong.glb', this.scene);
+      const container = await EnemyController.getOrLoadModelContainer(this.scene, rootUrl, 'pong.glb');
       if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.pongModelRoot) {
-        result.animationGroups.forEach(g => g.dispose());
-        result.transformNodes.forEach(n => n.dispose(false, false));
-        result.meshes.forEach(m => m.dispose(false, false));
         return;
       }
       this.disposePongModel();
+      const result = container.instantiateModelsToScene();
+      if (result.skeletons) {
+        this.instantiatedSkeletons.push(...result.skeletons);
+      }
       const root = new TransformNode(`pong_root_${this.id}`, this.scene);
-      const importedNodes = new Set<Node>();
-      result.transformNodes.forEach(n => importedNodes.add(n));
-      result.meshes.forEach(m => importedNodes.add(m));
-      result.transformNodes.forEach(n => { if (!n.parent || !importedNodes.has(n.parent)) n.parent = root; });
-      result.meshes.forEach(m => { if (!m.parent || !importedNodes.has(m.parent)) m.parent = root; });
       this.pongMeshes = [];
-      result.meshes.forEach(m => this.pongMeshes.push(m));
-      result.transformNodes.forEach(n => this.pongMeshes.push(n));
+      result.rootNodes.forEach(n => {
+        n.parent = root;
+        this.pongMeshes.push(n as Mesh);
+      });
+      const allMeshes = root.getChildMeshes(false);
+      allMeshes.forEach(m => {
+        m.layerMask = SCENE_LAYER;
+        this.pongMeshes.push(m);
+      });
       EnemyController.markPongVisualHierarchy(root, this.id);
       root.position = Vector3.Zero();
       root.rotation = new Vector3(0, -Math.PI / 2, 0);
@@ -4054,23 +4113,26 @@ export class EnemyController {
     try {
       const normalizedBase = getHudAssetBaseUrl();
       const rootUrl = `${normalizedBase}models/zombie/`;
-      const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'zombie.glb', this.scene);
+      const container = await EnemyController.getOrLoadModelContainer(this.scene, rootUrl, 'zombie.glb');
       if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.zombieModelRoot) {
-        result.animationGroups.forEach(g => g.dispose());
-        result.transformNodes.forEach(n => n.dispose(false, false));
-        result.meshes.forEach(m => m.dispose(false, false));
         return;
       }
       this.disposeZombieModel();
+      const result = container.instantiateModelsToScene();
+      if (result.skeletons) {
+        this.instantiatedSkeletons.push(...result.skeletons);
+      }
       const root = new TransformNode(`zombie_root_${this.id}`, this.scene);
-      const importedNodes = new Set<Node>();
-      result.transformNodes.forEach(n => importedNodes.add(n));
-      result.meshes.forEach(m => importedNodes.add(m));
-      result.transformNodes.forEach(n => { if (!n.parent || !importedNodes.has(n.parent)) n.parent = root; });
-      result.meshes.forEach(m => { if (!m.parent || !importedNodes.has(m.parent)) m.parent = root; });
       this.zombieMeshes = [];
-      result.transformNodes.forEach(n => this.zombieMeshes.push(n));
-      result.meshes.forEach(m => this.zombieMeshes.push(m));
+      result.rootNodes.forEach(n => {
+        n.parent = root;
+        this.zombieMeshes.push(n as Mesh);
+      });
+      const allMeshes = root.getChildMeshes(false);
+      allMeshes.forEach(m => {
+        m.layerMask = SCENE_LAYER;
+        this.zombieMeshes.push(m);
+      });
       
       const isBoss = this.typeId.includes('boss');
       const scale = isBoss ? this.zombieModelScale * 3.0 : this.zombieModelScale;
@@ -4093,11 +4155,14 @@ export class EnemyController {
         zombieColor = new Color3(0.8, 0.2, 0.2); // Red
       }
 
-      result.meshes.forEach(m => {
-        if (m.material && m.material.getClassName() === 'PBRMaterial') {
-          (m.material as any).albedoColor = zombieColor;
-        } else if (m.material && m.material.getClassName() === 'StandardMaterial') {
-          (m.material as any).diffuseColor = zombieColor;
+      allMeshes.forEach(m => {
+        if (m.material) {
+          m.material = m.material.clone(m.material.name + '_clone') || m.material;
+          if (m.material.getClassName() === 'PBRMaterial') {
+            (m.material as any).albedoColor = zombieColor;
+          } else if (m.material.getClassName() === 'StandardMaterial') {
+            (m.material as any).diffuseColor = zombieColor;
+          }
         }
       });
 
@@ -4116,7 +4181,11 @@ export class EnemyController {
       this.zombieModelRoot.dispose(false, false);
       this.zombieModelRoot = null;
     }
-    this.zombieMeshes.forEach(m => { if (!m.isDisposed()) m.dispose(false, false); });
+    this.zombieMeshes.forEach(m => { 
+      if (!m.isDisposed()) {
+        m.dispose(false, false);
+      }
+    });
     this.zombieMeshes = [];
     this.zombieAnimGroups.forEach(g => g.dispose());
     this.zombieAnimGroups.clear();
@@ -4156,23 +4225,26 @@ export class EnemyController {
     try {
       const normalizedBase = getHudAssetBaseUrl();
       const rootUrl = `${normalizedBase}models/caster/`;
-      const result = await SceneLoader.ImportMeshAsync('', rootUrl, 'missile.glb', this.scene);
+      const container = await EnemyController.getOrLoadModelContainer(this.scene, rootUrl, 'missile.glb');
       if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.missileModelRoot) {
-        result.animationGroups.forEach(g => g.dispose());
-        result.transformNodes.forEach(n => n.dispose(false, false));
-        result.meshes.forEach(m => m.dispose(false, false));
         return;
       }
       this.disposeMissileModel();
+      const result = container.instantiateModelsToScene();
+      if (result.skeletons) {
+        this.instantiatedSkeletons.push(...result.skeletons);
+      }
       const root = new TransformNode(`missile_root_${this.id}`, this.scene);
-      const importedNodes = new Set<Node>();
-      result.transformNodes.forEach(n => importedNodes.add(n));
-      result.meshes.forEach(m => importedNodes.add(m));
-      result.transformNodes.forEach(n => { if (!n.parent || !importedNodes.has(n.parent)) n.parent = root; });
-      result.meshes.forEach(m => { if (!m.parent || !importedNodes.has(m.parent)) m.parent = root; });
       this.missileMeshes = [];
-      result.meshes.forEach(m => this.missileMeshes.push(m));
-      result.transformNodes.forEach(n => this.missileMeshes.push(n));
+      result.rootNodes.forEach(n => {
+        n.parent = root;
+        this.missileMeshes.push(n as Mesh);
+      });
+      const allMeshes = root.getChildMeshes(false);
+      allMeshes.forEach(m => {
+        m.layerMask = SCENE_LAYER;
+        this.missileMeshes.push(m);
+      });
       EnemyController.markMissileVisualHierarchy(root, this.id);
       root.position = Vector3.Zero();
       root.rotation = new Vector3(0, Math.PI / 2, 0);
@@ -4204,18 +4276,12 @@ export class EnemyController {
 
     // Fire trail
     const particles = new ParticleSystem(`missile_trail_${this.id}`, 2000, this.scene);
-    
-    const texture = new DynamicTexture(`mt_tex_${this.id}`, { width: 32, height: 32 }, this.scene, false);
-    const ctx = texture.getContext();
-    ctx.fillStyle = "white";
-    ctx.fillRect(0, 0, 32, 32);
-    texture.update();
-    particles.particleTexture = texture;
+    particles.particleTexture = EnemyController.getFlareTexture(this.scene);
     
     particles.layerMask = SCENE_LAYER;
     
     // Find the actual moving visual part of the model
-    let targetEmitter: any = this.mesh;
+    const targetEmitter: any = this.mesh;
     
     particles.emitter = targetEmitter;
     

@@ -38,6 +38,21 @@ export class EnemyLaserPatternSubsystem {
   private laserSparks: ParticleSystem | null = null;
   private beamSparks: ParticleSystem | null = null;
 
+  private static flareTextureCache: Texture | null = null;
+  private getFlareTexture(): Texture {
+    if (!EnemyLaserPatternSubsystem.flareTextureCache || EnemyLaserPatternSubsystem.flareTextureCache.getScene() !== this.scene) {
+      if (EnemyLaserPatternSubsystem.flareTextureCache) {
+        try { EnemyLaserPatternSubsystem.flareTextureCache.dispose(); } catch (e) {}
+      }
+      EnemyLaserPatternSubsystem.flareTextureCache = new Texture('https://assets.babylonjs.com/textures/flare.png', this.scene);
+    }
+    return EnemyLaserPatternSubsystem.flareTextureCache;
+  }
+
+  public static clearCache(): void {
+    this.flareTextureCache = null;
+  }
+
   constructor(private readonly scene: Scene, private readonly enemyId: string) {}
 
   configure(behaviorConfig?: EnemyRuntimeConfig['behaviorConfig']): void {
@@ -451,7 +466,7 @@ export class EnemyLaserPatternSubsystem {
   private updateLaserSparks(floorPos: Vector3, color: Color3): void {
     if (!this.laserSparks) {
       this.laserSparks = new ParticleSystem(`laser_sparks_${this.enemyId}`, 150, this.scene);
-      this.laserSparks.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+      this.laserSparks.particleTexture = this.getFlareTexture();
       this.laserSparks.emitter = floorPos.clone();
       this.laserSparks.color1 = new Color4(color.r, color.g, color.b, 1.0);
       this.laserSparks.color2 = new Color4(color.r * 0.8, color.g * 0.8, color.b * 0.8, 1.0);
@@ -487,7 +502,7 @@ export class EnemyLaserPatternSubsystem {
     const dir = floorPos.subtract(crystalPos).normalize();
     if (!this.beamSparks) {
       this.beamSparks = new ParticleSystem(`beam_sparks_${this.enemyId}`, 100, this.scene);
-      this.beamSparks.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+      this.beamSparks.particleTexture = this.getFlareTexture();
       this.beamSparks.emitter = crystalPos.clone();
       this.beamSparks.color1 = new Color4(color.r, color.g, color.b, 1.0);
       this.beamSparks.color2 = new Color4(color.r, color.g, color.b, 0.8);

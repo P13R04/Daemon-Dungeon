@@ -56,6 +56,8 @@ export class UIFactory {
     tb.color = color;
     tb.textWrapping = true;
     tb.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    tb.isHitTestVisible = false;
+    tb.isPointerBlocker = false;
     return tb;
   }
 

@@ -12,7 +12,7 @@ import { DAEMON_ANIMATION_PRESETS, normalizeDaemonPresetName } from '../data/voi
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
 import { DaemonVoiceSynth } from '../audio/DaemonVoiceSynth';
 import { GameSettingsStore, formatInputKeyLabel } from '../settings/GameSettings';
-import { buildHudAssetUrl, getHudAssetBaseUrl, preloadHudAsset } from './hud/HudAssetPaths';
+import { buildHudAssetUrl, getHudAssetBaseUrl, preloadHudAsset, getCachedHudAsset } from './hud/HudAssetPaths';
 import { DaemonAvatarController, type DaemonAnimationPhaseState } from './hud/DaemonAvatarController';
 import { getSpecialMarkerAtDisplayIndex, stripAllSpecialMarkers } from './hud/DaemonTextUtils';
 import { BONUS_CODEX_ENTRIES } from '../data/codex/bonuses';
@@ -114,6 +114,7 @@ export class HUDManager {
   private showDamageNumbers: boolean = true;
   private showEnemyHealthBars: boolean = true;
   private showEnemyNames: boolean = true;
+  private autoAimLabel: TextBlock | null = null;
   private startScreen: Rectangle | null = null;
   private classSelectScreen: Rectangle | null = null;
   private codexScreen: Rectangle | null = null;
@@ -141,6 +142,7 @@ export class HUDManager {
   private readonly DAMAGE_TAUNT_COOLDOWN: number = 15.0; // Cooldown for general damage taunts
   private avatarImageCache: Map<string, HTMLImageElement> = new Map();
   private avatarPreloadPromise: Promise<void> | null = null;
+  public readonly preloadPromise: Promise<void>;
   private readonly daemonAvatarSets: Record<string, string[]> = DAEMON_ANIMATION_PRESETS;
   private scoreText!: TextBlock;
   private comboText!: TextBlock;
@@ -158,16 +160,19 @@ export class HUDManager {
       this.applyAudioSettingsFromStore();
     });
     
-    // Preload all avatar frames in background
-    this.preloadAllAvatarFrames().catch(err => {
-      console.warn('Avatar frames preload failed:', err);
-    });
-
     const bonusIds = BONUS_CODEX_ENTRIES.map(b => b.id);
     const achievementIds = Object.keys(getMergedAchievementDefinitions());
-    this.preloadBonusAndAchievementArtworks(bonusIds, achievementIds).catch(err => {
-      console.warn('Artwork preload failed:', err);
-    });
+
+    this.preloadPromise = (async () => {
+      try {
+        await Promise.all([
+          this.preloadAllAvatarFrames(),
+          this.preloadBonusAndAchievementArtworks(bonusIds, achievementIds)
+        ]);
+      } catch (err) {
+        console.warn('Interface 2D preloading encountered warnings:', err);
+      }
+    })();
 
     // Create GUIs on main camera
     this.guiFx = AdvancedDynamicTexture.CreateFullscreenUI('HUD_FX', true, scene);
@@ -201,17 +206,18 @@ export class HUDManager {
   }
 
   private applyGuiScaling(): void {
-    const engine = this.scene.getEngine();
-    const scaling = engine.getHardwareScalingLevel();
-    this.guiFx.renderAtIdealSize = true;
-    this.guiFx.idealWidth = engine.getRenderWidth(true) * scaling;
-    this.guiFx.idealHeight = engine.getRenderHeight(true) * scaling;
-    this.guiFx.renderScale = 1;
+    const designWidth = 1920;
+    const designHeight = 1080;
 
+    this.guiFx.idealWidth = designWidth;
+    this.guiFx.idealHeight = designHeight;
+    this.guiFx.useSmallestIdeal = true;
+    this.guiFx.renderAtIdealSize = true;
+
+    this.guiClean.idealWidth = designWidth;
+    this.guiClean.idealHeight = designHeight;
+    this.guiClean.useSmallestIdeal = true;
     this.guiClean.renderAtIdealSize = true;
-    this.guiClean.idealWidth = engine.getRenderWidth(true) * scaling;
-    this.guiClean.idealHeight = engine.getRenderHeight(true) * scaling;
-    this.guiClean.renderScale = 1;
 
     // Enemy bars must stay in raw screen space for projection alignment
     if (this.enemyGui) {
@@ -651,6 +657,22 @@ export class HUDManager {
     this.itemStatusText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.statusPanel.addControl(this.itemStatusText);
 
+    // Auto-aim indicator (keyboard-only mode badge)
+    this.autoAimLabel = new TextBlock('auto_aim_indicator');
+    this.autoAimLabel.text = '⊙ AUTO-AIM';
+    this.autoAimLabel.fontSize = 11;
+    this.autoAimLabel.fontFamily = fontFamily;
+    this.autoAimLabel.color = '#7CFFEA';
+    this.autoAimLabel.left = 10;
+    this.autoAimLabel.top = 100;
+    this.autoAimLabel.width = '220px';
+    this.autoAimLabel.height = '18px';
+    this.autoAimLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.autoAimLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.autoAimLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.autoAimLabel.isVisible = false;
+    this.statusPanel.addControl(this.autoAimLabel);
+
     this.achievementToastContainer = new Rectangle('achievement_toast');
     this.achievementToastContainer.width = '360px';
     this.achievementToastContainer.height = '88px';
@@ -728,6 +750,7 @@ export class HUDManager {
     this.daemonContainer.top = this.daemonBaseTop;
     this.daemonContainer.left = this.daemonBaseLeft;
     this.daemonContainer.isVisible = false;
+    this.daemonContainer.zIndex = 100;
     this.guiClean.addControl(this.daemonContainer);
 
     this.daemonGlitchOverlay = new Rectangle('daemon_glitch_overlay');
@@ -915,7 +938,7 @@ export class HUDManager {
       this.showSettingsMenu();
     });
 
-    createButton('QUIT TO MAIN MENU', '#B8FFE6', () => {
+    createButton('MAIN MENU', '#9FEFE1', () => {
       this.eventBus.emit(GameEvents.MAIN_MENU_REQUESTED);
     });
 
@@ -940,6 +963,98 @@ export class HUDManager {
   public hidePauseMenu(): void {
     if (this.pauseScreen) this.pauseScreen.isVisible = false;
     if (this.enemyGui) this.enemyGui.rootContainer.isVisible = true;
+  }
+
+  /** Show or hide the auto-aim badge in the HUD status panel. */
+  public setAutoAimIndicator(active: boolean): void {
+    if (this.autoAimLabel) {
+      this.autoAimLabel.isVisible = active;
+    }
+  }
+
+  /**
+   * Shows a 3-2-1-GO countdown overlay before gameplay starts.
+   * The callback fires once "GO!" has faded out.
+   */
+  public showCountdown(onComplete: () => void): void {
+    const overlay = new Rectangle('countdown_overlay');
+    overlay.width = 1;
+    overlay.height = 1;
+    overlay.thickness = 0;
+    overlay.background = 'transparent';
+    overlay.isPointerBlocker = false;
+    overlay.zIndex = 1500;
+    this.guiClean.addControl(overlay);
+
+    const label = new TextBlock('countdown_label');
+    label.text = '3';
+    label.color = '#7CFFEA';
+    label.fontSize = 140;
+    label.fontFamily = 'Consolas';
+    label.shadowBlur = 30;
+    label.shadowColor = '#00FFCC';
+    label.scaleX = 1.0;
+    label.scaleY = 1.0;
+    label.alpha = 1.0;
+    overlay.addControl(label);
+
+    const steps = ['3', '2', '1', 'GO!'];
+    const colors = ['#7CFFEA', '#FFD782', '#FF6B8A', '#FFFFFF'];
+    let step = 0;
+
+    const engine = this.scene.getEngine();
+    let elapsed = 0;
+    const STEP_DURATION = 900; // ms per number
+    const GO_DURATION = 600;   // ms for GO!
+    let observer: any = null;
+
+    const advance = () => {
+      step++;
+      elapsed = 0;
+
+      if (step >= steps.length) {
+        // Remove overlay and fire callback
+        this.guiClean.removeControl(overlay);
+        overlay.dispose();
+        onComplete();
+        if (observer) {
+          this.scene.onBeforeRenderObservable.remove(observer);
+        }
+        return;
+      }
+
+      label.text = steps[step];
+      label.color = colors[step];
+      label.shadowColor = colors[step];
+      label.scaleX = 1.4;
+      label.scaleY = 1.4;
+      label.alpha = 1.0;
+    };
+
+    observer = this.scene.onBeforeRenderObservable.add(() => {
+      const dt = engine.getDeltaTime();
+      elapsed += dt;
+      const duration = step < steps.length - 1 ? STEP_DURATION : GO_DURATION;
+      const t = Math.min(elapsed / duration, 1);
+
+      // Scale animation: pop in then settle
+      const scale = step < steps.length - 1
+        ? 1.4 - 0.4 * t           // shrink from 1.4 → 1.0
+        : 1.0 + 0.15 * Math.sin(Math.PI * t); // GO! pulse
+      label.scaleX = scale;
+      label.scaleY = scale;
+
+      // Fade out toward end of each step
+      if (t > 0.75) {
+        label.alpha = 1 - (t - 0.75) / 0.25;
+      } else {
+        label.alpha = 1.0;
+      }
+
+      if (elapsed >= duration) {
+        advance();
+      }
+    });
   }
 
   public handleEscapeKey(): void {
@@ -1010,15 +1125,25 @@ export class HUDManager {
     container.width = 1;
     container.height = 1;
     container.thickness = 0;
-    container.background = 'rgba(0,0,0,0.85)';
+    container.background = 'rgba(10, 18, 22, 0.95)';
     container.isVisible = false;
     container.isPointerBlocker = true;
+    container.zIndex = 50;
     this.guiClean.addControl(container);
     return container;
   }
 
-  public showGameOverScreen(stats: { score: number; highScore: number; roomReached: number; isNewHighScore: boolean }): void {
+  public showGameOverScreen(stats: { score: number; highScore: number; roomReached: number; isNewHighScore: boolean; bonuses: { id: string; stacks: number }[] }): void {
     if (!this.gameOverScreen) return;
+
+    // Hide gameplay HUD elements & enemies HUD, keeping only Daemon popup container
+    if (this.playerHealthDisplay) this.playerHealthDisplay.isVisible = false;
+    if (this.playerUltDisplay) this.playerUltDisplay.isVisible = false;
+    if (this.topBar) this.topBar.isVisible = false;
+    if (this.logPanel) this.logPanel.isVisible = false;
+    if (this.statusPanel) this.statusPanel.isVisible = false;
+    if (this.enemyGui) this.enemyGui.rootContainer.isVisible = false;
+
     this.gameOverScreen.isVisible = true;
     this.gameOverScreen.clearControls();
     
@@ -1031,7 +1156,7 @@ export class HUDManager {
     title.color = '#FF3B5C';
     title.fontSize = 52;
     title.fontFamily = fontFamily;
-    title.top = '-220px';
+    title.top = '-280px';
     title.shadowBlur = 10;
     title.shadowColor = '#FF0000';
     container.addControl(title);
@@ -1042,7 +1167,7 @@ export class HUDManager {
     scoreLabel.color = '#9FEFE1';
     scoreLabel.fontSize = 18;
     scoreLabel.fontFamily = fontFamily;
-    scoreLabel.top = '-140px';
+    scoreLabel.top = '-200px';
     container.addControl(scoreLabel);
 
     const scoreValue = new TextBlock('go_score_value');
@@ -1050,7 +1175,7 @@ export class HUDManager {
     scoreValue.color = '#FFFFFF';
     scoreValue.fontSize = 42;
     scoreValue.fontFamily = fontFamily;
-    scoreValue.top = '-90px';
+    scoreValue.top = '-150px';
     container.addControl(scoreValue);
 
     if (stats.isNewHighScore) {
@@ -1059,7 +1184,7 @@ export class HUDManager {
       newRecord.color = '#FFD782';
       newRecord.fontSize = 20;
       newRecord.fontFamily = fontFamily;
-      newRecord.top = '-50px';
+      newRecord.top = '-100px';
       container.addControl(newRecord);
     } else {
       const best = new TextBlock('go_best');
@@ -1067,7 +1192,7 @@ export class HUDManager {
       best.color = '#647D7D';
       best.fontSize = 16;
       best.fontFamily = fontFamily;
-      best.top = '-50px';
+      best.top = '-100px';
       container.addControl(best);
     }
 
@@ -1077,13 +1202,171 @@ export class HUDManager {
     roomInfo.color = '#7CFFEA';
     roomInfo.fontSize = 22;
     roomInfo.fontFamily = fontFamily;
-    roomInfo.top = '10px';
+    roomInfo.top = '-40px';
     container.addControl(roomInfo);
+
+    // Upgrades container
+    const numRows = Math.ceil((stats.bonuses ? stats.bonuses.length : 0) / 8) || 1;
+    const bonusContainerHeight = 60 + numRows * 64;
+
+    const bonusContainer = new Rectangle('go_bonuses');
+    bonusContainer.width = '640px';
+    bonusContainer.height = `${bonusContainerHeight}px`;
+    bonusContainer.top = `${40 + bonusContainerHeight / 2}px`;
+    bonusContainer.thickness = 1;
+    bonusContainer.color = '#3B685C';
+    bonusContainer.background = 'rgba(20, 30, 35, 0.4)';
+    container.addControl(bonusContainer);
+
+    const bonusLabel = new TextBlock('go_bonus_label', 'EQUIPPED MODULES');
+    bonusLabel.fontFamily = fontFamily;
+    bonusLabel.fontSize = 14;
+    bonusLabel.color = '#7CFFEA';
+    bonusLabel.top = `${-(bonusContainerHeight / 2) + 25}px`;
+    bonusContainer.addControl(bonusLabel);
+
+    const bonusStackRows = new StackPanel('go_bonus_stack_rows');
+    bonusStackRows.isVertical = true;
+    bonusStackRows.spacing = 10;
+    bonusStackRows.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    bonusStackRows.top = '15px';
+    bonusContainer.addControl(bonusStackRows);
+
+    // Detached Details Panel for Tooltips at the bottom center of the screen
+    const goDetailsPanel = new Rectangle('go_details_panel');
+    goDetailsPanel.width = '800px';
+    goDetailsPanel.height = '130px';
+    goDetailsPanel.top = `${125 + bonusContainerHeight}px`;
+    goDetailsPanel.thickness = 2;
+    goDetailsPanel.color = '#3B685C';
+    goDetailsPanel.background = 'rgba(10, 18, 22, 0.95)';
+    goDetailsPanel.cornerRadius = 6;
+    goDetailsPanel.isHitTestVisible = false;
+    goDetailsPanel.isPointerBlocker = false;
+    container.addControl(goDetailsPanel);
+
+    const goDetailsImg = new Image('go_details_img', '');
+    goDetailsImg.width = '90px';
+    goDetailsImg.height = '90px';
+    goDetailsImg.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    goDetailsImg.left = '20px';
+    goDetailsImg.isVisible = false;
+    goDetailsImg.isHitTestVisible = false;
+    goDetailsPanel.addControl(goDetailsImg);
+
+    const goTextStack = new StackPanel('go_details_text_stack');
+    goTextStack.isVertical = true;
+    goTextStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    goTextStack.left = '130px';
+    goTextStack.width = '640px';
+    goTextStack.spacing = 6;
+    goTextStack.isHitTestVisible = false;
+    goDetailsPanel.addControl(goTextStack);
+
+    const goDetailsTitle = new TextBlock('go_details_title', '> MODULE METRICS');
+    goDetailsTitle.fontFamily = fontFamily;
+    goDetailsTitle.fontSize = 16;
+    goDetailsTitle.color = '#7CFFEA';
+    goDetailsTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    goDetailsTitle.height = '24px';
+    goDetailsTitle.isHitTestVisible = false;
+    goTextStack.addControl(goDetailsTitle);
+
+    const goDetailsDesc = new TextBlock('go_details_desc', 'Hover an equipped module to read system diagnostics.');
+    goDetailsDesc.fontFamily = fontFamily;
+    goDetailsDesc.fontSize = 13;
+    goDetailsDesc.color = '#647D7D';
+    goDetailsDesc.textWrapping = true;
+    goDetailsDesc.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    goDetailsDesc.height = '70px';
+    goDetailsDesc.isHitTestVisible = false;
+    goTextStack.addControl(goDetailsDesc);
+
+    if (stats.bonuses && stats.bonuses.length > 0) {
+      let currentRowStack: StackPanel | null = null;
+      for (let i = 0; i < stats.bonuses.length; i++) {
+        const bonus = stats.bonuses[i];
+        if (i % 8 === 0) {
+          currentRowStack = new StackPanel(`go_bonus_row_stack_${Math.floor(i / 8)}`);
+          currentRowStack.isVertical = false;
+          currentRowStack.spacing = 12;
+          currentRowStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+          currentRowStack.height = '52px';
+          bonusStackRows.addControl(currentRowStack);
+        }
+
+        const box = new Rectangle(`go_bonus_box_${bonus.id}`);
+        box.width = '52px';
+        box.height = '52px';
+        box.thickness = 1;
+        box.color = '#3B685C';
+        box.background = 'rgba(10, 18, 22, 0.85)';
+        box.isPointerBlocker = true;
+        box.isHitTestVisible = true;
+        box.hoverCursor = 'pointer';
+        
+        const img = new Image(`go_bonus_img_${bonus.id}`, buildHudAssetUrl(`bonuses/${bonus.id}.png`));
+        img.width = '38px';
+        img.height = '38px';
+        img.isHitTestVisible = false;
+        box.addControl(img);
+
+        if (bonus.stacks > 1) {
+          const badge = new Rectangle(`go_bonus_badge_${bonus.id}`);
+          badge.width = '20px';
+          badge.height = '16px';
+          badge.thickness = 0;
+          badge.background = '#FF3B5C';
+          badge.cornerRadius = 2;
+          badge.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+          badge.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+          badge.left = '4px';
+          badge.top = '4px';
+          badge.isHitTestVisible = false;
+
+          const badgeText = new TextBlock(`go_bonus_badge_text_${bonus.id}`, `x${bonus.stacks}`);
+          badgeText.fontFamily = fontFamily;
+          badgeText.fontSize = 10;
+          badgeText.color = '#FFFFFF';
+          badgeText.isHitTestVisible = false;
+          badge.addControl(badgeText);
+          box.addControl(badge);
+        }
+
+        const def = BONUS_CODEX_ENTRIES.find(d => d.id === bonus.id) || {
+          name: bonus.id.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+          description: 'Custom system upgrade module loaded during execution.',
+          effect: 'Standard performance parameters apply.'
+        };
+        box.onPointerEnterObservable.add(() => {
+          goDetailsImg.source = buildHudAssetUrl(`bonuses/${bonus.id}.png`);
+          goDetailsImg.isVisible = true;
+          goDetailsTitle.text = `${def.name.toUpperCase()} (x${bonus.stacks})`;
+          goDetailsDesc.text = `${def.description}\nEffect: ${def.effect}`;
+        });
+        box.onPointerOutObservable.add(() => {
+          goDetailsImg.isVisible = false;
+          goDetailsTitle.text = '> MODULE METRICS';
+          goDetailsDesc.text = 'Hover an equipped module to read system diagnostics.';
+        });
+
+        if (currentRowStack) {
+          currentRowStack.addControl(box);
+        }
+      }
+    } else {
+      const noBonusText = new TextBlock('go_no_bonus', 'NO UPGRADES EQUIPPED');
+      noBonusText.fontFamily = fontFamily;
+      noBonusText.fontSize = 15;
+      noBonusText.color = '#647D7D';
+      noBonusText.isHitTestVisible = false;
+      bonusStackRows.addControl(noBonusText);
+    }
 
     // Buttons
     const buttonPanel = new StackPanel('go_buttons');
     buttonPanel.width = '240px';
-    buttonPanel.top = '140px';
+    buttonPanel.top = `${231 + bonusContainerHeight}px`;
     container.addControl(buttonPanel);
 
     const createButton = (text: string, color: string, onClick: () => void) => {
@@ -1102,16 +1385,7 @@ export class HUDManager {
       return btn;
     };
 
-    createButton('RETRY RUN', '#B8FFE6', () => {
-      this.eventBus.emit(GameEvents.GAME_RESTART_REQUESTED);
-    });
-
-    createButton('CHANGE CLASS', '#9FEFE1', () => {
-      this.hideOverlays();
-      this.eventBus.emit(GameEvents.CLASS_SELECT_REQUESTED);
-    });
-
-    createButton('MAIN MENU', '#647D7D', () => {
+    createButton('MAIN MENU', '#9FEFE1', () => {
       this.hideOverlays();
       this.eventBus.emit(GameEvents.MAIN_MENU_REQUESTED);
     });
@@ -1438,7 +1712,13 @@ export class HUDManager {
       if (this.achievementToastArtwork) {
         this.achievementToastArtwork.dispose();
       }
-      this.achievementToastArtwork = new Image('achievement_toast_artwork', buildHudAssetUrl(`achievements/${HUDManager.currentAchievement.id}.png`));
+      this.achievementToastArtwork = new Image('achievement_toast_artwork');
+      const cachedImg = getCachedHudAsset(`achievements/${HUDManager.currentAchievement.id}.png`);
+      if (cachedImg) {
+        this.achievementToastArtwork.domImage = cachedImg;
+      } else {
+        this.achievementToastArtwork.source = buildHudAssetUrl(`achievements/${HUDManager.currentAchievement.id}.png`);
+      }
       this.achievementToastArtwork.width = '64px';
       this.achievementToastArtwork.height = '64px';
       this.achievementToastArtwork.stretch = Image.STRETCH_UNIFORM;
@@ -1769,12 +2049,18 @@ export class HUDManager {
     
     gain.connect(this.voicelineGainNode);
     
+    (source as any).associatedGainNode = gain;
+
     source.start(ctx.currentTime + 0.1);
     this.activeVoicelineAudios.add(source);
     source.onended = () => {
       this.activeVoicelineAudios.delete(source);
-      source.disconnect();
-      gain.disconnect();
+      try {
+        source.disconnect();
+      } catch (e) {}
+      try {
+        gain.disconnect();
+      } catch (e) {}
     };
   }
 
@@ -1915,6 +2201,12 @@ export class HUDManager {
           // Babylon Sound has dispose()
           if (typeof (sound as any).dispose === 'function') {
             (sound as any).dispose();
+          }
+          // Disconnect associated GainNode first if present
+          if ((sound as any).associatedGainNode) {
+            try {
+              (sound as any).associatedGainNode.disconnect();
+            } catch (e) {}
           }
           // WebAudio nodes have disconnect()
           if (typeof (sound as any).disconnect === 'function') {
@@ -2346,11 +2638,11 @@ export class HUDManager {
   }
 
   public async preloadBonusAndAchievementArtworks(bonusIds: string[], achievementIds: string[]): Promise<void> {
-    const promises: Promise<void>[] = [];
+    const promises: Promise<void | HTMLImageElement | null>[] = [];
     bonusIds.forEach(id => promises.push(preloadHudAsset(`bonuses/${id}.png`)));
     achievementIds.forEach(id => promises.push(preloadHudAsset(`achievements/${id}.png`)));
     await Promise.all(promises);
-    console.log('✓ Bonus and achievement artworks preloaded.');
+    console.log(`✓ Bonus and achievement artworks preloaded.`);
   }
 
   toggleDisplay(enabled: boolean): void {
@@ -2575,7 +2867,12 @@ export class HUDManager {
       btn.addControl(artworkFrame);
 
       const artworkImg = new Image(`bonus_art_img_${card.id}`);
-      artworkImg.source = buildHudAssetUrl(`bonuses/${card.id}.png`);
+      const cachedBonusImg = getCachedHudAsset(`bonuses/${card.id}.png`);
+      if (cachedBonusImg) {
+        artworkImg.domImage = cachedBonusImg;
+      } else {
+        artworkImg.source = buildHudAssetUrl(`bonuses/${card.id}.png`);
+      }
       artworkImg.width = `${artworkFrameSize}px`;
       artworkImg.height = `${artworkFrameSize}px`;
       artworkImg.stretch = Image.STRETCH_UNIFORM;

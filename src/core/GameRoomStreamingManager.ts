@@ -133,6 +133,18 @@ export class GameRoomStreamingManager {
   }
 
   clearDeferredUnloadQueue(): void {
+    if (this.context.isGameplayInitialized()) {
+      while (this.deferredUnloadQueue.length > 0) {
+        const loadedKey = this.deferredUnloadQueue.shift();
+        if (!loadedKey) continue;
+        if (this.context.roomManager.hasRoomInstance(loadedKey)) {
+          this.context.roomManager.unloadRoomInstance(loadedKey);
+        }
+        if (this.context.isTilesEnabled() && this.context.tileFloorManager.hasRoomInstance(loadedKey)) {
+          this.context.tileFloorManager.unloadRoomFloorInstance(loadedKey);
+        }
+      }
+    }
     this.deferredUnloadQueue = [];
   }
 

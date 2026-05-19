@@ -221,6 +221,10 @@ export class BootSequenceScene {
     this.scene.activeCamera = this.camera;
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('BootUI', true, this.scene);
+    this.gui.idealWidth = 1920;
+    this.gui.idealHeight = 1080;
+    this.gui.useSmallestIdeal = true;
+    this.gui.renderAtIdealSize = true;
     if (this.gui.layer) this.gui.layer.layerMask = UI_LAYER;
 
     this._buildUI();

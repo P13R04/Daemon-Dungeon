@@ -202,6 +202,7 @@ export class ProjectileManager {
   private currentRoomManager?: RoomManager;
   private readonly aoeVisualY = 0.03;
   private projectileParticleEffects: Map<Projectile, ParticleSystem> = new Map();
+  private mageProjectileParticleTexture: DynamicTexture | null = null;
   private deferredMeshDisposalQueue: Mesh[] = [];
   private unsubscriber: (() => void) | null = null;
 
@@ -361,7 +362,7 @@ export class ProjectileManager {
       }
 
       const particles = new ParticleSystem(`${isHealer ? 'healer' : 'enemy'}_projectile_fx_${Date.now()}`, 150, this.scene);
-      particles.particleTexture = new Texture('/assets/textures/flare.png', this.scene);
+      particles.particleTexture = this.getMageProjectileParticleTexture();
       particles.layerMask = SCENE_LAYER;
       particles.emitter = projectile.mesh;
       particles.minSize = 0.1;

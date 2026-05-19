@@ -27,6 +27,15 @@ export interface AchievementProgress extends AchievementDefinition {
   unlocked: boolean;
 }
 
+export interface RunRecord {
+  id: string;
+  timestamp: number;
+  score: number;
+  classId: string;
+  roomReached: number;
+  bonuses: { id: string; stacks: number }[];
+}
+
 interface CodexSnapshot {
   version: 1 | 2;
   encounteredEnemies: string[];
@@ -54,6 +63,7 @@ interface CodexSnapshot {
     tutorialCompletedByClass: string[];
     classHighestRoom: Record<string, number>;
     uniqueBonusesSelectedLifetime: string[];
+    runHistory: RunRecord[];
   };
   catalog?: {
     runEnemyTypes: string[];
@@ -97,6 +107,7 @@ export class CodexService {
     tutorialCompletedByClass: [],
     classHighestRoom: {},
     uniqueBonusesSelectedLifetime: [],
+    runHistory: [],
   };
   private catalogState: { runEnemyTypes: string[] } = {
     runEnemyTypes: [],
@@ -246,6 +257,7 @@ export class CodexService {
       tutorialCompletedByClass: [],
       classHighestRoom: {},
       uniqueBonusesSelectedLifetime: [],
+      runHistory: [],
     };
 
     this.achievementState.clear();
@@ -257,12 +269,13 @@ export class CodexService {
   }
 
   getAchievementsProgress(): AchievementProgress[] {
+    const devUnlocked = this.devUnlockCodexEntries && GameSettingsStore.get().accessibility.devModeEnabled;
     return Array.from(this.achievementDefinitions.values()).map((definition) => {
       const state = this.achievementState.get(definition.id) ?? { progress: 0, unlocked: false };
       return {
         ...definition,
-        progress: Math.min(state.progress, definition.target),
-        unlocked: state.unlocked,
+        progress: devUnlocked ? definition.target : Math.min(state.progress, definition.target),
+        unlocked: devUnlocked ? true : state.unlocked,
       };
     });
   }
@@ -451,6 +464,31 @@ export class CodexService {
     }
     if (this.stats.highestScore >= 15000) {
       this.completeAchievement('stack_overflow_15000');
+    }
+
+    this.saveLocalSnapshot();
+  }
+
+  recordCompletedRun(score: number, classId: string, roomReached: number, bonuses: { id: string; stacks: number }[]): void {
+    const record: RunRecord = {
+      id: Math.random().toString(36).substring(2, 11),
+      timestamp: Date.now(),
+      score: Math.floor(score),
+      classId,
+      roomReached,
+      bonuses: [...bonuses],
+    };
+
+    if (!Array.isArray(this.stats.runHistory)) {
+      this.stats.runHistory = [];
+    }
+
+    this.stats.runHistory.push(record);
+    
+    // Sort by score descending and keep only the top 15 runs
+    this.stats.runHistory.sort((a, b) => b.score - a.score);
+    if (this.stats.runHistory.length > 15) {
+      this.stats.runHistory.length = 15;
     }
 
     this.saveLocalSnapshot();
@@ -665,6 +703,9 @@ export class CodexService {
       }
       if (!Array.isArray(this.stats.uniqueBonusesSelectedLifetime)) {
         this.stats.uniqueBonusesSelectedLifetime = [];
+      }
+      if (!Array.isArray(this.stats.runHistory)) {
+        this.stats.runHistory = [];
       }
       if (!Array.isArray(this.catalogState.runEnemyTypes)) {
         this.catalogState.runEnemyTypes = [];

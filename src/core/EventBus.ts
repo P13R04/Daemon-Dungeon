@@ -114,6 +114,8 @@ export const GameEvents = {
   MAIN_MENU_REQUESTED: 'game:mainMenuRequested',
   CLASS_SELECT_REQUESTED: 'game:classSelectRequested',
   CODEX_OPEN_REQUESTED: 'game:codexOpenRequested',
+  ACHIEVEMENTS_OPEN_REQUESTED: 'game:achievementsOpenRequested',
+  HIGHSCORES_OPEN_REQUESTED: 'game:highscoresOpenRequested',
   ROOM_NEXT_REQUESTED: 'room:nextRequested',
   TUTORIAL_START_REQUESTED: 'game:tutorialStartRequested',
   TUTORIAL_PHASE_COMPLETED: 'game:tutorialPhaseCompleted',

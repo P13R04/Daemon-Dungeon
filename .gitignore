@@ -72,3 +72,7 @@ daemon_dungeon_backup1/
 
 # Bundled Tools
 daemon-voice-lab.bundle.*
+
+# Documentation & Competition Cleanup
+docs/
+voicelines_instructions.md

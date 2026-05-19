@@ -98,14 +98,6 @@ export class SettingsMenuBuilder {
     title.top = '-292px';
     windowPanel.addControl(title);
 
-    const subtitle = new TextBlock('settingsSubtitle');
-    subtitle.text = 'TUNE GRAPHICS, CONTROLS, AUDIO, ACCESSIBILITY // ESC TO CANCEL A REBIND';
-    subtitle.color = '#9FEFE1';
-    subtitle.fontSize = 12;
-    subtitle.fontFamily = 'Consolas';
-    subtitle.top = '-262px';
-    windowPanel.addControl(subtitle);
-
     const actionRow = new Rectangle('settingsActionRow');
     actionRow.width = '860px';
     actionRow.height = '44px';
@@ -115,50 +107,14 @@ export class SettingsMenuBuilder {
     actionRow.zIndex = 120;
     windowPanel.addControl(actionRow);
 
-    const resetBtn = Button.CreateSimpleButton('settingsResetButton', 'RESET DEFAULTS');
-    resetBtn.width = '180px';
-    resetBtn.height = '34px';
-    resetBtn.color = '#C2FFE2';
-    resetBtn.cornerRadius = 4;
-    resetBtn.background = 'rgba(22,48,44,0.95)';
-    resetBtn.thickness = 1;
-    resetBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    resetBtn.left = '0px';
-    resetBtn.isPointerBlocker = true;
-    resetBtn.isHitTestVisible = true;
-    resetBtn.zIndex = 130;
-    this.bindButtonAction(resetBtn, () => {
-      this.awaitingRebind = null;
-      GameSettingsStore.resetToDefaults();
-    });
-    actionRow.addControl(resetBtn);
-
-    const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET CODEX PROGRESSION');
-    resetProgressBtn.width = '250px';
-    resetProgressBtn.height = '34px';
-    resetProgressBtn.color = '#FFE5E5';
-    resetProgressBtn.cornerRadius = 4;
-    resetProgressBtn.background = 'rgba(72,20,20,0.95)';
-    resetProgressBtn.thickness = 1;
-    resetProgressBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    resetProgressBtn.left = '0px';
-    resetProgressBtn.isPointerBlocker = true;
-    resetProgressBtn.isHitTestVisible = true;
-    resetProgressBtn.zIndex = 130;
-    this.bindButtonAction(resetProgressBtn, () => {
-      this.awaitingRebind = null;
-      this.onResetProgress();
-    });
-    actionRow.addControl(resetProgressBtn);
-
-    const closeBtn = Button.CreateSimpleButton('settingsCloseButton', 'CLOSE SETTINGS');
-    closeBtn.width = '220px';
+    const closeBtn = Button.CreateSimpleButton('settingsCloseButton', 'BACK');
+    closeBtn.width = '120px';
     closeBtn.height = '34px';
     closeBtn.color = '#D2FFF2';
     closeBtn.cornerRadius = 4;
     closeBtn.background = 'rgba(20,38,45,0.95)';
     closeBtn.thickness = 1;
-    closeBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    closeBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     closeBtn.left = '0px';
     closeBtn.isPointerBlocker = true;
     closeBtn.isHitTestVisible = true;
@@ -169,11 +125,23 @@ export class SettingsMenuBuilder {
     });
     actionRow.addControl(closeBtn);
 
-    const captureHintText = UIFactory.createText('settingsCaptureHint', 'Click a key field to capture input', 12, UITheme.colors.textDim);
-    captureHintText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    captureHintText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    captureHintText.top = '-185px';
-    windowPanel.addControl(captureHintText);
+    const resetBtn = Button.CreateSimpleButton('settingsResetButton', 'RESET DEFAULTS');
+    resetBtn.width = '180px';
+    resetBtn.height = '34px';
+    resetBtn.color = '#C2FFE2';
+    resetBtn.cornerRadius = 4;
+    resetBtn.background = 'rgba(22,48,44,0.95)';
+    resetBtn.thickness = 1;
+    resetBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    resetBtn.left = '0px';
+    resetBtn.isPointerBlocker = true;
+    resetBtn.isHitTestVisible = true;
+    resetBtn.zIndex = 130;
+    this.bindButtonAction(resetBtn, () => {
+      this.awaitingRebind = null;
+      GameSettingsStore.resetToDefaults();
+    });
+    actionRow.addControl(resetBtn);
 
     const scroll = UIFactory.createScrollViewer('settingsScroll');
     scroll.width = '860px';
@@ -187,8 +155,7 @@ export class SettingsMenuBuilder {
     content.width = 1;
     scroll.addControl(content);
 
-    this.addGraphicsSection(content);
-    this.addControlsSection(content);
+    this.addGameplaySection(content);
     this.addAudioSection(content);
     this.addAccessibilitySection(content);
     
@@ -197,9 +164,8 @@ export class SettingsMenuBuilder {
     return overlay;
   }
 
-  private addGraphicsSection(parent: StackPanel): void {
-    parent.addControl(this.makeSectionHeader('GRAPHICS // PERFORMANCE'));
-    parent.addControl(this.makeSectionSubText('Use lightweight procedural textures and progressive enemy spawn to reduce loading stalls.'));
+  private addGameplaySection(parent: StackPanel): void {
+    parent.addControl(this.makeSectionHeader('GAMEPLAY'));
 
     parent.addControl(this.makeToggleRow(
       'Lightweight Procedural Texture Mode',
@@ -238,8 +204,8 @@ export class SettingsMenuBuilder {
     ));
 
     parent.addControl(this.makeGraphicsNumberSliderRow(
-      'Room Preload Ahead Window',
-      'How many next rooms are preloaded asynchronously ahead of the current room.',
+      'Room Preload Ahead',
+      'How many next rooms are preloaded ahead of the current room.',
       1, 8,
       (slider, valueText) => {
         this.roomPreloadAheadSlider = slider;
@@ -253,20 +219,7 @@ export class SettingsMenuBuilder {
       },
     ));
 
-    parent.addControl(this.makeActionRow(
-      'Automated Benchmark Mode',
-      'Runs a repeatable autoplay benchmark, then copies full metrics to clipboard.',
-      'RUN BENCHMARK',
-      () => {
-        this.awaitingRebind = null;
-        this.onBenchmarkRequested();
-      }
-    ));
-  }
-
-  private addControlsSection(parent: StackPanel): void {
-    parent.addControl(this.makeSectionHeader('CONTROLS // KEYBINDINGS'));
-    parent.addControl(this.makeSectionSubText('Remap movement, shoot/posture and ultimate abilities.'));
+    parent.addControl(this.makeSectionHeader('CONTROLS'));
 
     for (const descriptor of ACTION_LABELS) {
       parent.addControl(this.makeKeybindRow(descriptor.action, descriptor.label));
@@ -295,11 +248,22 @@ export class SettingsMenuBuilder {
         });
       }
     ));
+
+    if (!import.meta.env.PROD) {
+      parent.addControl(this.makeActionRow(
+        'Automated Benchmark',
+        'Runs a repeatable autoplay benchmark and copies full metrics to clipboard.',
+        'RUN BENCHMARK',
+        () => {
+          this.awaitingRebind = null;
+          this.onBenchmarkRequested();
+        }
+      ));
+    }
   }
 
   private addAudioSection(parent: StackPanel): void {
     parent.addControl(this.makeSectionHeader('AUDIO'));
-    parent.addControl(this.makeSectionSubText('Master affects all channels. Music/SFX/UI/Voice are independent.'));
 
     parent.addControl(this.makeAudioSliderRow('master', 'Master Volume'));
     parent.addControl(this.makeAudioSliderRow('music', 'Music Volume'));
@@ -310,7 +274,6 @@ export class SettingsMenuBuilder {
 
   private addAccessibilitySection(parent: StackPanel): void {
     parent.addControl(this.makeSectionHeader('ACCESSIBILITY'));
-    parent.addControl(this.makeSectionSubText('Color filters are applied to the game canvas in real-time.'));
 
     const row = new Rectangle('accessibilityFilterRow');
     row.width = '820px';
@@ -350,8 +313,6 @@ export class SettingsMenuBuilder {
 
     parent.addControl(row);
 
-    parent.addControl(this.makeSectionSubText('Cycle options: NONE -> PROTANOPIA -> DEUTERANOPIA -> TRITANOPIA -> HIGH CONTRAST.'));
-
     parent.addControl(this.makeToggleRow(
       'Enable CAT Easter Egg (God Mode)',
       'Adds CAT class to selection.',
@@ -377,6 +338,23 @@ export class SettingsMenuBuilder {
         }
       ));
     }
+
+    // RESET CODEX PROGRESSION — at the very bottom of settings
+    const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET CODEX PROGRESSION');
+    resetProgressBtn.width = '280px';
+    resetProgressBtn.height = '34px';
+    resetProgressBtn.color = '#FFE5E5';
+    resetProgressBtn.cornerRadius = 4;
+    resetProgressBtn.background = 'rgba(72,20,20,0.95)';
+    resetProgressBtn.thickness = 1;
+    resetProgressBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    resetProgressBtn.isPointerBlocker = true;
+    resetProgressBtn.isHitTestVisible = true;
+    this.bindButtonAction(resetProgressBtn, () => {
+      this.awaitingRebind = null;
+      this.onResetProgress();
+    });
+    parent.addControl(resetProgressBtn);
   }
 
   private makeSectionHeader(text: string): Rectangle {
