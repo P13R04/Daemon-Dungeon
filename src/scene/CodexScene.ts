@@ -221,7 +221,7 @@ export class CodexScene {
       const size = this.gui.getSize();
       const scaleX = size.width / 1920;
       const scaleY = size.height / 1080;
-      const scale = Math.min(1, scaleX, scaleY);
+      const scale = Math.min(scaleX, scaleY);
       mainLayoutContainer.scaleX = scale;
       mainLayoutContainer.scaleY = scale;
     };
@@ -231,17 +231,17 @@ export class CodexScene {
     this.headerTitle = new TextBlock('codexHeaderTitle');
     this.headerTitle.text = 'NEURAL CODEX';
     this.headerTitle.fontFamily = this.terminalFont;
-    this.headerTitle.fontSize = 42;
+    this.headerTitle.fontSize = 56;
     this.headerTitle.color = '#7FFFE7';
-    this.headerTitle.top = '-44%';
+    this.headerTitle.top = '-43%';
     mainLayoutContainer.addControl(this.headerTitle);
 
     this.headerSubtitle = new TextBlock('codexHeaderSubtitle');
     this.headerSubtitle.text = '> DATABASE TERMINAL';
     this.headerSubtitle.fontFamily = this.terminalFont;
-    this.headerSubtitle.fontSize = 14;
+    this.headerSubtitle.fontSize = 18;
     this.headerSubtitle.color = '#8FDCCF';
-    this.headerSubtitle.top = '-38.7%';
+    this.headerSubtitle.top = '-37%';
     mainLayoutContainer.addControl(this.headerSubtitle);
 
     const backBtn = this.makeTopButton('codexBack', 'BACK TO MENU', Control.HORIZONTAL_ALIGNMENT_LEFT, () => this.onBackToMenu());
@@ -260,9 +260,9 @@ export class CodexScene {
 
     const tabsRow = new StackPanel('codexTabsRow');
     tabsRow.isVertical = false;
-    tabsRow.width = '760px';
-    tabsRow.height = '48px';
-    tabsRow.top = '-33%';
+    tabsRow.width = '1000px';
+    tabsRow.height = '54px';
+    tabsRow.top = '-32%';
     mainLayoutContainer.addControl(tabsRow);
 
     tabsRow.addControl(this.makeTabButton('BESTIARY', () => {
@@ -274,33 +274,33 @@ export class CodexScene {
       this.refreshSection(false);
     }));
 
-    this.leftPanel = this.makeTerminalPanel('codexLeftPanel', 430, 530);
+    this.leftPanel = this.makeTerminalPanel('codexLeftPanel', 520, 620);
     this.leftPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.leftPanel.left = '24px';
+    this.leftPanel.left = '40px';
     this.leftPanel.top = '58px';
     mainLayoutContainer.addControl(this.leftPanel);
 
-    this.leftTitle = this.makeTerminalText('leftTitle', 20, '#7DFFE8');
-    this.leftTitle.top = '-236px';
-    this.leftTitle.width = '390px';
+    this.leftTitle = this.makeTerminalText('leftTitle', 24, '#7DFFE8');
+    this.leftTitle.top = '-276px';
+    this.leftTitle.width = '480px';
     this.leftTitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.addControl(this.leftTitle);
 
-    this.leftDescription = this.makeTerminalText('leftDescription', 13, '#9EE6DB');
-    this.leftDescription.top = '-184px';
-    this.leftDescription.width = '390px';
-    this.leftDescription.height = '90px';
+    this.leftDescription = this.makeTerminalText('leftDescription', 16, '#9EE6DB');
+    this.leftDescription.top = '-214px';
+    this.leftDescription.width = '480px';
+    this.leftDescription.height = '110px';
     this.leftDescription.textWrapping = true;
     this.leftDescription.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.addControl(this.leftDescription);
 
     this.leftFilterRow = new StackPanel('leftFilterRow');
     this.leftFilterRow.isVertical = false;
-    this.leftFilterRow.width = '390px';
+    this.leftFilterRow.width = '480px';
     this.leftFilterRow.height = '42px';
-    this.leftFilterRow.top = '-120px';
+    this.leftFilterRow.top = '-130px';
     this.leftPanel.addControl(this.leftFilterRow);
 
     this.leftFilterNormalBtn = this.makeFilterButton('NORMAL', true, () => {
@@ -314,8 +314,8 @@ export class CodexScene {
     this.leftFilterRow.addControl(this.leftFilterNormalBtn);
     this.leftFilterRow.addControl(this.leftFilterBossBtn);
 
-    const leftListFrame = UIFactory.createPanel('leftListFrame', 390, 270);
-    leftListFrame.top = '44px';
+    const leftListFrame = UIFactory.createPanel('leftListFrame', 480, 330);
+    leftListFrame.top = '74px';
     this.leftPanel.addControl(leftListFrame);
 
     this.leftListScroll = UIFactory.createScrollViewer('leftListScroll');
@@ -331,67 +331,69 @@ export class CodexScene {
     this.leftListStack.isPointerBlocker = false;
     this.leftListScroll.addControl(this.leftListStack);
 
-    this.rightPanel = this.makeTerminalPanel('codexRightPanel', 430, 530);
+    this.rightPanel = this.makeTerminalPanel('codexRightPanel', 520, 620);
     this.rightPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.rightPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.rightPanel.left = '-24px';
+    this.rightPanel.left = '-40px';
     this.rightPanel.top = '58px';
     mainLayoutContainer.addControl(this.rightPanel);
 
-    this.rightTitle = this.makeTerminalText('rightTitle', 34, '#7EFFE7');
-    this.rightTitle.top = '-208px';
-    this.rightTitle.width = '390px';
+    this.rightTitle = this.makeTerminalText('rightTitle', 40, '#7EFFE7');
+    this.rightTitle.top = '-250px';
+    this.rightTitle.width = '480px';
     this.rightTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.rightPanel.addControl(this.rightTitle);
 
-    this.rightBody = this.makeTerminalText('rightBody', 14, '#A7EFE2');
-    this.rightBody.top = '-8px';
-    this.rightBody.width = '390px';
-    this.rightBody.height = '380px';
+    this.rightBody = this.makeTerminalText('rightBody', 18, '#A7EFE2');
+    this.rightBody.top = '10px';
+    this.rightBody.width = '480px';
+    this.rightBody.height = '440px';
     this.rightBody.textWrapping = true;
     this.rightBody.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.rightPanel.addControl(this.rightBody);
 
-    this.centerCard = this.makeTerminalPanel('centerFlatCard', 250, 280);
+    this.centerCard = this.makeTerminalPanel('centerFlatCard', 340, 380);
     this.centerCard.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.centerCard.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.centerCard.top = '38px';
     mainLayoutContainer.addControl(this.centerCard);
 
-    this.centerCardIcon = this.makeTerminalText('centerCardIcon', 64, '#8CFFF0');
-    this.centerCardIcon.top = '-58px';
+    this.centerCardIcon = this.makeTerminalText('centerCardIcon', 80, '#8CFFF0');
+    this.centerCardIcon.top = '-78px';
     this.centerCard.addControl(this.centerCardIcon);
 
     this.centerCardArtwork = new Image('centerCardArtwork');
-    this.centerCardArtwork.width = '140px';
-    this.centerCardArtwork.height = '140px';
+    this.centerCardArtwork.width = '180px';
+    this.centerCardArtwork.height = '180px';
     this.centerCardArtwork.stretch = Image.STRETCH_UNIFORM;
-    this.centerCardArtwork.top = '-40px';
+    this.centerCardArtwork.top = '-50px';
     this.centerCardArtwork.isVisible = false;
     this.centerCard.addControl(this.centerCardArtwork);
 
-    this.centerCardTitle = this.makeTerminalText('centerCardTitle', 20, '#C8FFF8');
-    this.centerCardTitle.top = '34px';
+    this.centerCardTitle = this.makeTerminalText('centerCardTitle', 26, '#C8FFF8');
+    this.centerCardTitle.top = '64px';
     this.centerCard.addControl(this.centerCardTitle);
 
-    this.centerCardSubtitle = this.makeTerminalText('centerCardSubtitle', 13, '#8FDACF');
-    this.centerCardSubtitle.top = '72px';
+    this.centerCardSubtitle = this.makeTerminalText('centerCardSubtitle', 16, '#8FDACF');
+    this.centerCardSubtitle.top = '112px';
     this.centerCard.addControl(this.centerCardSubtitle);
 
 
     const navRow = new StackPanel('codexBottomNav');
     navRow.isVertical = false;
-    navRow.width = '260px';
-    navRow.height = '56px';
+    navRow.width = '360px';
+    navRow.height = '64px';
     navRow.top = '42%';
     mainLayoutContainer.addControl(navRow);
 
-    const leftNavBtn = UIFactory.createTerminalButton('codexNavLeft', '<', '110px', '46px');
+    const leftNavBtn = UIFactory.createTerminalButton('codexNavLeft', '<', '150px', '52px');
     DaemonGlitchFx.inject(leftNavBtn, '<', () => this.navigateBy(-1), 0);
+    if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontSize = 20;
     navRow.addControl(leftNavBtn);
 
-    const rightNavBtn = UIFactory.createTerminalButton('codexNavRight', '>', '110px', '46px');
+    const rightNavBtn = UIFactory.createTerminalButton('codexNavRight', '>', '150px', '52px');
     DaemonGlitchFx.inject(rightNavBtn, '>', () => this.navigateBy(1), 0);
+    if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontSize = 20;
     navRow.addControl(rightNavBtn);
 
 
@@ -501,25 +503,28 @@ export class CodexScene {
   }
 
   private makeTopButton(id: string, label: string, alignment: number, onClick: () => void): Button {
-    const btn = UIFactory.createTerminalButton(id, label, '160px', '36px');
+    const btn = UIFactory.createTerminalButton(id, label, '220px', '40px');
     btn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     btn.horizontalAlignment = alignment;
     btn.top = '20px';
+    if (btn.textBlock) btn.textBlock.fontSize = 16;
     btn.onPointerClickObservable.add(onClick);
     return btn;
   }
 
   private makeTabButton(label: string, onClick: () => void): Button {
-    const btn = UIFactory.createTerminalButton(`tab_${label}`, label, '246px', '40px');
+    const btn = UIFactory.createTerminalButton(`tab_${label}`, label, '320px', '46px');
     DaemonGlitchFx.inject(btn, label, onClick, 0);
+    if (btn.textBlock) btn.textBlock.fontSize = 18;
     return btn;
   }
 
   private makeFilterButton(label: string, active: boolean, onClick: () => void): Button {
-    const btn = UIFactory.createTerminalButton(`bestiary_filter_${label}`, label, '190px', '34px');
+    const btn = UIFactory.createTerminalButton(`bestiary_filter_${label}`, label, '234px', '42px');
     btn.color = active ? UITheme.colors.textHighlight : UITheme.colors.borderBright;
     btn.background = active ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
     btn.onPointerClickObservable.add(onClick);
+    if (btn.textBlock) btn.textBlock.fontSize = 16;
     return btn;
   }
 
@@ -705,8 +710,8 @@ export class CodexScene {
 
   private makeLeftListButton(id: string, label: string, active: boolean, onClick: () => void): Button {
     const btn = Button.CreateSimpleButton(id, label);
-    btn.width = '382px';
-    btn.height = '38px';
+    btn.width = '472px';
+    btn.height = '42px';
     btn.thickness = 1;
     btn.cornerRadius = 4;
     btn.color = active ? '#F1FFFC' : '#A3DCCF';
@@ -717,6 +722,7 @@ export class CodexScene {
     if (btn.textBlock) {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
+      btn.textBlock.fontSize = 16;
     }
     return btn;
   }

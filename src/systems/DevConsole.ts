@@ -73,6 +73,7 @@ export class DevConsole {
   private devScrollWheelObserver: any = null;
   private devPanelBackground: Rectangle | null = null;
   private devPanelContent: StackPanel | null = null;
+  private mobileModeCheckbox: Checkbox | null = null;
 
   constructor(private scene: Scene, gameManager: DevConsoleGameManager) {
     this.gameManager = gameManager;
@@ -132,6 +133,9 @@ export class DevConsole {
 
   setPlayer(player: PlayerController): void {
     this.player = player;
+    if (this.mobileModeCheckbox) {
+      this.mobileModeCheckbox.isChecked = player.inputManager.isMobileMode();
+    }
   }
 
   private createConsoleUI(): void {
@@ -386,6 +390,40 @@ export class DevConsole {
     damageNumbersContainer.addControl(damageNumbersCheckbox);
     damageNumbersContainer.addControl(damageNumbersLabel);
     parent.addControl(damageNumbersContainer);
+
+    // Force Mobile Controls
+    const mobileModeContainer = new StackPanel('mobileModeContainer');
+    mobileModeContainer.isVertical = false;
+    mobileModeContainer.height = '30px';
+    mobileModeContainer.width = '440px';
+    mobileModeContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const mobileModeCheckbox = new Checkbox('mobileModeCheckbox');
+    mobileModeCheckbox.isChecked = this.player?.inputManager.isMobileMode() ?? false;
+    mobileModeCheckbox.width = '25px';
+    mobileModeCheckbox.height = '25px';
+    this.mobileModeCheckbox = mobileModeCheckbox;
+
+    const mobileModeLabel = new TextBlock('mobileModeLabel');
+    mobileModeLabel.text = '  Force Mobile Controls';
+    mobileModeLabel.fontSize = 13;
+    mobileModeLabel.color = '#FFFFFF';
+    mobileModeLabel.width = '400px';
+    mobileModeLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    mobileModeCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      if (this.player && this.player.inputManager) {
+        this.player.inputManager.setMobileMode(isChecked);
+        const hud = this.gameManager.getHUDManager() as any;
+        if (hud && hud.setMobileControlsVisible) {
+          hud.setMobileControlsVisible(isChecked);
+        }
+      }
+    });
+
+    mobileModeContainer.addControl(mobileModeCheckbox);
+    mobileModeContainer.addControl(mobileModeLabel);
+    parent.addControl(mobileModeContainer);
   }
 
   private createPostProcessingSection(parent: StackPanel): void {

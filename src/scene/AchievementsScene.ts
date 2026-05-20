@@ -236,7 +236,7 @@ export class AchievementsScene {
       const size = this.gui.getSize();
       const scaleX = size.width / 1920;
       const scaleY = size.height / 1080;
-      const scale = Math.min(1, scaleX, scaleY);
+      const scale = Math.min(scaleX, scaleY);
       mainLayoutContainer.scaleX = scale;
       mainLayoutContainer.scaleY = scale;
     };
@@ -267,41 +267,41 @@ export class AchievementsScene {
       mainLayoutContainer.addControl(devBtn);
     }
 
-    const mainTitle = UIFactory.createText('achTitle', 'ACHIEVEMENTS DIRECTORY', 46, UITheme.colors.textHighlight);
+    const mainTitle = UIFactory.createText('achTitle', 'ACHIEVEMENTS DIRECTORY', 60, UITheme.colors.textHighlight);
     mainTitle.fontFamily = UITheme.fonts.primary;
     mainTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     mainTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     mainTitle.top = '36px';
-    mainTitle.height = '60px';
+    mainTitle.height = '70px';
     mainTitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     mainLayoutContainer.addControl(mainTitle);
 
-    this.leftPanel = this.makeTerminalPanel('achLeftPanel', 430, 630);
+    this.leftPanel = this.makeTerminalPanel('achLeftPanel', 520, 720);
     this.leftPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.leftPanel.left = '24px';
+    this.leftPanel.left = '40px';
     this.leftPanel.top = '38px';
     mainLayoutContainer.addControl(this.leftPanel);
 
-    this.leftTitle = this.makeTerminalText('leftTitle', 20, '#7DFFE8');
-    this.leftTitle.top = '-286px';
-    this.leftTitle.width = '390px';
+    this.leftTitle = this.makeTerminalText('leftTitle', 24, '#7DFFE8');
+    this.leftTitle.top = '-320px';
+    this.leftTitle.width = '480px';
     this.leftTitle.height = '30px';
     this.leftTitle.isHitTestVisible = false;
     this.leftTitle.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftTitle);
 
-    this.leftDescription = this.makeTerminalText('leftDesc', 14, '#CFFCF3');
-    this.leftDescription.top = '-250px';
-    this.leftDescription.width = '390px';
+    this.leftDescription = this.makeTerminalText('leftDesc', 16, '#CFFCF3');
+    this.leftDescription.top = '-280px';
+    this.leftDescription.width = '480px';
     this.leftDescription.height = '50px';
     this.leftDescription.isHitTestVisible = false;
     this.leftDescription.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftDescription);
 
     const scrollViewer = new ScrollViewer('leftListScroll');
-    scrollViewer.width = '400px';
-    scrollViewer.height = '500px';
+    scrollViewer.width = '480px';
+    scrollViewer.height = '580px';
     scrollViewer.top = '20px';
     scrollViewer.thickness = 0;
     scrollViewer.barColor = '#3B685C';
@@ -315,32 +315,32 @@ export class AchievementsScene {
     this.leftListStack.spacing = 6;
     scrollViewer.addControl(this.leftListStack);
 
-    this.rightPanel = this.makeTerminalPanel('achRightPanel', 430, 630);
+    this.rightPanel = this.makeTerminalPanel('achRightPanel', 520, 720);
     this.rightPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.rightPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.rightPanel.left = '-24px';
+    this.rightPanel.left = '-40px';
     this.rightPanel.top = '38px';
     mainLayoutContainer.addControl(this.rightPanel);
 
-    this.rightTitle = this.makeTerminalText('rightTitle', 22, '#7DFFE8');
-    this.rightTitle.top = '-286px';
+    this.rightTitle = this.makeTerminalText('rightTitle', 26, '#7DFFE8');
+    this.rightTitle.top = '-320px';
     this.rightTitle.height = '60px';
     this.rightPanel.addControl(this.rightTitle);
 
-    this.rightBody = this.makeTerminalText('rightBody', 14, '#CFFCF3');
+    this.rightBody = this.makeTerminalText('rightBody', 18, '#CFFCF3');
     this.rightBody.top = '20px';
-    this.rightBody.height = '520px';
+    this.rightBody.height = '580px';
     this.rightPanel.addControl(this.rightBody);
 
-    this.centerCard = this.makeTerminalPanel('centerCard', 360, 480);
+    this.centerCard = this.makeTerminalPanel('centerCard', 420, 560);
     this.centerCard.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.centerCard.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.centerCard.top = '38px';
     mainLayoutContainer.addControl(this.centerCard);
 
     const artContainer = new Rectangle('artContainer');
-    artContainer.width = '300px';
-    artContainer.height = '300px';
+    artContainer.width = '360px';
+    artContainer.height = '360px';
     artContainer.top = '-60px';
     artContainer.thickness = 1;
     artContainer.color = '#3B685C';
@@ -349,7 +349,7 @@ export class AchievementsScene {
 
     this.centerCardIcon = new TextBlock('centerIcon', '?');
     this.centerCardIcon.fontFamily = this.terminalFont;
-    this.centerCardIcon.fontSize = 80;
+    this.centerCardIcon.fontSize = 96;
     this.centerCardIcon.color = '#7CFFEA';
     artContainer.addControl(this.centerCardIcon);
 
@@ -362,16 +362,16 @@ export class AchievementsScene {
 
     this.centerCardTitle = new TextBlock('centerTitle', '');
     this.centerCardTitle.fontFamily = this.terminalFont;
-    this.centerCardTitle.fontSize = 24;
+    this.centerCardTitle.fontSize = 28;
     this.centerCardTitle.color = '#FFFFFF';
-    this.centerCardTitle.top = '120px';
+    this.centerCardTitle.top = '150px';
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = new TextBlock('centerSubtitle', '');
     this.centerCardSubtitle.fontFamily = this.terminalFont;
-    this.centerCardSubtitle.fontSize = 16;
+    this.centerCardSubtitle.fontSize = 18;
     this.centerCardSubtitle.color = '#7DFFE8';
-    this.centerCardSubtitle.top = '150px';
+    this.centerCardSubtitle.top = '190px';
     this.centerCard.addControl(this.centerCardSubtitle);
   }
 
@@ -436,8 +436,8 @@ export class AchievementsScene {
 
   private makeLeftListButton(id: string, label: string, active: boolean, onClick: () => void): Button {
     const btn = Button.CreateSimpleButton(id, label);
-    btn.width = '382px';
-    btn.height = '38px';
+    btn.width = '472px';
+    btn.height = '42px';
     btn.thickness = 1;
     btn.cornerRadius = 4;
     btn.color = active ? '#F1FFFC' : '#A3DCCF';
@@ -449,7 +449,7 @@ export class AchievementsScene {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
       btn.textBlock.fontFamily = 'Consolas';
-      btn.textBlock.fontSize = 14;
+      btn.textBlock.fontSize = 16;
     }
     return btn;
   }

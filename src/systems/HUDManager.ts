@@ -2,7 +2,7 @@
  * HUDManager - Manages health bars, damage numbers, and UI elements
  */
 
-import { Scene, Engine, Vector3, TransformNode, AbstractMesh, Sound } from '@babylonjs/core';
+import { Scene, Engine, Vector3, Vector2, TransformNode, AbstractMesh, Sound, PointerEventTypes } from '@babylonjs/core';
 import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image, StackPanel, Checkbox } from '@babylonjs/gui';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { SettingsMenuBuilder } from '../ui/SettingsMenuBuilder';
@@ -12,6 +12,8 @@ import { DAEMON_ANIMATION_PRESETS, normalizeDaemonPresetName } from '../data/voi
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
 import { DaemonVoiceSynth } from '../audio/DaemonVoiceSynth';
 import { GameSettingsStore, formatInputKeyLabel } from '../settings/GameSettings';
+import { InputManager } from '../input/InputManager';
+import { PlayerController } from '../gameplay/PlayerController';
 import { buildHudAssetUrl, getHudAssetBaseUrl, preloadHudAsset, getCachedHudAsset } from './hud/HudAssetPaths';
 import { DaemonAvatarController, type DaemonAnimationPhaseState } from './hud/DaemonAvatarController';
 import { getSpecialMarkerAtDisplayIndex, stripAllSpecialMarkers } from './hud/DaemonTextUtils';
@@ -41,6 +43,14 @@ export class HUDManager {
   private guiClean: AdvancedDynamicTexture;
   private guiFx: AdvancedDynamicTexture;
   private enemyGui: AdvancedDynamicTexture;
+  private inputManager: InputManager | null = null;
+  private player: PlayerController | null = null;
+  private mobileControls: Control[] = [];
+  private mobileAttackBtn: Button | null = null;
+  private mobileStanceBtn: Button | null = null;
+  private mobileUltBtn: Button | null = null;
+  private wasStanceActive: boolean = false;
+  private mobileAttackHoldBlocked: boolean = false;
   private eventBus: EventBus;
   private damageNumbers: DamageNumber[] = [];
   private damageNumberCooldowns: Map<string, { lastTime: number; pending: number; lastPosition: Vector3 }> = new Map();
@@ -57,6 +67,13 @@ export class HUDManager {
   private logPanel: Rectangle | null = null;
   private logLines: TextBlock[] = [];
   private logMessages: string[] = [];
+  private currentTypingLength: number = 0;
+  private typingTimer: number = 0;
+  private cursorBlinkTimer: number = 0;
+  private showCursor: boolean = true;
+  private scheduledLogs: Array<{ message: string; delay: number }> = [];
+  private scheduledLogTimer: number = 0;
+  private randomGlitchTimer: number = 25;
   private achievementToastContainer: Rectangle | null = null;
   private achievementToastTitle: TextBlock | null = null;
   private achievementToastDescription: TextBlock | null = null;
@@ -72,6 +89,16 @@ export class HUDManager {
   private secondaryStatusText: TextBlock | null = null;
   private secondaryResourceBarFill: Rectangle | null = null;
   private itemStatusText: TextBlock | null = null;
+  private playerUltBarFill: Rectangle | null = null;
+  private ultBarContainer: Rectangle | null = null;
+  private secondaryBarContainer: Rectangle | null = null;
+  private ultTime: number = 0;
+  private stanceTime: number = 0;
+  private lastUltCharge: number = 0;
+  private lastUltActive: boolean = false;
+  private lastStanceRatio: number = 1.0;
+  private lastStanceActive: boolean = false;
+  private lastStanceThresholdRatio: number = 0.5;
   private daemonContainer: Rectangle | null = null;
   private daemonGlitchOverlay: Rectangle | null = null;
   private daemonPopupFlashOverlay: Rectangle | null = null;
@@ -334,31 +361,106 @@ export class HUDManager {
     const enemyId = data?.enemyId ?? data?.entityId;
     if (!enemyId) return;
     this.removeEnemyHealthBar(enemyId);
-    this.addLogMessage('ENEMY UNIT DEL...');
+    
+    const logs = [
+      'CRITICAL: CORRUPTED SUBPROCESS TERMINATED.',
+      'GARBAGE COLLECTOR: PURGED UNREGISTERED EXEC.',
+      'DELETED: DAEMON THREAD SUSPENDED.',
+      `DEALLOCATED MEMORY OX${Math.floor(Math.random() * 65536).toString(16).toUpperCase()}`,
+      'THREAT RESOLVED: ISOLATED PROCESS QUARANTINED.',
+      'HOST INTELLIGENCE: SECURITY LOG DISPOSED.'
+    ];
+    const chosen = logs[Math.floor(Math.random() * logs.length)];
+    this.addLogMessage(chosen);
   }
 
   private async handlePlayerDamagedEvent(data: PlayerDamagedPayload): Promise<void> {
     const current = data?.health?.current ?? (data as any)?.currentHealth ?? 0;
     const max = data?.health?.max ?? (data as any)?.maxHealth ?? 100;
     this.updateHealthDisplay(current, max);
-    // Taunt emission now delegated to DaemonVoicelineManager
+    
+    if (Math.random() < 0.35) {
+      const logs = [
+        'WARNING: SYSTEM BUFFER OVERFLOW DETECTED.',
+        'INTEGRITY CRITICAL: HARDWARE THREAT ENCOUNTERED.',
+        'IO INTERRUPT: PACKET COLLISION OCCURRED.',
+        'HOST EXCEPTION: MEMORY DUMP SCHEDULED.',
+        'CORE TEMPERATURE SPIKE: SHIELD INTEGRITY COMPROMISED.'
+      ];
+      const chosen = logs[Math.floor(Math.random() * logs.length)];
+      this.addLogMessage(chosen);
+    }
   }
 
   private async handleRoomClearedEvent(): Promise<void> {
-    this.addLogMessage('ROOM STATUS: CLEAR.');
-    // Taunt emission now delegated to DaemonVoicelineManager
+    const logs = [
+      'SECTOR RESTORED: DAEMON OVERWRITE SUSPENDED.',
+      'INTEGRITY SCAN: NO OUTSTANDING ERROR REPORTS.',
+      'COMPRESSION SUCCESSFUL: SAVING SECTOR CHECKPOINT.',
+      'HOST SECURITY: TEMPORARY SANDBOX ISOLATION SECURED.'
+    ];
+    const chosen = logs[Math.floor(Math.random() * logs.length)];
+    this.addLogMessage(chosen);
   }
 
   private handleRoomEnteredEvent(data: RoomEnteredPayload): void {
     this.waveNumber += 1;
     this.updateWaveText(this.waveNumber);
-    this.addLogMessage(`WAVE ${this.waveNumber.toString().padStart(2, '0')} INIT.`);
+    
+    this.scheduledLogs = [
+      { message: 'ESTABLISHING SANDBOX SYNC...', delay: 0.4 },
+      { message: 'SYNCING... [██░░░░░░░░░░░░░░] 12%', delay: 0.5 },
+      { message: 'SYNCING... [█████░░░░░░░░░░░] 31%', delay: 0.5 },
+      { message: 'SYNCING... [████████░░░░░░░░] 50%', delay: 0.5 },
+      { message: 'SYNCING... [████████████░░░░] 75%', delay: 0.5 },
+      { message: 'SYNCING... [████████████████] 100%', delay: 0.5 },
+      { message: `BOOT SEQUENCE: WAVE ${this.waveNumber.toString().padStart(2, '0')} INITIALIZED.`, delay: 0.4 }
+    ];
+    this.scheduledLogTimer = 0;
 
     const roomType = typeof data?.roomType === 'string' ? data.roomType.toLowerCase() : 'normal';
     if (roomType === 'boss') {
       const roomName = typeof data?.roomName === 'string' ? data.roomName : 'Unknown Chamber';
       this.triggerBossRoomAlert(roomName);
     }
+  }
+
+  private triggerRandomConsoleGlitchSequence(): void {
+    const sequences = [
+      [
+        { message: 'CRITICAL: SEGMENTATION FAULT DETECTED.', delay: 0.4 },
+        { message: 'CORE TERMINAL CORRUPTED. INITIATING REBOOT...', delay: 0.6 },
+        { message: 'DUMPING CORE... [██░░░░░░░░░░░░░░] 12%', delay: 0.6 },
+        { message: 'DUMPING CORE... [█████░░░░░░░░░░░] 31%', delay: 0.6 },
+        { message: 'DUMPING CORE... [████████░░░░░░░░] 50%', delay: 0.6 },
+        { message: 'DUMPING CORE... [████████████░░░░] 75%', delay: 0.6 },
+        { message: 'DUMPING CORE... [████████████████] 100%', delay: 0.5 },
+        { message: 'STACK CORRUPTION CLEAR... STATUS: OK', delay: 0.6 },
+        { message: 'CLEANING CONSOLE...', delay: 0.6 },
+        { message: '__CLEAR_ACTION__', delay: 0.4 },
+        { message: 'DIAGNOSTIC CONSOLE REBOOTING...', delay: 0.4 },
+        { message: 'RECONNECTING INTERRUPTS...', delay: 0.5 },
+        { message: 'DIAGNOSTIC SHELL v4.0.1 - ONLINE.', delay: 0.6 }
+      ],
+      [
+        { message: 'WARNING: KERNEL MEMORY OVERLOAD.', delay: 0.4 },
+        { message: 'RUNNING HOST GC (GARBAGE COLLECTOR)...', delay: 0.6 },
+        { message: 'GC: RECLAIMED OXF482 MEMORY BLOCKS.', delay: 0.6 },
+        { message: 'DIAGNOSTICS: STABLE.', delay: 0.5 }
+      ],
+      [
+        { message: 'INITIATING SUBJECT DIAGNOSTIC SCAN...', delay: 0.4 },
+        { message: 'SCANNING... [██░░░░░░░░░░░░░░] 12%', delay: 0.6 },
+        { message: 'SCANNING... [█████░░░░░░░░░░░] 31%', delay: 0.6 },
+        { message: 'SCANNING... [████████░░░░░░░░] 50%', delay: 0.6 },
+        { message: 'SCANNING... [████████████░░░░] 75%', delay: 0.6 },
+        { message: 'SCANNING... [████████████████] 100%', delay: 0.5 },
+        { message: 'RESULT: DAEMON INTEGRITY THREAT DETECTED.', delay: 0.6 }
+      ]
+    ];
+
+    const chosen = sequences[Math.floor(Math.random() * sequences.length)];
+    this.scheduledLogs.push(...chosen);
   }
 
   private async handleWaveUpdate(data: any): Promise<void> {
@@ -370,10 +472,36 @@ export class HUDManager {
   }
 
   private handlePlayerUltimateReadyEvent(data: PlayerUltReadyPayload): void {
-    if (!this.playerUltDisplay) return;
-    const percentage = Math.floor(data.charge * 100);
-    this.playerUltDisplay.text = `ULTI: ${percentage}%`;
-    this.playerUltDisplay.color = data.charge >= 1.0 ? '#00FF00' : '#FFFF00';
+    this.lastUltCharge = data.charge;
+    this.lastUltActive = !!data.active;
+
+    if (!this.playerUltDisplay || !this.playerUltBarFill) return;
+    const percentage = Math.max(0, Math.min(100, Math.floor(data.charge * 100)));
+    this.playerUltBarFill.width = `${percentage}%`;
+
+    if (this.lastUltActive) {
+      this.playerUltDisplay.text = `ULTI: ${percentage}% [ACTIVE]`;
+      this.playerUltDisplay.color = '#E040FF'; // Neon purple for active duration
+      this.playerUltBarFill.background = '#E040FF';
+      if (this.ultBarContainer) {
+        this.ultBarContainer.color = '#E040FF';
+      }
+    } else if (data.charge >= 1.0) {
+      this.playerUltDisplay.text = `ULTI: 100% [READY]`;
+      this.playerUltDisplay.color = '#00FF99'; // Bright matrix green
+      this.playerUltBarFill.background = '#00FF99';
+      if (this.ultBarContainer) {
+        this.ultBarContainer.color = '#00FF99';
+      }
+    } else {
+      this.playerUltDisplay.text = `ULTI: ${percentage}%`;
+      this.playerUltDisplay.color = '#FFFF00'; // Cyber yellow charging
+      this.playerUltBarFill.background = '#FFFF00';
+      if (this.ultBarContainer) {
+        this.ultBarContainer.color = '#FFFF00';
+        this.ultBarContainer.thickness = 1;
+      }
+    }
   }
 
   private handleUiOptionChangedEvent(data: UiOptionChangedPayload): void {
@@ -399,115 +527,78 @@ export class HUDManager {
   private createPlayerHUD(): void {
     const fontFamily = 'Consolas';
 
-    // Top bar
+    // Top bar (transparent container for layout)
     this.topBar = new Rectangle('hud_top_bar');
     this.topBar.width = 1;
-    this.topBar.height = '80px';
+    this.topBar.height = '140px';
     this.topBar.thickness = 0;
-    this.topBar.background = 'rgba(0, 0, 0, 0.45)';
+    this.topBar.background = 'transparent';
     this.topBar.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.topBar.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.guiClean.addControl(this.topBar);
 
-    const integrityLabel = new TextBlock('integrity_label');
-    integrityLabel.text = 'INTEGRITY:';
-    integrityLabel.fontSize = 16;
-    integrityLabel.fontFamily = fontFamily;
-    integrityLabel.color = '#7CFFEA';
-    integrityLabel.left = 16;
-    integrityLabel.top = 8;
-    integrityLabel.width = '120px';
-    integrityLabel.height = '24px';
-    integrityLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    integrityLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    integrityLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.topBar.addControl(integrityLabel);
+    // Stats Console (Top Right Container)
+    const statsContainer = new Rectangle('hud_stats_container');
+    statsContainer.width = '320px';
+    statsContainer.height = '130px';
+    statsContainer.thickness = 1;
+    statsContainer.color = '#3B685C';
+    statsContainer.background = 'rgba(10, 18, 22, 0.75)';
+    statsContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    statsContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    statsContainer.left = -24;
+    statsContainer.top = 24;
+    statsContainer.cornerRadius = 4;
+    this.topBar.addControl(statsContainer);
 
-    const healthBarContainer = new Rectangle('health_bar_container');
-    healthBarContainer.width = '220px';
-    healthBarContainer.height = '16px';
-    healthBarContainer.thickness = 1;
-    healthBarContainer.color = '#7CFFEA';
-    healthBarContainer.background = 'rgba(10, 30, 35, 0.7)';
-    healthBarContainer.left = 140;
-    healthBarContainer.top = 10;
-    healthBarContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    healthBarContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.topBar.addControl(healthBarContainer);
-
-    this.healthBarFill = new Rectangle('health_bar_fill');
-    this.healthBarFill.width = '100%';
-    this.healthBarFill.height = '100%';
-    this.healthBarFill.thickness = 0;
-    this.healthBarFill.background = '#00FFD1';
-    this.healthBarFill.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.healthBarFill.left = 0;
-    healthBarContainer.addControl(this.healthBarFill);
-
-    this.healthValueText = new TextBlock('health_value');
-    this.healthValueText.text = '100/100';
-    this.healthValueText.fontSize = 14;
-    this.healthValueText.fontFamily = fontFamily;
-    this.healthValueText.color = '#CFFCF3';
-    this.healthValueText.left = 370;
-    this.healthValueText.top = 8;
-    this.healthValueText.width = '120px';
-    this.healthValueText.height = '24px';
-    this.healthValueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.healthValueText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.healthValueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.topBar.addControl(this.healthValueText);
-    this.playerHealthDisplay = this.healthValueText;
+    this.scoreText = new TextBlock('score_text');
+    this.scoreText.text = 'SCORE: 00000000';
+    this.scoreText.fontSize = 18;
+    this.scoreText.fontFamily = fontFamily;
+    this.scoreText.color = '#7CFFEA';
+    this.scoreText.left = 16;
+    this.scoreText.top = 12;
+    this.scoreText.width = '288px';
+    this.scoreText.height = '28px';
+    this.scoreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.scoreText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.scoreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    statsContainer.addControl(this.scoreText);
 
     this.waveText = new TextBlock('wave_text');
     this.waveText.text = 'WAVE: 00';
     this.waveText.fontSize = 18;
     this.waveText.fontFamily = fontFamily;
     this.waveText.color = '#7CFFEA';
-    this.waveText.topInPixels = 32;
-    this.waveText.width = '160px';
-    this.waveText.height = '24px';
-    this.waveText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.waveText.left = 16;
+    this.waveText.top = 48;
+    this.waveText.width = '288px';
+    this.waveText.height = '28px';
+    this.waveText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.waveText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.waveText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    this.waveText.left = '-20px'; // 20px from right border
-    this.topBar.addControl(this.waveText);
+    this.waveText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    statsContainer.addControl(this.waveText);
 
     this.currencyText = new TextBlock('currency_text');
     this.currencyText.text = 'CREDITS: 000';
     this.currencyText.fontSize = 16;
     this.currencyText.fontFamily = fontFamily;
     this.currencyText.color = '#FFD782';
-    this.currencyText.topInPixels = 54;
-    this.currencyText.width = '220px';
-    this.currencyText.height = '22px';
-    this.currencyText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.currencyText.left = 16;
+    this.currencyText.top = 84;
+    this.currencyText.width = '288px';
+    this.currencyText.height = '28px';
+    this.currencyText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.currencyText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.currencyText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    this.currencyText.left = '-20px';
-    this.topBar.addControl(this.currencyText);
+    this.currencyText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    statsContainer.addControl(this.currencyText);
 
-    // Score Display (Top Right)
-    this.scoreText = new TextBlock('score_text');
-    this.scoreText.text = 'SCORE: 00000000';
-    this.scoreText.fontSize = 18;
-    this.scoreText.fontFamily = fontFamily;
-    this.scoreText.color = '#7CFFEA';
-    this.scoreText.left = '-20px';
-    this.scoreText.width = '240px';
-    this.scoreText.height = '40px';
-    this.scoreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    this.scoreText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.scoreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    this.scoreText.topInPixels = 8;
-    this.topBar.addControl(this.scoreText);
-
-    // Combo Container
+    // Combo Container (placed directly below statsContainer)
     this.comboContainer = new Rectangle('combo_container');
     this.comboContainer.width = '140px';
     this.comboContainer.height = '60px';
-    this.comboContainer.left = -20;
-    this.comboContainer.top = 85;
+    this.comboContainer.left = -24;
+    this.comboContainer.top = 145;
     this.comboContainer.thickness = 0;
     this.comboContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.comboContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -534,16 +625,29 @@ export class HUDManager {
 
     // Bottom-left command feed
     this.logPanel = new Rectangle('log_panel');
-    this.logPanel.width = '36%';
-    this.logPanel.height = '150px';
+    this.logPanel.width = '420px';
+    this.logPanel.height = '180px';
     this.logPanel.thickness = 1;
     this.logPanel.color = '#2EF9C3';
-    this.logPanel.background = 'rgba(0, 0, 0, 0.35)';
-    this.logPanel.left = 16;
-    this.logPanel.top = -16;
+    this.logPanel.background = 'rgba(4, 10, 8, 0.88)';
+    this.logPanel.left = 24;
+    this.logPanel.top = -24;
     this.logPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.logPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     this.guiClean.addControl(this.logPanel);
+
+    const logHeader = new TextBlock('log_header');
+    logHeader.text = ' SYSTEM MONITOR // DIAGNOSTIC FEED';
+    logHeader.fontSize = 10;
+    logHeader.fontFamily = fontFamily;
+    logHeader.color = '#2EF9C3';
+    logHeader.height = '16px';
+    logHeader.top = '6px';
+    logHeader.left = 10;
+    logHeader.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    logHeader.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    logHeader.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.logPanel.addControl(logHeader);
 
     const logsStack = new Rectangle('log_stack_container');
     logsStack.width = 1;
@@ -554,11 +658,11 @@ export class HUDManager {
     for (let i = 0; i < 6; i++) {
       const line = new TextBlock(`log_line_${i}`);
       line.text = '';
-      line.fontSize = 14;
+      line.fontSize = 12;
       line.fontFamily = fontFamily;
       line.color = '#B8FFE6';
-      line.height = '24px';
-      line.top = `${8 + i * 22}px`;
+      line.height = '20px';
+      line.top = `${28 + i * 21}px`;
       line.left = 10;
       line.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       line.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -567,30 +671,95 @@ export class HUDManager {
       this.logLines.push(line);
     }
 
-    const pauseBtn = Button.CreateSimpleButton('pause_btn', '[ || ]');
-    pauseBtn.width = '42px';
-    pauseBtn.height = '42px';
+    // Pause Button (Standalone Top Left)
+    const pauseBtn = Button.CreateSimpleButton('pause_btn', '||');
+    pauseBtn.width = '64px';
+    pauseBtn.height = '64px';
     pauseBtn.color = '#7CFFEA';
-    pauseBtn.background = 'rgba(10, 30, 35, 0.6)';
+    pauseBtn.background = 'rgba(10, 30, 35, 0.75)';
     pauseBtn.thickness = 1;
-    pauseBtn.left = 16;
-    pauseBtn.top = 96;
+    pauseBtn.left = 24;
+    pauseBtn.top = 24;
     pauseBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     pauseBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    if (pauseBtn.textBlock) {
+      pauseBtn.textBlock.fontSize = 20;
+      pauseBtn.textBlock.fontFamily = fontFamily;
+    }
     pauseBtn.onPointerUpObservable.add(() => {
       this.eventBus.emit(GameEvents.UI_PAUSE_TOGGLE);
     });
     this.guiClean.addControl(pauseBtn);
 
-    // Bottom-right status
+    // Bottom-center Integrity/Health Bar
+    const healthPanel = new Rectangle('hud_health_panel');
+    healthPanel.width = '520px';
+    healthPanel.height = '105px';
+    healthPanel.thickness = 0;
+    healthPanel.background = 'transparent';
+    healthPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    healthPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    healthPanel.left = 0;
+    healthPanel.top = -24;
+    this.guiClean.addControl(healthPanel);
+
+    const integrityLabel = new TextBlock('integrity_label');
+    integrityLabel.text = 'INTEGRITY';
+    integrityLabel.fontSize = 18;
+    integrityLabel.fontFamily = fontFamily;
+    integrityLabel.color = '#7CFFEA';
+    integrityLabel.width = '300px';
+    integrityLabel.height = '28px';
+    integrityLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    integrityLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    integrityLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    integrityLabel.top = '0px';
+    healthPanel.addControl(integrityLabel);
+
+    const healthBarContainer = new Rectangle('health_bar_container');
+    healthBarContainer.width = '420px';
+    healthBarContainer.height = '30px';
+    healthBarContainer.thickness = 1;
+    healthBarContainer.color = '#7CFFEA';
+    healthBarContainer.background = 'rgba(10, 30, 35, 0.7)';
+    healthBarContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    healthBarContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    healthBarContainer.left = 0;
+    healthBarContainer.top = '2px';
+    healthPanel.addControl(healthBarContainer);
+
+    this.healthBarFill = new Rectangle('health_bar_fill');
+    this.healthBarFill.width = '100%';
+    this.healthBarFill.height = '100%';
+    this.healthBarFill.thickness = 0;
+    this.healthBarFill.background = '#00FFD1';
+    this.healthBarFill.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    healthBarContainer.addControl(this.healthBarFill);
+
+    this.healthValueText = new TextBlock('health_value');
+    this.healthValueText.text = '100/100';
+    this.healthValueText.fontSize = 16;
+    this.healthValueText.fontFamily = fontFamily;
+    this.healthValueText.color = '#CFFCF3';
+    this.healthValueText.width = '200px';
+    this.healthValueText.height = '26px';
+    this.healthValueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.healthValueText.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    this.healthValueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.healthValueText.left = 0;
+    this.healthValueText.top = '0px';
+    healthPanel.addControl(this.healthValueText);
+    this.playerHealthDisplay = this.healthValueText;
+
+    // Bottom-right status panel (stacked resource bars)
     this.statusPanel = new Rectangle('status_panel');
-    this.statusPanel.width = '260px';
-    this.statusPanel.height = '120px';
+    this.statusPanel.width = '420px';
+    this.statusPanel.height = '180px';
     this.statusPanel.thickness = 1;
     this.statusPanel.color = '#2EF9C3';
-    this.statusPanel.background = 'rgba(0, 0, 0, 0.35)';
-    this.statusPanel.left = -16;
-    this.statusPanel.top = -16;
+    this.statusPanel.background = 'rgba(0, 0, 0, 0.55)';
+    this.statusPanel.left = -24;
+    this.statusPanel.top = -24;
     this.statusPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.statusPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     this.guiClean.addControl(this.statusPanel);
@@ -600,40 +769,62 @@ export class HUDManager {
     this.playerUltDisplay.fontSize = 16;
     this.playerUltDisplay.fontFamily = fontFamily;
     this.playerUltDisplay.color = '#FFFF00';
-    this.playerUltDisplay.left = 10;
-    this.playerUltDisplay.top = 10;
-    this.playerUltDisplay.width = '220px';
+    this.playerUltDisplay.left = 16;
+    this.playerUltDisplay.top = 16;
+    this.playerUltDisplay.width = '380px';
     this.playerUltDisplay.height = '24px';
     this.playerUltDisplay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.playerUltDisplay.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.playerUltDisplay.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.statusPanel.addControl(this.playerUltDisplay);
 
+    const ultBarContainer = new Rectangle('ultimate_bar_container');
+    ultBarContainer.width = '388px';
+    ultBarContainer.height = '24px';
+    ultBarContainer.thickness = 1;
+    ultBarContainer.color = '#FFFF00';
+    ultBarContainer.background = 'rgba(30, 30, 10, 0.7)';
+    ultBarContainer.left = 16;
+    ultBarContainer.top = 42;
+    ultBarContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    ultBarContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.statusPanel.addControl(ultBarContainer);
+    this.ultBarContainer = ultBarContainer;
+
+    this.playerUltBarFill = new Rectangle('ultimate_bar_fill');
+    this.playerUltBarFill.width = '0%';
+    this.playerUltBarFill.height = '100%';
+    this.playerUltBarFill.thickness = 0;
+    this.playerUltBarFill.background = '#FFFF00';
+    this.playerUltBarFill.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    ultBarContainer.addControl(this.playerUltBarFill);
+
     this.secondaryStatusText = new TextBlock('secondary_status');
-    this.secondaryStatusText.text = 'STANCE: 100%';
-    this.secondaryStatusText.fontSize = 14;
+    this.secondaryStatusText.text = 'STANCE: 100% [READY]';
+    this.secondaryStatusText.fontSize = 16;
     this.secondaryStatusText.fontFamily = fontFamily;
     this.secondaryStatusText.color = '#B8FFE6';
-    this.secondaryStatusText.left = 10;
-    this.secondaryStatusText.top = 40;
-    this.secondaryStatusText.width = '220px';
-    this.secondaryStatusText.height = '22px';
+    this.secondaryStatusText.left = 16;
+    this.secondaryStatusText.top = 88;
+    this.secondaryStatusText.width = '380px';
+    this.secondaryStatusText.height = '24px';
     this.secondaryStatusText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.secondaryStatusText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.secondaryStatusText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.statusPanel.addControl(this.secondaryStatusText);
 
     const secondaryBarContainer = new Rectangle('secondary_resource_container');
-    secondaryBarContainer.width = '220px';
-    secondaryBarContainer.height = '12px';
+    secondaryBarContainer.width = '388px';
+    secondaryBarContainer.height = '24px';
     secondaryBarContainer.thickness = 1;
     secondaryBarContainer.color = '#7CFFEA';
     secondaryBarContainer.background = 'rgba(10, 30, 35, 0.7)';
-    secondaryBarContainer.left = 10;
-    secondaryBarContainer.top = 62;
+    secondaryBarContainer.left = 16;
+    secondaryBarContainer.top = 114;
     secondaryBarContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     secondaryBarContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.statusPanel.addControl(secondaryBarContainer);
+    this.secondaryBarContainer = secondaryBarContainer;
 
     this.secondaryResourceBarFill = new Rectangle('secondary_resource_fill');
     this.secondaryResourceBarFill.width = '100%';
@@ -643,30 +834,21 @@ export class HUDManager {
     this.secondaryResourceBarFill.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     secondaryBarContainer.addControl(this.secondaryResourceBarFill);
 
+    // Keep itemStatusText hidden / dummy to preserve compatibility
     this.itemStatusText = new TextBlock('item_status');
     this.itemStatusText.text = 'ITEM: NONE';
-    this.itemStatusText.fontSize = 14;
-    this.itemStatusText.fontFamily = fontFamily;
-    this.itemStatusText.color = '#B8FFE6';
-    this.itemStatusText.left = 10;
-    this.itemStatusText.top = 80;
-    this.itemStatusText.width = '220px';
-    this.itemStatusText.height = '22px';
-    this.itemStatusText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.itemStatusText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.itemStatusText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.statusPanel.addControl(this.itemStatusText);
+    this.itemStatusText.isVisible = false;
 
     // Auto-aim indicator (keyboard-only mode badge)
     this.autoAimLabel = new TextBlock('auto_aim_indicator');
     this.autoAimLabel.text = '⊙ AUTO-AIM';
-    this.autoAimLabel.fontSize = 11;
+    this.autoAimLabel.fontSize = 13;
     this.autoAimLabel.fontFamily = fontFamily;
     this.autoAimLabel.color = '#7CFFEA';
-    this.autoAimLabel.left = 10;
-    this.autoAimLabel.top = 100;
-    this.autoAimLabel.width = '220px';
-    this.autoAimLabel.height = '18px';
+    this.autoAimLabel.left = 16;
+    this.autoAimLabel.top = 148;
+    this.autoAimLabel.width = '240px';
+    this.autoAimLabel.height = '20px';
     this.autoAimLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.autoAimLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.autoAimLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -740,11 +922,11 @@ export class HUDManager {
 
     // Daemon popup
     this.daemonContainer = new Rectangle('daemon_container');
-    this.daemonContainer.width = '460px';
-    this.daemonContainer.height = '140px';
+    this.daemonContainer.width = '780px';
+    this.daemonContainer.height = '220px';
     this.daemonContainer.thickness = 2;
     this.daemonContainer.color = '#FF3B5C';
-    this.daemonContainer.background = 'rgba(20, 0, 6, 0.8)';
+    this.daemonContainer.background = 'rgba(20, 0, 6, 0.85)';
     this.daemonContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.daemonContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.daemonContainer.top = this.daemonBaseTop;
@@ -754,8 +936,8 @@ export class HUDManager {
     this.guiClean.addControl(this.daemonContainer);
 
     this.daemonGlitchOverlay = new Rectangle('daemon_glitch_overlay');
-    this.daemonGlitchOverlay.width = '460px';
-    this.daemonGlitchOverlay.height = '140px';
+    this.daemonGlitchOverlay.width = '780px';
+    this.daemonGlitchOverlay.height = '220px';
     this.daemonGlitchOverlay.thickness = 1;
     this.daemonGlitchOverlay.color = '#FF5E73';
     this.daemonGlitchOverlay.background = 'rgba(120, 0, 16, 0.16)';
@@ -769,38 +951,38 @@ export class HUDManager {
     this.guiFx.addControl(this.daemonGlitchOverlay);
 
     const avatarBox = new Rectangle('daemon_avatar');
-    avatarBox.width = '90px';
-    avatarBox.height = '90px';
-    avatarBox.left = 10;
-    avatarBox.top = 10;
+    avatarBox.width = '160px';
+    avatarBox.height = '160px';
+    avatarBox.left = 24;
+    avatarBox.top = 0;
     avatarBox.thickness = 1;
     avatarBox.color = '#FF7A8F';
     avatarBox.background = 'rgba(90, 0, 12, 0.6)';
     avatarBox.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    avatarBox.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    avatarBox.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.daemonContainer.addControl(avatarBox);
 
     const initialFrame = this.getAvatarFrameSrc('init_01.png');
     console.log(`[HUDManager] Initializing with detected base URL: ${getHudAssetBaseUrl()}`);
     this.daemonAvatarImage = new Image('daemon_avatar_image', initialFrame);
-    this.daemonAvatarImage.width = '90px';
-    this.daemonAvatarImage.height = '90px';
+    this.daemonAvatarImage.width = '160px';
+    this.daemonAvatarImage.height = '160px';
     this.daemonAvatarImage.stretch = Image.STRETCH_UNIFORM;
     avatarBox.addControl(this.daemonAvatarImage);
     this.daemonAvatarController.setPingPongSequence(this.getAvatarFrames('init'), 0.12);
 
     this.daemonMessageText = new TextBlock('daemon_message');
     this.daemonMessageText.text = '';
-    this.daemonMessageText.fontSize = 16;
+    this.daemonMessageText.fontSize = 24;
     this.daemonMessageText.fontFamily = fontFamily;
     this.daemonMessageText.color = '#FFD1DA';
-    this.daemonMessageText.left = 120;
-    this.daemonMessageText.top = 10;
-    this.daemonMessageText.width = '320px';
-    this.daemonMessageText.height = '120px';
+    this.daemonMessageText.left = 208;
+    this.daemonMessageText.top = 0;
+    this.daemonMessageText.width = '530px';
+    this.daemonMessageText.height = '180px';
     this.daemonMessageText.textWrapping = true;
     this.daemonMessageText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.daemonMessageText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.daemonMessageText.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.daemonMessageText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.daemonContainer.addControl(this.daemonMessageText);
 
@@ -906,25 +1088,25 @@ export class HUDManager {
     title.color = '#7CFFEA';
     title.fontSize = 42;
     title.fontFamily = 'Consolas';
-    title.top = '-160px';
+    title.top = '-180px';
     container.addControl(title);
 
     const buttonPanel = new StackPanel('pause_buttons');
-    buttonPanel.width = '240px';
-    buttonPanel.top = '20px';
+    buttonPanel.width = '340px';
+    buttonPanel.top = '40px';
+    buttonPanel.spacing = 16;
     container.addControl(buttonPanel);
 
     const createButton = (text: string, color: string, onClick: () => void) => {
       const btn = Button.CreateSimpleButton(`pause_btn_${text}`, text);
-      btn.height = '42px';
-      btn.width = '240px';
+      btn.height = '60px';
+      btn.width = '340px';
       btn.color = color;
       btn.background = 'rgba(20, 30, 35, 0.8)';
       btn.thickness = 1;
       btn.cornerRadius = 4;
-      btn.fontSize = 16;
+      btn.fontSize = 22;
       btn.fontFamily = 'Consolas';
-      btn.paddingTop = '8px';
       btn.onPointerUpObservable.add(() => onClick());
       buttonPanel.addControl(btn);
       return btn;
@@ -1365,21 +1547,21 @@ export class HUDManager {
 
     // Buttons
     const buttonPanel = new StackPanel('go_buttons');
-    buttonPanel.width = '240px';
-    buttonPanel.top = `${231 + bonusContainerHeight}px`;
+    buttonPanel.width = '340px';
+    buttonPanel.top = `${240 + bonusContainerHeight}px`;
     container.addControl(buttonPanel);
 
     const createButton = (text: string, color: string, onClick: () => void) => {
       const btn = Button.CreateSimpleButton(`go_btn_${text}`, text);
-      btn.height = '42px';
-      btn.width = '240px';
+      btn.height = '60px';
+      btn.width = '340px';
       btn.color = color;
       btn.background = 'rgba(20, 30, 35, 0.8)';
       btn.thickness = 1;
       btn.cornerRadius = 4;
-      btn.fontSize = 16;
+      btn.fontSize = 22;
       btn.fontFamily = fontFamily;
-      btn.paddingTop = '8px';
+      btn.paddingTop = '10px';
       btn.onPointerUpObservable.add(() => onClick());
       buttonPanel.addControl(btn);
       return btn;
@@ -1550,9 +1732,107 @@ export class HUDManager {
   }
 
   update(deltaTime: number): void {
+    this.updateMobileControlsState(deltaTime);
     this.updateDaemonPopup(deltaTime);
     this.updateBossRoomAlert(deltaTime);
     this.updateAchievementToast(deltaTime);
+
+    // Process scheduled logs in the queue
+    if (this.scheduledLogs.length > 0) {
+      this.scheduledLogTimer += deltaTime;
+      if (this.scheduledLogTimer >= this.scheduledLogs[0].delay) {
+        this.scheduledLogTimer = 0;
+        const entry = this.scheduledLogs.shift();
+        if (entry) {
+          if (entry.message === '__CLEAR__') {
+            this.logMessages = [];
+            this.refreshLogLines();
+          } else {
+            this.addLogMessage(entry.message);
+          }
+        }
+      }
+    }
+
+    // Periodically trigger a random diagnostic console glitch sequence
+    if (this.scheduledLogs.length === 0) {
+      this.randomGlitchTimer -= deltaTime;
+      if (this.randomGlitchTimer <= 0) {
+        this.triggerRandomConsoleGlitchSequence();
+        this.randomGlitchTimer = 25 + Math.random() * 25; // 25-50 seconds cooldown
+      }
+    }
+
+    // Process typing animation for command log feed
+    if (this.logMessages.length > 0) {
+      const newestMsg = this.logMessages[this.logMessages.length - 1];
+      if (this.currentTypingLength < newestMsg.length) {
+        this.typingTimer += deltaTime;
+        if (this.typingTimer >= 0.025) {
+          const chars = Math.floor(this.typingTimer / 0.025);
+          this.typingTimer %= 0.025;
+          this.currentTypingLength = Math.min(newestMsg.length, this.currentTypingLength + chars);
+          this.refreshLogLines();
+        }
+      }
+    }
+
+    // Process cursor blinking
+    this.cursorBlinkTimer += deltaTime;
+    if (this.cursorBlinkTimer >= 0.25) {
+      this.cursorBlinkTimer %= 0.25;
+      this.showCursor = !this.showCursor;
+      this.refreshLogLines();
+    }
+
+    // Update timers for animations
+    this.ultTime += deltaTime;
+    this.stanceTime += deltaTime;
+
+    // Process ultimate bar animations/pulsing
+    if (this.ultBarContainer && this.playerUltDisplay) {
+      if (this.lastUltActive) {
+        // Rapid active flash
+        const activeFlash = Math.abs(Math.sin(this.ultTime * 10));
+        this.ultBarContainer.color = activeFlash > 0.5 ? '#E040FF' : '#FF00A0';
+        this.ultBarContainer.thickness = 2;
+        // Text pulse
+        this.playerUltDisplay.color = activeFlash > 0.5 ? '#E040FF' : '#FF99FF';
+      } else if (this.lastUltCharge >= 1.0) {
+        // Ready status pulse glow
+        const readyPulse = Math.abs(Math.sin(this.ultTime * 5));
+        this.ultBarContainer.thickness = 1 + readyPulse * 2;
+        this.ultBarContainer.color = readyPulse > 0.5 ? '#00FF99' : '#00FFD1';
+        this.playerUltDisplay.color = readyPulse > 0.5 ? '#00FF99' : '#CFFCF3';
+      }
+    }
+
+    // Process stance bar animations/pulsing
+    if (this.secondaryBarContainer && this.secondaryStatusText) {
+      if (this.lastStanceActive) {
+        this.secondaryBarContainer.thickness = 1;
+        this.secondaryBarContainer.color = '#66CCFF';
+      } else if (this.lastStanceRatio >= 1.0) {
+        // Solid cyan
+        this.secondaryBarContainer.thickness = 2;
+        this.secondaryBarContainer.color = '#00FFD1';
+      } else if (this.lastStanceRatio <= 0.0) {
+        // Flashing border warnings for fully consumed stance
+        const flashWarning = Math.abs(Math.sin(this.stanceTime * 12));
+        this.secondaryBarContainer.thickness = 2;
+        this.secondaryBarContainer.color = flashWarning > 0.5 ? '#FF4A66' : '#FFCC66';
+        this.secondaryStatusText.color = flashWarning > 0.5 ? '#FF4A66' : '#FFCC66';
+      } else if (this.lastStanceRatio >= this.lastStanceThresholdRatio) {
+        // Burst ready micro-pulse
+        const burstPulse = Math.abs(Math.sin(this.stanceTime * 6));
+        this.secondaryBarContainer.thickness = 1 + burstPulse * 1.5;
+        this.secondaryBarContainer.color = burstPulse > 0.5 ? '#7CFFEA' : '#00FFD1';
+      } else {
+        // Standard recharge
+        this.secondaryBarContainer.thickness = 1;
+        this.secondaryBarContainer.color = '#FFCC66';
+      }
+    }
 
     // Process pending health bars
     if (this.pendingEnemyHealthBars.length > 0) {
@@ -1613,20 +1893,45 @@ export class HUDManager {
     const thresholdRatio = Math.max(0, Math.min(1, activationThreshold / clampedMax));
     const percentage = Math.round(ratio * 100);
 
-    if (this.secondaryStatusText) {
-      const state = active ? 'ACTIVE' : (ratio >= thresholdRatio ? 'READY' : 'RECHARGE');
-      this.secondaryStatusText.text = `STANCE: ${percentage}% [${state}]`;
-      this.secondaryStatusText.color = active ? '#66CCFF' : (ratio >= thresholdRatio ? '#B8FFE6' : '#FFCC66');
-    }
+    this.lastStanceRatio = ratio;
+    this.lastStanceActive = active;
+    this.lastStanceThresholdRatio = thresholdRatio;
 
-    if (this.secondaryResourceBarFill) {
-      this.secondaryResourceBarFill.width = `${Math.floor(ratio * 100)}%`;
-      if (active) {
-        this.secondaryResourceBarFill.background = '#66CCFF';
-      } else if (ratio >= thresholdRatio) {
-        this.secondaryResourceBarFill.background = '#7CFFEA';
-      } else {
-        this.secondaryResourceBarFill.background = '#FFCC66';
+    if (!this.secondaryStatusText || !this.secondaryResourceBarFill) return;
+
+    this.secondaryResourceBarFill.width = `${Math.floor(ratio * 100)}%`;
+
+    if (active) {
+      this.secondaryStatusText.text = `STANCE: ${percentage}% [ACTIVE]`;
+      this.secondaryStatusText.color = '#66CCFF'; // Active stance blue
+      this.secondaryResourceBarFill.background = '#66CCFF';
+      if (this.secondaryBarContainer) {
+        this.secondaryBarContainer.color = '#66CCFF';
+      }
+    } else if (ratio >= 1.0) {
+      this.secondaryStatusText.text = `STANCE: 100% [READY]`;
+      this.secondaryStatusText.color = '#00FFD1'; // Solid matrix cyan
+      this.secondaryResourceBarFill.background = '#00FFD1';
+      if (this.secondaryBarContainer) {
+        this.secondaryBarContainer.color = '#00FFD1';
+      }
+    } else if (ratio >= thresholdRatio) {
+      this.secondaryStatusText.text = `STANCE: ${percentage}% [BURST READY]`;
+      this.secondaryStatusText.color = '#7CFFEA'; // Ready bright cyan
+      this.secondaryResourceBarFill.background = '#7CFFEA';
+      if (this.secondaryBarContainer) {
+        this.secondaryBarContainer.color = '#7CFFEA';
+      }
+    } else if (ratio <= 0.0) {
+      this.secondaryStatusText.text = `STANCE: 0% [RECHARGE]`;
+      this.secondaryStatusText.color = '#FFCC66'; // Warning orange
+      this.secondaryResourceBarFill.background = '#FFCC66';
+    } else {
+      this.secondaryStatusText.text = `STANCE: ${percentage}% [RECHARGE]`;
+      this.secondaryStatusText.color = '#FFCC66';
+      this.secondaryResourceBarFill.background = '#FFCC66';
+      if (this.secondaryBarContainer) {
+        this.secondaryBarContainer.color = '#FFCC66';
       }
     }
   }
@@ -1656,16 +1961,56 @@ export class HUDManager {
   }
 
   private addLogMessage(message: string): void {
-    this.logMessages.unshift(`> ${message}`);
-    if (this.logMessages.length > 6) {
-      this.logMessages.pop();
+    if (message.includes('[') && message.includes(']')) {
+      const prefix = message.split('[')[0].trim();
+      const lastIndex = this.logMessages.length - 1;
+      if (lastIndex >= 0) {
+        const lastMsg = this.logMessages[lastIndex];
+        if (lastMsg.includes('[') && lastMsg.includes(']') && lastMsg.includes(prefix)) {
+          this.logMessages[lastIndex] = `> ${message}`;
+          this.currentTypingLength = `> ${message}`.length;
+          this.typingTimer = 0;
+          this.refreshLogLines();
+          return;
+        }
+      }
     }
+
+    this.logMessages.push(`> ${message}`);
+    if (this.logMessages.length > 6) {
+      this.logMessages.shift();
+    }
+    this.currentTypingLength = 0;
+    this.typingTimer = 0;
     this.refreshLogLines();
   }
 
   private refreshLogLines(): void {
+    const fadeColors = [
+      'rgba(46, 249, 195, 1.0)',   // Newest
+      'rgba(46, 249, 195, 0.76)',
+      'rgba(46, 249, 195, 0.58)',
+      'rgba(46, 249, 195, 0.42)',
+      'rgba(46, 249, 195, 0.28)',
+      'rgba(46, 249, 195, 0.16)'   // Oldest
+    ];
+
+    const L = this.logMessages.length;
     for (let i = 0; i < this.logLines.length; i++) {
-      this.logLines[i].text = this.logMessages[i] ?? '';
+      const msgIndex = i - (6 - L);
+      if (msgIndex >= 0 && msgIndex < L) {
+        const msg = this.logMessages[msgIndex];
+        const age = (L - 1) - msgIndex;
+        if (msgIndex === L - 1) {
+          const visible = msg.slice(0, this.currentTypingLength);
+          this.logLines[i].text = visible + (this.showCursor ? '▮' : ' ');
+        } else {
+          this.logLines[i].text = msg;
+        }
+        this.logLines[i].color = fadeColors[Math.min(5, age)];
+      } else {
+        this.logLines[i].text = '';
+      }
     }
   }
 
@@ -3033,5 +3378,345 @@ export class HUDManager {
         // For now, doing nothing is fine if there is no setVolume method.
       }
     }
+  }
+
+  public setInputManager(inputManager: InputManager): void {
+    this.inputManager = inputManager;
+    this.initializeMobileControlsIfNeeded();
+  }
+
+  public setPlayer(player: PlayerController): void {
+    this.player = player;
+  }
+
+  private initializeMobileControlsIfNeeded(): void {
+    if (!this.inputManager) return;
+
+    // Detect mobile device or developer query parameter override
+    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+      || ('ontouchstart' in window) 
+      || (navigator.maxTouchPoints > 0);
+    const hasMobileQuery = typeof window !== 'undefined' && window.location && window.location.search.includes('mobile=true');
+
+    if (isMobileDevice || hasMobileQuery || this.inputManager.isMobileMode()) {
+      this.inputManager.setMobileMode(true);
+      this.setMobileControlsVisible(true);
+    }
+  }
+
+  public setMobileControlsVisible(visible: boolean): void {
+    if (visible) {
+      if (this.mobileControls.length === 0) {
+        this.createMobileControls();
+      }
+      for (const ctrl of this.mobileControls) {
+        ctrl.isVisible = true;
+      }
+    } else {
+      for (const ctrl of this.mobileControls) {
+        ctrl.isVisible = false;
+      }
+    }
+  }
+
+  private createMobileControls(): void {
+    const fontFamily = 'Consolas';
+
+    // 1. LEFT JOYSTICK (Movement - Snapped to 8 Directions)
+    const leftJoystickContainer = new Rectangle('left_joystick_container');
+    leftJoystickContainer.width = '180px';
+    leftJoystickContainer.height = '180px';
+    leftJoystickContainer.thickness = 0;
+    leftJoystickContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    leftJoystickContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    leftJoystickContainer.left = '144px';
+    leftJoystickContainer.top = '-240px';
+    this.guiClean.addControl(leftJoystickContainer);
+    this.mobileControls.push(leftJoystickContainer);
+
+    const joystickBg = new Rectangle('left_joystick_bg');
+    joystickBg.width = '120px';
+    joystickBg.height = '120px';
+    joystickBg.cornerRadius = 60;
+    joystickBg.thickness = 3;
+    joystickBg.color = '#2EF9C3';
+    joystickBg.background = 'rgba(4, 10, 8, 0.4)';
+    leftJoystickContainer.addControl(joystickBg);
+
+    const joystickThumb = new Rectangle('left_joystick_thumb');
+    joystickThumb.width = '50px';
+    joystickThumb.height = '50px';
+    joystickThumb.cornerRadius = 25;
+    joystickThumb.thickness = 0;
+    joystickThumb.background = '#2EF9C3';
+    leftJoystickContainer.addControl(joystickThumb);
+
+    // 2. ACTION BUTTONS (Attack, Stance & Ultimate)
+    const attackBtn = Button.CreateSimpleButton('mobile_attack_btn', 'ATTACK');
+    attackBtn.width = '96px';
+    attackBtn.height = '96px';
+    attackBtn.color = '#FFD782';
+    attackBtn.background = 'rgba(20, 15, 10, 0.75)';
+    attackBtn.thickness = 2;
+    attackBtn.cornerRadius = 48;
+    attackBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    attackBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    attackBtn.left = '-140px';
+    attackBtn.top = '-240px';
+    if (attackBtn.textBlock) {
+      attackBtn.textBlock.fontSize = 14;
+      attackBtn.textBlock.fontFamily = fontFamily;
+      attackBtn.textBlock.fontWeight = 'bold';
+    }
+    this.guiClean.addControl(attackBtn);
+    this.mobileControls.push(attackBtn);
+    this.mobileAttackBtn = attackBtn;
+
+    const stanceBtn = Button.CreateSimpleButton('mobile_stance_btn', 'STANCE');
+    stanceBtn.width = '72px';
+    stanceBtn.height = '72px';
+    stanceBtn.color = '#7CFFEA';
+    stanceBtn.background = 'rgba(10, 30, 35, 0.75)';
+    stanceBtn.thickness = 2;
+    stanceBtn.cornerRadius = 36;
+    stanceBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    stanceBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    stanceBtn.left = '-270px';
+    stanceBtn.top = '-240px';
+    if (stanceBtn.textBlock) {
+      stanceBtn.textBlock.fontSize = 12;
+      stanceBtn.textBlock.fontFamily = fontFamily;
+      stanceBtn.textBlock.fontWeight = 'bold';
+    }
+    this.guiClean.addControl(stanceBtn);
+    this.mobileControls.push(stanceBtn);
+    this.mobileStanceBtn = stanceBtn;
+
+    const ultBtn = Button.CreateSimpleButton('mobile_ult_btn', 'ULTIMATE');
+    ultBtn.width = '84px';
+    ultBtn.height = '84px';
+    ultBtn.color = '#FFFF00';
+    ultBtn.background = 'rgba(35, 35, 10, 0.75)';
+    ultBtn.thickness = 2;
+    ultBtn.cornerRadius = 42;
+    ultBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    ultBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    ultBtn.left = '-190px';
+    ultBtn.top = '-370px';
+    if (ultBtn.textBlock) {
+      ultBtn.textBlock.fontSize = 12;
+      ultBtn.textBlock.fontFamily = fontFamily;
+      ultBtn.textBlock.fontWeight = 'bold';
+    }
+    this.guiClean.addControl(ultBtn);
+    this.mobileControls.push(ultBtn);
+    this.mobileUltBtn = ultBtn;
+
+    // Interactive Drag Logic variables
+    let isDraggingLeft = false;
+    let leftPointerId = -1;
+
+    const localPos = new Vector2();
+    const updateLeftJoystick = (px: number, py: number) => {
+      leftJoystickContainer.getLocalCoordinatesToRef(new Vector2(px, py), localPos);
+      let dx = localPos.x;
+      let dy = localPos.y;
+      const maxRadius = 60;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance > maxRadius) {
+        dx = (dx / distance) * maxRadius;
+        dy = (dy / distance) * maxRadius;
+      }
+      joystickThumb.left = `${dx}px`;
+      joystickThumb.top = `${dy}px`;
+
+      if (distance > 0) {
+        const ndx = dx / maxRadius;
+        const ndy = -dy / maxRadius; // Invert Y for 3D coordinates (Z goes forward)
+
+        const rawVector = new Vector3(ndx, 0, ndy);
+        if (rawVector.length() > 0.15) {
+          const angle = Math.atan2(rawVector.x, rawVector.z);
+          const step = Math.PI / 4;
+          const snappedAngle = Math.round(angle / step) * step;
+          const quantized = new Vector3(Math.sin(snappedAngle), 0, Math.cos(snappedAngle)).normalize();
+          this.inputManager!.setJoystickMoveVector(quantized);
+        } else {
+          this.inputManager!.setJoystickMoveVector(Vector3.Zero());
+        }
+      } else {
+        this.inputManager!.setJoystickMoveVector(Vector3.Zero());
+      }
+    };
+
+    const resetLeftJoystick = () => {
+      joystickThumb.left = '0px';
+      joystickThumb.top = '0px';
+      this.inputManager!.setJoystickMoveVector(Vector3.Zero());
+    };
+
+    // Global Pointer Event bindings on the scene for left movement joystick multi-touch tracking
+    this.scene.onPointerObservable.add((pointerInfo) => {
+      const event = pointerInfo.event;
+      if (!event) return;
+      const pointerId = (event as any).pointerId;
+      const type = pointerInfo.type;
+
+      const engine = this.scene.getEngine();
+      const canvas = engine.getRenderingCanvas();
+      if (!canvas) return;
+      
+      const rect = canvas.getBoundingClientRect();
+      const rawX = (event as any).clientX - rect.left;
+      const rawY = (event as any).clientY - rect.top;
+
+      const localCheckPos = new Vector2();
+
+      if (type === PointerEventTypes.POINTERDOWN) {
+        const leftHalfW = leftJoystickContainer.widthInPixels / 2;
+        const leftHalfH = leftJoystickContainer.heightInPixels / 2;
+        leftJoystickContainer.getLocalCoordinatesToRef(new Vector2(rawX, rawY), localCheckPos);
+        const isInsideLeft = localCheckPos.x >= -leftHalfW && localCheckPos.x <= leftHalfW &&
+                             localCheckPos.y >= -leftHalfH && localCheckPos.y <= leftHalfH;
+
+        if (isInsideLeft) {
+          isDraggingLeft = true;
+          leftPointerId = pointerId;
+          updateLeftJoystick(rawX, rawY);
+        }
+      } else if (type === PointerEventTypes.POINTERMOVE) {
+        if (isDraggingLeft && pointerId === leftPointerId) {
+          updateLeftJoystick(rawX, rawY);
+        }
+      } else if (type === PointerEventTypes.POINTERUP) {
+        if (isDraggingLeft && pointerId === leftPointerId) {
+          isDraggingLeft = false;
+          leftPointerId = -1;
+          resetLeftJoystick();
+        }
+      }
+    });
+
+    // Attack action button observables
+    attackBtn.onPointerDownObservable.add(() => {
+      if (this.mobileAttackHoldBlocked) return;
+      this.inputManager!.setJoystickAimActive(true);
+    });
+    attackBtn.onPointerUpObservable.add(() => {
+      this.inputManager!.setJoystickAimActive(false);
+      this.mobileAttackHoldBlocked = false;
+    });
+
+    // Stance click-toggle button observables
+    stanceBtn.onPointerDownObservable.add(() => {
+      if (!this.player) return;
+      const isStanceActive = this.player.isSecondaryActive();
+      if (isStanceActive) {
+        this.inputManager!.setMobileStancePressed(false);
+      } else {
+        const currentResource = this.player.getSecondaryResourceCurrent();
+        const threshold = this.player.getSecondaryActivationThreshold();
+        if (currentResource >= threshold) {
+          this.inputManager!.setMobileStancePressed(true);
+        }
+      }
+    });
+
+    // Ultimate button observables
+    ultBtn.onPointerDownObservable.add(() => {
+      this.inputManager!.setMobileUltPressed(true);
+      ultBtn.background = 'rgba(255, 255, 0, 0.4)';
+    });
+    ultBtn.onPointerUpObservable.add(() => {
+      this.inputManager!.setMobileUltPressed(false);
+      ultBtn.background = 'rgba(35, 35, 10, 0.75)';
+    });
+  }
+
+  private updateMobileControlsState(deltaTime: number): void {
+    if (!this.inputManager || !this.player) return;
+
+    const mobileMode = this.inputManager.isMobileMode();
+
+    if (!mobileMode) {
+      this.setMobileControlsVisible(false);
+      return;
+    }
+
+    this.setMobileControlsVisible(true);
+
+    const isStanceActive = this.player.isSecondaryActive();
+    const classId = this.player.getClassId();
+
+    // Stance transition check: block attack hold if active when transitioning
+    if (isStanceActive && !this.wasStanceActive) {
+      if (this.inputManager.isJoystickAimActive()) {
+        this.mobileAttackHoldBlocked = true;
+        this.inputManager.setJoystickAimActive(false);
+      }
+    }
+
+    // Enforce hold suppression if blocked
+    if (this.mobileAttackHoldBlocked) {
+      this.inputManager.setJoystickAimActive(false);
+    }
+
+    // Dynamic Attack Button label and visual feedback updates
+    if (this.mobileAttackBtn) {
+      if (isStanceActive) {
+        if (classId === 'mage') {
+          this.mobileAttackBtn.textBlock!.text = 'BOOM';
+          this.mobileAttackBtn.color = '#66CCFF';
+          if (!this.mobileAttackHoldBlocked) {
+            this.mobileAttackBtn.background = 'rgba(10, 30, 45, 0.85)';
+          } else {
+            this.mobileAttackBtn.background = 'rgba(15, 15, 15, 0.6)';
+          }
+        } else {
+          this.mobileAttackBtn.textBlock!.text = 'DASH';
+          this.mobileAttackBtn.color = '#FF9900';
+          if (!this.mobileAttackHoldBlocked) {
+            this.mobileAttackBtn.background = 'rgba(45, 25, 10, 0.85)';
+          } else {
+            this.mobileAttackBtn.background = 'rgba(15, 15, 15, 0.6)';
+          }
+        }
+      } else {
+        this.mobileAttackBtn.textBlock!.text = 'ATTACK';
+        this.mobileAttackBtn.color = '#FFD782';
+        this.mobileAttackBtn.background = this.inputManager.isJoystickAimActive()
+          ? 'rgba(255, 215, 130, 0.4)'
+          : 'rgba(20, 15, 10, 0.75)';
+      }
+    }
+
+    // Dynamic Stance Button visual feedback updates
+    if (this.mobileStanceBtn) {
+      const currentResource = this.player.getSecondaryResourceCurrent();
+      const threshold = this.player.getSecondaryActivationThreshold();
+      const hasEnoughResource = currentResource >= threshold;
+
+      if (isStanceActive) {
+        this.mobileStanceBtn.background = 'rgba(46, 249, 195, 0.7)';
+        this.mobileStanceBtn.color = '#040A08';
+      } else {
+        if (hasEnoughResource) {
+          this.mobileStanceBtn.background = 'rgba(10, 30, 35, 0.75)';
+          this.mobileStanceBtn.color = '#7CFFEA';
+        } else {
+          this.mobileStanceBtn.background = 'rgba(20, 20, 20, 0.4)';
+          this.mobileStanceBtn.color = '#445550';
+        }
+      }
+    }
+
+    // Sync inputManager state and clear block if stance exits
+    if (!isStanceActive) {
+      this.inputManager.setMobileStancePressed(false);
+      this.mobileAttackHoldBlocked = false;
+    }
+
+    this.wasStanceActive = isStanceActive;
   }
 }

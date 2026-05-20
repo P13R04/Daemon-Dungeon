@@ -63,4 +63,5 @@ export interface UiOptionChangedPayload {
 
 export interface PlayerUltReadyPayload {
   charge: number;
+  active?: boolean;
 }

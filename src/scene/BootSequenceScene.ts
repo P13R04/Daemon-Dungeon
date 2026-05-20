@@ -69,32 +69,30 @@ const MIN_CHAR_MS = 6;
 const BASE_BOOT_LINES: BootLine[] = [
   // ── Phase 1 — Normal boot ─────────────────────────────────────────────────
   { text: 'DAEMON_OS v2.6.1 ── REBOOT SEQUENCE INITIATED',  color: C_HDR,    delay:  300, speed: 18 },
-  { text: '─'.repeat(56),                                   color: C_DIM,    delay:  820, speed:  3 },
+  { text: '─'.repeat(80),                                   color: C_DIM,    delay:  820, speed:  3 },
   { text: '>  Checking hardware integrity.........  [ OK ]', color: C_OK,     delay: 1050, speed: 16 },
   { text: '>  Loading kernel modules..............  [ OK ]', color: C_OK,     delay: 1550, speed: 16 },
   { text: '>  Mounting   /dev/dungeon.............  [ OK ]', color: C_OK,     delay: 2040, speed: 16 },
   { text: '>  Initializing audio subsystem........  [ OK ]', color: C_OK,     delay: 2520, speed: 16 },
   { text: '>  Buffa initialized...................  [ OK ]', color: C_OK,     delay: 2980, speed: 16 }, // 🐛 easter egg
-  { text: '>  Loading entity registry.............  [ OK ]', color: C_OK,     delay: 3430, speed: 16 },
-  { text: '>  Spawning AI pool....................  [ OK ]', color: C_OK,     delay: 3860, speed: 16 },
-  { text: '>  Initializing combat engine..........  [ OK ]', color: C_OK,     delay: 4260, speed: 16 },
-  { text: '',                                               color: C_OK,     delay: 4640, speed:  0 },
-  { text: '■  SYSTEM DIAGNOSTIC — ALL CLEAR',               color: C_HDR,    delay: 4740, speed: 22 },
-  { text: '>  Starting main loop...',                       color: C_OK,     delay: 5320, speed: 22 },
+  { text: '>  Initializing combat engine..........  [ OK ]', color: C_OK,     delay: 3400, speed: 16 },
+  { text: '',                                               color: C_OK,     delay: 3750, speed:  0 },
+  { text: '■  SYSTEM DIAGNOSTIC — ALL CLEAR',               color: C_HDR,    delay: 3850, speed: 22 },
+  { text: '>  Starting main loop...',                       color: C_OK,     delay: 4430, speed: 22 },
   // ── Phase 2 — Corruption begins ───────────────────────────────────────────
-  { text: '',                                               color: C_OK,     delay: 5700, speed:  0 },
-  { text: '[WARNING]   Anomalous process: /proc/d4em0n/c0re', color: C_WARN, delay: 5880, speed: 20 },
-  { text: '[ERROR]     Termination attempt.........  [FAIL]', color: C_ERR,  delay: 6280, speed: 20 },
-  { text: '[ERROR]     Firewall.ts overwritten......  [FAIL]', color: C_ERR, delay: 6640, speed: 20 },
-  { text: '[CRITICAL]  Memory segment 0×4D3M0N corrupted',  color: C_CRIT,  delay: 6960, speed: 20 },
-  { text: '[CRITICAL]  Root escalation — kernel compromised', color: C_CRIT, delay: 7250, speed: 20 },
-  { text: '[ERROR]     process_kill: permission denied',    color: C_CRIT,  delay: 7510, speed: 20 },
+  { text: '',                                               color: C_OK,     delay: 4810, speed:  0 },
+  { text: '[WARNING]   Anomalous process: /proc/d4em0n/c0re', color: C_WARN, delay: 4990, speed: 20 },
+  { text: '[ERROR]     Termination attempt.........  [FAIL]', color: C_ERR,  delay: 5390, speed: 20 },
+  { text: '[ERROR]     Firewall.ts overwritten......  [FAIL]', color: C_ERR, delay: 5750, speed: 20 },
+  { text: '[CRITICAL]  Memory segment 0×4D3M0N corrupted',  color: C_CRIT,  delay: 6070, speed: 20 },
+  { text: '[CRITICAL]  Root escalation — kernel compromised', color: C_CRIT, delay: 6360, speed: 20 },
+  { text: '[ERROR]     process_kill: permission denied',    color: C_CRIT,  delay: 6620, speed: 20 },
   // ── Phase 3 — Daemon takes control ────────────────────────────────────────
-  { text: '',                                               color: C_CRIT,   delay: 7750, speed:  0 },
-  { text: glitch('SYSTEM OVERRIDDEN.'),                     color: C_CRIT,   delay: 7880, speed: 30 },
-  { text: glitch('HALT.') + '  I have arrived.',            color: C_DAEMON, delay: 8580, speed: 55 },
-  { text: 'This system belongs to me now.',                 color: C_DAEMON, delay: 9350, speed: 48 },
-  { text: 'Welcome, prisoner...  to the  D u n g e o n.',  color: C_HDR,    delay:10150, speed: 42 },
+  { text: '',                                               color: C_CRIT,   delay: 6860, speed:  0 },
+  { text: glitch('SYSTEM OVERRIDDEN.'),                     color: C_CRIT,   delay: 6990, speed: 30 },
+  { text: glitch('HALT.') + '  I have arrived.',            color: C_DAEMON, delay: 7690, speed: 55 },
+  { text: 'This system belongs to me now.',                 color: C_DAEMON, delay: 8460, speed: 48 },
+  { text: 'Welcome, prisoner...  to the  D u n g e o n.',  color: C_HDR,    delay: 9260, speed: 42 },
 ];
 
 const BOOT_LINES: BootLine[] = BASE_BOOT_LINES.map((line) => ({
@@ -105,7 +103,7 @@ const BOOT_LINES: BootLine[] = BASE_BOOT_LINES.map((line) => ({
     : 0,
 }));
 
-const SEQUENCE_END_MS = Math.round(12500 * INTRO_TIMING_SCALE) + 400;
+const SEQUENCE_END_MS = Math.round(11600 * INTRO_TIMING_SCALE) + 400;
 const FADE_MS         = 450;
 const FINAL_HOLD_MS   = 1000;
 
@@ -278,7 +276,7 @@ export class BootSequenceScene {
     // ── Header bar ──────────────────────────────────────────────────────────
     const hdr = new Rectangle('bootHdr');
     hdr.width      = '100%';
-    hdr.height     = '34px';
+    hdr.height     = '48px';
     hdr.background = '#061210';
     hdr.thickness  = 0;
     hdr.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -296,10 +294,10 @@ export class BootSequenceScene {
     const hdrTxt = new TextBlock('bootHdrTxt');
     hdrTxt.text       = 'DAEMON_OS  [TERMINAL]   PID:0×D43M  UID:root   KERNEL:2.6.1-daemon';
     hdrTxt.color      = '#1E5C50';
-    hdrTxt.fontSize   = 11;
+    hdrTxt.fontSize   = 16;
     hdrTxt.fontFamily = 'Lucida Console, Courier New, monospace';
     hdrTxt.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    hdrTxt.paddingLeft = '12px';
+    hdrTxt.paddingLeft = '16px';
     hdr.addControl(hdrTxt);
     this._headerText = hdrTxt;
 
@@ -310,16 +308,16 @@ export class BootSequenceScene {
     this._logPanel.width                   = '96%';
     this._logPanel.verticalAlignment       = Control.VERTICAL_ALIGNMENT_TOP;
     this._logPanel.horizontalAlignment     = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this._logPanel.top                     = '42px';
-    this._logPanel.paddingLeft             = '14px';
+    this._logPanel.top                     = '64px';
+    this._logPanel.paddingLeft             = '24px';
     panel.addControl(this._logPanel);
 
     // Blinking cursor (always last child of logPanel)
     this._cursor = new TextBlock('bootCursor');
     this._cursor.text       = '_';
     this._cursor.color      = '#2EF9C3';
-    this._cursor.fontSize   = 13;
-    this._cursor.height     = '20px';
+    this._cursor.fontSize   = 20;
+    this._cursor.height     = '32px';
     this._cursor.fontFamily = 'Lucida Console, Courier New, monospace';
     this._cursor.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this._logPanel.addControl(this._cursor);
@@ -327,17 +325,17 @@ export class BootSequenceScene {
     // ── Footer ──────────────────────────────────────────────────────────────
     const footer = new Rectangle('bootFooter');
     footer.width      = '96%';
-    footer.height     = '52px';
+    footer.height     = '80px';
     footer.background = '#040810';
     footer.thickness  = 0;
     footer.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    footer.paddingBottom     = '10px';
+    footer.paddingBottom     = '15px';
     panel.addControl(footer);
 
     // Progress bar track
     const barBg = new Rectangle('bootBarBg');
     barBg.width      = '100%';
-    barBg.height     = '12px';
+    barBg.height     = '20px';
     barBg.background = '#0A1A14';
     barBg.thickness  = 1;
     barBg.color      = '#1E5C50';
@@ -357,11 +355,11 @@ export class BootSequenceScene {
     this._progressLabel = new TextBlock('bootBarLabel');
     this._progressLabel.text       = 'LOADING...  0%';
     this._progressLabel.color      = '#2EF9C3';
-    this._progressLabel.fontSize   = 11;
+    this._progressLabel.fontSize   = 15;
     this._progressLabel.fontFamily = 'Lucida Console, Courier New, monospace';
     this._progressLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this._progressLabel.verticalAlignment       = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    this._progressLabel.paddingBottom           = '2px';
+    this._progressLabel.paddingBottom           = '4px';
     footer.addControl(this._progressLabel);
 
     // Skip hint
@@ -369,11 +367,11 @@ export class BootSequenceScene {
       const skipHint = new TextBlock('bootSkipHint');
       skipHint.text       = '[ SPACE ] or [ CLICK ] to skip';
       skipHint.color      = '#1E4030';
-      skipHint.fontSize   = 11;
+      skipHint.fontSize   = 15;
       skipHint.fontFamily = 'Lucida Console, Courier New, monospace';
       skipHint.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
       skipHint.verticalAlignment       = Control.VERTICAL_ALIGNMENT_BOTTOM;
-      skipHint.paddingBottom           = '2px';
+      skipHint.paddingBottom           = '4px';
       footer.addControl(skipHint);
 
       // Click anywhere to skip
@@ -638,8 +636,8 @@ export class BootSequenceScene {
     const block = new TextBlock();
     block.text        = (speed <= 0 || text === '') ? text : '';
     block.color       = color;
-    block.fontSize    = 13;
-    block.height      = '20px';
+    block.fontSize    = 20;
+    block.height      = '32px';
     block.fontFamily  = 'Lucida Console, Courier New, monospace';
     block.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     block.textWrapping = false;

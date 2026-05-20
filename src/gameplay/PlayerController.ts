@@ -53,7 +53,7 @@ export class PlayerController {
 
   private mesh!: Mesh;
   private health!: Health;
-  private inputManager: InputManager;
+  public inputManager: InputManager;
   private eventBus: EventBus;
   private time: Time;
   public animationController!: PlayerAnimationController; // Public pour DevConsole
@@ -101,6 +101,7 @@ export class PlayerController {
   private isFiring: boolean = false;
   private poisonBonusPercent: number = 0;
   private poisonDuration: number = 0;
+  private activeProjectiles: any[] = [];
 
   // Bonus runtime state (room-to-room build progression)
   private bonusDodgeChance: number = 0;
@@ -128,6 +129,8 @@ export class PlayerController {
   private ultCharge: number = 0;
   private ultCooldown: number = 0;
   private ultChargePerSecond: number = 1 / 30; // 30 second charge
+  private ultimateActiveDuration: number = 0;
+  private ultimateActiveDurationMax: number = 0;
   private hasEnemiesInRoom: boolean = false;
   private gameplayActive: boolean = false;
 
@@ -949,6 +952,71 @@ export class PlayerController {
   }
 
   private updateAimDirection(): void {
+    if (this.isTankShieldActive()) {
+      let nearestThreatDir: Vector3 | null = null;
+      let nearestDistanceSq = Number.MAX_VALUE;
+
+      if (this.enemies && this.enemies.length > 0) {
+        for (const enemy of this.enemies) {
+          if (!enemy.isActive()) continue;
+          const enemyPos = enemy.getPosition();
+          const distSq = Vector3.DistanceSquared(this.position, enemyPos);
+          if (distSq < nearestDistanceSq) {
+            const dir = enemyPos.subtract(this.position);
+            dir.y = 0;
+            if (dir.lengthSquared() > 0.0001) {
+              nearestDistanceSq = distSq;
+              nearestThreatDir = dir.normalize();
+            }
+          }
+        }
+      }
+
+      if (this.activeProjectiles && this.activeProjectiles.length > 0) {
+        for (const proj of this.activeProjectiles) {
+          if (!proj.data || proj.data.friendly) continue;
+          const projPos = proj.data.position;
+          const distSq = Vector3.DistanceSquared(this.position, projPos);
+          if (distSq < nearestDistanceSq) {
+            const dir = projPos.subtract(this.position);
+            dir.y = 0;
+            if (dir.lengthSquared() > 0.0001) {
+              nearestDistanceSq = distSq;
+              nearestThreatDir = dir.normalize();
+            }
+          }
+        }
+      }
+
+      if (nearestThreatDir) {
+        this.attackDirection = nearestThreatDir;
+        this.lastAttackDirection = nearestThreatDir.clone();
+        this.attackTargetPoint = this.position.add(nearestThreatDir.scale(8));
+        return;
+      }
+    }
+
+    if (this.inputManager.isMobileMode()) {
+      // Prioritize nearest enemy for mobile auto-aim
+      const nearest = this.getNearestEnemy(this.enemies);
+      if (nearest) {
+        const enemyPos = nearest.getPosition();
+        const dir = enemyPos.subtract(this.position);
+        dir.y = 0;
+        if (dir.lengthSquared() > 0.0001) {
+          const targetDir = dir.normalize();
+          this.attackDirection = targetDir;
+          this.lastAttackDirection = targetDir.clone();
+          this.attackTargetPoint = this.position.add(targetDir.scale(8));
+          return;
+        }
+      }
+
+      // Fallback to movement-based aim
+      this.updateAimDirectionFromMovement();
+      return;
+    }
+
     if (this.keyboardOnlyMode && this.autoAimTowardMovement) {
       // Prioritize nearest enemy for auto-aim
       const nearest = this.getNearestEnemy(this.enemies);
@@ -1083,6 +1151,10 @@ export class PlayerController {
     this.enemies = enemies;
   }
 
+  setProjectiles(projectiles: any[]): void {
+    this.activeProjectiles = projectiles;
+  }
+
   setEnemiesPresent(present: boolean): void {
     this.enemiesPresent = present;
     this.hasEnemiesInRoom = present;
@@ -1118,16 +1190,32 @@ export class PlayerController {
     const configLoader = ConfigLoader.getInstance();
     const gameplayConfig = configLoader.getGameplayConfig();
 
+    if (this.ultimateActiveDuration > 0) {
+      this.ultimateActiveDuration = Math.max(0, this.ultimateActiveDuration - deltaTime);
+    }
+
     if (gameplayConfig?.debugConfig?.infiniteUltimate) {
       this.ultCharge = 1.0;
       this.ultCooldown = 0;
-      this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_READY, { charge: this.ultCharge });
+      this.ultimateActiveDuration = 0;
+      this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_READY, { charge: 1.0, active: false });
+      return;
+    }
+
+    if (this.ultimateActiveDuration > 0) {
+      const chargeRatio = this.ultimateActiveDurationMax > 0 ? this.ultimateActiveDuration / this.ultimateActiveDurationMax : 0;
+      this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_READY, { charge: chargeRatio, active: true });
+      
+      // Even if active, update cooldown if it's already ticking
+      if (this.ultCooldown > 0) {
+        this.ultCooldown = Math.max(0, this.ultCooldown - deltaTime);
+      }
       return;
     }
 
     if (this.ultCooldown > 0) {
-      this.ultCooldown -= deltaTime;
-      this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_READY, { charge: this.ultCharge });
+      this.ultCooldown = Math.max(0, this.ultCooldown - deltaTime);
+      this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_READY, { charge: this.ultCharge, active: false });
       return;
     }
 
@@ -1142,7 +1230,7 @@ export class PlayerController {
       this.ultCharge = Math.min(1.0, this.ultCharge + chargePerSecond * deltaTime);
     }
 
-    this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_READY, { charge: this.ultCharge });
+    this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_READY, { charge: this.ultCharge, active: false });
   }
 
   public setAutoPlayMode(enabled: boolean): void {
@@ -1246,7 +1334,14 @@ export class PlayerController {
 
       // Left Click: Primary Attack (Sweep) or Secondary Attack (Bash) under stance
       if (this.tankShieldActive && slot1Pressed && this.tankShieldBashCooldownTimer <= 0 && this.tankShieldBashRemaining <= 0 && this.tankStanceResource >= this.tankShieldBashCost) {
-        this.tankShieldBashDirection = this.attackDirection.clone();
+        const movementInput = this.inputManager.getMovementInput();
+        let bashDir = this.attackDirection.clone();
+        if (movementInput.lengthSquared() > 0.0001) {
+          bashDir = new Vector3(movementInput.x, 0, movementInput.z).normalize();
+        } else if (this.lastMovementDirection.lengthSquared() > 0.0001) {
+          bashDir = this.lastMovementDirection.normalize();
+        }
+        this.tankShieldBashDirection = bashDir;
         this.tankShieldBashRemaining = this.tankShieldBashDuration;
         this.tankComboSecondSwingPending = false;
         this.tankShieldBashCooldownTimer = this.tankShieldBashCooldown;
@@ -1306,7 +1401,14 @@ export class PlayerController {
           ? Vector3.Distance(this.position, this.attackTargetPoint)
           : maxDashDistance;
         const actualDistance = Math.max(0.001, Math.min(maxDashDistance, targetDistance));
-        this.rogueDashDirection = this.attackDirection.clone();
+        const movementInput = this.inputManager.getMovementInput();
+        let dashDir = this.attackDirection.clone();
+        if (movementInput.lengthSquared() > 0.0001) {
+          dashDir = new Vector3(movementInput.x, 0, movementInput.z).normalize();
+        } else if (this.lastMovementDirection.lengthSquared() > 0.0001) {
+          dashDir = this.lastMovementDirection.normalize();
+        }
+        this.rogueDashDirection = dashDir;
         this.rogueDashStartPosition = this.position.clone();
         this.rogueDashTrailLastPoint = this.position.clone();
         this.rogueDashTrailAccumulatedDistance = 0;
@@ -2136,6 +2238,7 @@ export class PlayerController {
   private castUltimate(): void {
     if (this.classId === 'firewall') {
       const ultConfig = this.config.firewall?.ultimate ?? {};
+      const duration = this.applyUltimateDurationModifier(this.readPositiveNumber(ultConfig.duration, 5));
       this.pendingTankUltimate = {
         position: this.position.clone(),
         radius: this.readPositiveNumber(ultConfig.radius, 4.2),
@@ -2146,8 +2249,10 @@ export class PlayerController {
           this.readPositiveNumber(ultConfig.pullStrength, 2.4)
         ),
         tickInterval: this.readPositiveNumber(ultConfig.tickInterval, 0.6),
-        duration: this.applyUltimateDurationModifier(this.readPositiveNumber(ultConfig.duration, 5)),
+        duration: duration,
       };
+      this.ultimateActiveDuration = duration;
+      this.ultimateActiveDurationMax = duration;
       this.ultCharge = 0;
       this.ultCooldown = this.readPositiveNumber(ultConfig.cooldown, 14);
       this.animationController.playAnimation(AnimationState.ULTIMATE);
@@ -2156,13 +2261,16 @@ export class PlayerController {
 
     if (this.isRogueLikeClass()) {
       const ultConfig = this.config.rogue?.ultimate ?? {};
+      const duration = this.applyUltimateDurationModifier(this.readPositiveNumber(ultConfig.duration, this.rogueUltimateDuration));
       this.pendingRogueUltimate = {
-        duration: this.applyUltimateDurationModifier(this.readPositiveNumber(ultConfig.duration, this.rogueUltimateDuration)),
+        duration: duration,
         zoneRadius: this.readPositiveNumber(ultConfig.zoneRadius, this.rogueUltimateZoneRadius),
         hitDamage: this.computeRogueDamage(this.readPositiveNumber(ultConfig.hitDamage, this.rogueUltimateHitDamage)),
         teleportInterval: this.readPositiveNumber(ultConfig.teleportInterval, this.rogueUltimateTeleportInterval),
         teleportOffset: this.readPositiveNumber(ultConfig.teleportOffset, this.rogueUltimateTeleportOffset),
       };
+      this.ultimateActiveDuration = duration;
+      this.ultimateActiveDurationMax = duration;
       this.ultCharge = 0;
       this.ultCooldown = this.readPositiveNumber(ultConfig.cooldown, 13);
       return;
@@ -2179,6 +2287,10 @@ export class PlayerController {
         }
       | undefined;
     const mageUltConfig = ultConfig ?? {};
+    const duration = this.applyUltimateDurationModifier(this.readPositiveNumber(mageUltConfig.dotDuration, 8));
+    this.ultimateActiveDuration = duration;
+    this.ultimateActiveDurationMax = duration;
+
     if (this.animationController) {
       this.animationController.rotateTowardDirection(this.attackDirection);
       this.animationController.setOnUltimateAnimationFinished(() => {
@@ -2186,7 +2298,7 @@ export class PlayerController {
           position: this.position.clone(),
           radius: this.readPositiveNumber(mageUltConfig.radius, 4),
           damage: this.computeOutgoingDamage(this.readPositiveNumber(mageUltConfig.damage, 50)),
-          duration: this.applyUltimateDurationModifier(this.readPositiveNumber(mageUltConfig.dotDuration, 8)),
+          duration: duration,
           dotTickRate: this.readPositiveNumber(mageUltConfig.dotTickRate, 0.5),
           healPerTick: this.readPositiveNumber(mageUltConfig.healPerTick, 6),
         });
@@ -2196,7 +2308,7 @@ export class PlayerController {
         position: this.position.clone(),
         radius: this.readPositiveNumber(mageUltConfig.radius, 4),
         damage: this.computeOutgoingDamage(this.readPositiveNumber(mageUltConfig.damage, 50)),
-        duration: this.applyUltimateDurationModifier(this.readPositiveNumber(mageUltConfig.dotDuration, 8)),
+        duration: duration,
         dotTickRate: this.readPositiveNumber(mageUltConfig.dotTickRate, 0.5),
         healPerTick: this.readPositiveNumber(mageUltConfig.healPerTick, 6),
       });
@@ -2218,7 +2330,22 @@ export class PlayerController {
   }
 
   getUltChargePercentage(): number {
+    if (this.ultimateActiveDuration > 0 && this.ultimateActiveDurationMax > 0) {
+      return this.ultimateActiveDuration / this.ultimateActiveDurationMax;
+    }
     return this.ultCharge;
+  }
+
+  getUltimateActiveDuration(): number {
+    return this.ultimateActiveDuration;
+  }
+
+  getUltimateActiveDurationMax(): number {
+    return this.ultimateActiveDurationMax;
+  }
+
+  isUltimateActiveState(): boolean {
+    return this.ultimateActiveDuration > 0;
   }
 
   getFocusFirePercentage(): number {
@@ -2483,12 +2610,14 @@ export class PlayerController {
     }
 
     // Reset ultimate
+    this.ultimateActiveDuration = 0;
+    this.ultimateActiveDurationMax = 0;
     this.ultCharge = 0;
     this.ultCooldown = 0;
     this.secondaryResource = this.secondaryResourceMax;
     this.tankStanceResource = this.tankStanceResourceMax;
     this.rogueStealthResource = this.rogueStealthResourceMax;
-    this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_READY, { charge: this.ultCharge });
+    this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_READY, { charge: this.ultCharge, active: false });
   }
 
   onPlayerDealtDamage(damage: number): void {
