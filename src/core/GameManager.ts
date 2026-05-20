@@ -345,9 +345,11 @@ export class GameManager {
     });
 
     // Initialize Babylon.js engine
-    // adaptToDeviceRatio=true: renders at the device's native pixel density
-    // (e.g. 3× on recent iPhones). Critical for sharp text/UI on mobile.
-    this.engine = new Engine(canvas, true, { adaptToDeviceRatio: true });
+    // NOTE: adaptToDeviceRatio is intentionally kept at default (false).
+    // Enabling it would force the GPU to render at full DPR resolution
+    // (e.g. 9× the pixels on an iPhone at DPR=3), causing severe lag.
+    // GUI sharpness is handled separately via renderAtIdealSize=false.
+    this.engine = new Engine(canvas, true);
 
     // Setup ResizeObserver on canvas to automatically resize engine dynamically
     this.resizeObserver = new ResizeObserver(() => {

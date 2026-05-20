@@ -17,7 +17,7 @@ import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { CodexService, RunRecord } from '../services/CodexService';
 import { BONUS_CODEX_ENTRIES } from '../data/codex/bonuses';
-import { applyResponsiveGuiScaling, DESIGN_WIDTH, DESIGN_HEIGHT } from '../ui/GuiScaling';
+import { applyResponsiveGuiScaling, computeLayoutScale } from '../ui/GuiScaling';
 
 interface TerminalLine {
   block: TextBlock;
@@ -236,15 +236,13 @@ export class HighscoresScene {
     root.addControl(mainLayoutContainer);
 
     const updateScale = () => {
-      const size   = this.gui.getSize();
-      const scaleX = size.width  / DESIGN_WIDTH;
-      const scaleY = size.height / DESIGN_HEIGHT;
-      const scale  = Math.min(scaleX, scaleY);
+      const scale = computeLayoutScale(this.gui);
       mainLayoutContainer.scaleX = scale;
       mainLayoutContainer.scaleY = scale;
-      applyResponsiveGuiScaling(this.gui, this.engine);
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
+    // Re-apply GUI scale settings on orientation/size change
+    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
     updateScale();
 
     const backBtn = this.makeTabButton('BACK TO MAIN MENU', () => {

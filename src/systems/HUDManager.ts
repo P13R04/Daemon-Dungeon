@@ -3429,8 +3429,8 @@ export class HUDManager {
     leftJoystickContainer.thickness = 0;
     leftJoystickContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     leftJoystickContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    leftJoystickContainer.left = '100px';
-    leftJoystickContainer.top = '-100px';
+    leftJoystickContainer.left = '60px';
+    leftJoystickContainer.top = '-260px';
     this.guiClean.addControl(leftJoystickContainer);
     this.mobileControls.push(leftJoystickContainer);
 
@@ -3462,7 +3462,7 @@ export class HUDManager {
     attackBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     attackBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     attackBtn.left = '-80px';
-    attackBtn.top = '-80px';
+    attackBtn.top = '-230px';
     if (attackBtn.textBlock) {
       attackBtn.textBlock.fontSize = 16;
       attackBtn.textBlock.fontFamily = fontFamily;
@@ -3481,8 +3481,8 @@ export class HUDManager {
     stanceBtn.cornerRadius = 48;
     stanceBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     stanceBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    stanceBtn.left = '-240px';
-    stanceBtn.top = '-80px';
+    stanceBtn.left = '-230px';
+    stanceBtn.top = '-230px';
     if (stanceBtn.textBlock) {
       stanceBtn.textBlock.fontSize = 14;
       stanceBtn.textBlock.fontFamily = fontFamily;
@@ -3501,8 +3501,8 @@ export class HUDManager {
     ultBtn.cornerRadius = 54;
     ultBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     ultBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    ultBtn.left = '-170px';
-    ultBtn.top = '-240px';
+    ultBtn.left = '-155px';
+    ultBtn.top = '-380px';
     if (ultBtn.textBlock) {
       ultBtn.textBlock.fontSize = 15;
       ultBtn.textBlock.fontFamily = fontFamily;

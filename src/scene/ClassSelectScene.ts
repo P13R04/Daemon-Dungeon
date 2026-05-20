@@ -30,7 +30,7 @@ import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { GameSettingsStore } from '../settings/GameSettings';
 import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
-import { applyResponsiveGuiScaling, DESIGN_WIDTH, DESIGN_HEIGHT } from '../ui/GuiScaling';
+import { applyResponsiveGuiScaling, computeLayoutScale } from '../ui/GuiScaling';
 
 interface ClassCarouselItem {
   id: 'mage' | 'firewall' | 'rogue' | 'cat';
@@ -313,15 +313,13 @@ export class ClassSelectScene {
     this.gui.addControl(mainLayoutContainer);
 
     const updateScale = () => {
-      const size   = this.gui.getSize();
-      const scaleX = size.width  / DESIGN_WIDTH;
-      const scaleY = size.height / DESIGN_HEIGHT;
-      const scale  = Math.min(scaleX, scaleY);
+      const scale = computeLayoutScale(this.gui);
       mainLayoutContainer.scaleX = scale;
       mainLayoutContainer.scaleY = scale;
-      applyResponsiveGuiScaling(this.gui, this.engine);
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
+    // Re-apply GUI scale settings on orientation/size change
+    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
     updateScale();
 
     const backBtn = UIFactory.createTerminalButton('classSelectBackTopLeft', 'BACK', '96px', '36px');

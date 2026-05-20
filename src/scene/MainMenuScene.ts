@@ -28,7 +28,7 @@ import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { createMenuMatrixBackground } from './MenuMatrixBackground';
-import { applyResponsiveGuiScaling, DESIGN_WIDTH, DESIGN_HEIGHT } from '../ui/GuiScaling';
+import { applyResponsiveGuiScaling, computeLayoutScale } from '../ui/GuiScaling';
 
 type AudioChannel = keyof AudioSettings;
 
@@ -142,16 +142,13 @@ export class MainMenuScene {
     this.gui.addControl(this.mainLayoutContainer);
 
     const updateScale = () => {
-      const size   = this.gui.getSize();
-      const scaleX = size.width  / DESIGN_WIDTH;
-      const scaleY = size.height / DESIGN_HEIGHT;
-      const scale  = Math.min(scaleX, scaleY);
+      const scale = computeLayoutScale(this.gui);
       this.mainLayoutContainer.scaleX = scale;
       this.mainLayoutContainer.scaleY = scale;
-      // Re-apply responsive sizing in case orientation changed
-      applyResponsiveGuiScaling(this.gui, this.engine);
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
+    // Re-apply GUI scale settings on orientation/size change
+    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
     updateScale();
 
     this.createMainButtons();
