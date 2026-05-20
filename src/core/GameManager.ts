@@ -593,6 +593,7 @@ export class GameManager {
     this.worldCollisionHazardManager = null;
     this.hudManager?.dispose();
     this.devConsole?.dispose();
+    this.devConsole = null;
     this.playerController?.dispose();
     this.enemySpawner?.dispose();
     this.roomManager?.dispose();

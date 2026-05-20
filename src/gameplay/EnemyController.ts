@@ -1770,7 +1770,7 @@ export class EnemyController {
       }
     }
 
-    if (!this.isPongBlockedByEnvironment(candidate, roomManager) && !this.isPongTouchingEnemy(candidate, allEnemies)) {
+    if (!this.isPongBlockedByEnvironment(candidate, roomManager)) {
       this.position.copyFrom(candidate);
     }
 
@@ -1814,8 +1814,36 @@ export class EnemyController {
       }
       case 'aim': {
         this.velocity = Vector3.Zero();
+        if (this.jumperLockedDirection.lengthSquared() > 0.0001) {
+          this.rotateToward(this.jumperLockedDirection, deltaTime, 15);
+        }
         this.jumperTimer -= deltaTime;
         if (this.jumperTimer <= 0) {
+          const jumpDist = this.speed * this.jumperJumpSpeedMultiplier * this.jumperJumpDuration;
+          let targetPos = this.position.add(this.jumperLockedDirection.scale(jumpDist));
+          
+          if (roomManager && !this.isWalkable(targetPos, roomManager)) {
+            let found = false;
+            for (let angle = 15; angle <= 180; angle += 15) {
+              const rad = angle * Math.PI / 180;
+              const leftDir = this.rotate2D(this.jumperLockedDirection, rad);
+              if (this.isWalkable(this.position.add(leftDir.scale(jumpDist)), roomManager)) {
+                this.jumperLockedDirection = leftDir;
+                found = true;
+                break;
+              }
+              const rightDir = this.rotate2D(this.jumperLockedDirection, -rad);
+              if (this.isWalkable(this.position.add(rightDir.scale(jumpDist)), roomManager)) {
+                this.jumperLockedDirection = rightDir;
+                found = true;
+                break;
+              }
+            }
+            if (!found) {
+              this.jumperLockedDirection = Vector3.Zero();
+            }
+          }
+
           this.jumperState = 'jump';
           this.jumperTimer = this.jumperJumpDuration;
         }
@@ -1847,14 +1875,7 @@ export class EnemyController {
 
     this.previousPosition = this.position.clone();
     const knock = this.knockback.update(deltaTime);
-    const candidate = this.position.add(this.velocity.scale(deltaTime)).add(knock);
-    if (this.jumperState === 'jump' && roomManager && !this.isWalkable(candidate, roomManager)) {
-      this.jumperState = 'cooldown';
-      this.jumperTimer = this.jumperCooldownDuration;
-      this.velocity = Vector3.Zero();
-    } else {
-      this.position = candidate;
-    }
+    this.position = this.position.add(this.velocity.scale(deltaTime)).add(knock);
 
     // Apply vertical arc during jump
     if (this.jumperState === 'jump') {
@@ -2550,6 +2571,10 @@ export class EnemyController {
 
   getBehavior(): string {
     return this.behavior;
+  }
+  public isAirborne(): boolean {
+    if (this.behavior === 'jumper' && this.jumperState === 'jump') return true;
+    return false;
   }
 
   public isStationary(): boolean {
@@ -3689,18 +3714,6 @@ export class EnemyController {
     return Vector3.DistanceSquared(position, playerPosition) <= minDistance * minDistance;
   }
 
-  private isPongTouchingEnemy(position: Vector3, allEnemies: EnemyController[]): boolean {
-    for (const other of allEnemies) {
-      if (other === this || !other.isActive()) continue;
-      const otherPos = other.getPosition();
-      const minDistance = this.pongRadius + other.getRadius();
-      if (Vector3.DistanceSquared(position, otherPos) <= minDistance * minDistance) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   private getPongPlayerBounceAxis(candidate: Vector3, playerPosition: Vector3, movement: Vector3): 'x' | 'z' {
     const delta = candidate.subtract(playerPosition);
     delta.y = 0;
@@ -3846,6 +3859,11 @@ export class EnemyController {
       result.animationGroups.forEach(g => {
         this.jumperAnimGroups.set(g.name, g);
       });
+      
+      const idle = this.jumperAnimGroups.get('idle') || result.animationGroups[0];
+      if (idle) {
+        idle.start(true, 1.0, idle.from, idle.to, false);
+      }
 
       this.applyRenderSuppressionState();
     } catch (error) {

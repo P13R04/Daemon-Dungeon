@@ -2,18 +2,31 @@ const TILESET_PATH = "tiles_test";
 
 const TYPES = ["void", "floor", "wall", "poison", "spikes"];
 
-// Enemy types list from enemies.json
+// Enemy types list (expanded to include all types referenced by room JSONs)
 const ENEMY_TYPES = [
-  { id: "zombie_basic", name: "Zombie", color: "#50FF50" },
-  { id: "dummy_tank", name: "Dummy", color: "#CCCCCC" },
+  { id: "zombie_basic", name: "Zombie", color: "#43D943" },
+  { id: "zombie_fast", name: "Fast Zombie", color: "#88FF88" },
+  { id: "zombie_basic_void", name: "Void Zombie", color: "#6699FF" },
+  { id: "dummy_tank", name: "Dummy Tank", color: "#CCCCCC" },
   { id: "bull", name: "Bull", color: "#FF5050" },
+  { id: "bull_boss", name: "Bull (Boss)", color: "#AA3333" },
+  { id: "jumper", name: "Jumper", color: "#FFAA33" },
+  { id: "jumper_boss", name: "Jumper (Boss)", color: "#CC8833" },
+  { id: "necromancer_boss", name: "Necromancer (Boss)", color: "#8844CC" },
+  { id: "spike_strategist_boss", name: "Spike Strategist (Boss)", color: "#993333" },
+  { id: "laser_pattern_boss", name: "Laser Pattern (Boss)", color: "#FF33CC" },
   { id: "shooter", name: "Shooter", color: "#FF9950" },
   { id: "sentinel", name: "Sentinel", color: "#5050FF" },
+  { id: "prefire_sentinel", name: "Prefire Sentinel", color: "#3355FF" },
   { id: "turret", name: "Turret", color: "#9950FF" },
   { id: "healer", name: "Healer", color: "#50FF99" },
   { id: "artificer", name: "Artificer", color: "#FFFF50" },
+  { id: "strategist", name: "Strategist", color: "#FFCC66" },
+  { id: "swarm_coordinator", name: "Swarm Coordinator", color: "#FF66CC" },
   { id: "bullet_hell", name: "Bullet Hell", color: "#FF50FF" },
-  { id: "mage_missile", name: "Mage Missile", color: "#50FFFF" }
+  { id: "mage_missile", name: "Mage Missile", color: "#50FFFF" },
+  { id: "pong", name: "Pong", color: "#66CCFF" },
+  { id: "fuyard", name: "Fuyard", color: "#FFDD66" }
 ];
 
 const FRIENDLY_TYPES = [
@@ -562,9 +575,13 @@ function getEnemyDisplayPosition(spawn) {
   const stepX = cellWidth + gapX;
   const stepZ = cellHeight + gapZ;
 
+  // Visual layout is rotated 180°: invert coordinates when computing screen position
+  const visX = (grid.width - 1) - spawn.x;
+  const visZ = (grid.height - 1) - spawn.z;
+
   return {
-    left: spawn.x * stepX + cellWidth / 2,
-    top: spawn.z * stepZ + cellHeight / 2,
+    left: visX * stepX + cellWidth / 2,
+    top: visZ * stepZ + cellHeight / 2,
   };
 }
 
@@ -588,9 +605,13 @@ function gridPositionFromMouseEvent(event) {
   const localX = event.clientX - rect.left - borderLeft;
   const localZ = event.clientY - rect.top - borderTop;
 
+  // Compute raw indices then invert to match visual 180° rotation
+  const rawX = clamp((localX - cellWidth / 2) / stepX, 0, grid.width - 1);
+  const rawZ = clamp((localZ - cellHeight / 2) / stepZ, 0, grid.height - 1);
+
   return {
-    x: clamp((localX - cellWidth / 2) / stepX, 0, grid.width - 1),
-    z: clamp((localZ - cellHeight / 2) / stepZ, 0, grid.height - 1),
+    x: clamp((grid.width - 1) - rawX, 0, grid.width - 1),
+    z: clamp((grid.height - 1) - rawZ, 0, grid.height - 1),
   };
 }
 
@@ -623,6 +644,9 @@ function buildGrid() {
       cell.className = "cell";
       cell.dataset.x = x;
       cell.dataset.y = y;
+      // place cells so the visual layout is rotated 180° while keeping logical coords
+      cell.style.gridColumnStart = String(grid.width - x);
+      cell.style.gridRowStart = String(grid.height - y);
       gridEl.appendChild(cell);
     }
   }
@@ -660,7 +684,8 @@ function render() {
       if (solved.texture) {
         const url = `${TILESET_PATH}/${solved.texture}`;
         cell.style.backgroundImage = `url('${url}')`;
-        cell.style.transform = `rotate(${solved.rotation}deg)`;
+        // Adjust rotation so texture appears correctly after visual 180° rotation
+        cell.style.transform = `rotate(${solved.rotation - 180}deg)`;
       } else {
         cell.classList.add(`edit-${type}`);
       }

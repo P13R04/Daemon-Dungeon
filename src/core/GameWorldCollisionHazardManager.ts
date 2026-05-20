@@ -96,7 +96,20 @@ export class GameWorldCollisionHazardManager {
     for (const enemy of enemies) {
       if (enemy.isStationary?.()) continue;
       const enemyPos = enemy.getPosition();
-      if (!this.roomManager.isWalkable(enemyPos.x, enemyPos.z)) {
+      
+      const tileType = this.roomManager.getTileTypeAtWorld(enemyPos.x, enemyPos.z);
+      const isAirborne = (enemy as any).isAirborne?.() ?? false;
+      
+      let blocked = false;
+      if (tileType === 'wall' || tileType === 'out') {
+        blocked = true;
+      } else if (tileType === 'void') {
+        blocked = !isAirborne;
+      } else if (!this.roomManager.isWalkable(enemyPos.x, enemyPos.z)) {
+        blocked = true;
+      }
+
+      if (blocked) {
         const prevPos = enemy.getPreviousPosition?.() ?? enemyPos;
         enemy.setPosition(prevPos);
         if (enemy.onWallCollision) {

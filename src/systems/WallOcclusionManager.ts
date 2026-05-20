@@ -33,7 +33,8 @@ const OCCLUSION_HALF_WIDTH = 1.5;
 const MAX_PLAYER_WALL_DIST = 3.0;
 
 /** Minimum projection ratio along cam→player for a wall to be "between" cam and player. */
-const MIN_PROJECTION_RATIO = 0.05;
+const MIN_PROJECTION_RATIO = -0.1;
+const MAX_PROJECTION_RATIO = 1.2;
 
 // ---------------------------------------------------------------------------
 
@@ -110,7 +111,7 @@ export class WallOcclusionManager {
           const wmz = mz - camZ;
           const proj = (wmx * dx + wmz * dz) / segLenSq;
 
-          if (proj >= MIN_PROJECTION_RATIO && proj <= 1.0 - MIN_PROJECTION_RATIO) {
+          if (proj >= MIN_PROJECTION_RATIO && proj <= MAX_PROJECTION_RATIO) {
             const closestX = camX + proj * dx;
             const closestZ = camZ + proj * dz;
             const perpX = mx - closestX;

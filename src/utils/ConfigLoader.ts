@@ -11,8 +11,11 @@ export class ConfigLoader {
   private enemiesConfig: EnemiesConfig | null = null;
   private gameplayConfig: GameplayConfig | null = null;
   private roomsConfig: RoomsConfig | null = null;
-  private realRoomsConfig: RoomsConfig | null = null;
-  private oldTestRoomsConfig: RoomsConfig | null = null;
+  private facileRoomsConfig: RoomsConfig | null = null;
+  private intermediaireRoomsConfig: RoomsConfig | null = null;
+  private difficileRoomsConfig: RoomsConfig | null = null;
+  private extremeRoomsConfig: RoomsConfig | null = null;
+  private bossRoomsConfig: RoomsConfig | null = null;
 
   private constructor() {}
 
@@ -29,33 +32,60 @@ export class ConfigLoader {
       this.enemiesConfig = await this.loadJSON<EnemiesConfig>('data/config/enemies.json');
       this.gameplayConfig = await this.loadJSON<GameplayConfig>('data/config/gameplay.json');
 
-      const realRoomModules = import.meta.glob('../data/rooms/room_*.json', { eager: true }) as Record<
+      const facileRoomModules = import.meta.glob('../data/rooms/facile/room_*.json', { eager: true }) as Record<
         string,
         { default?: RoomConfig } | RoomConfig
       >;
-      const oldTestRoomModules = import.meta.glob('../data/rooms/old_test_rooms/room_*.json', { eager: true }) as Record<
+      const intermediaireRoomModules = import.meta.glob('../data/rooms/intermediaire/room_*.json', { eager: true }) as Record<
         string,
         { default?: RoomConfig } | RoomConfig
       >;
-      const loadedRealRooms = Object.values(realRoomModules)
-        .map((module) => (module as { default?: RoomConfig }).default ?? (module as RoomConfig))
-        .filter((room): room is RoomConfig => Boolean(room && typeof room.id === 'string'));
-      const loadedOldTestRooms = Object.values(oldTestRoomModules)
-        .map((module) => (module as { default?: RoomConfig }).default ?? (module as RoomConfig))
-        .filter((room): room is RoomConfig => Boolean(room && typeof room.id === 'string'));
+      const difficileRoomModules = import.meta.glob('../data/rooms/difficile/room_*.json', { eager: true }) as Record<
+        string,
+        { default?: RoomConfig } | RoomConfig
+      >;
+      const extremeRoomModules = import.meta.glob('../data/rooms/Extreme/room_*.json', { eager: true }) as Record<
+        string,
+        { default?: RoomConfig } | RoomConfig
+      >;
+      const bossRoomModules = import.meta.glob('../data/rooms/boss/room_*.json', { eager: true }) as Record<
+        string,
+        { default?: RoomConfig } | RoomConfig
+      >;
+      const legacyRootRoomModules = import.meta.glob('../data/rooms/room_*.json', { eager: true }) as Record<
+        string,
+        { default?: RoomConfig } | RoomConfig
+      >;
+      const legacyOldTestRoomModules = import.meta.glob('../data/rooms/old_test_rooms/room_*.json', { eager: true }) as Record<
+        string,
+        { default?: RoomConfig } | RoomConfig
+      >;
 
-      const sortedRealRooms = loadedRealRooms.sort((a, b) => a.id.localeCompare(b.id));
-      const sortedOldTestRooms = loadedOldTestRooms.sort((a, b) => a.id.localeCompare(b.id));
+      const loadedFacileRooms = this.normalizeRoomModules(facileRoomModules);
+      const loadedIntermediaireRooms = this.normalizeRoomModules(intermediaireRoomModules);
+      const loadedDifficileRooms = this.normalizeRoomModules(difficileRoomModules);
+      const loadedExtremeRooms = this.normalizeRoomModules(extremeRoomModules);
+      const loadedBossRooms = this.normalizeRoomModules(bossRoomModules);
+      const loadedLegacyRootRooms = this.normalizeRoomModules(legacyRootRoomModules);
+      const loadedLegacyOldTestRooms = this.normalizeRoomModules(legacyOldTestRoomModules);
 
-      if (sortedRealRooms.length > 0 || sortedOldTestRooms.length > 0) {
-        this.realRoomsConfig = sortedRealRooms;
-        this.oldTestRoomsConfig = sortedOldTestRooms;
-        this.roomsConfig = [...sortedRealRooms, ...sortedOldTestRooms].sort((a, b) => a.id.localeCompare(b.id));
-      } else {
-        this.roomsConfig = await this.loadJSON<RoomsConfig>('data/config/rooms.json');
-        this.realRoomsConfig = this.roomsConfig;
-        this.oldTestRoomsConfig = [];
-      }
+      this.facileRoomsConfig = loadedFacileRooms;
+      this.intermediaireRoomsConfig = loadedIntermediaireRooms;
+      this.difficileRoomsConfig = loadedDifficileRooms;
+      this.extremeRoomsConfig = loadedExtremeRooms;
+      this.bossRoomsConfig = loadedBossRooms;
+
+      const combinedRooms = [
+        ...loadedFacileRooms,
+        ...loadedIntermediaireRooms,
+        ...loadedDifficileRooms,
+        ...loadedExtremeRooms,
+        ...loadedBossRooms,
+        ...loadedLegacyRootRooms,
+        ...loadedLegacyOldTestRooms,
+      ].sort((a, b) => a.id.localeCompare(b.id));
+
+      this.roomsConfig = combinedRooms.length > 0 ? combinedRooms : await this.loadJSON<RoomsConfig>('data/config/rooms.json');
 
       console.log('All configs loaded successfully');
     } catch (error) {
@@ -70,6 +100,13 @@ export class ConfigLoader {
       throw new Error(`Failed to load ${path}: ${response.status}`);
     }
     return response.json() as Promise<T>;
+  }
+
+  private normalizeRoomModules(modules: Record<string, { default?: RoomConfig } | RoomConfig>): RoomsConfig {
+    return Object.values(modules)
+      .map((module) => (module as { default?: RoomConfig }).default ?? (module as RoomConfig))
+      .filter((room): room is RoomConfig => Boolean(room && typeof room.id === 'string'))
+      .sort((a, b) => a.id.localeCompare(b.id));
   }
 
   getPlayerConfig(): PlayerConfig | null {
@@ -100,12 +137,24 @@ export class ConfigLoader {
     return this.roomsConfig;
   }
 
-  getRealRoomsConfig(): RoomsConfig | null {
-    return this.realRoomsConfig;
+  getFacileRoomsConfig(): RoomsConfig | null {
+    return this.facileRoomsConfig;
   }
 
-  getOldTestRoomsConfig(): RoomsConfig | null {
-    return this.oldTestRoomsConfig;
+  getIntermediaireRoomsConfig(): RoomsConfig | null {
+    return this.intermediaireRoomsConfig;
+  }
+
+  getDifficileRoomsConfig(): RoomsConfig | null {
+    return this.difficileRoomsConfig;
+  }
+
+  getExtremeRoomsConfig(): RoomsConfig | null {
+    return this.extremeRoomsConfig;
+  }
+
+  getBossRoomsConfig(): RoomsConfig | null {
+    return this.bossRoomsConfig;
   }
 
   updatePlayerConfig(config: PlayerConfig): void {

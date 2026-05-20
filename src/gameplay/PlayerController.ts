@@ -52,6 +52,7 @@ export class PlayerController {
   private static readonly ROGUE_MODEL_VERTICAL_TILE_FIX = 1.5;
 
   private mesh!: Mesh;
+  private hitboxHaloMesh: Mesh | null = null;
   private health!: Health;
   private inputManager: InputManager;
   private eventBus: EventBus;
@@ -436,6 +437,8 @@ export class PlayerController {
         this.startRogueAmbientGlitchParticles();
       }
     }
+
+    this.createHitboxHalo();
   }
 
   private createClassPlaceholder(classId: PlayerClassId): void {
@@ -665,6 +668,17 @@ export class PlayerController {
     this.mesh = cube;
   }
 
+  private createHitboxHalo(): void {
+    const torus = MeshBuilder.CreateTorus('player_hitbox_halo', { diameter: 0.7, thickness: 0.04, tessellation: 32 }, this.scene);
+    const material = new StandardMaterial('player_hitbox_halo_mat', this.scene);
+    material.emissiveColor = new Color3(1.0, 0.6, 0.0);
+    material.diffuseColor = new Color3(1.0, 0.6, 0.0);
+    material.alpha = 0.5;
+    torus.material = material;
+    torus.isPickable = false;
+    this.hitboxHaloMesh = torus;
+  }
+
   setPosition(position: Vector3): void {
     this.position = position.clone();
     this.position.y = 1.0; // Keep player at floor level
@@ -700,6 +714,13 @@ export class PlayerController {
     } else if (this.mesh) {
       this.mesh.position.copyFrom(renderPosition);
       this.mesh.visibility = effectiveVisibility;
+    }
+
+    if (this.hitboxHaloMesh) {
+      const haloPos = this.position.clone();
+      haloPos.y = 0.05 + this.externalVerticalOffset;
+      this.hitboxHaloMesh.position.copyFrom(haloPos);
+      this.hitboxHaloMesh.visibility = effectiveVisibility;
     }
   }
 
@@ -3067,6 +3088,10 @@ export class PlayerController {
     }
     if (this.animationController) {
       this.animationController.dispose();
+    }
+    if (this.hitboxHaloMesh) {
+      this.hitboxHaloMesh.dispose();
+      this.hitboxHaloMesh = null;
     }
   }
 }

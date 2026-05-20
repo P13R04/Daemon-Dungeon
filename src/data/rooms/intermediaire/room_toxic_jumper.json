@@ -1,0 +1,40 @@
+{
+  "id": "room_toxic_jumper",
+  "name": "toxic_jumper",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.....PPP.....#",
+    "#.VV..PPP..VV.#",
+    "#.VV..PPP..VV.#",
+    "#.............#",
+    "#.PPP..V..PPP.#",
+    "#.PPP.VVV.PPP.#",
+    "#.PPP..V..PPP.#",
+    "#.............#",
+    "#..VV.....VV..#",
+    "#..VV.....VV..#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 7.1,
+      "y": 2,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 11,
+      "y": 7,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 2.9,
+      "y": 7,
+      "enemyType": "jumper"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

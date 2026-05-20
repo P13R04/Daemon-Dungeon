@@ -12,11 +12,23 @@
       "###############"
     ],
     "spawnPoints": [
-      { "x": 2, "z": 2, "enemyType": "zombie" },
-      { "x": 10, "z": 6, "enemyType": "zombie" }
+      {
+        "x": 2,
+        "z": 2,
+        "enemyType": "zombie_basic"
+      },
+      {
+        "x": 10,
+        "z": 6,
+        "enemyType": "zombie_basic"
+      }
     ],
     "obstacles": [
-      { "x": 6, "z": 4, "type": "pillar" }
+      {
+        "x": 8,
+        "z": 4,
+        "type": "pillar"
+      }
     ]
   },
   "room_02": {
@@ -32,12 +44,28 @@
       "###############"
     ],
     "spawnPoints": [
-      { "x": 2, "z": 2, "enemyType": "zombie" },
-      { "x": 10, "z": 2, "enemyType": "zombie_fast" },
-      { "x": 2, "z": 6, "enemyType": "shooter" }
+      {
+        "x": 2,
+        "z": 2,
+        "enemyType": "zombie_basic"
+      },
+      {
+        "x": 10,
+        "z": 2,
+        "enemyType": "zombie_fast"
+      },
+      {
+        "x": 2,
+        "z": 6,
+        "enemyType": "shooter"
+      }
     ],
     "obstacles": [
-      { "x": 6, "z": 4, "type": "pillar" }
+      {
+        "x": 8,
+        "z": 4,
+        "type": "pillar"
+      }
     ]
   }
 }

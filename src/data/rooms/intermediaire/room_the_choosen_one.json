@@ -1,0 +1,80 @@
+{
+  "id": "room_the_choosen_one",
+  "name": "the_choosen_blob",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#..#.#.#.#.#..#",
+    "#.............#",
+    "#..#.......#..#",
+    "#.............#",
+    "#..#.......#..#",
+    "#.............#",
+    "#..#.......#..#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 3,
+      "y": 8.8,
+      "enemyType": "healer"
+    },
+    {
+      "x": 3,
+      "y": 7.1,
+      "enemyType": "healer"
+    },
+    {
+      "x": 3,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 4.1,
+      "y": 10,
+      "enemyType": "healer"
+    },
+    {
+      "x": 6,
+      "y": 10,
+      "enemyType": "healer"
+    },
+    {
+      "x": 8.1,
+      "y": 10,
+      "enemyType": "healer"
+    },
+    {
+      "x": 10,
+      "y": 10.1,
+      "enemyType": "healer"
+    },
+    {
+      "x": 11,
+      "y": 9,
+      "enemyType": "healer"
+    },
+    {
+      "x": 10.9,
+      "y": 7,
+      "enemyType": "healer"
+    },
+    {
+      "x": 11,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 7,
+      "y": 7.1,
+      "enemyType": "jumper"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

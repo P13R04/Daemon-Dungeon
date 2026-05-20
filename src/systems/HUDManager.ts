@@ -1460,9 +1460,18 @@ export class HUDManager {
     this.enemyGui?.addControl(label);
 
     if (mesh) {
-      container.linkWithMesh(mesh);
+      const anchor = new TransformNode(`health_anchor_${enemyId}`, mesh.getScene());
+      const observer = mesh.getScene().onBeforeRenderObservable.add(() => {
+        if (mesh.isDisposed()) {
+          anchor.dispose();
+          mesh.getScene().onBeforeRenderObservable.remove(observer);
+        } else {
+          anchor.position.copyFrom(mesh.position);
+        }
+      });
+      container.linkWithMesh(anchor as any);
       container.linkOffsetY = healthBarOffset ?? -60;
-      label.linkWithMesh(mesh);
+      label.linkWithMesh(anchor as any);
       label.linkOffsetY = (healthBarOffset ?? -60) - 20;
     }
 

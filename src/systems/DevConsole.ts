@@ -695,11 +695,17 @@ export class DevConsole {
   }
 
   private createRoomTestingSection(parent: StackPanel): void {
-    const oldTestRooms = this.configLoader.getOldTestRoomsConfig() ?? [];
-    const realRooms = this.configLoader.getRealRoomsConfig() ?? [];
+    const facileRooms = this.configLoader.getFacileRoomsConfig() ?? [];
+    const intermediaireRooms = this.configLoader.getIntermediaireRoomsConfig() ?? [];
+    const difficileRooms = this.configLoader.getDifficileRoomsConfig() ?? [];
+    const extremeRooms = this.configLoader.getExtremeRoomsConfig() ?? [];
+    const bossRooms = this.configLoader.getBossRoomsConfig() ?? [];
 
-    this.createRoomTestingSubsection(parent, '═══ OLD TEST ROOMS ═══', oldTestRooms, 'LOAD OLD ROOM', 'room_test_dummies', 'oldTestRooms');
-    const getRealRoomId = this.createRoomTestingSubsection(parent, '═══ REAL ROOMS ═══', realRooms, 'LOAD ROOM', 'room_boss_jumper', 'realRooms');
+    this.createRoomTestingSubsection(parent, '═══ FACILE ═══', facileRooms, 'LOAD FACILE ROOM', 'room_test_dummies', 'facileRooms');
+    this.createRoomTestingSubsection(parent, '═══ INTERMEDIAIRE ═══', intermediaireRooms, 'LOAD INTERMEDIAIRE ROOM', 'room_boss_jumper', 'intermediaireRooms');
+    this.createRoomTestingSubsection(parent, '═══ DIFFICILE ═══', difficileRooms, 'LOAD DIFFICILE ROOM', 'room_bull_void', 'difficileRooms');
+    this.createRoomTestingSubsection(parent, '═══ EXTREME ═══', extremeRooms, 'LOAD EXTREME ROOM', 'room_missile_poison', 'extremeRooms');
+    const getBossRoomId = this.createRoomTestingSubsection(parent, '═══ BOSS ═══', bossRooms, 'LOAD BOSS ROOM', 'room_boss_jumper', 'bossRooms');
 
     // Add tile controls
     const tileSectionTitle = new TextBlock('tileSectionTitle');
@@ -737,7 +743,7 @@ export class DevConsole {
     loadTilesBtn.background = '#004400';
     loadTilesBtn.thickness = 1;
     loadTilesBtn.onPointerUpObservable.add(() => {
-      const roomId = getRealRoomId();
+      const roomId = getBossRoomId();
       this.eventBus.emit(GameEvents.DEV_TILE_LOAD_REQUESTED, { roomId });
       this.gameManager.setTilesEnabled(true);
     });

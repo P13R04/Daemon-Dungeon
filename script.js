@@ -1,0 +1,1 @@
+const fs = require('fs'); const data = fs.readFileSync('c:/Users/bagia/Desktop/Daemon Dungeon/Daemon-Dungeon/public/models/jumper/sauteur.glb'); const str = data.toString('utf-8'); const matches = str.match(/"name":"([^"]+)"/g); if (matches) { console.log([...new Set(matches)]); }
