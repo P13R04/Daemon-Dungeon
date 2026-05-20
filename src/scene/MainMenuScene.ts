@@ -27,6 +27,8 @@ import { buildHudAssetUrl, getCachedHudAsset } from '../systems/hud/HudAssetPath
 import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
+import { createMenuMatrixBackground } from './MenuMatrixBackground';
+import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 
 type AudioChannel = keyof AudioSettings;
 
@@ -52,6 +54,12 @@ export class MainMenuScene {
   private settingsOverlay: Rectangle | null = null;
   private mainLayoutContainer!: Rectangle;
   private resizeObserver: any = null;
+  private layoutWidth = 1280;
+  private layoutHeight = 720;
+  private isMobileLayout = false;
+  private menuButtonWidth = 320;
+  private menuButtonHeight = 56;
+  private menuButtonFontSize = 18;
 
   private settingsSnapshot: GameSettings = GameSettingsStore.get();
   private unsubscribeSettings: (() => void) | null = null;
@@ -118,37 +126,40 @@ export class MainMenuScene {
     this.scene = new Scene(engine);
     this.scene.clearColor = Color4.FromHexString(UITheme.colors.bgVoid);
 
+    createMenuMatrixBackground(this.scene);
+
     const camera = new FreeCamera('mainMenuCamera', new Vector3(0, 0, -10), this.scene);
     camera.setTarget(Vector3.Zero());
     this.scene.activeCamera = camera;
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('MainMenuUI', true, this.scene);
-    this.gui.idealWidth = 1920;
-    this.gui.idealHeight = 1080;
-    this.gui.useSmallestIdeal = true;
-    this.gui.renderAtIdealSize = true;
+    applyResponsiveGuiScaling(this.gui, this.engine);
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
 
+    const idealWidth = this.gui.idealWidth || DESIGN_WIDTH;
+    const idealHeight = this.gui.idealHeight || DESIGN_HEIGHT;
+    this.isMobileLayout = idealWidth <= 960;
+    this.layoutWidth = Math.round(idealWidth);
+    this.layoutHeight = Math.round(idealHeight);
+
     this.mainLayoutContainer = new Rectangle('mainLayout');
-    this.mainLayoutContainer.width = '1920px';
-    this.mainLayoutContainer.height = '1080px';
+    this.mainLayoutContainer.width = 1;
+    this.mainLayoutContainer.height = 1;
     this.mainLayoutContainer.thickness = 0;
     this.mainLayoutContainer.background = 'transparent';
-    this.mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.gui.addControl(this.mainLayoutContainer);
 
     const updateScale = () => {
-      const size = this.gui.getSize();
-      const scaleX = size.width / 1920;
-      const scaleY = size.height / 1080;
-      const scale = Math.min(1, scaleX, scaleY);
-      this.mainLayoutContainer.scaleX = scale;
-      this.mainLayoutContainer.scaleY = scale;
+      this.mainLayoutContainer.scaleX = 1;
+      this.mainLayoutContainer.scaleY = 1;
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
+    // Re-apply GUI scale settings on orientation/size change
+    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
     updateScale();
 
     this.createMainButtons();
@@ -367,9 +378,9 @@ export class MainMenuScene {
   }
 
   private createMainButtons(): void {
-    const title = UIFactory.createText('menuTitle', 'DAEMON DUNGEON', 56, UITheme.colors.textHighlight);
+    const title = UIFactory.createText('menuTitle', 'DAEMON DUNGEON', 72, UITheme.colors.textHighlight);
     title.fontFamily = UITheme.fonts.primary;
-    title.top = '-34%';
+    title.top = `-${Math.round(this.layoutHeight * 0.44)}px`;
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.mainLayoutContainer.addControl(title);
 
@@ -393,47 +404,56 @@ export class MainMenuScene {
       }
     });
 
-    const subtitle = UIFactory.createText('menuSubtitle', 'SYSTEM READY // MAIN CONSOLE', 16, UITheme.colors.borderBright);
-    subtitle.top = '-27%';
+    const subtitle = UIFactory.createText('menuSubtitle', 'SYSTEM READY // MAIN CONSOLE', 20, UITheme.colors.borderBright);
+    subtitle.top = `-${Math.round(this.layoutHeight * 0.36)}px`;
     subtitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.mainLayoutContainer.addControl(subtitle);
 
-    const panel = UIFactory.createPanel('menuPanel', 460, 480);
-    panel.top = '-2%';
+    const panelWidth = Math.round(Math.min(760, Math.max(560, this.layoutWidth * 0.58)));
+    const panelHeight = Math.round(Math.min(720, Math.max(560, this.layoutHeight * 0.78)));
+    const buttonStep = Math.round((panelHeight / 7) * 0.9);
+    this.menuButtonWidth = Math.round(panelWidth * 0.62);
+    this.menuButtonHeight = Math.round(Math.max(56, panelHeight * 0.1));
+    this.menuButtonFontSize = this.isMobileLayout ? 20 : 21;
+
+    const panel = UIFactory.createPanel('menuPanel', panelWidth, panelHeight);
+    panel.top = `${Math.round(this.layoutHeight * 0.05)}px`;
     this.mainLayoutContainer.addControl(panel);
     this.menuPanel = panel;
 
-    const playBtn = this.makeActionButton('menuPlay', 'START RUN', -150, () => {
+    const topOffsets = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5].map((mult) => Math.round(mult * buttonStep));
+
+    const playBtn = this.makeActionButton('menuPlay', 'START RUN', topOffsets[0], () => {
       this.hidePanels();
       this.onPlayRequested();
     });
     panel.addControl(playBtn);
 
-    const tutorialBtn = this.makeActionButton('menuTutorial', 'TUTORIAL', -90, () => {
+    const tutorialBtn = this.makeActionButton('menuTutorial', 'TUTORIAL', topOffsets[1], () => {
       this.hidePanels();
       this.onTutorialRequested();
     });
     panel.addControl(tutorialBtn);
 
-    const codexBtn = this.makeActionButton('menuCodex', 'CODEX', -30, () => {
+    const codexBtn = this.makeActionButton('menuCodex', 'CODEX', topOffsets[2], () => {
       this.hidePanels();
       this.onCodexRequested();
     });
     panel.addControl(codexBtn);
 
-    const achievementsBtn = this.makeActionButton('menuAchievements', 'ACHIEVEMENTS', 30, () => {
+    const achievementsBtn = this.makeActionButton('menuAchievements', 'ACHIEVEMENTS', topOffsets[3], () => {
       this.hidePanels();
       this.eventBus.emit(GameEvents.ACHIEVEMENTS_OPEN_REQUESTED);
     });
     panel.addControl(achievementsBtn);
 
-    const highscoresBtn = this.makeActionButton('menuHighscores', 'HIGHSCORES', 90, () => {
+    const highscoresBtn = this.makeActionButton('menuHighscores', 'HIGHSCORES', topOffsets[4], () => {
       this.hidePanels();
       this.eventBus.emit(GameEvents.HIGHSCORES_OPEN_REQUESTED);
     });
     panel.addControl(highscoresBtn);
 
-    const settingsBtn = this.makeActionButton('menuSettings', 'SETTINGS', 150, () => {
+    const settingsBtn = this.makeActionButton('menuSettings', 'SETTINGS', topOffsets[5], () => {
       this.openSettingsOverlay();
     });
     panel.addControl(settingsBtn);
@@ -452,7 +472,9 @@ export class MainMenuScene {
     this.mainLayoutContainer.addControl(overlay);
     this.settingsOverlay = overlay;
 
-    const windowPanel = UIFactory.createPanel('settingsWindow', 900, 660);
+    const windowWidth = Math.round(this.layoutWidth * 0.9);
+    const windowHeight = Math.round(this.layoutHeight * 0.92);
+    const windowPanel = UIFactory.createPanel('settingsWindow', windowWidth, windowHeight);
     overlay.addControl(windowPanel);
 
     const title = new TextBlock('settingsTitle');
@@ -460,23 +482,23 @@ export class MainMenuScene {
     title.color = '#7CFFEA';
     title.fontSize = 34;
     title.fontFamily = 'Consolas';
-    title.top = '-292px';
+    title.top = `-${Math.round(windowHeight * 0.45)}px`;
     windowPanel.addControl(title);
 
 
 
     const actionRow = new Rectangle('settingsActionRow');
-    actionRow.width = '860px';
+    actionRow.width = `${Math.round(windowWidth - 40)}px`;
     actionRow.height = '44px';
     actionRow.thickness = 0;
-    actionRow.top = '-225px';
+    actionRow.top = `-${Math.round(windowHeight * 0.37)}px`;
     actionRow.isPointerBlocker = true;
     actionRow.zIndex = 120;
     windowPanel.addControl(actionRow);
 
     const closeBtn = Button.CreateSimpleButton('settingsCloseButton', 'BACK');
-    closeBtn.width = '120px';
-    closeBtn.height = '34px';
+    closeBtn.width = '160px';
+    closeBtn.height = '38px';
     closeBtn.color = '#D2FFF2';
     closeBtn.cornerRadius = 4;
     closeBtn.background = 'rgba(20,38,45,0.95)';
@@ -486,6 +508,7 @@ export class MainMenuScene {
     closeBtn.isPointerBlocker = true;
     closeBtn.isHitTestVisible = true;
     closeBtn.zIndex = 130;
+    if (closeBtn.textBlock) closeBtn.textBlock.fontSize = 18;
     this.bindButtonAction(closeBtn, () => {
       this.awaitingRebind = null;
       this.closeSettingsOverlay();
@@ -493,8 +516,8 @@ export class MainMenuScene {
     actionRow.addControl(closeBtn);
 
     const resetBtn = Button.CreateSimpleButton('settingsResetButton', 'RESET DEFAULTS');
-    resetBtn.width = '180px';
-    resetBtn.height = '34px';
+    resetBtn.width = '220px';
+    resetBtn.height = '38px';
     resetBtn.color = '#C2FFE2';
     resetBtn.cornerRadius = 4;
     resetBtn.background = 'rgba(22,48,44,0.95)';
@@ -504,6 +527,7 @@ export class MainMenuScene {
     resetBtn.isPointerBlocker = true;
     resetBtn.isHitTestVisible = true;
     resetBtn.zIndex = 130;
+    if (resetBtn.textBlock) resetBtn.textBlock.fontSize = 18;
     this.bindButtonAction(resetBtn, () => {
       this.awaitingRebind = null;
       GameSettingsStore.resetToDefaults();
@@ -513,13 +537,13 @@ export class MainMenuScene {
     this.captureHintText = UIFactory.createText('settingsCaptureHint', '', 12, UITheme.colors.textDim);
     this.captureHintText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.captureHintText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.captureHintText.top = '-185px';
+    this.captureHintText.top = `-${Math.round(windowHeight * 0.31)}px`;
     windowPanel.addControl(this.captureHintText);
 
     const scroll = UIFactory.createScrollViewer('settingsScroll');
-    scroll.width = '860px';
-    scroll.height = '470px';
-    scroll.top = '52px';
+    scroll.width = `${Math.round(windowWidth - 40)}px`;
+    scroll.height = `${Math.round(windowHeight * 0.76)}px`;
+    scroll.top = `${Math.round(windowHeight * 0.07)}px`;
     windowPanel.addControl(scroll);
 
     const content = new StackPanel('settingsStack');
@@ -647,8 +671,8 @@ export class MainMenuScene {
     parent.addControl(this.makeSectionHeader('ACCESSIBILITY'));
 
     const row = new Rectangle('accessibilityFilterRow');
-    row.width = '820px';
-    row.height = '56px';
+    row.width = '1020px';
+    row.height = '68px';
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -657,7 +681,7 @@ export class MainMenuScene {
     const label = new TextBlock('accessibilityFilterLabel');
     label.text = 'Color Vision Filter';
     label.color = '#B9F9E8';
-    label.fontSize = 16;
+    label.fontSize = 18;
     label.fontFamily = 'Consolas';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -665,14 +689,15 @@ export class MainMenuScene {
     row.addControl(label);
 
     const button = Button.CreateSimpleButton('accessibilityFilterButton', 'NONE');
-    button.width = '250px';
-    button.height = '34px';
+    button.width = '280px';
+    button.height = '38px';
     button.color = '#DAFFF3';
     button.cornerRadius = 4;
     button.background = 'rgba(22,48,44,0.95)';
     button.thickness = 1;
     button.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     button.left = '-10px';
+    if (button.textBlock) button.textBlock.fontSize = 16;
     this.bindButtonAction(button, () => {
       const current = this.settingsSnapshot.accessibility.colorFilter;
       const currentIndex = FILTER_OPTIONS.indexOf(current);
@@ -712,8 +737,8 @@ export class MainMenuScene {
 
     // RESET CODEX PROGRESSION — at the very bottom of settings
     const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET CODEX PROGRESSION');
-    resetProgressBtn.width = '280px';
-    resetProgressBtn.height = '34px';
+    resetProgressBtn.width = '340px';
+    resetProgressBtn.height = '38px';
     resetProgressBtn.color = '#FFE5E5';
     resetProgressBtn.cornerRadius = 4;
     resetProgressBtn.background = 'rgba(72,20,20,0.95)';
@@ -721,6 +746,7 @@ export class MainMenuScene {
     resetProgressBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     resetProgressBtn.isPointerBlocker = true;
     resetProgressBtn.isHitTestVisible = true;
+    if (resetProgressBtn.textBlock) resetProgressBtn.textBlock.fontSize = 16;
     this.bindButtonAction(resetProgressBtn, () => {
       this.awaitingRebind = null;
       this.eventBus.emit(GameEvents.CODEX_PROGRESS_RESET_REQUESTED);
@@ -730,15 +756,15 @@ export class MainMenuScene {
 
   private makeSectionHeader(text: string): Rectangle {
     const row = new Rectangle(`sectionHeader_${text.replace(/\s+/g, '_')}`);
-    row.width = '820px';
-    row.height = '42px';
+    row.width = '1020px';
+    row.height = '52px';
     row.thickness = 0;
     row.background = 'rgba(10, 30, 35, 0.6)';
 
     const title = new TextBlock(`sectionHeaderText_${text.replace(/\s+/g, '_')}`);
     title.text = text;
     title.color = '#7CFFEA';
-    title.fontSize = 20;
+    title.fontSize = 24;
     title.fontFamily = 'Consolas';
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     title.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -752,10 +778,10 @@ export class MainMenuScene {
     const info = new TextBlock(`sectionInfo_${text.replace(/\s+/g, '_').slice(0, 18)}`);
     info.text = text;
     info.color = '#8EC8BD';
-    info.fontSize = 12;
+    info.fontSize = 14;
     info.fontFamily = 'Consolas';
-    info.height = '22px';
-    info.width = '820px';
+    info.height = '28px';
+    info.width = '1020px';
     info.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     info.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     return info;
@@ -763,8 +789,8 @@ export class MainMenuScene {
 
   private makeKeybindRow(action: KeybindingAction, labelText: string): Rectangle {
     const row = new Rectangle(`keybindRow_${action}`);
-    row.width = '820px';
-    row.height = '48px';
+    row.width = '1020px';
+    row.height = '60px';
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -773,7 +799,7 @@ export class MainMenuScene {
     const label = new TextBlock(`keybindLabel_${action}`);
     label.text = labelText;
     label.color = '#B9F9E8';
-    label.fontSize = 15;
+    label.fontSize = 18;
     label.fontFamily = 'Consolas';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -781,14 +807,15 @@ export class MainMenuScene {
     row.addControl(label);
 
     const keyButton = Button.CreateSimpleButton(`keybindButton_${action}`, '...');
-    keyButton.width = '220px';
-    keyButton.height = '32px';
+    keyButton.width = '260px';
+    keyButton.height = '38px';
     keyButton.color = '#E3FFF7';
     keyButton.cornerRadius = 4;
     keyButton.background = 'rgba(22,48,44,0.95)';
     keyButton.thickness = 1;
     keyButton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     keyButton.left = '-10px';
+    if (keyButton.textBlock) keyButton.textBlock.fontSize = 18;
     this.bindButtonAction(keyButton, () => {
       this.awaitingRebind = this.awaitingRebind === action ? null : action;
       this.refreshSettingsUi();
@@ -805,8 +832,8 @@ export class MainMenuScene {
     onReady: (checkbox: Checkbox) => void
   ): Rectangle {
     const row = new Rectangle(`toggleRow_${title.replace(/\s+/g, '_')}`);
-    row.width = '820px';
-    row.height = '70px';
+    row.width = '1020px';
+    row.height = '84px';
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -815,18 +842,18 @@ export class MainMenuScene {
     const titleText = new TextBlock(`toggleTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
     titleText.color = '#B9F9E8';
-    titleText.fontSize = 15;
+    titleText.fontSize = 18;
     titleText.fontFamily = 'Consolas';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
-    titleText.top = '-12px';
+    titleText.top = '-14px';
     row.addControl(titleText);
 
     const detailText = new TextBlock(`toggleDetails_${title.replace(/\s+/g, '_')}`);
     detailText.text = details;
     detailText.color = '#86B9AE';
-    detailText.fontSize = 11;
+    detailText.fontSize = 13;
     detailText.fontFamily = 'Consolas';
     detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -835,12 +862,12 @@ export class MainMenuScene {
     row.addControl(detailText);
 
     const checkbox = new Checkbox(`toggleCheckbox_${title.replace(/\s+/g, '_')}`);
-    checkbox.width = '24px';
-    checkbox.height = '24px';
+    checkbox.width = '36px';
+    checkbox.height = '36px';
     checkbox.color = '#B9F9E8';
     checkbox.background = '#122D2B';
     checkbox.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    checkbox.left = '-18px';
+    checkbox.left = '-24px';
     row.addControl(checkbox);
     onReady(checkbox);
 
@@ -854,8 +881,8 @@ export class MainMenuScene {
     onAction: () => void,
   ): Rectangle {
     const row = new Rectangle(`actionRow_${title.replace(/\s+/g, '_')}`);
-    row.width = '820px';
-    row.height = '78px';
+    row.width = '1020px';
+    row.height = '84px';
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -864,18 +891,18 @@ export class MainMenuScene {
     const titleText = new TextBlock(`actionTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
     titleText.color = '#B9F9E8';
-    titleText.fontSize = 15;
+    titleText.fontSize = 18;
     titleText.fontFamily = 'Consolas';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
-    titleText.top = '-16px';
+    titleText.top = '-14px';
     row.addControl(titleText);
 
     const detailText = new TextBlock(`actionDetails_${title.replace(/\s+/g, '_')}`);
     detailText.text = details;
     detailText.color = '#86B9AE';
-    detailText.fontSize = 11;
+    detailText.fontSize = 13;
     detailText.fontFamily = 'Consolas';
     detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -884,14 +911,15 @@ export class MainMenuScene {
     row.addControl(detailText);
 
     const actionButton = Button.CreateSimpleButton(`actionButton_${title.replace(/\s+/g, '_')}`, buttonLabel);
-    actionButton.width = '220px';
-    actionButton.height = '36px';
+    actionButton.width = '240px';
+    actionButton.height = '38px';
     actionButton.color = '#E3FFF7';
     actionButton.cornerRadius = 4;
     actionButton.background = 'rgba(22,48,44,0.95)';
     actionButton.thickness = 1;
     actionButton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     actionButton.left = '-10px';
+    if (actionButton.textBlock) actionButton.textBlock.fontSize = 16;
     this.bindButtonAction(actionButton, onAction);
     row.addControl(actionButton);
 
@@ -900,8 +928,8 @@ export class MainMenuScene {
 
   private makeAudioSliderRow(channel: AudioChannel, labelText: string): Rectangle {
     const row = new Rectangle(`audioRow_${channel}`);
-    row.width = '820px';
-    row.height = '62px';
+    row.width = '1020px';
+    row.height = '68px';
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -910,19 +938,19 @@ export class MainMenuScene {
     const label = new TextBlock(`audioLabel_${channel}`);
     label.text = labelText;
     label.color = '#B9F9E8';
-    label.fontSize = 15;
+    label.fontSize = 18;
     label.fontFamily = 'Consolas';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.paddingLeft = '14px';
-    label.top = '-14px';
+    label.top = '-16px';
     row.addControl(label);
 
     const slider = UIFactory.createSlider(`audioSlider_${channel}`, 0, 100, 100);
-    slider.width = '520px';
+    slider.width = '640px';
     slider.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     slider.left = '12px';
-    slider.top = '14px';
+    slider.top = '18px';
     slider.onValueChangedObservable.add((value) => {
       if (this.isRefreshingUi) return;
       const normalized = Math.round(value) / 100;
@@ -933,13 +961,13 @@ export class MainMenuScene {
     const valueText = new TextBlock(`audioValue_${channel}`);
     valueText.text = '100%';
     valueText.color = '#DFFEF6';
-    valueText.fontSize = 14;
+    valueText.fontSize = 16;
     valueText.fontFamily = 'Consolas';
     valueText.width = '80px';
     valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.left = '-12px';
-    valueText.top = '14px';
+    valueText.top = '18px';
     row.addControl(valueText);
 
     this.audioSliders[channel] = slider;
@@ -956,8 +984,8 @@ export class MainMenuScene {
     onReady: (slider: Slider, valueText: TextBlock) => void,
   ): Rectangle {
     const row = new Rectangle(`graphicsNumberRow_${title.replace(/\s+/g, '_')}`);
-    row.width = '820px';
-    row.height = '82px';
+    row.width = '1020px';
+    row.height = '100px';
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -966,18 +994,18 @@ export class MainMenuScene {
     const titleText = new TextBlock(`graphicsNumberTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
     titleText.color = '#B9F9E8';
-    titleText.fontSize = 15;
+    titleText.fontSize = 18;
     titleText.fontFamily = 'Consolas';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
-    titleText.top = '-20px';
+    titleText.top = '-24px';
     row.addControl(titleText);
 
     const detailText = new TextBlock(`graphicsNumberDetails_${title.replace(/\s+/g, '_')}`);
     detailText.text = details;
     detailText.color = '#86B9AE';
-    detailText.fontSize = 11;
+    detailText.fontSize = 13;
     detailText.fontFamily = 'Consolas';
     detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -986,10 +1014,10 @@ export class MainMenuScene {
     row.addControl(detailText);
 
     const slider = UIFactory.createSlider(`graphicsNumberSlider_${title.replace(/\s+/g, '_')}`, min, max, min);
-    slider.width = '520px';
+    slider.width = '640px';
     slider.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     slider.left = '12px';
-    slider.top = '26px';
+    slider.top = '30px';
     row.addControl(slider);
 
     const valueText = new TextBlock(`graphicsNumberValue_${title.replace(/\s+/g, '_')}`);
@@ -1100,8 +1128,11 @@ export class MainMenuScene {
   }
 
   private makeActionButton(id: string, label: string, top: number, onClick: () => void): Button {
-    const button = UIFactory.createTerminalButton(id, label, '220px', '46px');
+    const button = UIFactory.createTerminalButton(id, label, `${this.menuButtonWidth}px`, `${this.menuButtonHeight}px`);
     button.top = `${top}px`;
+    if (button.textBlock) {
+      button.textBlock.fontSize = this.menuButtonFontSize;
+    }
     button.zIndex = 50;
     button.isPointerBlocker = true;
     button.isHitTestVisible = true;

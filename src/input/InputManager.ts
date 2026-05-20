@@ -25,6 +25,15 @@ export class InputManager {
   private keyboardOnlyMode: boolean = GameSettingsStore.get().controls.keyboardOnlyMode;
   private unsubscribeSettings: (() => void) | null = null;
 
+  // Mobile virtual joystick & buttons properties
+  private mobileMode: boolean = false;
+  private joystickMoveVector: Vector3 = Vector3.Zero();
+  private joystickAimVector: Vector3 = Vector3.Zero();
+  private joystickAimActive: boolean = false;
+  private joystickAimPressedThisFrame: boolean = false;
+  private mobileStancePressed: boolean = false;
+  private mobileUltPressed: boolean = false;
+
   constructor(canvas?: HTMLCanvasElement, scene?: Scene) {
     this.canvas = canvas || null;
     this.scene = scene || null;
@@ -41,6 +50,57 @@ export class InputManager {
       this.unsubscribeSettings();
       this.unsubscribeSettings = null;
     }
+  }
+
+  public setMobileMode(active: boolean): void {
+    this.mobileMode = active;
+  }
+
+  public isMobileMode(): boolean {
+    return this.mobileMode;
+  }
+
+  public setJoystickMoveVector(vector: Vector3): void {
+    this.joystickMoveVector.copyFrom(vector);
+  }
+
+  public getJoystickMoveVector(): Vector3 {
+    return this.joystickMoveVector;
+  }
+
+  public setJoystickAimVector(vector: Vector3): void {
+    this.joystickAimVector.copyFrom(vector);
+  }
+
+  public getJoystickAimVector(): Vector3 {
+    return this.joystickAimVector;
+  }
+
+  public setJoystickAimActive(active: boolean): void {
+    if (active && !this.joystickAimActive) {
+      this.joystickAimPressedThisFrame = true;
+    }
+    this.joystickAimActive = active;
+  }
+
+  public isJoystickAimActive(): boolean {
+    return this.joystickAimActive;
+  }
+
+  public setMobileStancePressed(pressed: boolean): void {
+    this.mobileStancePressed = pressed;
+  }
+
+  public isMobileStancePressed(): boolean {
+    return this.mobileStancePressed;
+  }
+
+  public setMobileUltPressed(pressed: boolean): void {
+    this.mobileUltPressed = pressed;
+  }
+
+  public isMobileUltPressed(): boolean {
+    return this.mobileUltPressed;
   }
 
   /**
@@ -165,6 +225,9 @@ export class InputManager {
    * Returns normalized direction vector
    */
   getMovementInput(): Vector3 {
+    if (this.mobileMode) {
+      return this.joystickMoveVector;
+    }
     const input = new Vector3();
 
     if (this.isActionHeld('moveUp')) input.z += 1;
@@ -190,6 +253,7 @@ export class InputManager {
    * Check if mouse button is held down
    */
   isMouseDown(): boolean {
+    if (this.mobileMode) return this.joystickAimActive;
     if (this.keyboardOnlyMode) return false;
     return this.mouseClick;
   }
@@ -198,6 +262,9 @@ export class InputManager {
    * Check if mouse button was clicked this frame
    */
   isMouseClickedThisFrame(): boolean {
+    if (this.mobileMode) {
+      return this.joystickAimPressedThisFrame;
+    }
     if (this.keyboardOnlyMode) {
       this.mouseClickThisFrame = false;
       return false;
@@ -208,11 +275,13 @@ export class InputManager {
   }
 
   isRightMouseDown(): boolean {
+    if (this.mobileMode) return this.mobileStancePressed;
     if (this.keyboardOnlyMode) return false;
     return this.rightMouseClick;
   }
 
   isRightMouseClickedThisFrame(): boolean {
+    if (this.mobileMode) return this.mobileStancePressed;
     if (this.keyboardOnlyMode) {
       this.rightMouseClickThisFrame = false;
       return false;
@@ -226,6 +295,7 @@ export class InputManager {
    * Check if space was pressed this frame (one-shot, resets after read)
    */
   isSpacePressed(): boolean {
+    if (this.mobileMode) return this.mobileUltPressed;
     return this.isActionPressedThisFrame('ultimate');
   }
 
@@ -234,6 +304,7 @@ export class InputManager {
    * Use this for checking ongoing input states like Ultimate charge
    */
   isSpaceHeld(): boolean {
+    if (this.mobileMode) return this.mobileUltPressed;
     return this.isActionHeld('ultimate');
   }
 
@@ -249,14 +320,18 @@ export class InputManager {
   }
 
   isAttackSlotHeld(slot: 1 | 2): boolean {
+    if (this.mobileMode) {
+      return slot === 1 ? this.joystickAimActive : this.mobileStancePressed;
+    }
     return slot === 1 ? this.isActionHeld('shoot') : this.isActionHeld('posture');
   }
 
   isAttackSlotPressedThisFrame(slot: 1 | 2): boolean {
+    if (this.mobileMode) {
+      return slot === 1 ? this.joystickAimPressedThisFrame : this.mobileStancePressed;
+    }
     return slot === 1 ? this.isActionPressedThisFrame('shoot') : this.isActionPressedThisFrame('posture');
   }
-
-
 
   setAttackSlotBindings(bindings: Partial<Record<1 | 2, string[]>>): void {
     const slot1 = bindings[1];
@@ -280,6 +355,7 @@ export class InputManager {
     this.mouseClickThisFrame = false;
     this.rightMouseClickThisFrame = false;
     this.keysPressedThisFrame.clear();
+    this.joystickAimPressedThisFrame = false;
   }
 
   private applySettings(settings: GameSettings): void {

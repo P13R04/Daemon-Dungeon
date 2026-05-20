@@ -345,6 +345,10 @@ export class GameManager {
     });
 
     // Initialize Babylon.js engine
+    // NOTE: adaptToDeviceRatio is intentionally kept at default (false).
+    // Enabling it would force the GPU to render at full DPR resolution
+    // (e.g. 9× the pixels on an iPhone at DPR=3), causing severe lag.
+    // GUI sharpness is handled separately via renderAtIdealSize=false.
     this.engine = new Engine(canvas, true);
 
     // Setup ResizeObserver on canvas to automatically resize engine dynamically
@@ -653,6 +657,7 @@ export class GameManager {
     this.projectileManager = new ProjectileManager(this.scene);
     this.ultimateManager = new UltimateManager(this.scene);
     this.hudManager = new HUDManager(this.scene);
+    this.hudManager.setInputManager(this.inputManager);
     this.musicManager = new MusicManager(this.scene);
     void this.musicManager.loadTrack('bgm', 'music/bgm.mp3').then(() => {
       if (this.gameState === 'playing' || this.gameState === 'bonus' || this.gameState === 'roomclear') {
@@ -704,6 +709,7 @@ export class GameManager {
 
     const playerConfig = this.configLoader.getPlayerConfig();
     this.playerController = new PlayerController(this.scene, this.inputManager, playerConfig!, this.selectedClassId);
+    this.hudManager.setPlayer(this.playerController);
     this.enemySpawner = new EnemySpawner(this.scene, this.roomManager);
     this.enemySpawner.setSpawnSmoothingConfig({
       enabled: this.progressiveEnemySpawning,

@@ -16,6 +16,7 @@ import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { AchievementProgress, CodexService } from '../services/CodexService';
+import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 
 interface TerminalLine {
   block: TextBlock;
@@ -45,6 +46,7 @@ export class AchievementsScene {
   private leftDescription!: TextBlock;
   private leftListStack!: StackPanel;
   private leftListScroll!: ScrollViewer;
+  private leftListButtonWidth: number = 472;
 
   private rightPanel!: Rectangle;
   private rightTitle!: TextBlock;
@@ -206,10 +208,7 @@ export class AchievementsScene {
     createSynthwaveGridBackground(this.scene, SCENE_LAYER, true);
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('AchievementsUI', true, this.scene);
-    this.gui.idealWidth = 1920;
-    this.gui.idealHeight = 1080;
-    this.gui.useSmallestIdeal = true;
-    this.gui.renderAtIdealSize = true;
+    applyResponsiveGuiScaling(this.gui, this.engine);
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
@@ -223,24 +222,36 @@ export class AchievementsScene {
     root.background = 'transparent';
     this.gui.addControl(root);
 
+    const idealWidth = this.gui.idealWidth || DESIGN_WIDTH;
+    const idealHeight = this.gui.idealHeight || DESIGN_HEIGHT;
+    const isMobileLayout = idealWidth <= 960;
+    const layoutWidth = Math.round(idealWidth);
+    const layoutHeight = Math.round(idealHeight);
+    const sidePadding = Math.round(layoutWidth * 0.02);
+    const panelTop = Math.round(layoutHeight * 0.06);
+    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.35 : 0.33));
+    const sidePanelHeight = Math.round(layoutHeight * 0.9);
+    const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
+    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 8);
+    const centerCardWidth = Math.round(layoutWidth * (isMobileLayout ? 0.26 : 0.28));
+    const centerCardHeight = Math.round(sidePanelHeight * 0.78);
+
     const mainLayoutContainer = new Rectangle('mainLayout');
-    mainLayoutContainer.width = '1920px';
-    mainLayoutContainer.height = '1080px';
+    mainLayoutContainer.width = 1;
+    mainLayoutContainer.height = 1;
     mainLayoutContainer.thickness = 0;
     mainLayoutContainer.background = 'transparent';
-    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     root.addControl(mainLayoutContainer);
 
     const updateScale = () => {
-      const size = this.gui.getSize();
-      const scaleX = size.width / 1920;
-      const scaleY = size.height / 1080;
-      const scale = Math.min(1, scaleX, scaleY);
-      mainLayoutContainer.scaleX = scale;
-      mainLayoutContainer.scaleY = scale;
+      mainLayoutContainer.scaleX = 1;
+      mainLayoutContainer.scaleY = 1;
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
+    // Re-apply GUI scale settings on orientation/size change
+    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
     updateScale();
 
     const backBtn = this.makeTabButton('BACK TO MAIN MENU', () => {
@@ -267,42 +278,42 @@ export class AchievementsScene {
       mainLayoutContainer.addControl(devBtn);
     }
 
-    const mainTitle = UIFactory.createText('achTitle', 'ACHIEVEMENTS DIRECTORY', 46, UITheme.colors.textHighlight);
+    const mainTitle = UIFactory.createText('achTitle', 'ACHIEVEMENTS DIRECTORY', 60, UITheme.colors.textHighlight);
     mainTitle.fontFamily = UITheme.fonts.primary;
     mainTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     mainTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    mainTitle.top = '36px';
-    mainTitle.height = '60px';
+    mainTitle.top = `${Math.round(layoutHeight * 0.05)}px`;
+    mainTitle.height = '70px';
     mainTitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     mainLayoutContainer.addControl(mainTitle);
 
-    this.leftPanel = this.makeTerminalPanel('achLeftPanel', 430, 630);
+    this.leftPanel = this.makeTerminalPanel('achLeftPanel', sidePanelWidth, sidePanelHeight);
     this.leftPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.leftPanel.left = '24px';
-    this.leftPanel.top = '38px';
+    this.leftPanel.left = `${sidePadding}px`;
+    this.leftPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.leftPanel);
 
-    this.leftTitle = this.makeTerminalText('leftTitle', 20, '#7DFFE8');
-    this.leftTitle.top = '-286px';
-    this.leftTitle.width = '390px';
+    this.leftTitle = this.makeTerminalText('leftTitle', 24, '#7DFFE8');
+    this.leftTitle.top = `-${Math.round(sidePanelHeight * 0.44)}px`;
+    this.leftTitle.width = `${sideInnerWidth}px`;
     this.leftTitle.height = '30px';
     this.leftTitle.isHitTestVisible = false;
     this.leftTitle.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftTitle);
 
-    this.leftDescription = this.makeTerminalText('leftDesc', 14, '#CFFCF3');
-    this.leftDescription.top = '-250px';
-    this.leftDescription.width = '390px';
-    this.leftDescription.height = '50px';
+    this.leftDescription = this.makeTerminalText('leftDesc', 16, '#CFFCF3');
+    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.39)}px`;
+    this.leftDescription.width = `${sideInnerWidth}px`;
+    this.leftDescription.height = `${Math.round(sidePanelHeight * 0.07)}px`;
     this.leftDescription.isHitTestVisible = false;
     this.leftDescription.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftDescription);
 
     const scrollViewer = new ScrollViewer('leftListScroll');
-    scrollViewer.width = '400px';
-    scrollViewer.height = '500px';
-    scrollViewer.top = '20px';
+    scrollViewer.width = `${sideInnerWidth}px`;
+    scrollViewer.height = `${Math.round(sidePanelHeight * 0.8)}px`;
+    scrollViewer.top = `${Math.round(sidePanelHeight * 0.03)}px`;
     scrollViewer.thickness = 0;
     scrollViewer.barColor = '#3B685C';
     scrollViewer.barBackground = 'rgba(0,0,0,0.5)';
@@ -315,33 +326,34 @@ export class AchievementsScene {
     this.leftListStack.spacing = 6;
     scrollViewer.addControl(this.leftListStack);
 
-    this.rightPanel = this.makeTerminalPanel('achRightPanel', 430, 630);
+    this.rightPanel = this.makeTerminalPanel('achRightPanel', sidePanelWidth, sidePanelHeight);
     this.rightPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.rightPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.rightPanel.left = '-24px';
-    this.rightPanel.top = '38px';
+    this.rightPanel.left = `-${sidePadding}px`;
+    this.rightPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.rightPanel);
 
-    this.rightTitle = this.makeTerminalText('rightTitle', 22, '#7DFFE8');
-    this.rightTitle.top = '-286px';
-    this.rightTitle.height = '60px';
+    this.rightTitle = this.makeTerminalText('rightTitle', 26, '#7DFFE8');
+    this.rightTitle.top = `-${Math.round(sidePanelHeight * 0.44)}px`;
+    this.rightTitle.height = `${Math.round(sidePanelHeight * 0.09)}px`;
     this.rightPanel.addControl(this.rightTitle);
 
-    this.rightBody = this.makeTerminalText('rightBody', 14, '#CFFCF3');
-    this.rightBody.top = '20px';
-    this.rightBody.height = '520px';
+    this.rightBody = this.makeTerminalText('rightBody', 18, '#CFFCF3');
+    this.rightBody.top = `${Math.round(sidePanelHeight * 0.03)}px`;
+    this.rightBody.height = `${Math.round(sidePanelHeight * 0.8)}px`;
     this.rightPanel.addControl(this.rightBody);
 
-    this.centerCard = this.makeTerminalPanel('centerCard', 360, 480);
+    this.centerCard = this.makeTerminalPanel('centerCard', centerCardWidth, centerCardHeight);
     this.centerCard.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.centerCard.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.centerCard.top = '38px';
+    this.centerCard.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.centerCard);
 
     const artContainer = new Rectangle('artContainer');
-    artContainer.width = '300px';
-    artContainer.height = '300px';
-    artContainer.top = '-60px';
+    const artSize = Math.round(centerCardWidth * 0.86);
+    artContainer.width = `${artSize}px`;
+    artContainer.height = `${artSize}px`;
+    artContainer.top = `-${Math.round(centerCardHeight * 0.1)}px`;
     artContainer.thickness = 1;
     artContainer.color = '#3B685C';
     artContainer.background = 'rgba(0,0,0,0.5)';
@@ -349,7 +361,7 @@ export class AchievementsScene {
 
     this.centerCardIcon = new TextBlock('centerIcon', '?');
     this.centerCardIcon.fontFamily = this.terminalFont;
-    this.centerCardIcon.fontSize = 80;
+    this.centerCardIcon.fontSize = 96;
     this.centerCardIcon.color = '#7CFFEA';
     artContainer.addControl(this.centerCardIcon);
 
@@ -362,16 +374,16 @@ export class AchievementsScene {
 
     this.centerCardTitle = new TextBlock('centerTitle', '');
     this.centerCardTitle.fontFamily = this.terminalFont;
-    this.centerCardTitle.fontSize = 24;
+    this.centerCardTitle.fontSize = 30;
     this.centerCardTitle.color = '#FFFFFF';
-    this.centerCardTitle.top = '120px';
+    this.centerCardTitle.top = '150px';
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = new TextBlock('centerSubtitle', '');
     this.centerCardSubtitle.fontFamily = this.terminalFont;
-    this.centerCardSubtitle.fontSize = 16;
+    this.centerCardSubtitle.fontSize = 20;
     this.centerCardSubtitle.color = '#7DFFE8';
-    this.centerCardSubtitle.top = '150px';
+    this.centerCardSubtitle.top = '190px';
     this.centerCard.addControl(this.centerCardSubtitle);
   }
 
@@ -388,7 +400,7 @@ export class AchievementsScene {
   private makeTerminalText(id: string, size: number, color: string): TextBlock {
     const t = new TextBlock(id, '');
     t.fontFamily = this.terminalFont;
-    t.fontSize = size;
+    t.fontSize = Math.round(size * 1.12);
     t.color = color;
     t.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     t.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -406,7 +418,7 @@ export class AchievementsScene {
     btn.cornerRadius = 2;
     btn.background = 'rgba(20, 30, 35, 0.6)';
     btn.fontFamily = this.terminalFont;
-    btn.fontSize = 16;
+    btn.fontSize = 18;
     btn.onPointerUpObservable.add(onClick);
     return btn;
   }
@@ -436,8 +448,8 @@ export class AchievementsScene {
 
   private makeLeftListButton(id: string, label: string, active: boolean, onClick: () => void): Button {
     const btn = Button.CreateSimpleButton(id, label);
-    btn.width = '382px';
-    btn.height = '38px';
+    btn.width = `${this.leftListButtonWidth}px`;
+    btn.height = '42px';
     btn.thickness = 1;
     btn.cornerRadius = 4;
     btn.color = active ? '#F1FFFC' : '#A3DCCF';
@@ -449,7 +461,7 @@ export class AchievementsScene {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
       btn.textBlock.fontFamily = 'Consolas';
-      btn.textBlock.fontSize = 14;
+      btn.textBlock.fontSize = 18;
     }
     return btn;
   }

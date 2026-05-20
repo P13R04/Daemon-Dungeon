@@ -2,7 +2,7 @@
  * HUDManager - Manages health bars, damage numbers, and UI elements
  */
 
-import { Scene, Engine, Vector3, TransformNode, AbstractMesh, Sound } from '@babylonjs/core';
+import { Scene, Engine, Vector3, Vector2, TransformNode, AbstractMesh, Sound, PointerEventTypes } from '@babylonjs/core';
 import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image, StackPanel, Checkbox } from '@babylonjs/gui';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { SettingsMenuBuilder } from '../ui/SettingsMenuBuilder';
@@ -12,12 +12,15 @@ import { DAEMON_ANIMATION_PRESETS, normalizeDaemonPresetName } from '../data/voi
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
 import { DaemonVoiceSynth } from '../audio/DaemonVoiceSynth';
 import { GameSettingsStore, formatInputKeyLabel } from '../settings/GameSettings';
+import { InputManager } from '../input/InputManager';
+import { PlayerController } from '../gameplay/PlayerController';
 import { buildHudAssetUrl, getHudAssetBaseUrl, preloadHudAsset, getCachedHudAsset } from './hud/HudAssetPaths';
 import { DaemonAvatarController, type DaemonAnimationPhaseState } from './hud/DaemonAvatarController';
 import { getSpecialMarkerAtDisplayIndex, stripAllSpecialMarkers } from './hud/DaemonTextUtils';
 import { BONUS_CODEX_ENTRIES } from '../data/codex/bonuses';
 import { getMergedAchievementDefinitions } from '../data/achievements/loadAchievementDefinitions';
 import type { BonusSelectionUiState } from './BonusSystemManager';
+import { applyResponsiveGuiScaling } from '../ui/GuiScaling';
 import type {
   AudioEngineLike,
   DamageNumber,
@@ -41,6 +44,15 @@ export class HUDManager {
   private guiClean: AdvancedDynamicTexture;
   private guiFx: AdvancedDynamicTexture;
   private enemyGui: AdvancedDynamicTexture;
+  private inputManager: InputManager | null = null;
+  private player: PlayerController | null = null;
+  private mobileControls: Control[] = [];
+  private mobileAttackBtn: Button | null = null;
+  private mobileStanceBtn: Button | null = null;
+  private mobileUltBtn: Button | null = null;
+  private resetMobileJoystick: (() => void) | null = null;
+  private wasStanceActive: boolean = false;
+  private mobileAttackHoldBlocked: boolean = false;
   private eventBus: EventBus;
   private damageNumbers: DamageNumber[] = [];
   private damageNumberCooldowns: Map<string, { lastTime: number; pending: number; lastPosition: Vector3 }> = new Map();
@@ -57,6 +69,13 @@ export class HUDManager {
   private logPanel: Rectangle | null = null;
   private logLines: TextBlock[] = [];
   private logMessages: string[] = [];
+  private currentTypingLength: number = 0;
+  private typingTimer: number = 0;
+  private cursorBlinkTimer: number = 0;
+  private showCursor: boolean = true;
+  private scheduledLogs: Array<{ message: string; delay: number }> = [];
+  private scheduledLogTimer: number = 0;
+  private randomGlitchTimer: number = 25;
   private achievementToastContainer: Rectangle | null = null;
   private achievementToastTitle: TextBlock | null = null;
   private achievementToastDescription: TextBlock | null = null;
@@ -72,6 +91,16 @@ export class HUDManager {
   private secondaryStatusText: TextBlock | null = null;
   private secondaryResourceBarFill: Rectangle | null = null;
   private itemStatusText: TextBlock | null = null;
+  private playerUltBarFill: Rectangle | null = null;
+  private ultBarContainer: Rectangle | null = null;
+  private secondaryBarContainer: Rectangle | null = null;
+  private ultTime: number = 0;
+  private stanceTime: number = 0;
+  private lastUltCharge: number = 0;
+  private lastUltActive: boolean = false;
+  private lastStanceRatio: number = 1.0;
+  private lastStanceActive: boolean = false;
+  private lastStanceThresholdRatio: number = 0.5;
   private daemonContainer: Rectangle | null = null;
   private daemonGlitchOverlay: Rectangle | null = null;
   private daemonPopupFlashOverlay: Rectangle | null = null;
@@ -206,23 +235,22 @@ export class HUDManager {
   }
 
   private applyGuiScaling(): void {
-    const designWidth = 1920;
-    const designHeight = 1080;
+    applyResponsiveGuiScaling(this.guiFx,    this.scene.getEngine());
+    applyResponsiveGuiScaling(this.guiClean, this.scene.getEngine());
 
-    this.guiFx.idealWidth = designWidth;
-    this.guiFx.idealHeight = designHeight;
-    this.guiFx.useSmallestIdeal = true;
-    this.guiFx.renderAtIdealSize = true;
-
-    this.guiClean.idealWidth = designWidth;
-    this.guiClean.idealHeight = designHeight;
-    this.guiClean.useSmallestIdeal = true;
-    this.guiClean.renderAtIdealSize = true;
-
-    // Enemy bars must stay in raw screen space for projection alignment
+    // Enemy bars stay in raw screen space for world-space projection alignment
     if (this.enemyGui) {
       this.enemyGui.renderAtIdealSize = false;
       this.enemyGui.renderScale = 1;
+    }
+
+    // Re-apply on every engine resize (handles orientation changes on mobile)
+    if (!(this as any)._guiScaleResizeRegistered) {
+      (this as any)._guiScaleResizeRegistered = true;
+      this.scene.getEngine().onResizeObservable.add(() => {
+        applyResponsiveGuiScaling(this.guiFx,    this.scene.getEngine());
+        applyResponsiveGuiScaling(this.guiClean, this.scene.getEngine());
+      });
     }
   }
 
@@ -244,17 +272,21 @@ export class HUDManager {
     }));
     this.unsubscribers.push(this.eventBus.on(GameEvents.ROOM_ENTERED, (data: RoomEnteredPayload) => {
       this.handleRoomEnteredEvent(data);
+      this.resetMobileInputState();
     }));
     this.unsubscribers.push(this.eventBus.on(GameEvents.ROOM_TRANSITION_START, () => {
       this.clearEnemyHealthBars();
+      this.resetMobileInputState();
     }));
     this.unsubscribers.push(this.eventBus.on(GameEvents.GAME_START_REQUESTED, () => {
       this.clearEnemyHealthBars();
       this.resetWaveCounter();
+      this.resetMobileInputState();
     }));
     this.unsubscribers.push(this.eventBus.on(GameEvents.GAME_RESTART_REQUESTED, () => {
       this.clearEnemyHealthBars();
       this.resetWaveCounter();
+      this.resetMobileInputState();
     }));
     this.unsubscribers.push(this.eventBus.on(GameEvents.DAEMON_TAUNT, async (data: DaemonTauntPayload) => {
       await this.handleDaemonTauntEvent(data);
@@ -334,31 +366,106 @@ export class HUDManager {
     const enemyId = data?.enemyId ?? data?.entityId;
     if (!enemyId) return;
     this.removeEnemyHealthBar(enemyId);
-    this.addLogMessage('ENEMY UNIT DEL...');
+    
+    const logs = [
+      'CRITICAL: CORRUPTED SUBPROCESS TERMINATED.',
+      'GARBAGE COLLECTOR: PURGED UNREGISTERED EXEC.',
+      'DELETED: DAEMON THREAD SUSPENDED.',
+      `DEALLOCATED MEMORY OX${Math.floor(Math.random() * 65536).toString(16).toUpperCase()}`,
+      'THREAT RESOLVED: ISOLATED PROCESS QUARANTINED.',
+      'HOST INTELLIGENCE: SECURITY LOG DISPOSED.'
+    ];
+    const chosen = logs[Math.floor(Math.random() * logs.length)];
+    this.addLogMessage(chosen);
   }
 
   private async handlePlayerDamagedEvent(data: PlayerDamagedPayload): Promise<void> {
     const current = data?.health?.current ?? (data as any)?.currentHealth ?? 0;
     const max = data?.health?.max ?? (data as any)?.maxHealth ?? 100;
     this.updateHealthDisplay(current, max);
-    // Taunt emission now delegated to DaemonVoicelineManager
+    
+    if (Math.random() < 0.35) {
+      const logs = [
+        'WARNING: SYSTEM BUFFER OVERFLOW DETECTED.',
+        'INTEGRITY CRITICAL: HARDWARE THREAT ENCOUNTERED.',
+        'IO INTERRUPT: PACKET COLLISION OCCURRED.',
+        'HOST EXCEPTION: MEMORY DUMP SCHEDULED.',
+        'CORE TEMPERATURE SPIKE: SHIELD INTEGRITY COMPROMISED.'
+      ];
+      const chosen = logs[Math.floor(Math.random() * logs.length)];
+      this.addLogMessage(chosen);
+    }
   }
 
   private async handleRoomClearedEvent(): Promise<void> {
-    this.addLogMessage('ROOM STATUS: CLEAR.');
-    // Taunt emission now delegated to DaemonVoicelineManager
+    const logs = [
+      'SECTOR RESTORED: DAEMON OVERWRITE SUSPENDED.',
+      'INTEGRITY SCAN: NO OUTSTANDING ERROR REPORTS.',
+      'COMPRESSION SUCCESSFUL: SAVING SECTOR CHECKPOINT.',
+      'HOST SECURITY: TEMPORARY SANDBOX ISOLATION SECURED.'
+    ];
+    const chosen = logs[Math.floor(Math.random() * logs.length)];
+    this.addLogMessage(chosen);
   }
 
   private handleRoomEnteredEvent(data: RoomEnteredPayload): void {
     this.waveNumber += 1;
     this.updateWaveText(this.waveNumber);
-    this.addLogMessage(`WAVE ${this.waveNumber.toString().padStart(2, '0')} INIT.`);
+    
+    this.scheduledLogs = [
+      { message: 'ESTABLISHING SANDBOX SYNC...', delay: 0.4 },
+      { message: 'SYNCING... [██░░░░░░░░░░░░░░] 12%', delay: 0.5 },
+      { message: 'SYNCING... [█████░░░░░░░░░░░] 31%', delay: 0.5 },
+      { message: 'SYNCING... [████████░░░░░░░░] 50%', delay: 0.5 },
+      { message: 'SYNCING... [████████████░░░░] 75%', delay: 0.5 },
+      { message: 'SYNCING... [████████████████] 100%', delay: 0.5 },
+      { message: `BOOT SEQUENCE: WAVE ${this.waveNumber.toString().padStart(2, '0')} INITIALIZED.`, delay: 0.4 }
+    ];
+    this.scheduledLogTimer = 0;
 
     const roomType = typeof data?.roomType === 'string' ? data.roomType.toLowerCase() : 'normal';
     if (roomType === 'boss') {
       const roomName = typeof data?.roomName === 'string' ? data.roomName : 'Unknown Chamber';
       this.triggerBossRoomAlert(roomName);
     }
+  }
+
+  private triggerRandomConsoleGlitchSequence(): void {
+    const sequences = [
+      [
+        { message: 'CRITICAL: SEGMENTATION FAULT DETECTED.', delay: 0.4 },
+        { message: 'CORE TERMINAL CORRUPTED. INITIATING REBOOT...', delay: 0.6 },
+        { message: 'DUMPING CORE... [██░░░░░░░░░░░░░░] 12%', delay: 0.6 },
+        { message: 'DUMPING CORE... [█████░░░░░░░░░░░] 31%', delay: 0.6 },
+        { message: 'DUMPING CORE... [████████░░░░░░░░] 50%', delay: 0.6 },
+        { message: 'DUMPING CORE... [████████████░░░░] 75%', delay: 0.6 },
+        { message: 'DUMPING CORE... [████████████████] 100%', delay: 0.5 },
+        { message: 'STACK CORRUPTION CLEAR... STATUS: OK', delay: 0.6 },
+        { message: 'CLEANING CONSOLE...', delay: 0.6 },
+        { message: '__CLEAR_ACTION__', delay: 0.4 },
+        { message: 'DIAGNOSTIC CONSOLE REBOOTING...', delay: 0.4 },
+        { message: 'RECONNECTING INTERRUPTS...', delay: 0.5 },
+        { message: 'DIAGNOSTIC SHELL v4.0.1 - ONLINE.', delay: 0.6 }
+      ],
+      [
+        { message: 'WARNING: KERNEL MEMORY OVERLOAD.', delay: 0.4 },
+        { message: 'RUNNING HOST GC (GARBAGE COLLECTOR)...', delay: 0.6 },
+        { message: 'GC: RECLAIMED OXF482 MEMORY BLOCKS.', delay: 0.6 },
+        { message: 'DIAGNOSTICS: STABLE.', delay: 0.5 }
+      ],
+      [
+        { message: 'INITIATING SUBJECT DIAGNOSTIC SCAN...', delay: 0.4 },
+        { message: 'SCANNING... [██░░░░░░░░░░░░░░] 12%', delay: 0.6 },
+        { message: 'SCANNING... [█████░░░░░░░░░░░] 31%', delay: 0.6 },
+        { message: 'SCANNING... [████████░░░░░░░░] 50%', delay: 0.6 },
+        { message: 'SCANNING... [████████████░░░░] 75%', delay: 0.6 },
+        { message: 'SCANNING... [████████████████] 100%', delay: 0.5 },
+        { message: 'RESULT: DAEMON INTEGRITY THREAT DETECTED.', delay: 0.6 }
+      ]
+    ];
+
+    const chosen = sequences[Math.floor(Math.random() * sequences.length)];
+    this.scheduledLogs.push(...chosen);
   }
 
   private async handleWaveUpdate(data: any): Promise<void> {
@@ -370,10 +477,36 @@ export class HUDManager {
   }
 
   private handlePlayerUltimateReadyEvent(data: PlayerUltReadyPayload): void {
-    if (!this.playerUltDisplay) return;
-    const percentage = Math.floor(data.charge * 100);
-    this.playerUltDisplay.text = `ULTI: ${percentage}%`;
-    this.playerUltDisplay.color = data.charge >= 1.0 ? '#00FF00' : '#FFFF00';
+    this.lastUltCharge = data.charge;
+    this.lastUltActive = !!data.active;
+
+    if (!this.playerUltDisplay || !this.playerUltBarFill) return;
+    const percentage = Math.max(0, Math.min(100, Math.floor(data.charge * 100)));
+    this.playerUltBarFill.width = `${percentage}%`;
+
+    if (this.lastUltActive) {
+      this.playerUltDisplay.text = `ULTI: ${percentage}% [ACTIVE]`;
+      this.playerUltDisplay.color = '#E040FF'; // Neon purple for active duration
+      this.playerUltBarFill.background = '#E040FF';
+      if (this.ultBarContainer) {
+        this.ultBarContainer.color = '#E040FF';
+      }
+    } else if (data.charge >= 1.0) {
+      this.playerUltDisplay.text = `ULTI: 100% [READY]`;
+      this.playerUltDisplay.color = '#00FF99'; // Bright matrix green
+      this.playerUltBarFill.background = '#00FF99';
+      if (this.ultBarContainer) {
+        this.ultBarContainer.color = '#00FF99';
+      }
+    } else {
+      this.playerUltDisplay.text = `ULTI: ${percentage}%`;
+      this.playerUltDisplay.color = '#FFFF00'; // Cyber yellow charging
+      this.playerUltBarFill.background = '#FFFF00';
+      if (this.ultBarContainer) {
+        this.ultBarContainer.color = '#FFFF00';
+        this.ultBarContainer.thickness = 1;
+      }
+    }
   }
 
   private handleUiOptionChangedEvent(data: UiOptionChangedPayload): void {
@@ -399,115 +532,78 @@ export class HUDManager {
   private createPlayerHUD(): void {
     const fontFamily = 'Consolas';
 
-    // Top bar
+    // Top bar (transparent container for layout)
     this.topBar = new Rectangle('hud_top_bar');
     this.topBar.width = 1;
-    this.topBar.height = '80px';
+    this.topBar.height = '140px';
     this.topBar.thickness = 0;
-    this.topBar.background = 'rgba(0, 0, 0, 0.45)';
+    this.topBar.background = 'transparent';
     this.topBar.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.topBar.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.guiClean.addControl(this.topBar);
 
-    const integrityLabel = new TextBlock('integrity_label');
-    integrityLabel.text = 'INTEGRITY:';
-    integrityLabel.fontSize = 16;
-    integrityLabel.fontFamily = fontFamily;
-    integrityLabel.color = '#7CFFEA';
-    integrityLabel.left = 16;
-    integrityLabel.top = 8;
-    integrityLabel.width = '120px';
-    integrityLabel.height = '24px';
-    integrityLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    integrityLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    integrityLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.topBar.addControl(integrityLabel);
+    // Stats Console (Top Right Container)
+    const statsContainer = new Rectangle('hud_stats_container');
+    statsContainer.width = '320px';
+    statsContainer.height = '130px';
+    statsContainer.thickness = 1;
+    statsContainer.color = '#3B685C';
+    statsContainer.background = 'rgba(10, 18, 22, 0.75)';
+    statsContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    statsContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    statsContainer.left = -24;
+    statsContainer.top = 24;
+    statsContainer.cornerRadius = 4;
+    this.topBar.addControl(statsContainer);
 
-    const healthBarContainer = new Rectangle('health_bar_container');
-    healthBarContainer.width = '220px';
-    healthBarContainer.height = '16px';
-    healthBarContainer.thickness = 1;
-    healthBarContainer.color = '#7CFFEA';
-    healthBarContainer.background = 'rgba(10, 30, 35, 0.7)';
-    healthBarContainer.left = 140;
-    healthBarContainer.top = 10;
-    healthBarContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    healthBarContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.topBar.addControl(healthBarContainer);
-
-    this.healthBarFill = new Rectangle('health_bar_fill');
-    this.healthBarFill.width = '100%';
-    this.healthBarFill.height = '100%';
-    this.healthBarFill.thickness = 0;
-    this.healthBarFill.background = '#00FFD1';
-    this.healthBarFill.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.healthBarFill.left = 0;
-    healthBarContainer.addControl(this.healthBarFill);
-
-    this.healthValueText = new TextBlock('health_value');
-    this.healthValueText.text = '100/100';
-    this.healthValueText.fontSize = 14;
-    this.healthValueText.fontFamily = fontFamily;
-    this.healthValueText.color = '#CFFCF3';
-    this.healthValueText.left = 370;
-    this.healthValueText.top = 8;
-    this.healthValueText.width = '120px';
-    this.healthValueText.height = '24px';
-    this.healthValueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.healthValueText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.healthValueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.topBar.addControl(this.healthValueText);
-    this.playerHealthDisplay = this.healthValueText;
+    this.scoreText = new TextBlock('score_text');
+    this.scoreText.text = 'SCORE: 00000000';
+    this.scoreText.fontSize = 18;
+    this.scoreText.fontFamily = fontFamily;
+    this.scoreText.color = '#7CFFEA';
+    this.scoreText.left = 16;
+    this.scoreText.top = 12;
+    this.scoreText.width = '288px';
+    this.scoreText.height = '28px';
+    this.scoreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.scoreText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.scoreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    statsContainer.addControl(this.scoreText);
 
     this.waveText = new TextBlock('wave_text');
     this.waveText.text = 'WAVE: 00';
     this.waveText.fontSize = 18;
     this.waveText.fontFamily = fontFamily;
     this.waveText.color = '#7CFFEA';
-    this.waveText.topInPixels = 32;
-    this.waveText.width = '160px';
-    this.waveText.height = '24px';
-    this.waveText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.waveText.left = 16;
+    this.waveText.top = 48;
+    this.waveText.width = '288px';
+    this.waveText.height = '28px';
+    this.waveText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.waveText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.waveText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    this.waveText.left = '-20px'; // 20px from right border
-    this.topBar.addControl(this.waveText);
+    this.waveText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    statsContainer.addControl(this.waveText);
 
     this.currencyText = new TextBlock('currency_text');
     this.currencyText.text = 'CREDITS: 000';
     this.currencyText.fontSize = 16;
     this.currencyText.fontFamily = fontFamily;
     this.currencyText.color = '#FFD782';
-    this.currencyText.topInPixels = 54;
-    this.currencyText.width = '220px';
-    this.currencyText.height = '22px';
-    this.currencyText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.currencyText.left = 16;
+    this.currencyText.top = 84;
+    this.currencyText.width = '288px';
+    this.currencyText.height = '28px';
+    this.currencyText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.currencyText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.currencyText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    this.currencyText.left = '-20px';
-    this.topBar.addControl(this.currencyText);
+    this.currencyText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    statsContainer.addControl(this.currencyText);
 
-    // Score Display (Top Right)
-    this.scoreText = new TextBlock('score_text');
-    this.scoreText.text = 'SCORE: 00000000';
-    this.scoreText.fontSize = 18;
-    this.scoreText.fontFamily = fontFamily;
-    this.scoreText.color = '#7CFFEA';
-    this.scoreText.left = '-20px';
-    this.scoreText.width = '240px';
-    this.scoreText.height = '40px';
-    this.scoreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    this.scoreText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.scoreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    this.scoreText.topInPixels = 8;
-    this.topBar.addControl(this.scoreText);
-
-    // Combo Container
+    // Combo Container (placed directly below statsContainer)
     this.comboContainer = new Rectangle('combo_container');
     this.comboContainer.width = '140px';
     this.comboContainer.height = '60px';
-    this.comboContainer.left = -20;
-    this.comboContainer.top = 85;
+    this.comboContainer.left = -24;
+    this.comboContainer.top = 145;
     this.comboContainer.thickness = 0;
     this.comboContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.comboContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -534,16 +630,29 @@ export class HUDManager {
 
     // Bottom-left command feed
     this.logPanel = new Rectangle('log_panel');
-    this.logPanel.width = '36%';
-    this.logPanel.height = '150px';
+    this.logPanel.width = '420px';
+    this.logPanel.height = '180px';
     this.logPanel.thickness = 1;
     this.logPanel.color = '#2EF9C3';
-    this.logPanel.background = 'rgba(0, 0, 0, 0.35)';
-    this.logPanel.left = 16;
-    this.logPanel.top = -16;
+    this.logPanel.background = 'rgba(4, 10, 8, 0.88)';
+    this.logPanel.left = 24;
+    this.logPanel.top = -24;
     this.logPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.logPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     this.guiClean.addControl(this.logPanel);
+
+    const logHeader = new TextBlock('log_header');
+    logHeader.text = ' SYSTEM MONITOR // DIAGNOSTIC FEED';
+    logHeader.fontSize = 10;
+    logHeader.fontFamily = fontFamily;
+    logHeader.color = '#2EF9C3';
+    logHeader.height = '16px';
+    logHeader.top = '6px';
+    logHeader.left = 10;
+    logHeader.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    logHeader.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    logHeader.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.logPanel.addControl(logHeader);
 
     const logsStack = new Rectangle('log_stack_container');
     logsStack.width = 1;
@@ -554,11 +663,11 @@ export class HUDManager {
     for (let i = 0; i < 6; i++) {
       const line = new TextBlock(`log_line_${i}`);
       line.text = '';
-      line.fontSize = 14;
+      line.fontSize = 12;
       line.fontFamily = fontFamily;
       line.color = '#B8FFE6';
-      line.height = '24px';
-      line.top = `${8 + i * 22}px`;
+      line.height = '20px';
+      line.top = `${28 + i * 21}px`;
       line.left = 10;
       line.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       line.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -567,30 +676,95 @@ export class HUDManager {
       this.logLines.push(line);
     }
 
-    const pauseBtn = Button.CreateSimpleButton('pause_btn', '[ || ]');
-    pauseBtn.width = '42px';
-    pauseBtn.height = '42px';
+    // Pause Button (Standalone Top Left)
+    const pauseBtn = Button.CreateSimpleButton('pause_btn', '||');
+    pauseBtn.width = '64px';
+    pauseBtn.height = '64px';
     pauseBtn.color = '#7CFFEA';
-    pauseBtn.background = 'rgba(10, 30, 35, 0.6)';
+    pauseBtn.background = 'rgba(10, 30, 35, 0.75)';
     pauseBtn.thickness = 1;
-    pauseBtn.left = 16;
-    pauseBtn.top = 96;
+    pauseBtn.left = 24;
+    pauseBtn.top = 24;
     pauseBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     pauseBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    if (pauseBtn.textBlock) {
+      pauseBtn.textBlock.fontSize = 20;
+      pauseBtn.textBlock.fontFamily = fontFamily;
+    }
     pauseBtn.onPointerUpObservable.add(() => {
       this.eventBus.emit(GameEvents.UI_PAUSE_TOGGLE);
     });
     this.guiClean.addControl(pauseBtn);
 
-    // Bottom-right status
+    // Bottom-center Integrity/Health Bar
+    const healthPanel = new Rectangle('hud_health_panel');
+    healthPanel.width = '520px';
+    healthPanel.height = '105px';
+    healthPanel.thickness = 0;
+    healthPanel.background = 'transparent';
+    healthPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    healthPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    healthPanel.left = 0;
+    healthPanel.top = -24;
+    this.guiClean.addControl(healthPanel);
+
+    const integrityLabel = new TextBlock('integrity_label');
+    integrityLabel.text = 'INTEGRITY';
+    integrityLabel.fontSize = 18;
+    integrityLabel.fontFamily = fontFamily;
+    integrityLabel.color = '#7CFFEA';
+    integrityLabel.width = '300px';
+    integrityLabel.height = '28px';
+    integrityLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    integrityLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    integrityLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    integrityLabel.top = '0px';
+    healthPanel.addControl(integrityLabel);
+
+    const healthBarContainer = new Rectangle('health_bar_container');
+    healthBarContainer.width = '420px';
+    healthBarContainer.height = '30px';
+    healthBarContainer.thickness = 1;
+    healthBarContainer.color = '#7CFFEA';
+    healthBarContainer.background = 'rgba(10, 30, 35, 0.7)';
+    healthBarContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    healthBarContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    healthBarContainer.left = 0;
+    healthBarContainer.top = '2px';
+    healthPanel.addControl(healthBarContainer);
+
+    this.healthBarFill = new Rectangle('health_bar_fill');
+    this.healthBarFill.width = '100%';
+    this.healthBarFill.height = '100%';
+    this.healthBarFill.thickness = 0;
+    this.healthBarFill.background = '#00FFD1';
+    this.healthBarFill.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    healthBarContainer.addControl(this.healthBarFill);
+
+    this.healthValueText = new TextBlock('health_value');
+    this.healthValueText.text = '100/100';
+    this.healthValueText.fontSize = 16;
+    this.healthValueText.fontFamily = fontFamily;
+    this.healthValueText.color = '#CFFCF3';
+    this.healthValueText.width = '200px';
+    this.healthValueText.height = '26px';
+    this.healthValueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.healthValueText.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    this.healthValueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.healthValueText.left = 0;
+    this.healthValueText.top = '0px';
+    healthPanel.addControl(this.healthValueText);
+    this.playerHealthDisplay = this.healthValueText;
+
+    // Bottom-right status panel (stacked resource bars)
     this.statusPanel = new Rectangle('status_panel');
-    this.statusPanel.width = '260px';
-    this.statusPanel.height = '120px';
+    this.statusPanel.width = '420px';
+    this.statusPanel.height = '180px';
     this.statusPanel.thickness = 1;
     this.statusPanel.color = '#2EF9C3';
-    this.statusPanel.background = 'rgba(0, 0, 0, 0.35)';
-    this.statusPanel.left = -16;
-    this.statusPanel.top = -16;
+    this.statusPanel.background = 'rgba(0, 0, 0, 0.55)';
+    this.statusPanel.left = -24;
+    this.statusPanel.top = -24;
     this.statusPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.statusPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     this.guiClean.addControl(this.statusPanel);
@@ -600,40 +774,62 @@ export class HUDManager {
     this.playerUltDisplay.fontSize = 16;
     this.playerUltDisplay.fontFamily = fontFamily;
     this.playerUltDisplay.color = '#FFFF00';
-    this.playerUltDisplay.left = 10;
-    this.playerUltDisplay.top = 10;
-    this.playerUltDisplay.width = '220px';
+    this.playerUltDisplay.left = 16;
+    this.playerUltDisplay.top = 16;
+    this.playerUltDisplay.width = '380px';
     this.playerUltDisplay.height = '24px';
     this.playerUltDisplay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.playerUltDisplay.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.playerUltDisplay.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.statusPanel.addControl(this.playerUltDisplay);
 
+    const ultBarContainer = new Rectangle('ultimate_bar_container');
+    ultBarContainer.width = '388px';
+    ultBarContainer.height = '24px';
+    ultBarContainer.thickness = 1;
+    ultBarContainer.color = '#FFFF00';
+    ultBarContainer.background = 'rgba(30, 30, 10, 0.7)';
+    ultBarContainer.left = 16;
+    ultBarContainer.top = 42;
+    ultBarContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    ultBarContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.statusPanel.addControl(ultBarContainer);
+    this.ultBarContainer = ultBarContainer;
+
+    this.playerUltBarFill = new Rectangle('ultimate_bar_fill');
+    this.playerUltBarFill.width = '0%';
+    this.playerUltBarFill.height = '100%';
+    this.playerUltBarFill.thickness = 0;
+    this.playerUltBarFill.background = '#FFFF00';
+    this.playerUltBarFill.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    ultBarContainer.addControl(this.playerUltBarFill);
+
     this.secondaryStatusText = new TextBlock('secondary_status');
-    this.secondaryStatusText.text = 'STANCE: 100%';
-    this.secondaryStatusText.fontSize = 14;
+    this.secondaryStatusText.text = 'STANCE: 100% [READY]';
+    this.secondaryStatusText.fontSize = 16;
     this.secondaryStatusText.fontFamily = fontFamily;
     this.secondaryStatusText.color = '#B8FFE6';
-    this.secondaryStatusText.left = 10;
-    this.secondaryStatusText.top = 40;
-    this.secondaryStatusText.width = '220px';
-    this.secondaryStatusText.height = '22px';
+    this.secondaryStatusText.left = 16;
+    this.secondaryStatusText.top = 88;
+    this.secondaryStatusText.width = '380px';
+    this.secondaryStatusText.height = '24px';
     this.secondaryStatusText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.secondaryStatusText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.secondaryStatusText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.statusPanel.addControl(this.secondaryStatusText);
 
     const secondaryBarContainer = new Rectangle('secondary_resource_container');
-    secondaryBarContainer.width = '220px';
-    secondaryBarContainer.height = '12px';
+    secondaryBarContainer.width = '388px';
+    secondaryBarContainer.height = '24px';
     secondaryBarContainer.thickness = 1;
     secondaryBarContainer.color = '#7CFFEA';
     secondaryBarContainer.background = 'rgba(10, 30, 35, 0.7)';
-    secondaryBarContainer.left = 10;
-    secondaryBarContainer.top = 62;
+    secondaryBarContainer.left = 16;
+    secondaryBarContainer.top = 114;
     secondaryBarContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     secondaryBarContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.statusPanel.addControl(secondaryBarContainer);
+    this.secondaryBarContainer = secondaryBarContainer;
 
     this.secondaryResourceBarFill = new Rectangle('secondary_resource_fill');
     this.secondaryResourceBarFill.width = '100%';
@@ -643,30 +839,21 @@ export class HUDManager {
     this.secondaryResourceBarFill.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     secondaryBarContainer.addControl(this.secondaryResourceBarFill);
 
+    // Keep itemStatusText hidden / dummy to preserve compatibility
     this.itemStatusText = new TextBlock('item_status');
     this.itemStatusText.text = 'ITEM: NONE';
-    this.itemStatusText.fontSize = 14;
-    this.itemStatusText.fontFamily = fontFamily;
-    this.itemStatusText.color = '#B8FFE6';
-    this.itemStatusText.left = 10;
-    this.itemStatusText.top = 80;
-    this.itemStatusText.width = '220px';
-    this.itemStatusText.height = '22px';
-    this.itemStatusText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.itemStatusText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.itemStatusText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.statusPanel.addControl(this.itemStatusText);
+    this.itemStatusText.isVisible = false;
 
     // Auto-aim indicator (keyboard-only mode badge)
     this.autoAimLabel = new TextBlock('auto_aim_indicator');
     this.autoAimLabel.text = '⊙ AUTO-AIM';
-    this.autoAimLabel.fontSize = 11;
+    this.autoAimLabel.fontSize = 13;
     this.autoAimLabel.fontFamily = fontFamily;
     this.autoAimLabel.color = '#7CFFEA';
-    this.autoAimLabel.left = 10;
-    this.autoAimLabel.top = 100;
-    this.autoAimLabel.width = '220px';
-    this.autoAimLabel.height = '18px';
+    this.autoAimLabel.left = 16;
+    this.autoAimLabel.top = 148;
+    this.autoAimLabel.width = '240px';
+    this.autoAimLabel.height = '20px';
     this.autoAimLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.autoAimLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.autoAimLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -674,11 +861,11 @@ export class HUDManager {
     this.statusPanel.addControl(this.autoAimLabel);
 
     this.achievementToastContainer = new Rectangle('achievement_toast');
-    this.achievementToastContainer.width = '360px';
-    this.achievementToastContainer.height = '88px';
-    this.achievementToastContainer.thickness = 1;
+    this.achievementToastContainer.width = '460px';
+    this.achievementToastContainer.height = '112px';
+    this.achievementToastContainer.thickness = 2;
     this.achievementToastContainer.color = '#7CFFEA';
-    this.achievementToastContainer.background = 'rgba(4, 24, 28, 0.88)';
+    this.achievementToastContainer.background = 'rgba(4, 24, 28, 0.92)';
     this.achievementToastContainer.left = 16;
     this.achievementToastContainer.top = 88;
     this.achievementToastContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -689,13 +876,13 @@ export class HUDManager {
     this.guiClean.addControl(this.achievementToastContainer);
 
     this.achievementIconPlaceholder = new Rectangle('achievement_toast_icon');
-    this.achievementIconPlaceholder.width = '64px';
-    this.achievementIconPlaceholder.height = '64px';
+    this.achievementIconPlaceholder.width = '80px';
+    this.achievementIconPlaceholder.height = '80px';
     this.achievementIconPlaceholder.thickness = 1;
     this.achievementIconPlaceholder.color = '#5FFFE0';
     this.achievementIconPlaceholder.background = 'rgba(18, 44, 51, 0.9)';
-    this.achievementIconPlaceholder.left = 12;
-    this.achievementIconPlaceholder.top = 12;
+    this.achievementIconPlaceholder.left = 14;
+    this.achievementIconPlaceholder.top = 16;
     this.achievementIconPlaceholder.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.achievementIconPlaceholder.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.achievementToastContainer.addControl(this.achievementIconPlaceholder);
@@ -703,7 +890,7 @@ export class HUDManager {
     this.achievementIconText = new TextBlock('achievement_toast_icon_text');
     this.achievementIconText.text = '?';
     this.achievementIconText.fontFamily = fontFamily;
-    this.achievementIconText.fontSize = 24;
+    this.achievementIconText.fontSize = 30;
     this.achievementIconText.color = '#B8FFE6';
     this.achievementIconPlaceholder.addControl(this.achievementIconText);
 
@@ -711,13 +898,13 @@ export class HUDManager {
 
     this.achievementToastTitle = new TextBlock('achievement_toast_title');
     this.achievementToastTitle.text = 'ACHIEVEMENT UNLOCKED';
-    this.achievementToastTitle.fontSize = 16;
+    this.achievementToastTitle.fontSize = 18;
     this.achievementToastTitle.fontFamily = fontFamily;
     this.achievementToastTitle.color = '#7CFFEA';
-    this.achievementToastTitle.left = 88;
-    this.achievementToastTitle.top = 12;
-    this.achievementToastTitle.width = '256px';
-    this.achievementToastTitle.height = '24px';
+    this.achievementToastTitle.left = 106;
+    this.achievementToastTitle.top = 14;
+    this.achievementToastTitle.width = '340px';
+    this.achievementToastTitle.height = '28px';
     this.achievementToastTitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.achievementToastTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.achievementToastTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -725,13 +912,13 @@ export class HUDManager {
 
     this.achievementToastDescription = new TextBlock('achievement_toast_desc');
     this.achievementToastDescription.text = '';
-    this.achievementToastDescription.fontSize = 13;
+    this.achievementToastDescription.fontSize = 14;
     this.achievementToastDescription.fontFamily = fontFamily;
     this.achievementToastDescription.color = '#CFFCF3';
-    this.achievementToastDescription.left = 88;
-    this.achievementToastDescription.top = 34;
-    this.achievementToastDescription.width = '256px';
-    this.achievementToastDescription.height = '42px';
+    this.achievementToastDescription.left = 106;
+    this.achievementToastDescription.top = 46;
+    this.achievementToastDescription.width = '340px';
+    this.achievementToastDescription.height = '54px';
     this.achievementToastDescription.textWrapping = true;
     this.achievementToastDescription.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.achievementToastDescription.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -740,11 +927,11 @@ export class HUDManager {
 
     // Daemon popup
     this.daemonContainer = new Rectangle('daemon_container');
-    this.daemonContainer.width = '460px';
-    this.daemonContainer.height = '140px';
+    this.daemonContainer.width = '780px';
+    this.daemonContainer.height = '220px';
     this.daemonContainer.thickness = 2;
     this.daemonContainer.color = '#FF3B5C';
-    this.daemonContainer.background = 'rgba(20, 0, 6, 0.8)';
+    this.daemonContainer.background = 'rgba(20, 0, 6, 0.85)';
     this.daemonContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.daemonContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.daemonContainer.top = this.daemonBaseTop;
@@ -754,8 +941,8 @@ export class HUDManager {
     this.guiClean.addControl(this.daemonContainer);
 
     this.daemonGlitchOverlay = new Rectangle('daemon_glitch_overlay');
-    this.daemonGlitchOverlay.width = '460px';
-    this.daemonGlitchOverlay.height = '140px';
+    this.daemonGlitchOverlay.width = '780px';
+    this.daemonGlitchOverlay.height = '220px';
     this.daemonGlitchOverlay.thickness = 1;
     this.daemonGlitchOverlay.color = '#FF5E73';
     this.daemonGlitchOverlay.background = 'rgba(120, 0, 16, 0.16)';
@@ -769,38 +956,38 @@ export class HUDManager {
     this.guiFx.addControl(this.daemonGlitchOverlay);
 
     const avatarBox = new Rectangle('daemon_avatar');
-    avatarBox.width = '90px';
-    avatarBox.height = '90px';
-    avatarBox.left = 10;
-    avatarBox.top = 10;
+    avatarBox.width = '160px';
+    avatarBox.height = '160px';
+    avatarBox.left = 24;
+    avatarBox.top = 0;
     avatarBox.thickness = 1;
     avatarBox.color = '#FF7A8F';
     avatarBox.background = 'rgba(90, 0, 12, 0.6)';
     avatarBox.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    avatarBox.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    avatarBox.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.daemonContainer.addControl(avatarBox);
 
     const initialFrame = this.getAvatarFrameSrc('init_01.png');
     console.log(`[HUDManager] Initializing with detected base URL: ${getHudAssetBaseUrl()}`);
     this.daemonAvatarImage = new Image('daemon_avatar_image', initialFrame);
-    this.daemonAvatarImage.width = '90px';
-    this.daemonAvatarImage.height = '90px';
+    this.daemonAvatarImage.width = '160px';
+    this.daemonAvatarImage.height = '160px';
     this.daemonAvatarImage.stretch = Image.STRETCH_UNIFORM;
     avatarBox.addControl(this.daemonAvatarImage);
     this.daemonAvatarController.setPingPongSequence(this.getAvatarFrames('init'), 0.12);
 
     this.daemonMessageText = new TextBlock('daemon_message');
     this.daemonMessageText.text = '';
-    this.daemonMessageText.fontSize = 16;
+    this.daemonMessageText.fontSize = 24;
     this.daemonMessageText.fontFamily = fontFamily;
     this.daemonMessageText.color = '#FFD1DA';
-    this.daemonMessageText.left = 120;
-    this.daemonMessageText.top = 10;
-    this.daemonMessageText.width = '320px';
-    this.daemonMessageText.height = '120px';
+    this.daemonMessageText.left = 208;
+    this.daemonMessageText.top = 0;
+    this.daemonMessageText.width = '530px';
+    this.daemonMessageText.height = '180px';
     this.daemonMessageText.textWrapping = true;
     this.daemonMessageText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.daemonMessageText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.daemonMessageText.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.daemonMessageText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.daemonContainer.addControl(this.daemonMessageText);
 
@@ -906,25 +1093,25 @@ export class HUDManager {
     title.color = '#7CFFEA';
     title.fontSize = 42;
     title.fontFamily = 'Consolas';
-    title.top = '-160px';
+    title.top = '-180px';
     container.addControl(title);
 
     const buttonPanel = new StackPanel('pause_buttons');
-    buttonPanel.width = '240px';
-    buttonPanel.top = '20px';
+    buttonPanel.width = '340px';
+    buttonPanel.top = '40px';
+    buttonPanel.spacing = 16;
     container.addControl(buttonPanel);
 
     const createButton = (text: string, color: string, onClick: () => void) => {
       const btn = Button.CreateSimpleButton(`pause_btn_${text}`, text);
-      btn.height = '42px';
-      btn.width = '240px';
+      btn.height = '60px';
+      btn.width = '340px';
       btn.color = color;
       btn.background = 'rgba(20, 30, 35, 0.8)';
       btn.thickness = 1;
       btn.cornerRadius = 4;
-      btn.fontSize = 16;
+      btn.fontSize = 22;
       btn.fontFamily = 'Consolas';
-      btn.paddingTop = '8px';
       btn.onPointerUpObservable.add(() => onClick());
       buttonPanel.addControl(btn);
       return btn;
@@ -1365,21 +1552,21 @@ export class HUDManager {
 
     // Buttons
     const buttonPanel = new StackPanel('go_buttons');
-    buttonPanel.width = '240px';
-    buttonPanel.top = `${231 + bonusContainerHeight}px`;
+    buttonPanel.width = '340px';
+    buttonPanel.top = `${240 + bonusContainerHeight}px`;
     container.addControl(buttonPanel);
 
     const createButton = (text: string, color: string, onClick: () => void) => {
       const btn = Button.CreateSimpleButton(`go_btn_${text}`, text);
-      btn.height = '42px';
-      btn.width = '240px';
+      btn.height = '60px';
+      btn.width = '340px';
       btn.color = color;
       btn.background = 'rgba(20, 30, 35, 0.8)';
       btn.thickness = 1;
       btn.cornerRadius = 4;
-      btn.fontSize = 16;
+      btn.fontSize = 22;
       btn.fontFamily = fontFamily;
-      btn.paddingTop = '8px';
+      btn.paddingTop = '10px';
       btn.onPointerUpObservable.add(() => onClick());
       buttonPanel.addControl(btn);
       return btn;
@@ -1559,9 +1746,107 @@ export class HUDManager {
   }
 
   update(deltaTime: number): void {
+    this.updateMobileControlsState(deltaTime);
     this.updateDaemonPopup(deltaTime);
     this.updateBossRoomAlert(deltaTime);
     this.updateAchievementToast(deltaTime);
+
+    // Process scheduled logs in the queue
+    if (this.scheduledLogs.length > 0) {
+      this.scheduledLogTimer += deltaTime;
+      if (this.scheduledLogTimer >= this.scheduledLogs[0].delay) {
+        this.scheduledLogTimer = 0;
+        const entry = this.scheduledLogs.shift();
+        if (entry) {
+          if (entry.message === '__CLEAR__') {
+            this.logMessages = [];
+            this.refreshLogLines();
+          } else {
+            this.addLogMessage(entry.message);
+          }
+        }
+      }
+    }
+
+    // Periodically trigger a random diagnostic console glitch sequence
+    if (this.scheduledLogs.length === 0) {
+      this.randomGlitchTimer -= deltaTime;
+      if (this.randomGlitchTimer <= 0) {
+        this.triggerRandomConsoleGlitchSequence();
+        this.randomGlitchTimer = 25 + Math.random() * 25; // 25-50 seconds cooldown
+      }
+    }
+
+    // Process typing animation for command log feed
+    if (this.logMessages.length > 0) {
+      const newestMsg = this.logMessages[this.logMessages.length - 1];
+      if (this.currentTypingLength < newestMsg.length) {
+        this.typingTimer += deltaTime;
+        if (this.typingTimer >= 0.025) {
+          const chars = Math.floor(this.typingTimer / 0.025);
+          this.typingTimer %= 0.025;
+          this.currentTypingLength = Math.min(newestMsg.length, this.currentTypingLength + chars);
+          this.refreshLogLines();
+        }
+      }
+    }
+
+    // Process cursor blinking
+    this.cursorBlinkTimer += deltaTime;
+    if (this.cursorBlinkTimer >= 0.25) {
+      this.cursorBlinkTimer %= 0.25;
+      this.showCursor = !this.showCursor;
+      this.refreshLogLines();
+    }
+
+    // Update timers for animations
+    this.ultTime += deltaTime;
+    this.stanceTime += deltaTime;
+
+    // Process ultimate bar animations/pulsing
+    if (this.ultBarContainer && this.playerUltDisplay) {
+      if (this.lastUltActive) {
+        // Rapid active flash
+        const activeFlash = Math.abs(Math.sin(this.ultTime * 10));
+        this.ultBarContainer.color = activeFlash > 0.5 ? '#E040FF' : '#FF00A0';
+        this.ultBarContainer.thickness = 2;
+        // Text pulse
+        this.playerUltDisplay.color = activeFlash > 0.5 ? '#E040FF' : '#FF99FF';
+      } else if (this.lastUltCharge >= 1.0) {
+        // Ready status pulse glow
+        const readyPulse = Math.abs(Math.sin(this.ultTime * 5));
+        this.ultBarContainer.thickness = 1 + readyPulse * 2;
+        this.ultBarContainer.color = readyPulse > 0.5 ? '#00FF99' : '#00FFD1';
+        this.playerUltDisplay.color = readyPulse > 0.5 ? '#00FF99' : '#CFFCF3';
+      }
+    }
+
+    // Process stance bar animations/pulsing
+    if (this.secondaryBarContainer && this.secondaryStatusText) {
+      if (this.lastStanceActive) {
+        this.secondaryBarContainer.thickness = 1;
+        this.secondaryBarContainer.color = '#66CCFF';
+      } else if (this.lastStanceRatio >= 1.0) {
+        // Solid cyan
+        this.secondaryBarContainer.thickness = 2;
+        this.secondaryBarContainer.color = '#00FFD1';
+      } else if (this.lastStanceRatio <= 0.0) {
+        // Flashing border warnings for fully consumed stance
+        const flashWarning = Math.abs(Math.sin(this.stanceTime * 12));
+        this.secondaryBarContainer.thickness = 2;
+        this.secondaryBarContainer.color = flashWarning > 0.5 ? '#FF4A66' : '#FFCC66';
+        this.secondaryStatusText.color = flashWarning > 0.5 ? '#FF4A66' : '#FFCC66';
+      } else if (this.lastStanceRatio >= this.lastStanceThresholdRatio) {
+        // Burst ready micro-pulse
+        const burstPulse = Math.abs(Math.sin(this.stanceTime * 6));
+        this.secondaryBarContainer.thickness = 1 + burstPulse * 1.5;
+        this.secondaryBarContainer.color = burstPulse > 0.5 ? '#7CFFEA' : '#00FFD1';
+      } else {
+        // Standard recharge
+        this.secondaryBarContainer.thickness = 1;
+        this.secondaryBarContainer.color = '#FFCC66';
+      }
+    }
 
     // Process pending health bars
     if (this.pendingEnemyHealthBars.length > 0) {
@@ -1622,20 +1907,45 @@ export class HUDManager {
     const thresholdRatio = Math.max(0, Math.min(1, activationThreshold / clampedMax));
     const percentage = Math.round(ratio * 100);
 
-    if (this.secondaryStatusText) {
-      const state = active ? 'ACTIVE' : (ratio >= thresholdRatio ? 'READY' : 'RECHARGE');
-      this.secondaryStatusText.text = `STANCE: ${percentage}% [${state}]`;
-      this.secondaryStatusText.color = active ? '#66CCFF' : (ratio >= thresholdRatio ? '#B8FFE6' : '#FFCC66');
-    }
+    this.lastStanceRatio = ratio;
+    this.lastStanceActive = active;
+    this.lastStanceThresholdRatio = thresholdRatio;
 
-    if (this.secondaryResourceBarFill) {
-      this.secondaryResourceBarFill.width = `${Math.floor(ratio * 100)}%`;
-      if (active) {
-        this.secondaryResourceBarFill.background = '#66CCFF';
-      } else if (ratio >= thresholdRatio) {
-        this.secondaryResourceBarFill.background = '#7CFFEA';
-      } else {
-        this.secondaryResourceBarFill.background = '#FFCC66';
+    if (!this.secondaryStatusText || !this.secondaryResourceBarFill) return;
+
+    this.secondaryResourceBarFill.width = `${Math.floor(ratio * 100)}%`;
+
+    if (active) {
+      this.secondaryStatusText.text = `STANCE: ${percentage}% [ACTIVE]`;
+      this.secondaryStatusText.color = '#66CCFF'; // Active stance blue
+      this.secondaryResourceBarFill.background = '#66CCFF';
+      if (this.secondaryBarContainer) {
+        this.secondaryBarContainer.color = '#66CCFF';
+      }
+    } else if (ratio >= 1.0) {
+      this.secondaryStatusText.text = `STANCE: 100% [READY]`;
+      this.secondaryStatusText.color = '#00FFD1'; // Solid matrix cyan
+      this.secondaryResourceBarFill.background = '#00FFD1';
+      if (this.secondaryBarContainer) {
+        this.secondaryBarContainer.color = '#00FFD1';
+      }
+    } else if (ratio >= thresholdRatio) {
+      this.secondaryStatusText.text = `STANCE: ${percentage}% [BURST READY]`;
+      this.secondaryStatusText.color = '#7CFFEA'; // Ready bright cyan
+      this.secondaryResourceBarFill.background = '#7CFFEA';
+      if (this.secondaryBarContainer) {
+        this.secondaryBarContainer.color = '#7CFFEA';
+      }
+    } else if (ratio <= 0.0) {
+      this.secondaryStatusText.text = `STANCE: 0% [RECHARGE]`;
+      this.secondaryStatusText.color = '#FFCC66'; // Warning orange
+      this.secondaryResourceBarFill.background = '#FFCC66';
+    } else {
+      this.secondaryStatusText.text = `STANCE: ${percentage}% [RECHARGE]`;
+      this.secondaryStatusText.color = '#FFCC66';
+      this.secondaryResourceBarFill.background = '#FFCC66';
+      if (this.secondaryBarContainer) {
+        this.secondaryBarContainer.color = '#FFCC66';
       }
     }
   }
@@ -1665,16 +1975,56 @@ export class HUDManager {
   }
 
   private addLogMessage(message: string): void {
-    this.logMessages.unshift(`> ${message}`);
-    if (this.logMessages.length > 6) {
-      this.logMessages.pop();
+    if (message.includes('[') && message.includes(']')) {
+      const prefix = message.split('[')[0].trim();
+      const lastIndex = this.logMessages.length - 1;
+      if (lastIndex >= 0) {
+        const lastMsg = this.logMessages[lastIndex];
+        if (lastMsg.includes('[') && lastMsg.includes(']') && lastMsg.includes(prefix)) {
+          this.logMessages[lastIndex] = `> ${message}`;
+          this.currentTypingLength = `> ${message}`.length;
+          this.typingTimer = 0;
+          this.refreshLogLines();
+          return;
+        }
+      }
     }
+
+    this.logMessages.push(`> ${message}`);
+    if (this.logMessages.length > 6) {
+      this.logMessages.shift();
+    }
+    this.currentTypingLength = 0;
+    this.typingTimer = 0;
     this.refreshLogLines();
   }
 
   private refreshLogLines(): void {
+    const fadeColors = [
+      'rgba(46, 249, 195, 1.0)',   // Newest
+      'rgba(46, 249, 195, 0.76)',
+      'rgba(46, 249, 195, 0.58)',
+      'rgba(46, 249, 195, 0.42)',
+      'rgba(46, 249, 195, 0.28)',
+      'rgba(46, 249, 195, 0.16)'   // Oldest
+    ];
+
+    const L = this.logMessages.length;
     for (let i = 0; i < this.logLines.length; i++) {
-      this.logLines[i].text = this.logMessages[i] ?? '';
+      const msgIndex = i - (6 - L);
+      if (msgIndex >= 0 && msgIndex < L) {
+        const msg = this.logMessages[msgIndex];
+        const age = (L - 1) - msgIndex;
+        if (msgIndex === L - 1) {
+          const visible = msg.slice(0, this.currentTypingLength);
+          this.logLines[i].text = visible + (this.showCursor ? '▮' : ' ');
+        } else {
+          this.logLines[i].text = msg;
+        }
+        this.logLines[i].color = fadeColors[Math.min(5, age)];
+      } else {
+        this.logLines[i].text = '';
+      }
     }
   }
 
@@ -1728,8 +2078,8 @@ export class HUDManager {
       } else {
         this.achievementToastArtwork.source = buildHudAssetUrl(`achievements/${HUDManager.currentAchievement.id}.png`);
       }
-      this.achievementToastArtwork.width = '64px';
-      this.achievementToastArtwork.height = '64px';
+      this.achievementToastArtwork.width = '80px';
+      this.achievementToastArtwork.height = '80px';
       this.achievementToastArtwork.stretch = Image.STRETCH_UNIFORM;
       this.achievementIconPlaceholder.addControl(this.achievementToastArtwork);
     }
@@ -3042,5 +3392,409 @@ export class HUDManager {
         // For now, doing nothing is fine if there is no setVolume method.
       }
     }
+  }
+
+  public setInputManager(inputManager: InputManager): void {
+    this.inputManager = inputManager;
+    this.initializeMobileControlsIfNeeded();
+  }
+
+  public setPlayer(player: PlayerController): void {
+    this.player = player;
+  }
+
+  private initializeMobileControlsIfNeeded(): void {
+    if (!this.inputManager) return;
+
+    // Detect mobile device or developer query parameter override
+    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
+      || ('ontouchstart' in window) 
+      || (navigator.maxTouchPoints > 0);
+    const hasMobileQuery = typeof window !== 'undefined' && window.location && window.location.search.includes('mobile=true');
+
+    if (isMobileDevice || hasMobileQuery || this.inputManager.isMobileMode()) {
+      this.inputManager.setMobileMode(true);
+      this.setMobileControlsVisible(true);
+    }
+  }
+
+  public setMobileControlsVisible(visible: boolean): void {
+    if (visible) {
+      if (this.mobileControls.length === 0) {
+        this.createMobileControls();
+      }
+      for (const ctrl of this.mobileControls) {
+        ctrl.isVisible = true;
+      }
+    } else {
+      for (const ctrl of this.mobileControls) {
+        ctrl.isVisible = false;
+      }
+    }
+  }
+
+  private createMobileControls(): void {
+    const fontFamily = 'Consolas';
+    const idealWidth = this.guiClean.idealWidth || 1920;
+    const idealHeight = this.guiClean.idealHeight || 1080;
+    const isMobileLayout = idealWidth <= 960;
+    const controlScale = isMobileLayout ? 1.1 : 1;
+    const leftMargin = Math.round(Math.max(40, idealWidth * 0.04));
+    const bottomMargin = Math.round(Math.max(40, idealHeight * 0.06));
+    const extraSafeLift = Math.round(Math.max(16, idealHeight * 0.04));
+    const logPanelHeight = this.logPanel?.heightInPixels ?? 180;
+    const statusPanelHeight = (this.statusPanel as Rectangle | null)?.heightInPixels ?? 180;
+    const bottomSafe = Math.round(Math.max(logPanelHeight, statusPanelHeight) + bottomMargin + extraSafeLift);
+    const joystickSize = Math.round(180 * controlScale);
+    const joystickBgSize = Math.round(120 * controlScale);
+    const joystickThumbSize = Math.round(50 * controlScale);
+    const attackSize = Math.round(120 * controlScale);
+    const stanceSize = Math.round(96 * controlScale);
+    const ultSize = Math.round(108 * controlScale);
+    const buttonGap = Math.round(attackSize * 0.18);
+
+    // 1. LEFT JOYSTICK (Movement - Snapped to 8 Directions)
+    const leftJoystickContainer = new Rectangle('left_joystick_container');
+    leftJoystickContainer.width = `${joystickSize}px`;
+    leftJoystickContainer.height = `${joystickSize}px`;
+    leftJoystickContainer.thickness = 0;
+    leftJoystickContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    leftJoystickContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    leftJoystickContainer.left = `${leftMargin}px`;
+    leftJoystickContainer.top = `-${bottomSafe}px`;
+    this.guiClean.addControl(leftJoystickContainer);
+    this.mobileControls.push(leftJoystickContainer);
+
+    const joystickBg = new Rectangle('left_joystick_bg');
+    joystickBg.width = `${joystickBgSize}px`;
+    joystickBg.height = `${joystickBgSize}px`;
+    joystickBg.cornerRadius = Math.round(joystickBgSize / 2);
+    joystickBg.thickness = 3;
+    joystickBg.color = '#2EF9C3';
+    joystickBg.background = 'rgba(4, 10, 8, 0.4)';
+    leftJoystickContainer.addControl(joystickBg);
+
+    const joystickThumb = new Rectangle('left_joystick_thumb');
+    joystickThumb.width = `${joystickThumbSize}px`;
+    joystickThumb.height = `${joystickThumbSize}px`;
+    joystickThumb.cornerRadius = Math.round(joystickThumbSize / 2);
+    joystickThumb.thickness = 0;
+    joystickThumb.background = '#2EF9C3';
+    leftJoystickContainer.addControl(joystickThumb);
+
+    // 2. ACTION BUTTONS (Attack, Stance & Ultimate) — bigger for comfortable touch targets
+    const attackBtn = Button.CreateSimpleButton('mobile_attack_btn', 'ATTACK');
+    attackBtn.width = `${attackSize}px`;
+    attackBtn.height = `${attackSize}px`;
+    attackBtn.color = '#FFD782';
+    attackBtn.background = 'rgba(20, 15, 10, 0.75)';
+    attackBtn.thickness = 3;
+    attackBtn.cornerRadius = Math.round(attackSize / 2);
+    attackBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    attackBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    attackBtn.left = `-${leftMargin}px`;
+    attackBtn.top = `-${bottomSafe}px`;
+    if (attackBtn.textBlock) {
+      attackBtn.textBlock.fontSize = 16;
+      attackBtn.textBlock.fontFamily = fontFamily;
+      attackBtn.textBlock.fontWeight = 'bold';
+    }
+    this.guiClean.addControl(attackBtn);
+    this.mobileControls.push(attackBtn);
+    this.mobileAttackBtn = attackBtn;
+
+    const stanceBtn = Button.CreateSimpleButton('mobile_stance_btn', 'STANCE');
+    stanceBtn.width = `${stanceSize}px`;
+    stanceBtn.height = `${stanceSize}px`;
+    stanceBtn.color = '#7CFFEA';
+    stanceBtn.background = 'rgba(10, 30, 35, 0.75)';
+    stanceBtn.thickness = 3;
+    stanceBtn.cornerRadius = Math.round(stanceSize / 2);
+    stanceBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    stanceBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    stanceBtn.left = `-${leftMargin + attackSize + buttonGap}px`;
+    stanceBtn.top = `-${bottomSafe}px`;
+    if (stanceBtn.textBlock) {
+      stanceBtn.textBlock.fontSize = 14;
+      stanceBtn.textBlock.fontFamily = fontFamily;
+      stanceBtn.textBlock.fontWeight = 'bold';
+    }
+    this.guiClean.addControl(stanceBtn);
+    this.mobileControls.push(stanceBtn);
+    this.mobileStanceBtn = stanceBtn;
+
+    const ultBtn = Button.CreateSimpleButton('mobile_ult_btn', 'ULT');
+    ultBtn.width = `${ultSize}px`;
+    ultBtn.height = `${ultSize}px`;
+    ultBtn.color = '#FFFF00';
+    ultBtn.background = 'rgba(35, 35, 10, 0.75)';
+    ultBtn.thickness = 3;
+    ultBtn.cornerRadius = Math.round(ultSize / 2);
+    ultBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    ultBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    ultBtn.left = `-${leftMargin + Math.round(attackSize * 0.45)}px`;
+    ultBtn.top = `-${bottomSafe + attackSize + buttonGap}px`;
+    if (ultBtn.textBlock) {
+      ultBtn.textBlock.fontSize = 15;
+      ultBtn.textBlock.fontFamily = fontFamily;
+      ultBtn.textBlock.fontWeight = 'bold';
+    }
+    this.guiClean.addControl(ultBtn);
+    this.mobileControls.push(ultBtn);
+    this.mobileUltBtn = ultBtn;
+
+    // ── Joystick drag logic ──────────────────────────────────────────────────
+    // Uses scene.onPointerObservable (global) so the thumb tracks correctly even
+    // when the finger moves outside the joystick container bounds.
+    //
+    // DPR / hardware-scaling fix:
+    //   Touch events deliver CSS pixels (clientX/Y).
+    //   Babylon GUI internal coordinates are in render pixels.
+    //   canvas.width / rect.width gives the CSS→render scale factor.
+
+    let isDraggingLeft = false;
+    let leftPointerId = -1;
+    const maxRadius = joystickBgSize / 2;
+    const getJoystickHalfSize = () => {
+      const w = leftJoystickContainer.widthInPixels || joystickSize;
+      const h = leftJoystickContainer.heightInPixels || joystickSize;
+      return { halfW: w / 2, halfH: h / 2 };
+    };
+
+    const toJoystickLocal = (clientX: number, clientY: number, result: Vector2): void => {
+      const engine = this.scene.getEngine();
+      const canvas = engine.getRenderingCanvas();
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const sx = canvas.width  / (rect.width  || 1);
+      const sy = canvas.height / (rect.height || 1);
+      const renderX = (clientX - rect.left) * sx;
+      const renderY = (clientY - rect.top)  * sy;
+      // Maps render-pixel canvas coords → control local space.
+      leftJoystickContainer.getLocalCoordinatesToRef(new Vector2(renderX, renderY), result);
+      const { halfW, halfH } = getJoystickHalfSize();
+      result.x -= halfW;
+      result.y -= halfH;
+    };
+
+    const applyJoystickInput = (localX: number, localY: number) => {
+      let dx = localX;
+      let dy = localY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance > maxRadius) {
+        dx = (dx / distance) * maxRadius;
+        dy = (dy / distance) * maxRadius;
+      }
+      joystickThumb.left = `${dx}px`;
+      joystickThumb.top  = `${dy}px`;
+
+      if (distance > 4) {
+        const ndx = dx / maxRadius;
+        const ndy = -dy / maxRadius; // Invert Y: screen-down = 3D-backward
+        const rawVec = new Vector3(ndx, 0, ndy);
+        if (rawVec.length() > 0.15) {
+          const angle        = Math.atan2(rawVec.x, rawVec.z);
+          const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+          const quantized    = new Vector3(Math.sin(snappedAngle), 0, Math.cos(snappedAngle)).normalize();
+          if (this.inputManager) this.inputManager.setJoystickMoveVector(quantized);
+        } else {
+          if (this.inputManager) this.inputManager.setJoystickMoveVector(Vector3.Zero());
+        }
+      } else {
+        if (this.inputManager) this.inputManager.setJoystickMoveVector(Vector3.Zero());
+      }
+    };
+
+    const resetLeftJoystick = () => {
+      joystickThumb.left = '0px';
+      joystickThumb.top  = '0px';
+      isDraggingLeft = false;
+      leftPointerId  = -1;
+      if (this.inputManager) this.inputManager.setJoystickMoveVector(Vector3.Zero());
+    };
+    this.resetMobileJoystick = resetLeftJoystick;
+
+    const isInsideJoystick = (clientX: number, clientY: number): boolean => {
+      const engine = this.scene.getEngine();
+      const canvas = engine.getRenderingCanvas();
+      if (!canvas) return false;
+      const rect  = canvas.getBoundingClientRect();
+      const sx    = canvas.width  / (rect.width  || 1);
+      const sy    = canvas.height / (rect.height || 1);
+      const renderX = (clientX - rect.left) * sx;
+      const renderY = (clientY - rect.top)  * sy;
+      const local   = new Vector2();
+      leftJoystickContainer.getLocalCoordinatesToRef(new Vector2(renderX, renderY), local);
+      const { halfW, halfH } = getJoystickHalfSize();
+      const centeredX = local.x - halfW;
+      const centeredY = local.y - halfH;
+      return centeredX >= -halfW && centeredX <= halfW && centeredY >= -halfH && centeredY <= halfH;
+    };
+
+    // Global scene observer — supports multi-touch, works outside container bounds
+    const jsLocal = new Vector2();
+    this.scene.onPointerObservable.add((pointerInfo) => {
+      const event = pointerInfo.event as PointerEvent;
+      if (!event) return;
+
+      // Ignore if mobile controls are hidden (e.g. desktop mode)
+      if (!this.inputManager || !this.inputManager.isMobileMode()) return;
+
+      const pid = (event as any).pointerId ?? 0;
+
+      switch (pointerInfo.type) {
+        case PointerEventTypes.POINTERDOWN:
+          if (!isDraggingLeft && isInsideJoystick(event.clientX, event.clientY)) {
+            isDraggingLeft = true;
+            leftPointerId  = pid;
+            toJoystickLocal(event.clientX, event.clientY, jsLocal);
+            applyJoystickInput(jsLocal.x, jsLocal.y);
+          }
+          break;
+
+        case PointerEventTypes.POINTERMOVE:
+          if (isDraggingLeft && pid === leftPointerId) {
+            toJoystickLocal(event.clientX, event.clientY, jsLocal);
+            applyJoystickInput(jsLocal.x, jsLocal.y);
+          }
+          break;
+
+        case PointerEventTypes.POINTERUP:
+          if (isDraggingLeft && pid === leftPointerId) resetLeftJoystick();
+          break;
+      }
+    });
+
+    // Attack action button observables
+    attackBtn.onPointerDownObservable.add(() => {
+      if (this.mobileAttackHoldBlocked) return;
+      this.inputManager!.setJoystickAimActive(true);
+    });
+    attackBtn.onPointerUpObservable.add(() => {
+      this.inputManager!.setJoystickAimActive(false);
+      this.mobileAttackHoldBlocked = false;
+    });
+
+    // Stance click-toggle button observables
+    stanceBtn.onPointerDownObservable.add(() => {
+      if (!this.player) return;
+      const isStanceActive = this.player.isSecondaryActive();
+      if (isStanceActive) {
+        this.inputManager!.setMobileStancePressed(false);
+      } else {
+        const currentResource = this.player.getSecondaryResourceCurrent();
+        const threshold       = this.player.getSecondaryActivationThreshold();
+        if (currentResource >= threshold) {
+          this.inputManager!.setMobileStancePressed(true);
+        }
+      }
+    });
+
+    // Ultimate button observables
+    ultBtn.onPointerDownObservable.add(() => {
+      this.inputManager!.setMobileUltPressed(true);
+      ultBtn.background = 'rgba(255, 255, 0, 0.4)';
+    });
+    ultBtn.onPointerUpObservable.add(() => {
+      this.inputManager!.setMobileUltPressed(false);
+      ultBtn.background = 'rgba(35, 35, 10, 0.75)';
+    });
+  }
+
+
+  private updateMobileControlsState(deltaTime: number): void {
+    if (!this.inputManager || !this.player) return;
+
+    const mobileMode = this.inputManager.isMobileMode();
+
+    if (!mobileMode) {
+      this.setMobileControlsVisible(false);
+      return;
+    }
+
+    this.setMobileControlsVisible(true);
+
+    const isStanceActive = this.player.isSecondaryActive();
+    const classId = this.player.getClassId();
+
+    // Stance transition check: block attack hold if active when transitioning
+    if (isStanceActive && !this.wasStanceActive) {
+      if (this.inputManager.isJoystickAimActive()) {
+        this.mobileAttackHoldBlocked = true;
+        this.inputManager.setJoystickAimActive(false);
+      }
+    }
+
+    // Enforce hold suppression if blocked
+    if (this.mobileAttackHoldBlocked) {
+      this.inputManager.setJoystickAimActive(false);
+    }
+
+    // Dynamic Attack Button label and visual feedback updates
+    if (this.mobileAttackBtn) {
+      if (isStanceActive) {
+        if (classId === 'mage') {
+          this.mobileAttackBtn.textBlock!.text = 'BOOM';
+          this.mobileAttackBtn.color = '#66CCFF';
+          if (!this.mobileAttackHoldBlocked) {
+            this.mobileAttackBtn.background = 'rgba(10, 30, 45, 0.85)';
+          } else {
+            this.mobileAttackBtn.background = 'rgba(15, 15, 15, 0.6)';
+          }
+        } else {
+          this.mobileAttackBtn.textBlock!.text = 'DASH';
+          this.mobileAttackBtn.color = '#FF9900';
+          if (!this.mobileAttackHoldBlocked) {
+            this.mobileAttackBtn.background = 'rgba(45, 25, 10, 0.85)';
+          } else {
+            this.mobileAttackBtn.background = 'rgba(15, 15, 15, 0.6)';
+          }
+        }
+      } else {
+        this.mobileAttackBtn.textBlock!.text = 'ATTACK';
+        this.mobileAttackBtn.color = '#FFD782';
+        this.mobileAttackBtn.background = this.inputManager.isJoystickAimActive()
+          ? 'rgba(255, 215, 130, 0.4)'
+          : 'rgba(20, 15, 10, 0.75)';
+      }
+    }
+
+    // Dynamic Stance Button visual feedback updates
+    if (this.mobileStanceBtn) {
+      const currentResource = this.player.getSecondaryResourceCurrent();
+      const threshold = this.player.getSecondaryActivationThreshold();
+      const hasEnoughResource = currentResource >= threshold;
+
+      if (isStanceActive) {
+        this.mobileStanceBtn.background = 'rgba(46, 249, 195, 0.7)';
+        this.mobileStanceBtn.color = '#040A08';
+      } else {
+        if (hasEnoughResource) {
+          this.mobileStanceBtn.background = 'rgba(10, 30, 35, 0.75)';
+          this.mobileStanceBtn.color = '#7CFFEA';
+        } else {
+          this.mobileStanceBtn.background = 'rgba(20, 20, 20, 0.4)';
+          this.mobileStanceBtn.color = '#445550';
+        }
+      }
+    }
+
+    // Sync inputManager state and clear block if stance exits
+    if (!isStanceActive) {
+      this.inputManager.setMobileStancePressed(false);
+      this.mobileAttackHoldBlocked = false;
+    }
+
+    this.wasStanceActive = isStanceActive;
+  }
+
+  private resetMobileInputState(): void {
+    if (!this.inputManager || !this.inputManager.isMobileMode()) return;
+    this.resetMobileJoystick?.();
+    this.inputManager.setJoystickAimActive(false);
+    this.inputManager.setMobileStancePressed(false);
+    this.inputManager.setMobileUltPressed(false);
+    this.mobileAttackHoldBlocked = false;
+    this.wasStanceActive = false;
   }
 }

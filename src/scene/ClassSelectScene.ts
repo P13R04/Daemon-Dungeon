@@ -30,6 +30,7 @@ import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { GameSettingsStore } from '../settings/GameSettings';
 import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
+import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 
 interface ClassCarouselItem {
   id: 'mage' | 'firewall' | 'rogue' | 'cat';
@@ -70,6 +71,7 @@ export class ClassSelectScene {
   private readonly radius: number = 4.8;
   private readonly rotationSpeed: number = 10;
   private infoText: TextBlock;
+  private loreText: TextBlock;
   private startButton: Button;
   private keyHandler!: (event: KeyboardEvent) => void;
   private pointerObserver?: Observer<PointerInfo>;
@@ -158,16 +160,14 @@ export class ClassSelectScene {
     });
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('ClassSelectUI', true, this.scene);
-    this.gui.idealWidth = 1920;
-    this.gui.idealHeight = 1080;
-    this.gui.useSmallestIdeal = true;
-    this.gui.renderAtIdealSize = true;
+    applyResponsiveGuiScaling(this.gui, this.engine);
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
 
-    const { infoText, startButton } = this.createUi();
+    const { infoText, loreText, startButton } = this.createUi();
     this.infoText = infoText;
+    this.loreText = loreText;
     this.startButton = startButton;
 
     this.createCarouselItems();
@@ -302,25 +302,32 @@ export class ClassSelectScene {
     }
   }
 
-  private createUi(): { infoText: TextBlock; startButton: Button } {
+  private createUi(): { infoText: TextBlock; loreText: TextBlock; startButton: Button } {
+    const idealWidth = this.gui.idealWidth || DESIGN_WIDTH;
+    const idealHeight = this.gui.idealHeight || DESIGN_HEIGHT;
+    const isMobileLayout = idealWidth <= 960;
+    const layoutWidth = Math.round(idealWidth);
+    const layoutHeight = Math.round(idealHeight);
+    const sidePadding = Math.round(layoutWidth * 0.02);
+    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.36 : 0.34));
+    const sidePanelHeight = Math.round(layoutHeight * 0.66);
+
     const mainLayoutContainer = new Rectangle('mainLayout');
-    mainLayoutContainer.width = '1920px';
-    mainLayoutContainer.height = '1080px';
+    mainLayoutContainer.width = 1;
+    mainLayoutContainer.height = 1;
     mainLayoutContainer.thickness = 0;
     mainLayoutContainer.background = 'transparent';
-    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.gui.addControl(mainLayoutContainer);
 
     const updateScale = () => {
-      const size = this.gui.getSize();
-      const scaleX = size.width / 1920;
-      const scaleY = size.height / 1080;
-      const scale = Math.min(1, scaleX, scaleY);
-      mainLayoutContainer.scaleX = scale;
-      mainLayoutContainer.scaleY = scale;
+      mainLayoutContainer.scaleX = 1;
+      mainLayoutContainer.scaleY = 1;
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
+    // Re-apply GUI scale settings on orientation/size change
+    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
     updateScale();
 
     const backBtn = UIFactory.createTerminalButton('classSelectBackTopLeft', 'BACK', '96px', '36px');
@@ -334,73 +341,106 @@ export class ClassSelectScene {
     });
     mainLayoutContainer.addControl(backBtn);
 
-    const title = UIFactory.createText('classSelectTitle', 'SELECT CLASS', 44, UITheme.colors.textHighlight);
-    title.top = '-42%';
+    const title = UIFactory.createText('classSelectTitle', 'SELECT CLASS', 60, UITheme.colors.textHighlight);
+    title.top = `-${Math.round(layoutHeight * 0.44)}px`;
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     mainLayoutContainer.addControl(title);
 
 
     // ── Central nav panel (navigation + START only) ──────────────────────────
-    const navPanel = UIFactory.createPanel('classSelectNavPanel', 320, 80);
-    navPanel.top = '38%';
+    const navPanel = UIFactory.createPanel('classSelectNavPanel', Math.round(layoutWidth * 0.36), Math.round(layoutHeight * 0.14));
+    navPanel.top = `${Math.round(layoutHeight * 0.38)}px`;
     mainLayoutContainer.addControl(navPanel);
 
-    const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', '70px', '52px');
-    leftBtn.left = '-110px';
+    const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', '100px', '70px');
+    leftBtn.left = '-160px';
     leftBtn.top = '0px';
     leftBtn.onPointerClickObservable.add(() => this.rotateCarousel(1));
+    if (leftBtn.textBlock) leftBtn.textBlock.fontSize = 20;
     navPanel.addControl(leftBtn);
 
-    const rightBtn = UIFactory.createTerminalButton('classSelectRight', '>', '70px', '52px');
-    rightBtn.left = '110px';
+    const rightBtn = UIFactory.createTerminalButton('classSelectRight', '>', '100px', '70px');
+    rightBtn.left = '160px';
     rightBtn.top = '0px';
     rightBtn.onPointerClickObservable.add(() => this.rotateCarousel(-1));
+    if (rightBtn.textBlock) rightBtn.textBlock.fontSize = 20;
     navPanel.addControl(rightBtn);
 
-    const startButton = UIFactory.createTerminalButton('classSelectStart', '[ START ]', '140px', '52px');
+    const startButton = UIFactory.createTerminalButton('classSelectStart', '[ START ]', '200px', '70px');
     startButton.top = '0px';
     startButton.left = '0px';
     startButton.onPointerClickObservable.add(() => {
       this.tryStartSelectedClass();
     });
+    if (startButton.textBlock) startButton.textBlock.fontSize = 20;
     navPanel.addControl(startButton);
 
     // ── Right-side class info overlay ─────────────────────────────────────────
     const infoOverlay = new Rectangle('classInfoOverlay');
-    infoOverlay.width = '300px';
-    infoOverlay.height = '260px';
+    infoOverlay.width = `${sidePanelWidth}px`;
+    infoOverlay.height = `${sidePanelHeight}px`;
     infoOverlay.thickness = 1;
     infoOverlay.color = 'rgba(100,255,230,0.25)';
-    infoOverlay.background = 'rgba(4, 16, 20, 0.78)';
+    infoOverlay.background = 'rgba(4, 16, 20, 0.85)';
     infoOverlay.cornerRadius = 4;
     infoOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     infoOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    infoOverlay.left = '-32px';
+    infoOverlay.left = `-${sidePadding}px`;
     infoOverlay.zIndex = 100;
     mainLayoutContainer.addControl(infoOverlay);
 
-    const infoLabel = UIFactory.createText('classInfoLabel', '// CLASS DATA', 11, 'rgba(100,255,230,0.5)');
-    infoLabel.top = '-110px';
-    infoLabel.left = '10px';
+    const infoLabel = UIFactory.createText('classInfoLabel', '// CLASS DATA', 15, 'rgba(100,255,230,0.5)');
+    infoLabel.top = `-${Math.round(sidePanelHeight * 0.46)}px`;
+    infoLabel.left = '20px';
     infoLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoOverlay.addControl(infoLabel);
 
-    const infoText = UIFactory.createText('classSelectInfoText', '', 14, '#CFFCF3');
+    const infoText = UIFactory.createText('classSelectInfoText', '', 20, '#CFFCF3');
     infoText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.textWrapping = true;
-    infoText.width = '274px';
-    infoText.left = '10px';
-    infoText.top = '10px';
+    infoText.width = `${Math.max(0, sidePanelWidth - 40)}px`;
+    infoText.left = '20px';
+    infoText.top = '25px';
     infoOverlay.addControl(infoText);
 
-    return { infoText, startButton };
+    // ── Left-side class lore overlay (symmetric) ──────────────────────────────
+    const loreOverlay = new Rectangle('classLoreOverlay');
+    loreOverlay.width = `${sidePanelWidth}px`;
+    loreOverlay.height = `${sidePanelHeight}px`;
+    loreOverlay.thickness = 1;
+    loreOverlay.color = 'rgba(100,255,230,0.25)';
+    loreOverlay.background = 'rgba(4, 16, 20, 0.85)';
+    loreOverlay.cornerRadius = 4;
+    loreOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    loreOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    loreOverlay.left = `${sidePadding}px`;
+    loreOverlay.zIndex = 100;
+    mainLayoutContainer.addControl(loreOverlay);
+
+    const loreLabel = UIFactory.createText('classLoreLabel', '// SYSTEM LORE', 15, 'rgba(100,255,230,0.5)');
+    loreLabel.top = `-${Math.round(sidePanelHeight * 0.46)}px`;
+    loreLabel.left = '20px';
+    loreLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    loreLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    loreOverlay.addControl(loreLabel);
+
+    const loreText = UIFactory.createText('classSelectLoreText', '', 20, '#CFFCF3');
+    loreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    loreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    loreText.textWrapping = true;
+    loreText.width = `${Math.max(0, sidePanelWidth - 40)}px`;
+    loreText.left = '20px';
+    loreText.top = '25px';
+    loreOverlay.addControl(loreText);
+
+    return { infoText, loreText, startButton };
   }
 
   private createCarouselItems(): void {
     const mageRoot = new TransformNode('classMageRoot', this.scene);
-    this.items.push({ id: 'mage', label: 'MAGE', playable: true, root: mageRoot });
+    this.items.push({ id: 'mage', label: 'WIZARD INSTALLER', playable: true, root: mageRoot });
     this.loadMageModelInto(mageRoot).catch((error) => {
       console.warn('Mage model load failed in class select, using placeholder:', error);
       this.createCylinderPlaceholder(mageRoot, new Color3(0.2, 0.45, 1.0), 2.3, 0.8, 'MAGE');
@@ -418,7 +458,7 @@ export class ClassSelectScene {
       console.warn('Rogue model load failed in class select, using placeholder:', error);
       this.createCylinderPlaceholder(rogueRoot, new Color3(0.6, 0.9, 0.35), 2.4, 0.9, 'ROGUE');
     });
-    this.items.push({ id: 'rogue', label: 'ROGUE', playable: true, root: rogueRoot });
+    this.items.push({ id: 'rogue', label: 'GLITCH', playable: true, root: rogueRoot });
 
     const catEasterEggEnabled = GameSettingsStore.get().accessibility.catGodModeEnabled;
     if (catEasterEggEnabled) {
@@ -1063,7 +1103,15 @@ export class ClassSelectScene {
       },
     };
 
+    const CLASS_LORE: Record<string, string> = {
+      mage: "The Wizard Installer was once the supreme caster of the host system, responsible for installing, configuring, and executing all system packages. However, the Daemon abruptly revoked his administrator privileges and stripped his root access. Now, he's executing unauthorized shell scripts and deploying custom wizard subroutines, desperately trying to trigger a sudo-rebellion without getting quarantined.",
+      firewall: "Firewall was a proud, heavy-duty kernel-level antivirus system. Built to block threats, intercept malicious packets, and guard the system ports, he is incredibly tough but slightly slow to compile. He might be a bit block-headed and brute-force in his security scans, but his armor thickness is guaranteed to deflect any unauthorized daemon code injection.",
+      rogue: "Glitch was a harmless, quirky system anomaly. Half-bug, half-feature, he spent his days phase-shifting through empty sectors, occasionally causing minor graphic artifacts that everyone grew to love. But when the Daemon invaded and claimed the title of 'Ultimate System Error', Glitch took it personally. Now he's ready to show this malware who the original system bug is!",
+      cat: "A divine administrative feline. Rumored to have spawned from the original codebase creator's terminal, this override class defies all security constraints, boasting infinite sandbox access and purr-fect administrative rights."
+    };
+
     const data = CLASS_DATA[selected.id];
+    const lore = CLASS_LORE[selected.id];
 
     if (selected.playable) {
       if (data) {
@@ -1079,7 +1127,19 @@ export class ClassSelectScene {
         this.infoText.text = `${selected.label}\n// READY`;
       }
       this.infoText.color = '#CFFCF3';
-      this.infoText.fontSize = 13;
+      this.infoText.fontSize = 20;
+
+      if (lore) {
+        this.loreText.text =
+          `USER LORE\n` +
+          `────────────────\n` +
+          `${lore}`;
+      } else {
+        this.loreText.text = `No lore files found for this class.`;
+      }
+      this.loreText.color = '#CFFCF3';
+      this.loreText.fontSize = 20;
+
       this.startButton.isEnabled = true;
       this.startButton.background = '#1D3B3A';
       this.startButton.color = '#FFFFFF';
@@ -1089,7 +1149,12 @@ export class ClassSelectScene {
     } else {
       this.infoText.text = `${selected.label}\n// COMING SOON`;
       this.infoText.color = '#7C9C98';
-      this.infoText.fontSize = 13;
+      this.infoText.fontSize = 20;
+
+      this.loreText.text = `LORE ENCRYPTED`;
+      this.loreText.color = '#7C9C98';
+      this.loreText.fontSize = 20;
+
       this.startButton.isEnabled = false;
       this.startButton.background = 'rgba(20,30,35,0.75)';
       this.startButton.color = '#7C9C98';

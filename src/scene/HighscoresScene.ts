@@ -17,6 +17,7 @@ import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { CodexService, RunRecord } from '../services/CodexService';
 import { BONUS_CODEX_ENTRIES } from '../data/codex/bonuses';
+import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 
 interface TerminalLine {
   block: TextBlock;
@@ -46,6 +47,7 @@ export class HighscoresScene {
   private leftDescription!: TextBlock;
   private leftListStack!: StackPanel;
   private leftListScroll!: ScrollViewer;
+  private leftListButtonWidth: number = 392;
 
   private rightPanel!: Rectangle;
   private rightTitle!: TextBlock;
@@ -213,10 +215,7 @@ export class HighscoresScene {
     createSynthwaveGridBackground(this.scene, SCENE_LAYER, true);
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('HighscoresUI', true, this.scene);
-    this.gui.idealWidth = 1920;
-    this.gui.idealHeight = 1080;
-    this.gui.useSmallestIdeal = true;
-    this.gui.renderAtIdealSize = true;
+    applyResponsiveGuiScaling(this.gui, this.engine);
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
@@ -228,24 +227,36 @@ export class HighscoresScene {
     root.background = 'transparent';
     this.gui.addControl(root);
 
+    const idealWidth = this.gui.idealWidth || DESIGN_WIDTH;
+    const idealHeight = this.gui.idealHeight || DESIGN_HEIGHT;
+    const isMobileLayout = idealWidth <= 960;
+    const layoutWidth = Math.round(idealWidth);
+    const layoutHeight = Math.round(idealHeight);
+    const sidePadding = Math.round(layoutWidth * 0.02);
+    const panelTop = Math.round(layoutHeight * 0.06);
+    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.32 : 0.3));
+    const sidePanelHeight = Math.round(layoutHeight * 0.9);
+    const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
+    const centerCardWidth = Math.round(layoutWidth * (isMobileLayout ? 0.3 : 0.34));
+    const centerCardHeight = Math.round(layoutHeight * 0.5);
+    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 8);
+
     const mainLayoutContainer = new Rectangle('mainLayout');
-    mainLayoutContainer.width = '1920px';
-    mainLayoutContainer.height = '1080px';
+    mainLayoutContainer.width = 1;
+    mainLayoutContainer.height = 1;
     mainLayoutContainer.thickness = 0;
     mainLayoutContainer.background = 'transparent';
-    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     root.addControl(mainLayoutContainer);
 
     const updateScale = () => {
-      const size = this.gui.getSize();
-      const scaleX = size.width / 1920;
-      const scaleY = size.height / 1080;
-      const scale = Math.min(1, scaleX, scaleY);
-      mainLayoutContainer.scaleX = scale;
-      mainLayoutContainer.scaleY = scale;
+      mainLayoutContainer.scaleX = 1;
+      mainLayoutContainer.scaleY = 1;
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
+    // Re-apply GUI scale settings on orientation/size change
+    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
     updateScale();
 
     const backBtn = this.makeTabButton('BACK TO MAIN MENU', () => {
@@ -271,42 +282,42 @@ export class HighscoresScene {
       mainLayoutContainer.addControl(devBtn);
     }
 
-    const mainTitle = UIFactory.createText('hsTitle', 'LOCAL HIGHSCORES DIRECTORY', 46, UITheme.colors.textHighlight);
+    const mainTitle = UIFactory.createText('hsTitle', 'LOCAL HIGHSCORES DIRECTORY', 60, UITheme.colors.textHighlight);
     mainTitle.fontFamily = UITheme.fonts.primary;
     mainTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     mainTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    mainTitle.top = '36px';
-    mainTitle.height = '60px';
+    mainTitle.top = `${Math.round(layoutHeight * 0.05)}px`;
+    mainTitle.height = '70px';
     mainTitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     mainLayoutContainer.addControl(mainTitle);
 
-    this.leftPanel = this.makeTerminalPanel('hsLeftPanel', 430, 630);
+    this.leftPanel = this.makeTerminalPanel('hsLeftPanel', sidePanelWidth, sidePanelHeight);
     this.leftPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.leftPanel.left = '24px';
-    this.leftPanel.top = '38px';
+    this.leftPanel.left = `${sidePadding}px`;
+    this.leftPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.leftPanel);
 
-    this.leftTitle = this.makeTerminalText('leftTitle', 20, '#7DFFE8');
-    this.leftTitle.top = '-286px';
-    this.leftTitle.width = '390px';
+    this.leftTitle = this.makeTerminalText('leftTitle', 24, '#7DFFE8');
+    this.leftTitle.top = `-${Math.round(sidePanelHeight * 0.44)}px`;
+    this.leftTitle.width = `${sideInnerWidth}px`;
     this.leftTitle.height = '30px';
     this.leftTitle.isHitTestVisible = false;
     this.leftTitle.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftTitle);
 
-    this.leftDescription = this.makeTerminalText('leftDesc', 14, '#CFFCF3');
-    this.leftDescription.top = '-250px';
-    this.leftDescription.width = '390px';
-    this.leftDescription.height = '50px';
+    this.leftDescription = this.makeTerminalText('leftDesc', 16, '#CFFCF3');
+    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.39)}px`;
+    this.leftDescription.width = `${sideInnerWidth}px`;
+    this.leftDescription.height = `${Math.round(sidePanelHeight * 0.07)}px`;
     this.leftDescription.isHitTestVisible = false;
     this.leftDescription.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftDescription);
 
     const scrollViewer = new ScrollViewer('leftListScroll');
-    scrollViewer.width = '400px';
-    scrollViewer.height = '500px';
-    scrollViewer.top = '20px';
+    scrollViewer.width = `${sideInnerWidth}px`;
+    scrollViewer.height = `${Math.round(sidePanelHeight * 0.8)}px`;
+    scrollViewer.top = `${Math.round(sidePanelHeight * 0.03)}px`;
     scrollViewer.thickness = 0;
     scrollViewer.barColor = '#3B685C';
     scrollViewer.barBackground = 'rgba(0,0,0,0.5)';
@@ -319,47 +330,49 @@ export class HighscoresScene {
     this.leftListStack.spacing = 6;
     scrollViewer.addControl(this.leftListStack);
 
-    this.rightPanel = this.makeTerminalPanel('hsRightPanel', 430, 630);
+    this.rightPanel = this.makeTerminalPanel('hsRightPanel', sidePanelWidth, sidePanelHeight);
     this.rightPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.rightPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.rightPanel.left = '-24px';
-    this.rightPanel.top = '38px';
+    this.rightPanel.left = `-${sidePadding}px`;
+    this.rightPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.rightPanel);
 
-    this.rightTitle = this.makeTerminalText('rightTitle', 22, '#7DFFE8');
-    this.rightTitle.top = '-286px';
-    this.rightTitle.height = '60px';
+    this.rightTitle = this.makeTerminalText('rightTitle', 26, '#7DFFE8');
+    this.rightTitle.top = `-${Math.round(sidePanelHeight * 0.44)}px`;
+    this.rightTitle.width = `${sideInnerWidth}px`;
+    this.rightTitle.height = `${Math.round(sidePanelHeight * 0.09)}px`;
     this.rightPanel.addControl(this.rightTitle);
 
-    this.rightBody = this.makeTerminalText('rightBody', 14, '#CFFCF3');
-    this.rightBody.top = '20px';
-    this.rightBody.height = '520px';
+    this.rightBody = this.makeTerminalText('rightBody', 18, '#CFFCF3');
+    this.rightBody.top = `${Math.round(sidePanelHeight * 0.03)}px`;
+    this.rightBody.width = `${sideInnerWidth}px`;
+    this.rightBody.height = `${Math.round(sidePanelHeight * 0.8)}px`;
     this.rightPanel.addControl(this.rightBody);
 
-    this.centerCard = this.makeTerminalPanel('centerCard', 640, 320);
+    this.centerCard = this.makeTerminalPanel('centerCard', centerCardWidth, centerCardHeight);
     this.centerCard.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.centerCard.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.centerCard.top = '38px';
+    this.centerCard.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.centerCard);
 
     this.centerCardTitle = new TextBlock('centerTitle', 'RUN SUMMARY');
     this.centerCardTitle.fontFamily = this.terminalFont;
-    this.centerCardTitle.fontSize = 24;
+    this.centerCardTitle.fontSize = 30;
     this.centerCardTitle.color = '#FFFFFF';
-    this.centerCardTitle.top = '-120px';
+    this.centerCardTitle.top = `-${Math.round(centerCardHeight * 0.39)}px`;
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = new TextBlock('centerSubtitle', '');
     this.centerCardSubtitle.fontFamily = this.terminalFont;
-    this.centerCardSubtitle.fontSize = 16;
+    this.centerCardSubtitle.fontSize = 20;
     this.centerCardSubtitle.color = '#7DFFE8';
-    this.centerCardSubtitle.top = '-80px';
+    this.centerCardSubtitle.top = `-${Math.round(centerCardHeight * 0.28)}px`;
     this.centerCard.addControl(this.centerCardSubtitle);
 
     this.centerBonusesContainer = new Rectangle('bonusesContainer');
-    this.centerBonusesContainer.width = '600px';
-    this.centerBonusesContainer.height = '160px';
-    this.centerBonusesContainer.top = '40px';
+    this.centerBonusesContainer.width = `${Math.max(0, centerCardWidth - 40)}px`;
+    this.centerBonusesContainer.height = `${Math.round(centerCardHeight * 0.5)}px`;
+    this.centerBonusesContainer.top = `${Math.round(centerCardHeight * 0.12)}px`;
     this.centerBonusesContainer.thickness = 1;
     this.centerBonusesContainer.color = '#3B685C';
     this.centerBonusesContainer.background = 'rgba(0,0,0,0.5)';
@@ -367,9 +380,9 @@ export class HighscoresScene {
 
     this.centerBonusLabel = new TextBlock('bonusLabel', 'EQUIPPED BONUSES');
     this.centerBonusLabel.fontFamily = this.terminalFont;
-    this.centerBonusLabel.fontSize = 14;
+    this.centerBonusLabel.fontSize = 18;
     this.centerBonusLabel.color = '#7CFFEA';
-    this.centerBonusLabel.top = '-60px';
+    this.centerBonusLabel.top = `-${Math.round(centerCardHeight * 0.19)}px`;
     this.centerBonusesContainer.addControl(this.centerBonusLabel);
 
     this.bonusIconsStack = new StackPanel('bonusIconsStack');
@@ -381,10 +394,10 @@ export class HighscoresScene {
 
     // Detached Details Panel for Tooltips at the bottom center of the screen
     this.centerDetailsPanel = new Rectangle('centerDetailsPanel');
-    this.centerDetailsPanel.width = '800px';
-    this.centerDetailsPanel.height = '130px';
+    this.centerDetailsPanel.width = `${Math.round(layoutWidth * 0.7)}px`;
+    this.centerDetailsPanel.height = '150px';
     this.centerDetailsPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    this.centerDetailsPanel.top = '-40px';
+    this.centerDetailsPanel.top = `-${Math.round(layoutHeight * 0.06)}px`;
     this.centerDetailsPanel.thickness = 2;
     this.centerDetailsPanel.color = '#3B685C';
     this.centerDetailsPanel.background = 'rgba(10, 18, 22, 0.95)';
@@ -405,21 +418,21 @@ export class HighscoresScene {
     detailsTextStack.isVertical = true;
     detailsTextStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     detailsTextStack.left = '130px';
-    detailsTextStack.width = '640px';
+    detailsTextStack.width = `${Math.max(0, Math.round(layoutWidth * 0.7) - 160)}px`;
     detailsTextStack.spacing = 6;
     this.centerDetailsPanel.addControl(detailsTextStack);
 
     this.centerDetailsTitle = new TextBlock('centerDetailsTitle', '> SYSTEM METRICS');
     this.centerDetailsTitle.fontFamily = this.terminalFont;
-    this.centerDetailsTitle.fontSize = 16;
+    this.centerDetailsTitle.fontSize = 20;
     this.centerDetailsTitle.color = '#7CFFEA';
     this.centerDetailsTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.centerDetailsTitle.height = '24px';
+    this.centerDetailsTitle.height = '28px';
     detailsTextStack.addControl(this.centerDetailsTitle);
 
     this.centerDetailsDesc = new TextBlock('centerDetailsDesc', 'Hover a module to analyze database metadata.');
     this.centerDetailsDesc.fontFamily = this.terminalFont;
-    this.centerDetailsDesc.fontSize = 13;
+    this.centerDetailsDesc.fontSize = 18;
     this.centerDetailsDesc.color = '#647D7D';
     this.centerDetailsDesc.textWrapping = true;
     this.centerDetailsDesc.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -440,7 +453,7 @@ export class HighscoresScene {
   private makeTerminalText(id: string, size: number, color: string): TextBlock {
     const t = new TextBlock(id, '');
     t.fontFamily = this.terminalFont;
-    t.fontSize = size;
+    t.fontSize = Math.round(size * 1.12);
     t.color = color;
     t.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     t.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -451,14 +464,14 @@ export class HighscoresScene {
 
   private makeTabButton(label: string, onClick: () => void): Button {
     const btn = Button.CreateSimpleButton(`tab_${label}`, label);
-    btn.width = '240px';
-    btn.height = '38px';
+    btn.width = '320px';
+    btn.height = '46px';
     btn.color = '#7CFFEA';
     btn.thickness = 1;
     btn.cornerRadius = 2;
     btn.background = 'rgba(20, 30, 35, 0.6)';
     btn.fontFamily = this.terminalFont;
-    btn.fontSize = 16;
+    btn.fontSize = 20;
     btn.onPointerUpObservable.add(onClick);
     return btn;
   }
@@ -470,16 +483,25 @@ export class HighscoresScene {
     }
   }
 
+  private getFormattedClassName(classId: string): string {
+    switch (classId.toLowerCase()) {
+      case 'mage': return 'WIZARD INSTALLER';
+      case 'firewall': return 'FIREWALL';
+      case 'rogue': return 'GLITCH';
+      default: return classId.toUpperCase();
+    }
+  }
+
   private populateRunsList(): void {
     this.clearLeftList();
     if (this.runs.length === 0) {
       const emptyBtn = Button.CreateSimpleButton('empty_hs', 'NO RECORDED RUNS');
-      emptyBtn.width = '382px';
-      emptyBtn.height = '38px';
+      emptyBtn.width = '392px';
+      emptyBtn.height = '42px';
       emptyBtn.thickness = 0;
       emptyBtn.color = '#647D7D';
       emptyBtn.fontFamily = 'Consolas';
-      emptyBtn.fontSize = 14;
+      emptyBtn.fontSize = 18;
       this.leftListStack.addControl(emptyBtn);
       return;
     }
@@ -487,7 +509,7 @@ export class HighscoresScene {
     for (let i = 0; i < this.runs.length; i++) {
       const run = this.runs[i];
       const dateStr = new Date(run.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      const label = `#${i+1} [${run.classId.toUpperCase()}] - ${run.score.toLocaleString()} (${dateStr})`;
+      const label = `#${i+1} [${this.getFormattedClassName(run.classId)}] - ${run.score.toLocaleString()} (${dateStr})`;
       const btn = this.makeLeftListButton(`left_run_${run.id}`, label, i === this.selectedRunIndex, () => {
         this.selectedRunIndex = i;
         this.populateRunsList();
@@ -500,8 +522,8 @@ export class HighscoresScene {
 
   private makeLeftListButton(id: string, label: string, active: boolean, onClick: () => void): Button {
     const btn = Button.CreateSimpleButton(id, label);
-    btn.width = '382px';
-    btn.height = '38px';
+    btn.width = `${this.leftListButtonWidth}px`;
+    btn.height = '42px';
     btn.thickness = 1;
     btn.cornerRadius = 4;
     btn.color = active ? '#F1FFFC' : '#A3DCCF';
@@ -513,7 +535,7 @@ export class HighscoresScene {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
       btn.textBlock.fontFamily = 'Consolas';
-      btn.textBlock.fontSize = 14;
+      btn.textBlock.fontSize = 15;
     }
     return btn;
   }
@@ -613,7 +635,7 @@ export class HighscoresScene {
 
           const badgeText = new TextBlock(`hs_bonus_badge_text_${bonus.id}`, `x${bonus.stacks}`);
           badgeText.fontFamily = this.terminalFont;
-          badgeText.fontSize = 10;
+          badgeText.fontSize = 12;
           badgeText.color = '#FFFFFF';
           badgeText.isHitTestVisible = false;
           badge.addControl(badgeText);
@@ -654,7 +676,7 @@ export class HighscoresScene {
 
       const noneText = new TextBlock('no_bonuses', 'NO BONUSES SELECTED');
       noneText.fontFamily = this.terminalFont;
-      noneText.fontSize = 13;
+      noneText.fontSize = 15;
       noneText.color = '#647D7D';
       noneText.isHitTestVisible = false;
       this.bonusIconsStack.addControl(noneText);
@@ -666,7 +688,7 @@ export class HighscoresScene {
       `Date: ${dateStr}\n` +
       `System Sector: ${run.roomReached}\n` +
       `Final Score: ${run.score.toLocaleString()}\n` +
-      `Host Class: ${run.classId.toUpperCase()}\n\n` +
+      `Host Class: ${this.getFormattedClassName(run.classId)}\n\n` +
       `> System Parameters\n` +
       `Unique code: RUN-${run.id.toUpperCase()}\n` +
       `Discovered modules: ${run.bonuses ? run.bonuses.length : 0}\n\n` +

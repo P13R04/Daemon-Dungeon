@@ -23,10 +23,10 @@ export const UITheme = {
   
   fonts: {
     primary: 'Consolas, monospace',
-    titleSize: 34,
-    headerSize: 20,
-    normalSize: 15,
-    smallSize: 12,
+    titleSize: 38,
+    headerSize: 22,
+    normalSize: 17,
+    smallSize: 14,
   },
   
   shapes: {
