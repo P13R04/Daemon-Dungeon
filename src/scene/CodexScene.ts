@@ -29,7 +29,7 @@ import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { CodexService } from '../services/CodexService';
 import type { EnemyConfigEntry } from '../types/config';
-import { applyResponsiveGuiScaling, computeLayoutScale } from '../ui/GuiScaling';
+import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 
 type CodexSection = 'bestiary' | 'bonuses';
 type BestiaryGroup = 'normal' | 'boss';
@@ -111,6 +111,7 @@ export class CodexScene {
   private leftFilterRow!: StackPanel;
   private leftFilterNormalBtn: Button;
   private leftFilterBossBtn: Button;
+  private leftListButtonWidth: number = 472;
 
   private rightPanel: Rectangle;
   private rightTitle: TextBlock;
@@ -206,19 +207,32 @@ export class CodexScene {
     root.background = 'rgba(5,8,16,0.15)';
     this.gui.addControl(root);
 
+    const idealWidth = this.gui.idealWidth || DESIGN_WIDTH;
+    const idealHeight = this.gui.idealHeight || DESIGN_HEIGHT;
+    const isMobileLayout = idealWidth <= 960;
+    const layoutWidth = Math.round(idealWidth);
+    const layoutHeight = Math.round(idealHeight);
+    const sidePadding = Math.round(layoutWidth * 0.02);
+    const panelTop = Math.round(layoutHeight * 0.08);
+    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.36 : 0.34));
+    const sidePanelHeight = Math.round(layoutHeight * 0.86);
+    const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
+    const centerCardWidth = Math.round(layoutWidth * (isMobileLayout ? 0.24 : 0.26));
+    const centerCardHeight = Math.round(layoutHeight * 0.53);
+    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 8);
+
     const mainLayoutContainer = new Rectangle('mainLayout');
-    mainLayoutContainer.width = '1920px';
-    mainLayoutContainer.height = '1080px';
+    mainLayoutContainer.width = 1;
+    mainLayoutContainer.height = 1;
     mainLayoutContainer.thickness = 0;
     mainLayoutContainer.background = 'transparent';
-    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     root.addControl(mainLayoutContainer);
 
     const updateScale = () => {
-      const scale = computeLayoutScale(this.gui);
-      mainLayoutContainer.scaleX = scale;
-      mainLayoutContainer.scaleY = scale;
+      mainLayoutContainer.scaleX = 1;
+      mainLayoutContainer.scaleY = 1;
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
@@ -230,7 +244,7 @@ export class CodexScene {
     this.headerTitle.fontFamily = this.terminalFont;
     this.headerTitle.fontSize = 56;
     this.headerTitle.color = '#7FFFE7';
-    this.headerTitle.top = '-43%';
+    this.headerTitle.top = `-${Math.round(layoutHeight * 0.43)}px`;
     mainLayoutContainer.addControl(this.headerTitle);
 
     this.headerSubtitle = new TextBlock('codexHeaderSubtitle');
@@ -238,7 +252,7 @@ export class CodexScene {
     this.headerSubtitle.fontFamily = this.terminalFont;
     this.headerSubtitle.fontSize = 18;
     this.headerSubtitle.color = '#8FDCCF';
-    this.headerSubtitle.top = '-37%';
+    this.headerSubtitle.top = `-${Math.round(layoutHeight * 0.37)}px`;
     mainLayoutContainer.addControl(this.headerSubtitle);
 
     const backBtn = this.makeTopButton('codexBack', 'BACK TO MENU', Control.HORIZONTAL_ALIGNMENT_LEFT, () => this.onBackToMenu());
@@ -257,9 +271,9 @@ export class CodexScene {
 
     const tabsRow = new StackPanel('codexTabsRow');
     tabsRow.isVertical = false;
-    tabsRow.width = '1000px';
+    tabsRow.width = `${Math.round(layoutWidth * 0.78)}px`;
     tabsRow.height = '54px';
-    tabsRow.top = '-32%';
+    tabsRow.top = `-${Math.round(layoutHeight * 0.32)}px`;
     mainLayoutContainer.addControl(tabsRow);
 
     tabsRow.addControl(this.makeTabButton('BESTIARY', () => {
@@ -271,33 +285,33 @@ export class CodexScene {
       this.refreshSection(false);
     }));
 
-    this.leftPanel = this.makeTerminalPanel('codexLeftPanel', 520, 620);
+    this.leftPanel = this.makeTerminalPanel('codexLeftPanel', sidePanelWidth, sidePanelHeight);
     this.leftPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.leftPanel.left = '40px';
-    this.leftPanel.top = '58px';
+    this.leftPanel.left = `${sidePadding}px`;
+    this.leftPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.leftPanel);
 
     this.leftTitle = this.makeTerminalText('leftTitle', 24, '#7DFFE8');
-    this.leftTitle.top = '-276px';
-    this.leftTitle.width = '480px';
+    this.leftTitle.top = `-${Math.round(sidePanelHeight * 0.45)}px`;
+    this.leftTitle.width = `${sideInnerWidth}px`;
     this.leftTitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.addControl(this.leftTitle);
 
     this.leftDescription = this.makeTerminalText('leftDescription', 16, '#9EE6DB');
-    this.leftDescription.top = '-214px';
-    this.leftDescription.width = '480px';
-    this.leftDescription.height = '110px';
+    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.35)}px`;
+    this.leftDescription.width = `${sideInnerWidth}px`;
+    this.leftDescription.height = `${Math.round(sidePanelHeight * 0.18)}px`;
     this.leftDescription.textWrapping = true;
     this.leftDescription.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.addControl(this.leftDescription);
 
     this.leftFilterRow = new StackPanel('leftFilterRow');
     this.leftFilterRow.isVertical = false;
-    this.leftFilterRow.width = '480px';
+    this.leftFilterRow.width = `${sideInnerWidth}px`;
     this.leftFilterRow.height = '42px';
-    this.leftFilterRow.top = '-130px';
+    this.leftFilterRow.top = `-${Math.round(sidePanelHeight * 0.21)}px`;
     this.leftPanel.addControl(this.leftFilterRow);
 
     this.leftFilterNormalBtn = this.makeFilterButton('NORMAL', true, () => {
@@ -311,8 +325,8 @@ export class CodexScene {
     this.leftFilterRow.addControl(this.leftFilterNormalBtn);
     this.leftFilterRow.addControl(this.leftFilterBossBtn);
 
-    const leftListFrame = UIFactory.createPanel('leftListFrame', 480, 330);
-    leftListFrame.top = '74px';
+    const leftListFrame = UIFactory.createPanel('leftListFrame', sideInnerWidth, Math.round(sidePanelHeight * 0.53));
+    leftListFrame.top = `${Math.round(sidePanelHeight * 0.12)}px`;
     this.leftPanel.addControl(leftListFrame);
 
     this.leftListScroll = UIFactory.createScrollViewer('leftListScroll');
@@ -328,59 +342,59 @@ export class CodexScene {
     this.leftListStack.isPointerBlocker = false;
     this.leftListScroll.addControl(this.leftListStack);
 
-    this.rightPanel = this.makeTerminalPanel('codexRightPanel', 520, 620);
+    this.rightPanel = this.makeTerminalPanel('codexRightPanel', sidePanelWidth, sidePanelHeight);
     this.rightPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.rightPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.rightPanel.left = '-40px';
-    this.rightPanel.top = '58px';
+    this.rightPanel.left = `-${sidePadding}px`;
+    this.rightPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.rightPanel);
 
     this.rightTitle = this.makeTerminalText('rightTitle', 40, '#7EFFE7');
-    this.rightTitle.top = '-250px';
-    this.rightTitle.width = '480px';
+    this.rightTitle.top = `-${Math.round(sidePanelHeight * 0.4)}px`;
+    this.rightTitle.width = `${sideInnerWidth}px`;
     this.rightTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.rightPanel.addControl(this.rightTitle);
 
     this.rightBody = this.makeTerminalText('rightBody', 18, '#A7EFE2');
     this.rightBody.top = '10px';
-    this.rightBody.width = '480px';
-    this.rightBody.height = '440px';
+    this.rightBody.width = `${sideInnerWidth}px`;
+    this.rightBody.height = `${Math.round(sidePanelHeight * 0.71)}px`;
     this.rightBody.textWrapping = true;
     this.rightBody.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.rightPanel.addControl(this.rightBody);
 
-    this.centerCard = this.makeTerminalPanel('centerFlatCard', 340, 380);
+    this.centerCard = this.makeTerminalPanel('centerFlatCard', centerCardWidth, centerCardHeight);
     this.centerCard.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.centerCard.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.centerCard.top = '38px';
+    this.centerCard.top = `${Math.round(layoutHeight * 0.05)}px`;
     mainLayoutContainer.addControl(this.centerCard);
 
     this.centerCardIcon = this.makeTerminalText('centerCardIcon', 80, '#8CFFF0');
-    this.centerCardIcon.top = '-78px';
+    this.centerCardIcon.top = `-${Math.round(centerCardHeight * 0.21)}px`;
     this.centerCard.addControl(this.centerCardIcon);
 
     this.centerCardArtwork = new Image('centerCardArtwork');
-    this.centerCardArtwork.width = '180px';
-    this.centerCardArtwork.height = '180px';
+    this.centerCardArtwork.width = `${Math.round(centerCardWidth * 0.53)}px`;
+    this.centerCardArtwork.height = `${Math.round(centerCardWidth * 0.53)}px`;
     this.centerCardArtwork.stretch = Image.STRETCH_UNIFORM;
-    this.centerCardArtwork.top = '-50px';
+    this.centerCardArtwork.top = `-${Math.round(centerCardHeight * 0.13)}px`;
     this.centerCardArtwork.isVisible = false;
     this.centerCard.addControl(this.centerCardArtwork);
 
     this.centerCardTitle = this.makeTerminalText('centerCardTitle', 26, '#C8FFF8');
-    this.centerCardTitle.top = '64px';
+    this.centerCardTitle.top = `${Math.round(centerCardHeight * 0.17)}px`;
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = this.makeTerminalText('centerCardSubtitle', 16, '#8FDACF');
-    this.centerCardSubtitle.top = '112px';
+    this.centerCardSubtitle.top = `${Math.round(centerCardHeight * 0.29)}px`;
     this.centerCard.addControl(this.centerCardSubtitle);
 
 
     const navRow = new StackPanel('codexBottomNav');
     navRow.isVertical = false;
-    navRow.width = '360px';
-    navRow.height = '64px';
-    navRow.top = '42%';
+    navRow.width = `${Math.round(layoutWidth * 0.28)}px`;
+    navRow.height = `${Math.round(layoutHeight * 0.09)}px`;
+    navRow.top = `${Math.round(layoutHeight * 0.42)}px`;
     mainLayoutContainer.addControl(navRow);
 
     const leftNavBtn = UIFactory.createTerminalButton('codexNavLeft', '<', '150px', '52px');
@@ -707,7 +721,7 @@ export class CodexScene {
 
   private makeLeftListButton(id: string, label: string, active: boolean, onClick: () => void): Button {
     const btn = Button.CreateSimpleButton(id, label);
-    btn.width = '472px';
+    btn.width = `${this.leftListButtonWidth}px`;
     btn.height = '42px';
     btn.thickness = 1;
     btn.cornerRadius = 4;

@@ -30,7 +30,7 @@ import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { GameSettingsStore } from '../settings/GameSettings';
 import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
-import { applyResponsiveGuiScaling, computeLayoutScale } from '../ui/GuiScaling';
+import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 
 interface ClassCarouselItem {
   id: 'mage' | 'firewall' | 'rogue' | 'cat';
@@ -303,19 +303,27 @@ export class ClassSelectScene {
   }
 
   private createUi(): { infoText: TextBlock; loreText: TextBlock; startButton: Button } {
+    const idealWidth = this.gui.idealWidth || DESIGN_WIDTH;
+    const idealHeight = this.gui.idealHeight || DESIGN_HEIGHT;
+    const isMobileLayout = idealWidth <= 960;
+    const layoutWidth = Math.round(idealWidth);
+    const layoutHeight = Math.round(idealHeight);
+    const sidePadding = Math.round(layoutWidth * 0.02);
+    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.36 : 0.34));
+    const sidePanelHeight = Math.round(layoutHeight * 0.66);
+
     const mainLayoutContainer = new Rectangle('mainLayout');
-    mainLayoutContainer.width = '1920px';
-    mainLayoutContainer.height = '1080px';
+    mainLayoutContainer.width = 1;
+    mainLayoutContainer.height = 1;
     mainLayoutContainer.thickness = 0;
     mainLayoutContainer.background = 'transparent';
-    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.gui.addControl(mainLayoutContainer);
 
     const updateScale = () => {
-      const scale = computeLayoutScale(this.gui);
-      mainLayoutContainer.scaleX = scale;
-      mainLayoutContainer.scaleY = scale;
+      mainLayoutContainer.scaleX = 1;
+      mainLayoutContainer.scaleY = 1;
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
@@ -334,14 +342,14 @@ export class ClassSelectScene {
     mainLayoutContainer.addControl(backBtn);
 
     const title = UIFactory.createText('classSelectTitle', 'SELECT CLASS', 60, UITheme.colors.textHighlight);
-    title.top = '-41%';
+    title.top = `-${Math.round(layoutHeight * 0.44)}px`;
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     mainLayoutContainer.addControl(title);
 
 
     // ── Central nav panel (navigation + START only) ──────────────────────────
-    const navPanel = UIFactory.createPanel('classSelectNavPanel', 460, 100);
-    navPanel.top = '38%';
+    const navPanel = UIFactory.createPanel('classSelectNavPanel', Math.round(layoutWidth * 0.36), Math.round(layoutHeight * 0.14));
+    navPanel.top = `${Math.round(layoutHeight * 0.38)}px`;
     mainLayoutContainer.addControl(navPanel);
 
     const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', '100px', '70px');
@@ -369,20 +377,20 @@ export class ClassSelectScene {
 
     // ── Right-side class info overlay ─────────────────────────────────────────
     const infoOverlay = new Rectangle('classInfoOverlay');
-    infoOverlay.width = '560px';
-    infoOverlay.height = '480px';
+    infoOverlay.width = `${sidePanelWidth}px`;
+    infoOverlay.height = `${sidePanelHeight}px`;
     infoOverlay.thickness = 1;
     infoOverlay.color = 'rgba(100,255,230,0.25)';
     infoOverlay.background = 'rgba(4, 16, 20, 0.85)';
     infoOverlay.cornerRadius = 4;
     infoOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     infoOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    infoOverlay.left = '-32px';
+    infoOverlay.left = `-${sidePadding}px`;
     infoOverlay.zIndex = 100;
     mainLayoutContainer.addControl(infoOverlay);
 
     const infoLabel = UIFactory.createText('classInfoLabel', '// CLASS DATA', 15, 'rgba(100,255,230,0.5)');
-    infoLabel.top = '-220px';
+    infoLabel.top = `-${Math.round(sidePanelHeight * 0.46)}px`;
     infoLabel.left = '20px';
     infoLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -392,27 +400,27 @@ export class ClassSelectScene {
     infoText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.textWrapping = true;
-    infoText.width = '520px';
+    infoText.width = `${Math.max(0, sidePanelWidth - 40)}px`;
     infoText.left = '20px';
     infoText.top = '25px';
     infoOverlay.addControl(infoText);
 
     // ── Left-side class lore overlay (symmetric) ──────────────────────────────
     const loreOverlay = new Rectangle('classLoreOverlay');
-    loreOverlay.width = '560px';
-    loreOverlay.height = '480px';
+    loreOverlay.width = `${sidePanelWidth}px`;
+    loreOverlay.height = `${sidePanelHeight}px`;
     loreOverlay.thickness = 1;
     loreOverlay.color = 'rgba(100,255,230,0.25)';
     loreOverlay.background = 'rgba(4, 16, 20, 0.85)';
     loreOverlay.cornerRadius = 4;
     loreOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    loreOverlay.left = '32px';
+    loreOverlay.left = `${sidePadding}px`;
     loreOverlay.zIndex = 100;
     mainLayoutContainer.addControl(loreOverlay);
 
     const loreLabel = UIFactory.createText('classLoreLabel', '// SYSTEM LORE', 15, 'rgba(100,255,230,0.5)');
-    loreLabel.top = '-220px';
+    loreLabel.top = `-${Math.round(sidePanelHeight * 0.46)}px`;
     loreLabel.left = '20px';
     loreLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -422,7 +430,7 @@ export class ClassSelectScene {
     loreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreText.textWrapping = true;
-    loreText.width = '520px';
+    loreText.width = `${Math.max(0, sidePanelWidth - 40)}px`;
     loreText.left = '20px';
     loreText.top = '25px';
     loreOverlay.addControl(loreText);

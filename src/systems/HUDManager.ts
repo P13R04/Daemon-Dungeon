@@ -3421,48 +3421,64 @@ export class HUDManager {
 
   private createMobileControls(): void {
     const fontFamily = 'Consolas';
+    const idealWidth = this.guiClean.idealWidth || 1920;
+    const idealHeight = this.guiClean.idealHeight || 1080;
+    const isMobileLayout = idealWidth <= 960;
+    const controlScale = isMobileLayout ? 1.1 : 1;
+    const leftMargin = Math.round(Math.max(40, idealWidth * 0.04));
+    const bottomMargin = Math.round(Math.max(40, idealHeight * 0.06));
+    const logPanelHeight = this.logPanel?.heightInPixels ?? 180;
+    const statusPanelHeight = (this.statusPanel as Rectangle | null)?.heightInPixels ?? 180;
+    const bottomSafe = Math.round(Math.max(logPanelHeight, statusPanelHeight) + bottomMargin);
+    const joystickSize = Math.round(180 * controlScale);
+    const joystickBgSize = Math.round(120 * controlScale);
+    const joystickThumbSize = Math.round(50 * controlScale);
+    const attackSize = Math.round(120 * controlScale);
+    const stanceSize = Math.round(96 * controlScale);
+    const ultSize = Math.round(108 * controlScale);
+    const buttonGap = Math.round(attackSize * 0.18);
 
     // 1. LEFT JOYSTICK (Movement - Snapped to 8 Directions)
     const leftJoystickContainer = new Rectangle('left_joystick_container');
-    leftJoystickContainer.width = '180px';
-    leftJoystickContainer.height = '180px';
+    leftJoystickContainer.width = `${joystickSize}px`;
+    leftJoystickContainer.height = `${joystickSize}px`;
     leftJoystickContainer.thickness = 0;
     leftJoystickContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     leftJoystickContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    leftJoystickContainer.left = '60px';
-    leftJoystickContainer.top = '-260px';
+    leftJoystickContainer.left = `${leftMargin}px`;
+    leftJoystickContainer.top = `-${bottomSafe}px`;
     this.guiClean.addControl(leftJoystickContainer);
     this.mobileControls.push(leftJoystickContainer);
 
     const joystickBg = new Rectangle('left_joystick_bg');
-    joystickBg.width = '120px';
-    joystickBg.height = '120px';
-    joystickBg.cornerRadius = 60;
+    joystickBg.width = `${joystickBgSize}px`;
+    joystickBg.height = `${joystickBgSize}px`;
+    joystickBg.cornerRadius = Math.round(joystickBgSize / 2);
     joystickBg.thickness = 3;
     joystickBg.color = '#2EF9C3';
     joystickBg.background = 'rgba(4, 10, 8, 0.4)';
     leftJoystickContainer.addControl(joystickBg);
 
     const joystickThumb = new Rectangle('left_joystick_thumb');
-    joystickThumb.width = '50px';
-    joystickThumb.height = '50px';
-    joystickThumb.cornerRadius = 25;
+    joystickThumb.width = `${joystickThumbSize}px`;
+    joystickThumb.height = `${joystickThumbSize}px`;
+    joystickThumb.cornerRadius = Math.round(joystickThumbSize / 2);
     joystickThumb.thickness = 0;
     joystickThumb.background = '#2EF9C3';
     leftJoystickContainer.addControl(joystickThumb);
 
     // 2. ACTION BUTTONS (Attack, Stance & Ultimate) — bigger for comfortable touch targets
     const attackBtn = Button.CreateSimpleButton('mobile_attack_btn', 'ATTACK');
-    attackBtn.width = '120px';
-    attackBtn.height = '120px';
+    attackBtn.width = `${attackSize}px`;
+    attackBtn.height = `${attackSize}px`;
     attackBtn.color = '#FFD782';
     attackBtn.background = 'rgba(20, 15, 10, 0.75)';
     attackBtn.thickness = 3;
-    attackBtn.cornerRadius = 60;
+    attackBtn.cornerRadius = Math.round(attackSize / 2);
     attackBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     attackBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    attackBtn.left = '-80px';
-    attackBtn.top = '-230px';
+    attackBtn.left = `-${leftMargin}px`;
+    attackBtn.top = `-${bottomSafe}px`;
     if (attackBtn.textBlock) {
       attackBtn.textBlock.fontSize = 16;
       attackBtn.textBlock.fontFamily = fontFamily;
@@ -3473,16 +3489,16 @@ export class HUDManager {
     this.mobileAttackBtn = attackBtn;
 
     const stanceBtn = Button.CreateSimpleButton('mobile_stance_btn', 'STANCE');
-    stanceBtn.width = '96px';
-    stanceBtn.height = '96px';
+    stanceBtn.width = `${stanceSize}px`;
+    stanceBtn.height = `${stanceSize}px`;
     stanceBtn.color = '#7CFFEA';
     stanceBtn.background = 'rgba(10, 30, 35, 0.75)';
     stanceBtn.thickness = 3;
-    stanceBtn.cornerRadius = 48;
+    stanceBtn.cornerRadius = Math.round(stanceSize / 2);
     stanceBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     stanceBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    stanceBtn.left = '-230px';
-    stanceBtn.top = '-230px';
+    stanceBtn.left = `-${leftMargin + attackSize + buttonGap}px`;
+    stanceBtn.top = `-${bottomSafe}px`;
     if (stanceBtn.textBlock) {
       stanceBtn.textBlock.fontSize = 14;
       stanceBtn.textBlock.fontFamily = fontFamily;
@@ -3493,16 +3509,16 @@ export class HUDManager {
     this.mobileStanceBtn = stanceBtn;
 
     const ultBtn = Button.CreateSimpleButton('mobile_ult_btn', 'ULT');
-    ultBtn.width = '108px';
-    ultBtn.height = '108px';
+    ultBtn.width = `${ultSize}px`;
+    ultBtn.height = `${ultSize}px`;
     ultBtn.color = '#FFFF00';
     ultBtn.background = 'rgba(35, 35, 10, 0.75)';
     ultBtn.thickness = 3;
-    ultBtn.cornerRadius = 54;
+    ultBtn.cornerRadius = Math.round(ultSize / 2);
     ultBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     ultBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    ultBtn.left = '-155px';
-    ultBtn.top = '-380px';
+    ultBtn.left = `-${leftMargin + Math.round(attackSize * 0.45)}px`;
+    ultBtn.top = `-${bottomSafe + attackSize + buttonGap}px`;
     if (ultBtn.textBlock) {
       ultBtn.textBlock.fontSize = 15;
       ultBtn.textBlock.fontFamily = fontFamily;
@@ -3523,7 +3539,7 @@ export class HUDManager {
 
     let isDraggingLeft = false;
     let leftPointerId = -1;
-    const maxRadius = 60;
+    const maxRadius = joystickBgSize / 2;
 
     const toJoystickLocal = (clientX: number, clientY: number, result: Vector2): void => {
       const engine = this.scene.getEngine();

@@ -28,7 +28,7 @@ import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { createMenuMatrixBackground } from './MenuMatrixBackground';
-import { applyResponsiveGuiScaling, computeLayoutScale } from '../ui/GuiScaling';
+import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 
 type AudioChannel = keyof AudioSettings;
 
@@ -54,6 +54,12 @@ export class MainMenuScene {
   private settingsOverlay: Rectangle | null = null;
   private mainLayoutContainer!: Rectangle;
   private resizeObserver: any = null;
+  private layoutWidth = 1280;
+  private layoutHeight = 720;
+  private isMobileLayout = false;
+  private menuButtonWidth = 320;
+  private menuButtonHeight = 56;
+  private menuButtonFontSize = 18;
 
   private settingsSnapshot: GameSettings = GameSettingsStore.get();
   private unsubscribeSettings: (() => void) | null = null;
@@ -132,19 +138,24 @@ export class MainMenuScene {
       this.gui.layer.layerMask = UI_LAYER;
     }
 
+    const idealWidth = this.gui.idealWidth || DESIGN_WIDTH;
+    const idealHeight = this.gui.idealHeight || DESIGN_HEIGHT;
+    this.isMobileLayout = idealWidth <= 960;
+    this.layoutWidth = Math.round(idealWidth);
+    this.layoutHeight = Math.round(idealHeight);
+
     this.mainLayoutContainer = new Rectangle('mainLayout');
-    this.mainLayoutContainer.width = '1920px';
-    this.mainLayoutContainer.height = '1080px';
+    this.mainLayoutContainer.width = 1;
+    this.mainLayoutContainer.height = 1;
     this.mainLayoutContainer.thickness = 0;
     this.mainLayoutContainer.background = 'transparent';
-    this.mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.gui.addControl(this.mainLayoutContainer);
 
     const updateScale = () => {
-      const scale = computeLayoutScale(this.gui);
-      this.mainLayoutContainer.scaleX = scale;
-      this.mainLayoutContainer.scaleY = scale;
+      this.mainLayoutContainer.scaleX = 1;
+      this.mainLayoutContainer.scaleY = 1;
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
@@ -369,7 +380,7 @@ export class MainMenuScene {
   private createMainButtons(): void {
     const title = UIFactory.createText('menuTitle', 'DAEMON DUNGEON', 72, UITheme.colors.textHighlight);
     title.fontFamily = UITheme.fonts.primary;
-    title.top = '-34%';
+    title.top = `-${Math.round(this.layoutHeight * 0.44)}px`;
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.mainLayoutContainer.addControl(title);
 
@@ -394,46 +405,55 @@ export class MainMenuScene {
     });
 
     const subtitle = UIFactory.createText('menuSubtitle', 'SYSTEM READY // MAIN CONSOLE', 20, UITheme.colors.borderBright);
-    subtitle.top = '-27%';
+    subtitle.top = `-${Math.round(this.layoutHeight * 0.36)}px`;
     subtitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.mainLayoutContainer.addControl(subtitle);
 
-    const panel = UIFactory.createPanel('menuPanel', 540, 560);
-    panel.top = '-2%';
+    const panelWidth = Math.round(Math.min(760, Math.max(560, this.layoutWidth * 0.58)));
+    const panelHeight = Math.round(Math.min(720, Math.max(560, this.layoutHeight * 0.78)));
+    const buttonStep = Math.round((panelHeight / 7) * 0.9);
+    this.menuButtonWidth = Math.round(panelWidth * 0.62);
+    this.menuButtonHeight = Math.round(Math.max(56, panelHeight * 0.1));
+    this.menuButtonFontSize = this.isMobileLayout ? 18 : 19;
+
+    const panel = UIFactory.createPanel('menuPanel', panelWidth, panelHeight);
+    panel.top = `${Math.round(this.layoutHeight * 0.05)}px`;
     this.mainLayoutContainer.addControl(panel);
     this.menuPanel = panel;
 
-    const playBtn = this.makeActionButton('menuPlay', 'START RUN', -200, () => {
+    const topOffsets = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5].map((mult) => Math.round(mult * buttonStep));
+
+    const playBtn = this.makeActionButton('menuPlay', 'START RUN', topOffsets[0], () => {
       this.hidePanels();
       this.onPlayRequested();
     });
     panel.addControl(playBtn);
 
-    const tutorialBtn = this.makeActionButton('menuTutorial', 'TUTORIAL', -120, () => {
+    const tutorialBtn = this.makeActionButton('menuTutorial', 'TUTORIAL', topOffsets[1], () => {
       this.hidePanels();
       this.onTutorialRequested();
     });
     panel.addControl(tutorialBtn);
 
-    const codexBtn = this.makeActionButton('menuCodex', 'CODEX', -40, () => {
+    const codexBtn = this.makeActionButton('menuCodex', 'CODEX', topOffsets[2], () => {
       this.hidePanels();
       this.onCodexRequested();
     });
     panel.addControl(codexBtn);
 
-    const achievementsBtn = this.makeActionButton('menuAchievements', 'ACHIEVEMENTS', 40, () => {
+    const achievementsBtn = this.makeActionButton('menuAchievements', 'ACHIEVEMENTS', topOffsets[3], () => {
       this.hidePanels();
       this.eventBus.emit(GameEvents.ACHIEVEMENTS_OPEN_REQUESTED);
     });
     panel.addControl(achievementsBtn);
 
-    const highscoresBtn = this.makeActionButton('menuHighscores', 'HIGHSCORES', 120, () => {
+    const highscoresBtn = this.makeActionButton('menuHighscores', 'HIGHSCORES', topOffsets[4], () => {
       this.hidePanels();
       this.eventBus.emit(GameEvents.HIGHSCORES_OPEN_REQUESTED);
     });
     panel.addControl(highscoresBtn);
 
-    const settingsBtn = this.makeActionButton('menuSettings', 'SETTINGS', 200, () => {
+    const settingsBtn = this.makeActionButton('menuSettings', 'SETTINGS', topOffsets[5], () => {
       this.openSettingsOverlay();
     });
     panel.addControl(settingsBtn);
@@ -452,7 +472,9 @@ export class MainMenuScene {
     this.mainLayoutContainer.addControl(overlay);
     this.settingsOverlay = overlay;
 
-    const windowPanel = UIFactory.createPanel('settingsWindow', 1100, 780);
+    const windowWidth = Math.round(this.layoutWidth * 0.9);
+    const windowHeight = Math.round(this.layoutHeight * 0.92);
+    const windowPanel = UIFactory.createPanel('settingsWindow', windowWidth, windowHeight);
     overlay.addControl(windowPanel);
 
     const title = new TextBlock('settingsTitle');
@@ -460,16 +482,16 @@ export class MainMenuScene {
     title.color = '#7CFFEA';
     title.fontSize = 34;
     title.fontFamily = 'Consolas';
-    title.top = '-352px';
+    title.top = `-${Math.round(windowHeight * 0.45)}px`;
     windowPanel.addControl(title);
 
 
 
     const actionRow = new Rectangle('settingsActionRow');
-    actionRow.width = '1060px';
+    actionRow.width = `${Math.round(windowWidth - 40)}px`;
     actionRow.height = '44px';
     actionRow.thickness = 0;
-    actionRow.top = '-285px';
+    actionRow.top = `-${Math.round(windowHeight * 0.37)}px`;
     actionRow.isPointerBlocker = true;
     actionRow.zIndex = 120;
     windowPanel.addControl(actionRow);
@@ -515,13 +537,13 @@ export class MainMenuScene {
     this.captureHintText = UIFactory.createText('settingsCaptureHint', '', 12, UITheme.colors.textDim);
     this.captureHintText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.captureHintText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.captureHintText.top = '-245px';
+    this.captureHintText.top = `-${Math.round(windowHeight * 0.31)}px`;
     windowPanel.addControl(this.captureHintText);
 
     const scroll = UIFactory.createScrollViewer('settingsScroll');
-    scroll.width = '1060px';
-    scroll.height = '590px';
-    scroll.top = '52px';
+    scroll.width = `${Math.round(windowWidth - 40)}px`;
+    scroll.height = `${Math.round(windowHeight * 0.76)}px`;
+    scroll.top = `${Math.round(windowHeight * 0.07)}px`;
     windowPanel.addControl(scroll);
 
     const content = new StackPanel('settingsStack');
@@ -1106,10 +1128,10 @@ export class MainMenuScene {
   }
 
   private makeActionButton(id: string, label: string, top: number, onClick: () => void): Button {
-    const button = UIFactory.createTerminalButton(id, label, '320px', '56px');
+    const button = UIFactory.createTerminalButton(id, label, `${this.menuButtonWidth}px`, `${this.menuButtonHeight}px`);
     button.top = `${top}px`;
     if (button.textBlock) {
-      button.textBlock.fontSize = 18;
+      button.textBlock.fontSize = this.menuButtonFontSize;
     }
     button.zIndex = 50;
     button.isPointerBlocker = true;

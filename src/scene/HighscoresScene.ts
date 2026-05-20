@@ -17,7 +17,7 @@ import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { CodexService, RunRecord } from '../services/CodexService';
 import { BONUS_CODEX_ENTRIES } from '../data/codex/bonuses';
-import { applyResponsiveGuiScaling, computeLayoutScale } from '../ui/GuiScaling';
+import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 
 interface TerminalLine {
   block: TextBlock;
@@ -47,6 +47,7 @@ export class HighscoresScene {
   private leftDescription!: TextBlock;
   private leftListStack!: StackPanel;
   private leftListScroll!: ScrollViewer;
+  private leftListButtonWidth: number = 392;
 
   private rightPanel!: Rectangle;
   private rightTitle!: TextBlock;
@@ -226,19 +227,32 @@ export class HighscoresScene {
     root.background = 'transparent';
     this.gui.addControl(root);
 
+    const idealWidth = this.gui.idealWidth || DESIGN_WIDTH;
+    const idealHeight = this.gui.idealHeight || DESIGN_HEIGHT;
+    const isMobileLayout = idealWidth <= 960;
+    const layoutWidth = Math.round(idealWidth);
+    const layoutHeight = Math.round(idealHeight);
+    const sidePadding = Math.round(layoutWidth * 0.02);
+    const panelTop = Math.round(layoutHeight * 0.06);
+    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.32 : 0.3));
+    const sidePanelHeight = Math.round(layoutHeight * 0.9);
+    const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
+    const centerCardWidth = Math.round(layoutWidth * (isMobileLayout ? 0.3 : 0.34));
+    const centerCardHeight = Math.round(layoutHeight * 0.5);
+    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 8);
+
     const mainLayoutContainer = new Rectangle('mainLayout');
-    mainLayoutContainer.width = '1920px';
-    mainLayoutContainer.height = '1080px';
+    mainLayoutContainer.width = 1;
+    mainLayoutContainer.height = 1;
     mainLayoutContainer.thickness = 0;
     mainLayoutContainer.background = 'transparent';
-    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     root.addControl(mainLayoutContainer);
 
     const updateScale = () => {
-      const scale = computeLayoutScale(this.gui);
-      mainLayoutContainer.scaleX = scale;
-      mainLayoutContainer.scaleY = scale;
+      mainLayoutContainer.scaleX = 1;
+      mainLayoutContainer.scaleY = 1;
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
@@ -272,38 +286,38 @@ export class HighscoresScene {
     mainTitle.fontFamily = UITheme.fonts.primary;
     mainTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     mainTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    mainTitle.top = '36px';
+    mainTitle.top = `${Math.round(layoutHeight * 0.05)}px`;
     mainTitle.height = '70px';
     mainTitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     mainLayoutContainer.addControl(mainTitle);
 
-    this.leftPanel = this.makeTerminalPanel('hsLeftPanel', 440, 720);
+    this.leftPanel = this.makeTerminalPanel('hsLeftPanel', sidePanelWidth, sidePanelHeight);
     this.leftPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.leftPanel.left = '40px';
-    this.leftPanel.top = '38px';
+    this.leftPanel.left = `${sidePadding}px`;
+    this.leftPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.leftPanel);
 
     this.leftTitle = this.makeTerminalText('leftTitle', 24, '#7DFFE8');
-    this.leftTitle.top = '-320px';
-    this.leftTitle.width = '400px';
+    this.leftTitle.top = `-${Math.round(sidePanelHeight * 0.44)}px`;
+    this.leftTitle.width = `${sideInnerWidth}px`;
     this.leftTitle.height = '30px';
     this.leftTitle.isHitTestVisible = false;
     this.leftTitle.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftTitle);
 
     this.leftDescription = this.makeTerminalText('leftDesc', 16, '#CFFCF3');
-    this.leftDescription.top = '-280px';
-    this.leftDescription.width = '400px';
-    this.leftDescription.height = '50px';
+    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.39)}px`;
+    this.leftDescription.width = `${sideInnerWidth}px`;
+    this.leftDescription.height = `${Math.round(sidePanelHeight * 0.07)}px`;
     this.leftDescription.isHitTestVisible = false;
     this.leftDescription.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftDescription);
 
     const scrollViewer = new ScrollViewer('leftListScroll');
-    scrollViewer.width = '400px';
-    scrollViewer.height = '580px';
-    scrollViewer.top = '20px';
+    scrollViewer.width = `${sideInnerWidth}px`;
+    scrollViewer.height = `${Math.round(sidePanelHeight * 0.8)}px`;
+    scrollViewer.top = `${Math.round(sidePanelHeight * 0.03)}px`;
     scrollViewer.thickness = 0;
     scrollViewer.barColor = '#3B685C';
     scrollViewer.barBackground = 'rgba(0,0,0,0.5)';
@@ -316,49 +330,49 @@ export class HighscoresScene {
     this.leftListStack.spacing = 6;
     scrollViewer.addControl(this.leftListStack);
 
-    this.rightPanel = this.makeTerminalPanel('hsRightPanel', 440, 720);
+    this.rightPanel = this.makeTerminalPanel('hsRightPanel', sidePanelWidth, sidePanelHeight);
     this.rightPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.rightPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.rightPanel.left = '-40px';
-    this.rightPanel.top = '38px';
+    this.rightPanel.left = `-${sidePadding}px`;
+    this.rightPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.rightPanel);
 
     this.rightTitle = this.makeTerminalText('rightTitle', 26, '#7DFFE8');
-    this.rightTitle.top = '-320px';
-    this.rightTitle.width = '400px';
-    this.rightTitle.height = '60px';
+    this.rightTitle.top = `-${Math.round(sidePanelHeight * 0.44)}px`;
+    this.rightTitle.width = `${sideInnerWidth}px`;
+    this.rightTitle.height = `${Math.round(sidePanelHeight * 0.09)}px`;
     this.rightPanel.addControl(this.rightTitle);
 
     this.rightBody = this.makeTerminalText('rightBody', 18, '#CFFCF3');
-    this.rightBody.top = '20px';
-    this.rightBody.width = '400px';
-    this.rightBody.height = '580px';
+    this.rightBody.top = `${Math.round(sidePanelHeight * 0.03)}px`;
+    this.rightBody.width = `${sideInnerWidth}px`;
+    this.rightBody.height = `${Math.round(sidePanelHeight * 0.8)}px`;
     this.rightPanel.addControl(this.rightBody);
 
-    this.centerCard = this.makeTerminalPanel('centerCard', 680, 360);
+    this.centerCard = this.makeTerminalPanel('centerCard', centerCardWidth, centerCardHeight);
     this.centerCard.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.centerCard.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.centerCard.top = '38px';
+    this.centerCard.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.centerCard);
 
     this.centerCardTitle = new TextBlock('centerTitle', 'RUN SUMMARY');
     this.centerCardTitle.fontFamily = this.terminalFont;
     this.centerCardTitle.fontSize = 28;
     this.centerCardTitle.color = '#FFFFFF';
-    this.centerCardTitle.top = '-140px';
+    this.centerCardTitle.top = `-${Math.round(centerCardHeight * 0.39)}px`;
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = new TextBlock('centerSubtitle', '');
     this.centerCardSubtitle.fontFamily = this.terminalFont;
     this.centerCardSubtitle.fontSize = 18;
     this.centerCardSubtitle.color = '#7DFFE8';
-    this.centerCardSubtitle.top = '-100px';
+    this.centerCardSubtitle.top = `-${Math.round(centerCardHeight * 0.28)}px`;
     this.centerCard.addControl(this.centerCardSubtitle);
 
     this.centerBonusesContainer = new Rectangle('bonusesContainer');
-    this.centerBonusesContainer.width = '640px';
-    this.centerBonusesContainer.height = '180px';
-    this.centerBonusesContainer.top = '45px';
+    this.centerBonusesContainer.width = `${Math.max(0, centerCardWidth - 40)}px`;
+    this.centerBonusesContainer.height = `${Math.round(centerCardHeight * 0.5)}px`;
+    this.centerBonusesContainer.top = `${Math.round(centerCardHeight * 0.12)}px`;
     this.centerBonusesContainer.thickness = 1;
     this.centerBonusesContainer.color = '#3B685C';
     this.centerBonusesContainer.background = 'rgba(0,0,0,0.5)';
@@ -368,7 +382,7 @@ export class HighscoresScene {
     this.centerBonusLabel.fontFamily = this.terminalFont;
     this.centerBonusLabel.fontSize = 16;
     this.centerBonusLabel.color = '#7CFFEA';
-    this.centerBonusLabel.top = '-70px';
+    this.centerBonusLabel.top = `-${Math.round(centerCardHeight * 0.19)}px`;
     this.centerBonusesContainer.addControl(this.centerBonusLabel);
 
     this.bonusIconsStack = new StackPanel('bonusIconsStack');
@@ -380,10 +394,10 @@ export class HighscoresScene {
 
     // Detached Details Panel for Tooltips at the bottom center of the screen
     this.centerDetailsPanel = new Rectangle('centerDetailsPanel');
-    this.centerDetailsPanel.width = '900px';
+    this.centerDetailsPanel.width = `${Math.round(layoutWidth * 0.7)}px`;
     this.centerDetailsPanel.height = '150px';
     this.centerDetailsPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    this.centerDetailsPanel.top = '-40px';
+    this.centerDetailsPanel.top = `-${Math.round(layoutHeight * 0.06)}px`;
     this.centerDetailsPanel.thickness = 2;
     this.centerDetailsPanel.color = '#3B685C';
     this.centerDetailsPanel.background = 'rgba(10, 18, 22, 0.95)';
@@ -404,7 +418,7 @@ export class HighscoresScene {
     detailsTextStack.isVertical = true;
     detailsTextStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     detailsTextStack.left = '130px';
-    detailsTextStack.width = '740px';
+    detailsTextStack.width = `${Math.max(0, Math.round(layoutWidth * 0.7) - 160)}px`;
     detailsTextStack.spacing = 6;
     this.centerDetailsPanel.addControl(detailsTextStack);
 
@@ -508,7 +522,7 @@ export class HighscoresScene {
 
   private makeLeftListButton(id: string, label: string, active: boolean, onClick: () => void): Button {
     const btn = Button.CreateSimpleButton(id, label);
-    btn.width = '392px';
+    btn.width = `${this.leftListButtonWidth}px`;
     btn.height = '42px';
     btn.thickness = 1;
     btn.cornerRadius = 4;
