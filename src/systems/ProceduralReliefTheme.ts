@@ -560,7 +560,7 @@ export class ProceduralReliefTheme {
     this.disposeAllCaches();
   }
 
-  private static disposeAllCaches(): void {
+  public static disposeAllCaches(): void {
     for (const cache of this.sceneCaches.values()) {
       for (const mat of cache.floorMats.values()) {
         mat.dispose();
@@ -1403,6 +1403,16 @@ export class ProceduralReliefTheme {
     const ctx  = tex.getContext()  as Canvas2DRenderingContext;
     const bctx = bump.getContext() as Canvas2DRenderingContext;
 
+    // Pre-fill entire canvas background with warm dark grey-brown mortar (74, 77, 82)
+    // to ensure no microscopic transparent gaps remain under the bricks.
+    const mortarShade = 74;
+    ctx.fillStyle = `rgb(${mortarShade}, ${mortarShade + 3}, ${mortarShade + 8})`;
+    ctx.fillRect(0, 0, size, size);
+    
+    const mortarH = 76;
+    bctx.fillStyle = `rgb(${mortarH}, ${mortarH}, ${mortarH})`;
+    bctx.fillRect(0, 0, size, size);
+
     // ── Main per-pixel loop (step=2) ──────────────────────────────────────────
     // Exactly mirrors the original single-pixel loop from the reference file,
     // but samples every `step` pixels and fills step×step blocks.
@@ -1495,8 +1505,8 @@ export class ProceduralReliefTheme {
     // ── Blue neon brick highlights (unchanged from reference) ────────────────
     drawWallBrickHighlights(ctx, size, hOffset, axisSeed, flipU, bricksY, allowPartialEdgeHighlights, uScale);
 
-    tex.update(false);
-    bump.update(false);
+    tex.update(false, useMipMaps);
+    bump.update(false, useMipMaps);
     tex.updateSamplingMode(this.lightweightMode ? Texture.BILINEAR_SAMPLINGMODE : Texture.TRILINEAR_SAMPLINGMODE);
     bump.updateSamplingMode(this.lightweightMode ? Texture.BILINEAR_SAMPLINGMODE : Texture.TRILINEAR_SAMPLINGMODE);
     tex.wrapU = Texture.CLAMP_ADDRESSMODE;
@@ -1650,8 +1660,8 @@ export class ProceduralReliefTheme {
     // Original drawWallBrickHighlights uses 'screen' composite for the luminescent look.
     drawWallBrickHighlights(ctx, size, hOffset, axisSeed, flipU, bricksY, allowPartialEdgeHighlights, uScale);
 
-    tex.update(false);
-    bump.update(false);
+    tex.update(false, !this.lightweightMode);
+    bump.update(false, !this.lightweightMode);
     tex.updateSamplingMode(this.lightweightMode ? Texture.BILINEAR_SAMPLINGMODE : Texture.TRILINEAR_SAMPLINGMODE);
     bump.updateSamplingMode(this.lightweightMode ? Texture.BILINEAR_SAMPLINGMODE : Texture.TRILINEAR_SAMPLINGMODE);
     tex.wrapU = Texture.CLAMP_ADDRESSMODE;

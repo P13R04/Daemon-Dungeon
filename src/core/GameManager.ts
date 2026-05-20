@@ -26,6 +26,7 @@ import { InputManager } from '../input/InputManager';
 import { PlayerController } from '../gameplay/PlayerController';
 import { EnemySpawner } from '../systems/EnemySpawner';
 import { EnemyController } from '../gameplay/EnemyController';
+import { EnemyLaserPatternSubsystem } from '../gameplay/enemy/EnemyLaserPatternSubsystem';
 import { RoomManager } from '../systems/RoomManager';
 import { ProjectileManager } from '../gameplay/ProjectileManager';
 import { UltimateManager } from '../gameplay/UltimateManager';
@@ -45,6 +46,8 @@ import type { RoomConfig as LoadedRoomConfig } from '../types/config';
 import { ClassSelectScene } from '../scene/ClassSelectScene';
 import { MainMenuScene } from '../scene/MainMenuScene';
 import { CodexScene } from '../scene/CodexScene';
+import { AchievementsScene } from '../scene/AchievementsScene';
+import { HighscoresScene } from '../scene/HighscoresScene';
 import { BootSequenceScene } from '../scene/BootSequenceScene';
 import { AchievementDefinition, CodexService } from '../services/CodexService';
 import { getMergedAchievementDefinitions } from '../data/achievements/loadAchievementDefinitions';
@@ -62,6 +65,7 @@ import { ScoreManager } from '../systems/ScoreManager';
 import { BONUS_TUNING } from '../data/bonuses/bonusTuning';
 import { WallOcclusionManager } from '../systems/WallOcclusionManager';
 import { MusicManager } from '../audio/MusicManager';
+import { DaemonVoiceSynth } from '../audio/DaemonVoiceSynth';
 import { DaemonVoicelineManager } from './DaemonVoicelineManager';
 
 
@@ -100,6 +104,8 @@ export class GameManager {
   private mainMenuScene?: MainMenuScene;
   private classSelectScene?: ClassSelectScene;
   private codexScene?: CodexScene;
+  private achievementsScene?: AchievementsScene;
+  private highscoresScene?: HighscoresScene;
   private codexService: CodexService;
   private audioUnlockHandler: (() => void) | null = null;
   private unsubscribeSettings: (() => void) | null = null;
@@ -127,6 +133,7 @@ export class GameManager {
   private selectedClassId: 'mage' | 'firewall' | 'rogue' | 'cat' = 'mage';
   private tilesEnabled: boolean = true;
   public isPaused: boolean = false;
+  private isCountingDown: boolean = false;
   private textureRenderMode: TextureRenderMode = 'proceduralRelief';
   private roomLayoutCache: Map<string, RoomLayout> = new Map();
   private proceduralPrewarmPromise: Promise<void> | null = null;
@@ -178,6 +185,10 @@ export class GameManager {
   private enemySpawnBatchSize: number = GameSettingsStore.get().graphics.enemySpawnBatchSize;
   private roomPreloadAheadCount: number = Math.max(1, Math.min(8, Math.round(GameSettingsStore.get().graphics.roomPreloadAheadCount || 2)));
   private benchmarkRunner: GameBenchmarkRunner | null = null;
+  private benchmarkRoomElapsedSeconds: number = 0;
+  private benchmarkAutoplayState: 'fighting' | 'clearing' | 'running_to_door' | 'transitioning' = 'fighting';
+  private benchmarkEnemyKillTimer: number = 0;
+  private showBenchmarkReportOnFinish: boolean = false;
   private benchmarkReportOverlay: HTMLDivElement | null = null;
   private benchmarkPreparationLastPumpMs: number = 0;
   private lastBenchmarkFrameProfile: RuntimeFrameProfileSnapshot | null = null;
@@ -274,6 +285,16 @@ export class GameManager {
       },
       showBonusChoices: (choices, currency, rerollCost, selectionState) => {
         this.hudManager.showBonusChoices(choices, currency, rerollCost, selectionState);
+        if (this.benchmarkRunner) {
+          const available = choices.filter(c => !selectionState.selectedBonusIds.includes(c.id));
+          if (available.length > 0) {
+            setTimeout(() => {
+              if (this.gameplayInitialized && this.gameState === 'bonus') {
+                this.bonusSystemManager.handleBonusSelected(available[0].id);
+              }
+            }, 600);
+          }
+        }
       },
       applyBonus: (bonusId) => {
         this.applyBonus(bonusId);
@@ -318,10 +339,20 @@ export class GameManager {
     this.unsubscribeSettings = GameSettingsStore.subscribe((settings) => {
       this.applyGraphicsSettings(settings);
       this.applyAudioSettings(settings);
+      // Update auto-aim HUD badge
+      const autoAimActive = !!settings.controls.keyboardOnlyMode && !!settings.controls.autoAimTowardMovement;
+      if (this.hudManager) this.hudManager.setAutoAimIndicator(autoAimActive);
     });
 
     // Initialize Babylon.js engine
     this.engine = new Engine(canvas, true);
+
+    // Setup ResizeObserver on canvas to automatically resize engine dynamically
+    this.resizeObserver = new ResizeObserver(() => {
+      this.engine?.resize();
+    });
+    this.resizeObserver.observe(canvas as any);
+
     this.setupGlobalAudioUnlock();
 
     // Load configurations
@@ -439,6 +470,14 @@ export class GameManager {
       this.codexScene.dispose();
       this.codexScene = undefined;
     }
+    if (this.achievementsScene) {
+      this.achievementsScene.dispose();
+      this.achievementsScene = undefined;
+    }
+    if (this.highscoresScene) {
+      this.highscoresScene.dispose();
+      this.highscoresScene = undefined;
+    }
   }
 
   private async openMainMenuScene(): Promise<void> {
@@ -485,6 +524,42 @@ export class GameManager {
     }
   }
 
+  private async openAchievementsScene(): Promise<void> {
+    this.disposeFrontendScenes();
+    try {
+      this.achievementsScene = new AchievementsScene(
+        this.engine,
+        this.codexService,
+        () => {
+          void this.openMainMenuScene();
+        }
+      );
+      this.scene = this.achievementsScene.getScene();
+      this.transitionGameState('menu');
+    } catch (error) {
+      console.error('[GameManager] Failed to open Achievements scene:', error);
+      await this.openMainMenuScene();
+    }
+  }
+
+  private async openHighscoresScene(): Promise<void> {
+    this.disposeFrontendScenes();
+    try {
+      this.highscoresScene = new HighscoresScene(
+        this.engine,
+        this.codexService,
+        () => {
+          void this.openMainMenuScene();
+        }
+      );
+      this.scene = this.highscoresScene.getScene();
+      this.transitionGameState('menu');
+    } catch (error) {
+      console.error('[GameManager] Failed to open Highscores scene:', error);
+      await this.openMainMenuScene();
+    }
+  }
+
   private async openClassSelectScene(isTutorial: boolean = false): Promise<void> {
     if (this.gameplayInitialized) {
       this.disposeGameplay();
@@ -505,24 +580,42 @@ export class GameManager {
   }
 
   private disposeGameplay(): void {
-    if (this.playerController) this.playerController.dispose();
-    if (this.enemySpawner) this.enemySpawner.dispose();
-    if (this.hudManager) this.hudManager.dispose();
-    if (this.postProcessManager) this.postProcessManager.dispose();
-    if (this.inputManager) this.inputManager.dispose();
-    if (this.tutorialManager) this.tutorialManager.dispose();
-    if (this.projectileManager) this.projectileManager.dispose();
-    if (this.ultimateManager) this.ultimateManager.dispose();
-    if (this.worldCollisionHazardManager) this.worldCollisionHazardManager.dispose?.();
-    if (this.playerVoidRecoveryManager) this.playerVoidRecoveryManager.dispose?.();
+    this.projectileManager?.dispose();
+    this.ultimateManager?.dispose();
+    this.ultimateSystemManager?.reset();
+    this.combatActionManager?.dispose();
+    this.combatActionManager = null;
+    this.playerVoidRecoveryManager?.dispose?.();
+    this.playerVoidRecoveryManager = null;
+    this.economyFlowManager = null;
+    this.roomStreamingManager = null;
+    this.worldCollisionHazardManager?.dispose?.();
+    this.worldCollisionHazardManager = null;
+    this.hudManager?.dispose();
+    this.devConsole?.dispose();
+    this.playerController?.dispose();
+    this.enemySpawner?.dispose();
+    this.roomManager?.dispose();
+    this.tileFloorManager?.dispose();
+    this.daemonVoicelineManager?.dispose();
+    this.postProcessManager?.dispose();
+    this.inputManager?.dispose();
+    this.tutorialManager?.dispose();
+    this.bonusSystemManager?.resetRun();
+
     if (this.wallOcclusionManager) { this.wallOcclusionManager.dispose(); this.wallOcclusionManager = null; }
     if (this.musicManager) { this.musicManager.dispose(); this.musicManager = null; }
 
-    
     if (this.scene && this.scene !== this.mainMenuScene?.getScene() && this.scene !== this.classSelectScene?.getScene()) {
       this.scene.dispose();
     }
     this.gameplayInitialized = false;
+
+    // Clear static model/texture caches to prevent VRAM accumulation and scene reuse crashes
+    EnemyController.clearModelCache();
+    EnemyLaserPatternSubsystem.clearCache();
+    ProceduralReliefTheme.disposeAllCaches();
+    DaemonVoiceSynth.getInstance().clearCache();
   }
 
 
@@ -725,6 +818,12 @@ export class GameManager {
       onCodexOpenRequested: () => {
         void this.openCodexScene();
       },
+      onAchievementsOpenRequested: () => {
+        void this.openAchievementsScene();
+      },
+      onHighscoresOpenRequested: () => {
+        void this.openHighscoresScene();
+      },
       onRoomNextRequested: () => {
         if (!this.gameplayInitialized) return;
         this.loadNextRoom();
@@ -800,13 +899,25 @@ export class GameManager {
         const attackerType = payload?.enemyType ?? this.lastAttackerType ?? undefined;
         this.codexService.recordPlayerDied(deathReason, attackerType);
 
+        // Get run bonuses
+        const activeBonuses = this.bonusSystemManager.getActiveBonuses();
+        
+        // Record run highscore and statistics history
+        this.codexService.recordCompletedRun(
+          finalScore,
+          this.selectedClassId,
+          roomReached,
+          activeBonuses
+        );
+
         this.codexService.endRunTracking();
         this.transitionGameState('gameover');
         this.hudManager.showGameOverScreen({
           score: finalScore,
           highScore: highScore,
           roomReached: roomReached,
-          isNewHighScore: finalScore >= highScore && finalScore > 0
+          isNewHighScore: finalScore >= highScore && finalScore > 0,
+          bonuses: activeBonuses
         });
       },
       onEnemySpawned: (data) => {
@@ -1200,7 +1311,7 @@ export class GameManager {
       }
 
       if (this.gameplayInitialized && this.gameState === 'playing') {
-        if (this.isPaused) {
+        if (this.isPaused || this.isCountingDown) {
           shouldSkipRender = this.updatePlayingFrame(0);
         } else {
           const playerIsMoving = this.playerController?.getIsMoving() ?? false;
@@ -1222,6 +1333,9 @@ export class GameManager {
           allowUnloads: allowDeferredUnloads,
         });
         loopProfiler?.mark('roomStreamingDeferred');
+        
+        this.updateAutoplayBenchmark(deltaTime);
+
         this.benchmarkRunner.update(deltaTime, rawFrameMs);
         loopProfiler?.mark('benchmarkUpdate');
         if (this.gameState === 'gameover') {
@@ -1346,6 +1460,133 @@ export class GameManager {
     };
   }
 
+  private updateAutoplayBenchmark(deltaTime: number): void {
+    if (!this.gameplayInitialized || this.gameState !== 'playing') {
+      return;
+    }
+
+    this.benchmarkRoomElapsedSeconds += deltaTime;
+    const elapsed = this.benchmarkRoomElapsedSeconds;
+
+    // Force player autoplay mode
+    this.playerController.setAutoPlayMode(true);
+
+    const enemies = this.enemySpawner.getEnemies().filter(e => e.isActive());
+    const playerPos = this.playerController.getPosition();
+    const roomOrigin = this.roomManager.getPlayerSpawnPoint(this.roomOrder[this.currentRoomIndex]) || Vector3.Zero();
+
+    // 1. Target & Aim
+    let targetEnemy: any = null;
+    let minDistance = Infinity;
+    for (const enemy of enemies) {
+      const dist = Vector3.Distance(playerPos, enemy.getPosition());
+      if (dist < minDistance) {
+        minDistance = dist;
+        targetEnemy = enemy;
+      }
+    }
+
+    let aimDir = new Vector3(0, 0, 1);
+    if (targetEnemy) {
+      aimDir = targetEnemy.getPosition().subtract(playerPos).normalize();
+      aimDir.y = 0;
+    }
+    this.playerController.simulateAim(aimDir);
+
+    // 2. Scripted Attacks (Mage style)
+    let slot1Held = false;
+    let slot1Pressed = false;
+    let slot2Held = false;
+    let isSpaceHeld = false;
+
+    if (this.benchmarkAutoplayState === 'fighting') {
+      // Shoot primary attack
+      slot1Held = true;
+
+      // Periodically trigger stance (hold slot 2) and trigger burst (slot 1 pressed)
+      const secCycle = Math.floor(elapsed) % 4;
+      if (secCycle === 2) {
+        slot2Held = true;
+        if ((elapsed * 10) % 10 < 2) {
+          slot1Pressed = true;
+        }
+      }
+
+      // Cast Ultimate when ready
+      if (this.playerController.getUltChargePercentage() >= 1.0) {
+        isSpaceHeld = true;
+      }
+
+      // Live and dynamic orbital movement around origin
+      const moveTarget = roomOrigin.add(new Vector3(
+        2.5 * Math.sin(elapsed * 1.8),
+        0,
+        2.5 * Math.cos(elapsed * 1.8)
+      ));
+      const moveDir = moveTarget.subtract(playerPos);
+      if (moveDir.length() > 0.3) {
+        this.playerController.simulateMove(moveDir.normalize(), deltaTime);
+      } else {
+        this.playerController.simulateMove(Vector3.Zero(), deltaTime);
+      }
+
+      // Progressive Damage / Killing enemies to wow the spectator
+      this.benchmarkEnemyKillTimer += deltaTime;
+      if (this.benchmarkEnemyKillTimer >= 0.8) {
+        this.benchmarkEnemyKillTimer = 0;
+        if (enemies.length > 0) {
+          const randEnemy = enemies[Math.floor(Math.random() * enemies.length)];
+          randEnemy.takeDamage(randEnemy.getHealth().getMaxHP() * 0.35);
+        }
+      }
+
+      // Speed up if all enemies are already dead
+      if (enemies.length === 0 && !this.enemySpawner.hasPendingSpawns()) {
+        this.benchmarkAutoplayState = 'running_to_door';
+        if (this.benchmarkRoomElapsedSeconds < 5.2) {
+          this.benchmarkRoomElapsedSeconds = 5.2;
+        }
+      }
+
+      // Clear the rest of the room at 5.0s (base duration is 7s)
+      if (elapsed >= 5.0) {
+        this.benchmarkAutoplayState = 'clearing';
+      }
+    }
+
+    if (this.benchmarkAutoplayState === 'clearing') {
+      enemies.forEach(enemy => {
+        if (enemy.isActive()) {
+          enemy.takeDamage(100000);
+        }
+      });
+      this.benchmarkAutoplayState = 'running_to_door';
+    }
+
+    if (this.benchmarkAutoplayState === 'running_to_door') {
+      const doorPos = this.roomManager.getDoorPosition();
+      if (doorPos) {
+        const toDoor = doorPos.subtract(playerPos);
+        toDoor.y = 0;
+        if (toDoor.length() > 0.8) {
+          this.playerController.simulateMove(toDoor.normalize(), deltaTime);
+        } else {
+          this.playerController.simulateMove(Vector3.Zero(), deltaTime);
+        }
+      }
+
+      // Force choices menu if we didn't touch or reach the sensor by 6.5s
+      if (elapsed >= 6.5 && this.gameState === 'playing') {
+        this.playerController.simulateMove(Vector3.Zero(), deltaTime);
+        this.roomCleared = true;
+        this.bonusSystemManager.openBonusChoices();
+      }
+    }
+
+    // Apply simulated attack values
+    this.playerController.simulateAttack(slot1Held, slot1Pressed, slot2Held, isSpaceHeld, deltaTime);
+  }
+
   private getUsedHeapMemoryMB(): number | null {
     if (typeof performance === 'undefined') {
       return null;
@@ -1429,7 +1670,7 @@ export class GameManager {
 
   private dispose(): void {
     this.disposeRuntimeHooks();
-    this.disposeGameplaySystems();
+    this.disposeGameplay();
     this.disposeScenesAndEngine();
   }
 
@@ -1476,23 +1717,7 @@ export class GameManager {
     }
   }
 
-  private disposeGameplaySystems(): void {
-    this.projectileManager?.dispose();
-    this.ultimateManager?.dispose();
-    this.ultimateSystemManager?.reset();
-    this.combatActionManager?.dispose();
-    this.combatActionManager = null;
-    this.playerVoidRecoveryManager?.reset();
-    this.playerVoidRecoveryManager = null;
-    this.economyFlowManager = null;
-    this.roomStreamingManager = null;
-    this.worldCollisionHazardManager = null;
-    this.hudManager?.dispose();
-    this.devConsole?.dispose();
-    this.playerController?.dispose();
-    this.enemySpawner?.dispose();
-    this.roomManager?.dispose();
-  }
+
 
   private disposeScenesAndEngine(): void {
     if (this.mainMenuScene) {
@@ -1656,6 +1881,12 @@ export class GameManager {
         await this.initializeGameplayScene();
       }
 
+      if (this.hudManager && this.hudManager.preloadPromise) {
+        this.setLoadingOverlay(true, 'PRELOADING 2D INTERFACE ASSETS...', '50%');
+        await this.waitForNextPaint(1);
+        await this.hudManager.preloadPromise;
+      }
+
       this.setLoadingOverlay(true, 'PRELOADING DUNGEON CELLS...', '78%');
       await this.waitForNextPaint(1);
 
@@ -1668,6 +1899,17 @@ export class GameManager {
       await this.waitForMs(1000);
       this.transitionGameState('playing');
       this.setLoadingOverlay(false);
+
+      // 3-2-1-GO countdown: freeze enemies and player during the window.
+      if (this.hudManager && !this.isTutorialRun) {
+        this.isCountingDown = true;
+        await new Promise<void>((resolve) => {
+          this.hudManager.showCountdown(() => {
+            this.isCountingDown = false;
+            resolve();
+          });
+        });
+      }
     } finally {
       this.gameplayStartInProgress = false;
       this.setLoadingOverlay(false);
@@ -1695,10 +1937,16 @@ export class GameManager {
 
     this.stopBenchmarkRunner();
     this.playerController.setBenchmarkInvulnerable(true);
+    this.playerController.setAutoPlayMode(true);
+
+    this.benchmarkRoomElapsedSeconds = 0;
+    this.benchmarkAutoplayState = 'fighting';
+    this.benchmarkEnemyKillTimer = 0;
 
     this.benchmarkRunner = new GameBenchmarkRunner(this.eventBus, {
       isReadyForTransition: () => {
-        return this.gameplayInitialized && this.gameState === 'playing' && this.cameraMove == null;
+        // Autoplay scripted benchmark will naturally trigger room transition, do not auto-request here.
+        return false;
       },
       requestNextRoomTransition: () => {
         this.loadNextRoom();
@@ -1733,18 +1981,24 @@ export class GameManager {
       },
       onFinished: (result: BenchmarkRunResult) => {
         this.playerController.setBenchmarkInvulnerable(false);
+        this.playerController.setAutoPlayMode(false);
         this.benchmarkRunner = null;
-        this.showBenchmarkReportOverlay(result);
+        if (this.showBenchmarkReportOnFinish) {
+          this.showBenchmarkReportOverlay(result);
+        } else {
+          console.log("[Benchmark] Automated run complete! Summary details:");
+          console.log(this.formatBenchmarkSummary(result));
+        }
       },
     });
 
     this.benchmarkRunner.start({
       warmupSeconds: 1,
-      transitionCount: 5,
+      transitionCount: 100,
       settleSeconds: 0.6,
       transitionStartTimeoutSeconds: 2.5,
       resourceSampleIntervalSeconds: 0.25,
-      maxDurationSeconds: 30,
+      maxDurationSeconds: 1200,
       spikeCaptureThresholdMs: 45,
       maxSpikeDiagnostics: 12,
     });
@@ -1752,6 +2006,7 @@ export class GameManager {
 
   private stopBenchmarkRunner(): void {
     this.playerController?.setBenchmarkInvulnerable(false);
+    this.playerController?.setAutoPlayMode(false);
     this.benchmarkPreparationLastPumpMs = 0;
     if (!this.benchmarkRunner) {
       return;
@@ -2024,6 +2279,7 @@ export class GameManager {
     this.scoreManager.reset();
     if (this.playerController) {
       this.playerController.resetBonuses();
+      this.playerController.healToFull();
     }
     this.roomElapsedSeconds = 0;
     this.resetPlayerVoidFallState();
@@ -2050,6 +2306,9 @@ export class GameManager {
     this.roomManager.setDoorActive(false);
     this.roomCleared = false;
     this.roomElapsedSeconds = 0;
+    this.benchmarkRoomElapsedSeconds = 0;
+    this.benchmarkAutoplayState = 'fighting';
+    this.benchmarkEnemyKillTimer = 0;
     this.resetPlayerVoidFallState();
     this.ultimateSystemManager.reset();
     this.playerController.setRogueUltimateActive(false);
@@ -2071,7 +2330,6 @@ export class GameManager {
 
     const spawnPoint = this.roomManager.getPlayerSpawnPoint(roomId) || Vector3.Zero();
     this.playerController.setPosition(spawnPoint);
-    this.playerController.healToFull();
     this.playerController.resetFocusFire();
 
     this.projectileManager.resetForRoomTransition();
@@ -3566,12 +3824,10 @@ export class GameManager {
     if (this.isPaused) {
       this.hudManager.showPauseMenu();
       if (this.musicManager) this.musicManager.setLowPass(true);
-      if (this.audioManager) this.audioManager.setMuted(true);
       if (this.hudManager) this.hudManager.setVoicelinesMuted(true);
     } else {
       this.hudManager.hidePauseMenu();
       if (this.musicManager) this.musicManager.setLowPass(false);
-      if (this.audioManager) this.audioManager.setMuted(false);
       if (this.hudManager) this.hudManager.setVoicelinesMuted(false);
     }
   }

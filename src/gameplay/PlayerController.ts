@@ -61,6 +61,7 @@ export class PlayerController {
   
   private config: PlayerConfig;
   private classId: PlayerClassId;
+  private autoPlayMode: boolean = false;
   private position: Vector3 = Vector3.Zero();
   private velocity: Vector3 = Vector3.Zero();
   private externalVerticalOffset: number = 0;
@@ -1144,7 +1145,61 @@ export class PlayerController {
     this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_READY, { charge: this.ultCharge });
   }
 
+  public setAutoPlayMode(enabled: boolean): void {
+    this.autoPlayMode = enabled;
+  }
+
+  public simulateMove(inputVector: Vector3, deltaTime: number): void {
+    if (inputVector.lengthSquared() > 0.0001) {
+      this.isMoving = true;
+      this.timeSinceMovement = 0;
+      this.focusFireBonus = 1.0;
+      this.velocity = inputVector.normalize().scale(this.speed);
+      this.lastMovementDirection = inputVector.normalize();
+      if (this.animationController) {
+        this.animationController.rotateTowardDirection(this.lastMovementDirection);
+      }
+    } else {
+      this.isMoving = false;
+      this.velocity = Vector3.Zero();
+      this.timeSinceMovement += deltaTime;
+    }
+  }
+
+  public simulateAim(direction: Vector3): void {
+    if (direction.lengthSquared() > 0.0001) {
+      this.attackDirection = direction.normalize();
+    }
+  }
+
+  public simulateAttack(slot1Held: boolean, slot1Pressed: boolean, slot2Held: boolean, isSpaceHeld: boolean, deltaTime: number): void {
+    this.inputSlot1Held = slot1Held;
+    this.inputSlot1Pressed = slot1Pressed;
+    this.inputSlot2Held = slot2Held;
+
+    // Simulate Mage: Primary Attack (Projectiles)
+    this.isFiring = slot1Held && !this.secondaryActive;
+    if (this.isFiring) {
+      this.wasJustAttacking = true;
+      this.justAttackingTimeLeft = 999;
+      if (this.timeSinceLastAttack >= this.fireRate) {
+        this.fireProjectile();
+        this.timeSinceLastAttack = 0;
+      }
+    }
+
+    // Ultimate trigger
+    const isUltimateReadyAndPressed = isSpaceHeld && this.ultCharge >= 1.0;
+    if (isUltimateReadyAndPressed && !this.wasUltimateActive) {
+      this.castUltimate();
+    }
+    this.wasUltimateActive = isUltimateReadyAndPressed;
+  }
+
   private handleInput(deltaTime: number): void {
+    if (this.autoPlayMode) {
+      return;
+    }
     this.updateAimDirection();
 
     void deltaTime;
@@ -1331,7 +1386,7 @@ export class PlayerController {
 
   private createSecondaryZoneVisual(): void {
     const mesh = VisualPlaceholder.createAoEPlaceholder(this.scene, 'player_secondary_zone', this.secondaryZoneRadius);
-    const material = new StandardMaterial('player_secondary_zone_mat', this.scene);
+    const material = mesh.material as StandardMaterial;
     material.diffuseColor = new Color3(0.3, 0.8, 1.0);
     material.emissiveColor = new Color3(0.1, 0.35, 0.5);
     material.alpha = 0.25;
@@ -1344,7 +1399,7 @@ export class PlayerController {
 
   private createRogueStealthZoneVisual(): void {
     const mesh = VisualPlaceholder.createAoEPlaceholder(this.scene, 'player_rogue_stealth_zone', this.rogueStealthZoneRadius);
-    const material = new StandardMaterial('player_rogue_stealth_zone_mat', this.scene);
+    const material = mesh.material as StandardMaterial;
     material.diffuseColor = new Color3(0.12, 0.88, 0.48);
     material.emissiveColor = new Color3(0.05, 0.34, 0.18);
     material.alpha = 0.26;
@@ -2799,7 +2854,6 @@ export class PlayerController {
   computeRogueHitDamage(baseDamage: number): number {
     return this.computeRogueDamage(baseDamage);
   }
-
 
   setGameplayActive(active: boolean): void {
     this.gameplayActive = active;

@@ -58,6 +58,10 @@ export class BonusSystemManager {
     this.paidRarePurchased = false;
   }
 
+  getActiveBonuses(): { id: string; stacks: number }[] {
+    return this.bonusPool.getActiveBonuses();
+  }
+
   openBonusChoices(): void {
     if (!this.callbacks.isGameplayInitialized()) return;
 
@@ -66,7 +70,11 @@ export class BonusSystemManager {
     this.paidRarePurchased = false;
     this.selectedChoiceIds.clear();
     this.currentBonusChoices = this.rollChoices();
-    this.currentPaidRareChoice = this.rollPaidRareChoice();
+    
+    const excludeIds = new Set<string>();
+    this.currentBonusChoices.forEach((choice) => excludeIds.add(choice.id));
+    this.currentPaidRareChoice = this.rollPaidRareChoice(excludeIds);
+    
     this.showCurrentBonusChoices();
   }
 
@@ -170,7 +178,9 @@ export class BonusSystemManager {
     this.selectedChoiceIds.clear();
     this.currentBonusChoices = this.rollChoices();
     if (!this.paidRarePurchased) {
-      this.currentPaidRareChoice = this.rollPaidRareChoice();
+      const excludeIds = new Set<string>();
+      this.currentBonusChoices.forEach((choice) => excludeIds.add(choice.id));
+      this.currentPaidRareChoice = this.rollPaidRareChoice(excludeIds);
     }
     this.showCurrentBonusChoices();
   }
@@ -199,14 +209,15 @@ export class BonusSystemManager {
     return this.bonusPool.getShopDiscountMultiplier();
   }
 
-  private rollChoices(): BonusChoice[] {
-    return this.bonusPool.rollChoices(this.callbacks.getSelectedClassId(), this.bonusPool.getOfferCount());
+  private rollChoices(excludeIds?: Set<string>): BonusChoice[] {
+    return this.bonusPool.rollChoices(this.callbacks.getSelectedClassId(), this.bonusPool.getOfferCount(), excludeIds);
   }
 
-  private rollPaidRareChoice(): BonusChoice | null {
+  private rollPaidRareChoice(excludeIds?: Set<string>): BonusChoice | null {
     return this.bonusPool.rollRestrictedRareChoice(
       this.callbacks.getSelectedClassId(),
-      BONUS_TUNING.selection.paidRareRestrictedPoolIds
+      BONUS_TUNING.selection.paidRareRestrictedPoolIds,
+      excludeIds
     );
   }
 
@@ -275,7 +286,9 @@ export class BonusSystemManager {
       && this.currentPaidRareChoice
       && !this.bonusPool.canApply(this.currentPaidRareChoice.id)
     ) {
-      this.currentPaidRareChoice = this.rollPaidRareChoice();
+      const excludeIds = new Set<string>();
+      this.currentBonusChoices.forEach((choice) => excludeIds.add(choice.id));
+      this.currentPaidRareChoice = this.rollPaidRareChoice(excludeIds);
     }
 
     const health = this.callbacks.getPlayerHealth();

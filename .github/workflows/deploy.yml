@@ -9,6 +9,7 @@ on:
 
 jobs:
   build-and-upload:
+    if: github.repository == 'P13R04/Daemon-Dungeon'
     runs-on: macos-latest
 
     steps:

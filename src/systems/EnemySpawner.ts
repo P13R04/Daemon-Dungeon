@@ -411,15 +411,37 @@ export class EnemySpawner {
     const gameplayConfig = this.configLoader.getGameplayConfig();
     const scaling = gameplayConfig?.scaling;
 
-    const hpMultiplier = scaling?.enabled ? Math.pow(scaling.hpPerRoom ?? 1, level) : 1;
-    const dmgMultiplier = scaling?.enabled ? Math.pow(scaling.damagePerRoom ?? 1, level) : 1;
+    // Progressive difficulty curve (runner-style):
+    //   Rooms  0–4  : very gentle ramp (~60% of normal per-room multiplier)
+    //   Rooms  5–14 : standard ramp (full per-room multiplier)
+    //   Rooms 15+   : accelerated ramp (1.5× per-room multiplier) for endless tension
+    const computeRunnerMultiplier = (perRoom: number, lvl: number): number => {
+      if (!scaling?.enabled || perRoom <= 1) return 1;
+      const delta = perRoom - 1; // e.g. 0.15 for 1.15
+      let acc = 1;
+      for (let i = 0; i < lvl; i++) {
+        let roomDelta: number;
+        if (i < 5) {
+          roomDelta = delta * 0.6;    // Early game: soft
+        } else if (i < 15) {
+          roomDelta = delta;           // Mid game: normal
+        } else {
+          roomDelta = delta * 1.5;    // Late game: escalation
+        }
+        acc *= (1 + roomDelta);
+      }
+      return acc;
+    };
+
+    const hpMultiplier   = scaling?.enabled ? computeRunnerMultiplier(scaling.hpPerRoom   ?? 1, level) : 1;
+    const dmgMultiplier  = scaling?.enabled ? computeRunnerMultiplier(scaling.damagePerRoom ?? 1, level) : 1;
 
     const scaledConfig = {
       ...enemyTypeConfig,
       baseStats: {
         ...enemyTypeConfig.baseStats,
-        hp: Math.round((enemyTypeConfig.baseStats?.hp ?? 40) * hpMultiplier),
-        damage: Math.round((enemyTypeConfig.baseStats?.damage ?? 8) * dmgMultiplier),
+        hp:     Math.round((enemyTypeConfig.baseStats?.hp     ?? 40) * hpMultiplier),
+        damage: Math.round((enemyTypeConfig.baseStats?.damage ??  8) * dmgMultiplier),
       },
     };
 
@@ -575,7 +597,9 @@ export class EnemySpawner {
     this.enemies.forEach(e => e.dispose());
     this.enemies = [];
     this.pendingRoomSpawnQueue = [];
+    this.suppressedAIActivationQueue.forEach(e => e.dispose());
     this.suppressedAIActivationQueue = [];
+    this.deferredEnemyDisposalQueue.forEach(e => e.dispose());
     this.deferredEnemyDisposalQueue = [];
     this.orphanBullCleanupAccumulator = 0;
     this.clearTransitionPreparation(true);

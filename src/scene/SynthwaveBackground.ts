@@ -9,7 +9,7 @@ import {
   Material,
 } from '@babylonjs/core';
 
-export function createSynthwaveGridBackground(scene: Scene, layerMask?: number): void {
+export function createSynthwaveGridBackground(scene: Scene, layerMask?: number, rotate180: boolean = false): void {
   const baseMesh = MeshBuilder.CreateGround(
     'synthwave_base_bg',
     {
@@ -24,6 +24,9 @@ export function createSynthwaveGridBackground(scene: Scene, layerMask?: number):
   baseMesh.isPickable = false;
   if (layerMask != null) {
     baseMesh.layerMask = layerMask;
+  }
+  if (rotate180) {
+    baseMesh.rotation.y = Math.PI;
   }
 
   const baseMaterial = new StandardMaterial('synthwave_base_mat', scene);
@@ -48,6 +51,9 @@ export function createSynthwaveGridBackground(scene: Scene, layerMask?: number):
   if (layerMask != null) {
     perspectiveMesh.layerMask = layerMask;
   }
+  if (rotate180) {
+    perspectiveMesh.rotation.y = Math.PI;
+  }
 
   const flowMesh = MeshBuilder.CreateGround(
     'synthwave_grid_flow_bg',
@@ -63,6 +69,9 @@ export function createSynthwaveGridBackground(scene: Scene, layerMask?: number):
   flowMesh.isPickable = false;
   if (layerMask != null) {
     flowMesh.layerMask = layerMask;
+  }
+  if (rotate180) {
+    flowMesh.rotation.y = Math.PI;
   }
 
   const perspectiveTextureSize = 2048;
@@ -107,8 +116,9 @@ export function createSynthwaveGridBackground(scene: Scene, layerMask?: number):
   perspectiveCtx.globalCompositeOperation = 'destination-in';
   const perspectiveFade = perspectiveCtx.createLinearGradient(0, horizonY, 0, perspectiveTextureSize);
   perspectiveFade.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  perspectiveFade.addColorStop(0.12, 'rgba(0, 0, 0, 0.72)');
-  perspectiveFade.addColorStop(0.28, 'rgba(0, 0, 0, 1)');
+  perspectiveFade.addColorStop(0.25, 'rgba(0, 0, 0, 0)');
+  perspectiveFade.addColorStop(0.38, 'rgba(0, 0, 0, 0.65)');
+  perspectiveFade.addColorStop(0.55, 'rgba(0, 0, 0, 1)');
   perspectiveFade.addColorStop(1, 'rgba(0, 0, 0, 1)');
   perspectiveCtx.fillStyle = perspectiveFade;
   perspectiveCtx.fillRect(0, horizonY, perspectiveTextureSize, perspectiveTextureSize - horizonY);
@@ -160,18 +170,6 @@ export function createSynthwaveGridBackground(scene: Scene, layerMask?: number):
   }
   flowCtx.globalAlpha = 1;
 
-  // Same horizon fade for the scrolling layer to keep both grids visually stable
-  flowCtx.save();
-  flowCtx.globalCompositeOperation = 'destination-in';
-  const flowFade = flowCtx.createLinearGradient(0, horizonY, 0, flowTextureSize);
-  flowFade.addColorStop(0, 'rgba(0, 0, 0, 0)');
-  flowFade.addColorStop(0.1, 'rgba(0, 0, 0, 0.68)');
-  flowFade.addColorStop(0.26, 'rgba(0, 0, 0, 1)');
-  flowFade.addColorStop(1, 'rgba(0, 0, 0, 1)');
-  flowCtx.fillStyle = flowFade;
-  flowCtx.fillRect(0, horizonY, flowTextureSize, flowTextureSize - horizonY);
-  flowCtx.restore();
-
   flowTexture.update(false);
   flowTexture.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
   flowTexture.anisotropicFilteringLevel = 8;
@@ -180,13 +178,35 @@ export function createSynthwaveGridBackground(scene: Scene, layerMask?: number):
   flowTexture.uScale = 1;
   flowTexture.vScale = 1;
 
+  // Create a separate static opacity texture for the horizon fade.
+  // This avoids baking transparency into the scrolling grid, giving a seamless infinte scroll.
+  const fadeTextureSize = 512;
+  const fadeTexture = new DynamicTexture('synthwave_grid_fade_texture', { width: fadeTextureSize, height: fadeTextureSize }, scene, true);
+  fadeTexture.hasAlpha = true;
+  const fadeCtx = fadeTexture.getContext() as unknown as CanvasRenderingContext2D;
+  fadeCtx.clearRect(0, 0, fadeTextureSize, fadeTextureSize);
+
+  const fadeHorizonY = fadeTextureSize * 0.08;
+  const fadeGradient = fadeCtx.createLinearGradient(0, fadeHorizonY, 0, fadeTextureSize);
+  fadeGradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
+  fadeGradient.addColorStop(0.25, 'rgba(255, 255, 255, 0)');
+  fadeGradient.addColorStop(0.38, 'rgba(255, 255, 255, 0.65)');
+  fadeGradient.addColorStop(0.55, 'rgba(255, 255, 255, 1)');
+  fadeGradient.addColorStop(1, 'rgba(255, 255, 255, 1)');
+  fadeCtx.fillStyle = fadeGradient;
+  fadeCtx.fillRect(0, fadeHorizonY, fadeTextureSize, fadeTextureSize - fadeHorizonY);
+  fadeTexture.update(false);
+  
+  fadeTexture.wrapU = Texture.CLAMP_ADDRESSMODE;
+  fadeTexture.wrapV = Texture.CLAMP_ADDRESSMODE;
+
   const flowMaterial = new StandardMaterial('synthwave_grid_flow_mat', scene);
   flowMaterial.disableLighting = true;
   flowMaterial.diffuseColor = Color3.Black();
   flowMaterial.specularColor = Color3.Black();
   flowMaterial.diffuseTexture = flowTexture;
-  flowMaterial.opacityTexture = flowTexture;
-  flowMaterial.useAlphaFromDiffuseTexture = true;
+  flowMaterial.opacityTexture = fadeTexture;
+  flowMaterial.useAlphaFromDiffuseTexture = false;
   flowMaterial.transparencyMode = Material.MATERIAL_ALPHABLEND;
   flowMaterial.emissiveTexture = flowTexture;
   flowMaterial.emissiveColor = new Color3(0.78, 0.9, 1.0);

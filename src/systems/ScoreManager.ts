@@ -115,7 +115,7 @@ export class ScoreManager {
     
     // Base room clear bonus: 500 * (1 + roomIndex * 0.2)
     // We'd need the room index here. For now let's use a flat 500
-    let bonus = 500;
+    const bonus = 500;
     
     // Speed bonus: if cleared in under 30 seconds
     if (timeTaken < 30) {

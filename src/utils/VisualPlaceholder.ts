@@ -5,6 +5,14 @@
 import { MeshBuilder, StandardMaterial, Color3, Mesh, Scene, Vector3 } from '@babylonjs/core';
 
 export class VisualPlaceholder {
+  static applyAutoDispose(mesh: Mesh): void {
+    mesh.onDisposeObservable.add(() => {
+      if (mesh.material && typeof (mesh.material as any).dispose === 'function') {
+        (mesh.material as any).dispose(false, true);
+      }
+    });
+  }
+
   static createPlayerPlaceholder(scene: Scene, name: string = 'player'): Mesh {
     // Blue cube for player
     const mesh = MeshBuilder.CreateBox(name, { size: 0.6 }, scene);
@@ -12,6 +20,7 @@ export class VisualPlaceholder {
     material.diffuseColor = new Color3(0.2, 0.5, 1.0); // Blue
     material.emissiveColor = new Color3(0.1, 0.3, 0.5);
     mesh.material = material;
+    this.applyAutoDispose(mesh);
     return mesh;
   }
 
@@ -22,6 +31,7 @@ export class VisualPlaceholder {
     material.diffuseColor = color;
     material.emissiveColor = new Color3(color.r * 0.5, color.g * 0.5, color.b * 0.5);
     mesh.material = material;
+    this.applyAutoDispose(mesh);
     return mesh;
   }
 
@@ -32,6 +42,7 @@ export class VisualPlaceholder {
     material.diffuseColor = new Color3(1.0, 1.0, 0.0); // Yellow
     material.emissiveColor = new Color3(1.0, 1.0, 0.0);
     mesh.material = material;
+    this.applyAutoDispose(mesh);
     return mesh;
   }
 
@@ -44,6 +55,7 @@ export class VisualPlaceholder {
     material.alpha = 0.3;
     material.needDepthPrePass = true;
     mesh.material = material;
+    this.applyAutoDispose(mesh);
     return mesh;
   }
 
@@ -60,6 +72,7 @@ export class VisualPlaceholder {
     }
     
     mesh.material = material;
+    this.applyAutoDispose(mesh);
     return mesh;
   }
 
@@ -80,6 +93,7 @@ export class VisualPlaceholder {
       const mat = new StandardMaterial(`gridMat_${x}`, scene);
       mat.diffuseColor = new Color3(0.5, 0.5, 0.5);
       line.material = mat;
+      this.applyAutoDispose(line);
     }
 
     for (let z = 0; z <= height; z++) {
@@ -97,6 +111,7 @@ export class VisualPlaceholder {
       const mat = new StandardMaterial(`gridMat_${z}`, scene);
       mat.diffuseColor = new Color3(0.5, 0.5, 0.5);
       line.material = mat;
+      this.applyAutoDispose(line);
     }
   }
 }

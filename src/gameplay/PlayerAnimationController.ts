@@ -79,6 +79,7 @@ export class PlayerAnimationController {
   private lastTankThrusterMoving: boolean = false;
   private lastTankThrusterBashing: boolean = false;
   private lastPlayerVelocity: Vector3 = Vector3.Zero();
+  private instantiatedSkeletons: any[] = [];
 
   constructor(scene: Scene, playerClass: PlayerClass = 'mage') {
     this.scene = scene;
@@ -110,6 +111,9 @@ export class PlayerAnimationController {
               ? 'cat.glb'
             : 'mage.glb';
       const result = await SceneLoader.ImportMeshAsync('', modelPath, modelFile, this.scene);
+      if (result.skeletons) {
+        this.instantiatedSkeletons.push(...result.skeletons);
+      }
 
       this.mesh = result.meshes[0] as Mesh;
       this.mesh.name = `player_${this.playerClass}`;
@@ -845,6 +849,18 @@ export class PlayerAnimationController {
       group.dispose();
     });
     this.animationGroups.clear();
+    if (this.instantiatedSkeletons) {
+      this.instantiatedSkeletons.forEach(s => {
+        try {
+          if (s && !s.isDisposed()) {
+            s.dispose();
+          }
+        } catch (e) {
+          console.warn("Failed to dispose player skeleton clone", e);
+        }
+      });
+      this.instantiatedSkeletons = [];
+    }
   }
 
   // ============ Private helpers ============

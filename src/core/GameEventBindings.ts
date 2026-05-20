@@ -16,6 +16,8 @@ export interface GameEventBindingsCallbacks {
   onGameStartRequested(data: GameStartRequestedPayload): void;
   onGameRestartRequested(): void;
   onCodexOpenRequested(): void;
+  onAchievementsOpenRequested?(): void;
+  onHighscoresOpenRequested?(): void;
   onRoomNextRequested(): void;
   onDevRoomLoadRequested(data: DevRoomLoadRequestedPayload): void;
   onDevTileToggleRequested(): void;
@@ -63,6 +65,14 @@ export class GameEventBindings {
 
     onEvent(GameEvents.CODEX_OPEN_REQUESTED, () => {
       this.callbacks.onCodexOpenRequested();
+    });
+
+    onEvent(GameEvents.ACHIEVEMENTS_OPEN_REQUESTED, () => {
+      if (this.callbacks.onAchievementsOpenRequested) this.callbacks.onAchievementsOpenRequested();
+    });
+
+    onEvent(GameEvents.HIGHSCORES_OPEN_REQUESTED, () => {
+      if (this.callbacks.onHighscoresOpenRequested) this.callbacks.onHighscoresOpenRequested();
     });
 
     onEvent(GameEvents.ROOM_NEXT_REQUESTED, () => {

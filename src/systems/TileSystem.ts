@@ -706,7 +706,7 @@ export class TileSystem {
         }
       );
     } else if (this.renderProfile === 'neoDungeonTest' && tile.type === 'floor') {
-      mesh.material?.dispose();
+      this.disposeMeshMaterialSafely(mesh);
       mesh.material = ProceduralDungeonTheme.createFloorMaterial(
         this.scene,
         key,
@@ -723,14 +723,14 @@ export class TileSystem {
       );
     } else if (this.isProceduralReliefProfile() && tile.type === 'poison') {
       if (!(mesh.material instanceof ShaderMaterial)) {
-        mesh.material?.dispose();
+        this.disposeMeshMaterialSafely(mesh);
         const poisonMat = ProceduralReliefTheme.createPoisonMaterial(this.scene, key);
         mesh.material = poisonMat;
         this.poisonShaderMaterials.add(poisonMat);
       }
     } else if (this.renderProfile === 'neoDungeonTest' && tile.type === 'poison') {
       if (!(mesh.material instanceof ShaderMaterial)) {
-        mesh.material?.dispose();
+        this.disposeMeshMaterialSafely(mesh);
         const poisonMat = ProceduralDungeonTheme.createPoisonShaderMaterial(this.scene, key);
         mesh.material = poisonMat;
         this.poisonShaderMaterials.add(poisonMat);
@@ -754,15 +754,44 @@ export class TileSystem {
     }
   }
 
+  private disposeMeshMaterialSafely(mesh: Mesh): void {
+    const mat = mesh.material;
+    if (mat && typeof (mat as any).dispose === 'function') {
+      const name = mat.name || "";
+      if (
+        !name.startsWith('f_mat_') &&
+        !name.startsWith('s_mat_') &&
+        !name.startsWith('w_mat_') &&
+        !name.startsWith('poison_') &&
+        !name.startsWith('relief_wall_core_')
+      ) {
+        (mat as any).dispose(false, true);
+      }
+    }
+    mesh.material = null;
+  }
+
   clearTiles(): void {
     this.clearSpikeMeshes();
     this.clearPoisonParticles();
     for (const material of this.poisonShaderMaterials) {
-      material.dispose();
+      const name = material.name || "";
+      if (
+        !name.startsWith('f_mat_') &&
+        !name.startsWith('s_mat_') &&
+        !name.startsWith('w_mat_') &&
+        !name.startsWith('poison_') &&
+        !name.startsWith('relief_wall_core_')
+      ) {
+        material.dispose(false, true);
+      }
     }
     this.poisonShaderMaterials.clear();
     this.tileMeshes.forEach(mesh => {
-      if (mesh) mesh.dispose();
+      if (mesh) {
+        this.disposeMeshMaterialSafely(mesh);
+        mesh.dispose();
+      }
     });
     this.tileMeshes.clear();
     this.tileGrid.clear();
@@ -882,11 +911,8 @@ export class TileSystem {
   private clearSpikeMeshes(): void {
     for (const meshes of this.spikeMeshes.values()) {
       for (const mesh of meshes) {
-        const material = mesh.material;
+        this.disposeMeshMaterialSafely(mesh);
         mesh.dispose();
-        if (material && typeof (material as StandardMaterial | null)?.dispose === 'function') {
-          (material as StandardMaterial | null)?.dispose();
-        }
       }
     }
     this.spikeMeshes.clear();

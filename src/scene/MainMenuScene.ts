@@ -23,7 +23,7 @@ import {
 } from '../settings/GameSettings';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { HUDManager } from '../systems/HUDManager';
-import { buildHudAssetUrl } from '../systems/hud/HudAssetPaths';
+import { buildHudAssetUrl, getCachedHudAsset } from '../systems/hud/HudAssetPaths';
 import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
@@ -50,6 +50,8 @@ export class MainMenuScene {
   private glitchFx!: DaemonGlitchFx;
   private titleFlickerTime = 0;
   private settingsOverlay: Rectangle | null = null;
+  private mainLayoutContainer!: Rectangle;
+  private resizeObserver: any = null;
 
   private settingsSnapshot: GameSettings = GameSettingsStore.get();
   private unsubscribeSettings: (() => void) | null = null;
@@ -121,9 +123,33 @@ export class MainMenuScene {
     this.scene.activeCamera = camera;
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('MainMenuUI', true, this.scene);
+    this.gui.idealWidth = 1920;
+    this.gui.idealHeight = 1080;
+    this.gui.useSmallestIdeal = true;
+    this.gui.renderAtIdealSize = true;
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
+
+    this.mainLayoutContainer = new Rectangle('mainLayout');
+    this.mainLayoutContainer.width = '1920px';
+    this.mainLayoutContainer.height = '1080px';
+    this.mainLayoutContainer.thickness = 0;
+    this.mainLayoutContainer.background = 'transparent';
+    this.mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.gui.addControl(this.mainLayoutContainer);
+
+    const updateScale = () => {
+      const size = this.gui.getSize();
+      const scaleX = size.width / 1920;
+      const scaleY = size.height / 1080;
+      const scale = Math.min(1, scaleX, scaleY);
+      this.mainLayoutContainer.scaleX = scale;
+      this.mainLayoutContainer.scaleY = scale;
+    };
+    this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
+    updateScale();
 
     this.createMainButtons();
     this.createSettingsOverlay();
@@ -189,6 +215,10 @@ export class MainMenuScene {
       this.achievementToastArtwork.dispose();
       this.achievementToastArtwork = null;
     }
+    if (this.resizeObserver) {
+      this.engine.onResizeObservable.remove(this.resizeObserver);
+      this.resizeObserver = null;
+    }
     window.removeEventListener('keydown', this.keyCaptureHandler, true);
     this.glitchFx.dispose();
     this.gui.dispose();
@@ -209,7 +239,7 @@ export class MainMenuScene {
     toast.isPointerBlocker = false;
     toast.isVisible = false;
     toast.zIndex = 1000;
-    this.gui.addControl(toast);
+    this.mainLayoutContainer.addControl(toast);
     this.achievementToast = toast;
 
     const title = new TextBlock('menuAchievementToastTitle');
@@ -283,7 +313,13 @@ export class MainMenuScene {
       if (this.achievementToastArtwork) {
         this.achievementToastArtwork.dispose();
       }
-      this.achievementToastArtwork = new Image('menuAchievementToastArtwork', buildHudAssetUrl(`achievements/${HUDManager.currentAchievement.id}.png`));
+      this.achievementToastArtwork = new Image('menuAchievementToastArtwork');
+      const cachedImg = getCachedHudAsset(`achievements/${HUDManager.currentAchievement.id}.png`);
+      if (cachedImg) {
+        this.achievementToastArtwork.domImage = cachedImg;
+      } else {
+        this.achievementToastArtwork.source = buildHudAssetUrl(`achievements/${HUDManager.currentAchievement.id}.png`);
+      }
       this.achievementToastArtwork.width = '64px';
       this.achievementToastArtwork.height = '64px';
       this.achievementToastArtwork.stretch = Image.STRETCH_UNIFORM;
@@ -335,7 +371,7 @@ export class MainMenuScene {
     title.fontFamily = UITheme.fonts.primary;
     title.top = '-34%';
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.gui.addControl(title);
+    this.mainLayoutContainer.addControl(title);
 
     // Title flicker animation — slow oscillation between highlight colors
     this.scene.onBeforeRenderObservable.add(() => {
@@ -360,45 +396,49 @@ export class MainMenuScene {
     const subtitle = UIFactory.createText('menuSubtitle', 'SYSTEM READY // MAIN CONSOLE', 16, UITheme.colors.borderBright);
     subtitle.top = '-27%';
     subtitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.gui.addControl(subtitle);
+    this.mainLayoutContainer.addControl(subtitle);
 
-    const panel = UIFactory.createPanel('menuPanel', 460, 300);
+    const panel = UIFactory.createPanel('menuPanel', 460, 480);
     panel.top = '-2%';
-    this.gui.addControl(panel);
+    this.mainLayoutContainer.addControl(panel);
     this.menuPanel = panel;
 
-    const playBtn = this.makeActionButton('menuPlay', 'PLAY', -104, () => {
+    const playBtn = this.makeActionButton('menuPlay', 'START RUN', -150, () => {
       this.hidePanels();
       this.onPlayRequested();
     });
     panel.addControl(playBtn);
 
-    const tutorialBtn = this.makeActionButton('menuTutorial', 'TUTORIAL', -40, () => {
+    const tutorialBtn = this.makeActionButton('menuTutorial', 'TUTORIAL', -90, () => {
       this.hidePanels();
       this.onTutorialRequested();
     });
     panel.addControl(tutorialBtn);
 
-    const codexBtn = this.makeActionButton('menuCodex', 'CODEX', 24, () => {
+    const codexBtn = this.makeActionButton('menuCodex', 'CODEX', -30, () => {
       this.hidePanels();
       this.onCodexRequested();
     });
     panel.addControl(codexBtn);
 
-    const settingsBtn = this.makeActionButton('menuSettings', 'SETTINGS', 88, () => {
+    const achievementsBtn = this.makeActionButton('menuAchievements', 'ACHIEVEMENTS', 30, () => {
+      this.hidePanels();
+      this.eventBus.emit(GameEvents.ACHIEVEMENTS_OPEN_REQUESTED);
+    });
+    panel.addControl(achievementsBtn);
+
+    const highscoresBtn = this.makeActionButton('menuHighscores', 'HIGHSCORES', 90, () => {
+      this.hidePanels();
+      this.eventBus.emit(GameEvents.HIGHSCORES_OPEN_REQUESTED);
+    });
+    panel.addControl(highscoresBtn);
+
+    const settingsBtn = this.makeActionButton('menuSettings', 'SETTINGS', 150, () => {
       this.openSettingsOverlay();
     });
     panel.addControl(settingsBtn);
 
-    const hint = new TextBlock('menuHint');
-    hint.text = 'SETTINGS: GRAPHICS / KEYBINDS / AUDIO / ACCESSIBILITY';
-    hint.color = '#7C9C98';
-    hint.fontSize = 12;
-    hint.fontFamily = 'Consolas';
-    hint.top = '130px';
-    hint.isHitTestVisible = false;
-    panel.addControl(hint);
-    this.menuHint = hint;
+    this.menuHint = null;
   }
 
   private createSettingsOverlay(): void {
@@ -409,7 +449,7 @@ export class MainMenuScene {
     overlay.background = 'rgba(0, 0, 0, 0.75)';
     overlay.isPointerBlocker = true;
     overlay.isVisible = false;
-    this.gui.addControl(overlay);
+    this.mainLayoutContainer.addControl(overlay);
     this.settingsOverlay = overlay;
 
     const windowPanel = UIFactory.createPanel('settingsWindow', 900, 660);
@@ -423,13 +463,7 @@ export class MainMenuScene {
     title.top = '-292px';
     windowPanel.addControl(title);
 
-    const subtitle = new TextBlock('settingsSubtitle');
-    subtitle.text = 'TUNE GRAPHICS, CONTROLS, AUDIO, ACCESSIBILITY // ESC TO CANCEL A REBIND';
-    subtitle.color = '#9FEFE1';
-    subtitle.fontSize = 12;
-    subtitle.fontFamily = 'Consolas';
-    subtitle.top = '-262px';
-    windowPanel.addControl(subtitle);
+
 
     const actionRow = new Rectangle('settingsActionRow');
     actionRow.width = '860px';
@@ -440,50 +474,14 @@ export class MainMenuScene {
     actionRow.zIndex = 120;
     windowPanel.addControl(actionRow);
 
-    const resetBtn = Button.CreateSimpleButton('settingsResetButton', 'RESET DEFAULTS');
-    resetBtn.width = '180px';
-    resetBtn.height = '34px';
-    resetBtn.color = '#C2FFE2';
-    resetBtn.cornerRadius = 4;
-    resetBtn.background = 'rgba(22,48,44,0.95)';
-    resetBtn.thickness = 1;
-    resetBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    resetBtn.left = '0px';
-    resetBtn.isPointerBlocker = true;
-    resetBtn.isHitTestVisible = true;
-    resetBtn.zIndex = 130;
-    this.bindButtonAction(resetBtn, () => {
-      this.awaitingRebind = null;
-      GameSettingsStore.resetToDefaults();
-    });
-    actionRow.addControl(resetBtn);
-
-    const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET CODEX PROGRESSION');
-    resetProgressBtn.width = '250px';
-    resetProgressBtn.height = '34px';
-    resetProgressBtn.color = '#FFE5E5';
-    resetProgressBtn.cornerRadius = 4;
-    resetProgressBtn.background = 'rgba(72,20,20,0.95)';
-    resetProgressBtn.thickness = 1;
-    resetProgressBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    resetProgressBtn.left = '0px';
-    resetProgressBtn.isPointerBlocker = true;
-    resetProgressBtn.isHitTestVisible = true;
-    resetProgressBtn.zIndex = 130;
-    this.bindButtonAction(resetProgressBtn, () => {
-      this.awaitingRebind = null;
-      this.eventBus.emit(GameEvents.CODEX_PROGRESS_RESET_REQUESTED);
-    });
-    actionRow.addControl(resetProgressBtn);
-
-    const closeBtn = Button.CreateSimpleButton('settingsCloseButton', 'RETURN TO MAIN MENU');
-    closeBtn.width = '220px';
+    const closeBtn = Button.CreateSimpleButton('settingsCloseButton', 'BACK');
+    closeBtn.width = '120px';
     closeBtn.height = '34px';
     closeBtn.color = '#D2FFF2';
     closeBtn.cornerRadius = 4;
     closeBtn.background = 'rgba(20,38,45,0.95)';
     closeBtn.thickness = 1;
-    closeBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    closeBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     closeBtn.left = '0px';
     closeBtn.isPointerBlocker = true;
     closeBtn.isHitTestVisible = true;
@@ -494,7 +492,25 @@ export class MainMenuScene {
     });
     actionRow.addControl(closeBtn);
 
-    this.captureHintText = UIFactory.createText('settingsCaptureHint', 'Click a key field to capture input', 12, UITheme.colors.textDim);
+    const resetBtn = Button.CreateSimpleButton('settingsResetButton', 'RESET DEFAULTS');
+    resetBtn.width = '180px';
+    resetBtn.height = '34px';
+    resetBtn.color = '#C2FFE2';
+    resetBtn.cornerRadius = 4;
+    resetBtn.background = 'rgba(22,48,44,0.95)';
+    resetBtn.thickness = 1;
+    resetBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    resetBtn.left = '0px';
+    resetBtn.isPointerBlocker = true;
+    resetBtn.isHitTestVisible = true;
+    resetBtn.zIndex = 130;
+    this.bindButtonAction(resetBtn, () => {
+      this.awaitingRebind = null;
+      GameSettingsStore.resetToDefaults();
+    });
+    actionRow.addControl(resetBtn);
+
+    this.captureHintText = UIFactory.createText('settingsCaptureHint', '', 12, UITheme.colors.textDim);
     this.captureHintText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.captureHintText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.captureHintText.top = '-185px';
@@ -512,19 +528,17 @@ export class MainMenuScene {
     content.width = 1;
     scroll.addControl(content);
 
-    this.addGraphicsSection(content);
-    this.addControlsSection(content);
+    this.addGameplaySection(content);
     this.addAudioSection(content);
     this.addAccessibilitySection(content);
   }
 
-  private addGraphicsSection(parent: StackPanel): void {
-    parent.addControl(this.makeSectionHeader('GRAPHICS // PERFORMANCE'));
-    parent.addControl(this.makeSectionSubText('Use lightweight procedural textures and progressive enemy spawn to reduce loading stalls.'));
+  private addGameplaySection(parent: StackPanel): void {
+    parent.addControl(this.makeSectionHeader('GAMEPLAY'));
 
     parent.addControl(this.makeToggleRow(
       'Lightweight Procedural Texture Mode',
-      'Uses lighter procedural texture generation and reduced relief density (recommended for smooth room transitions).',
+      'Uses lighter procedural texture generation and reduced relief density.',
       (checkbox) => {
         this.lightweightTexturesCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -536,7 +550,7 @@ export class MainMenuScene {
 
     parent.addControl(this.makeToggleRow(
       'Progressive Enemy Spawning',
-      'Spawns enemies in small batches over frames to avoid spikes in rooms with many enemies.',
+      'Spawns enemies in small batches over frames to avoid spikes.',
       (checkbox) => {
         this.progressiveSpawnCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -548,7 +562,7 @@ export class MainMenuScene {
 
     parent.addControl(this.makeToggleRow(
       'Wall Occlusion Transparency',
-      'Renders walls partially transparent when they hide the player, improving gameplay readability.',
+      'Walls become transparent when hiding the player.',
       (checkbox) => {
         this.wallOcclusionCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -559,8 +573,8 @@ export class MainMenuScene {
     ));
 
     parent.addControl(this.makeGraphicsNumberSliderRow(
-      'Room Preload Ahead Window',
-      'How many next rooms are preloaded asynchronously ahead of the current room (higher = more anticipation, potentially more memory).',
+      'Room Preload Ahead',
+      'How many next rooms are preloaded ahead of the current room.',
       1,
       8,
       (slider, valueText) => {
@@ -575,21 +589,7 @@ export class MainMenuScene {
       },
     ));
 
-    parent.addControl(this.makeActionRow(
-      'Automated Benchmark Mode',
-      'Runs a repeatable autoplay benchmark (player + enemies + transitions), then copies full metrics to clipboard.',
-      'RUN BENCHMARK',
-      () => {
-        this.awaitingRebind = null;
-        this.hidePanels();
-        this.onBenchmarkRequested();
-      }
-    ));
-  }
-
-  private addControlsSection(parent: StackPanel): void {
-    parent.addControl(this.makeSectionHeader('CONTROLS // KEYBINDINGS'));
-    parent.addControl(this.makeSectionSubText('Remap movement, shoot/posture and ultimate abilities.'));
+    parent.addControl(this.makeSectionHeader('CONTROLS'));
 
     for (const descriptor of ACTION_LABELS) {
       parent.addControl(this.makeKeybindRow(descriptor.action, descriptor.label));
@@ -597,7 +597,7 @@ export class MainMenuScene {
 
     parent.addControl(this.makeToggleRow(
       'Keyboard-Only Mode',
-      'Ignore mouse buttons during gameplay (for keyboard-only sessions).',
+      'Ignore mouse buttons during gameplay.',
       (checkbox) => {
         this.keyboardOnlyCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -609,7 +609,7 @@ export class MainMenuScene {
 
     parent.addControl(this.makeToggleRow(
       'Auto Aim On Movement (8 directions)',
-      'Aim follows last movement direction (snapped to 8 directions) in keyboard-only mode.',
+      'Aim follows last movement direction in keyboard-only mode.',
       (checkbox) => {
         this.autoAimCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -618,11 +618,23 @@ export class MainMenuScene {
         });
       }
     ));
+
+    if (!import.meta.env.PROD) {
+      parent.addControl(this.makeActionRow(
+        'Automated Benchmark',
+        'Runs a repeatable autoplay benchmark and copies full metrics to clipboard.',
+        'RUN BENCHMARK',
+        () => {
+          this.awaitingRebind = null;
+          this.hidePanels();
+          this.onBenchmarkRequested();
+        }
+      ));
+    }
   }
 
   private addAudioSection(parent: StackPanel): void {
     parent.addControl(this.makeSectionHeader('AUDIO'));
-    parent.addControl(this.makeSectionSubText('Master affects all channels. Music/SFX/UI/Voice are independent mix controls.'));
 
     parent.addControl(this.makeAudioSliderRow('master', 'Master Volume'));
     parent.addControl(this.makeAudioSliderRow('music', 'Music Volume'));
@@ -633,7 +645,6 @@ export class MainMenuScene {
 
   private addAccessibilitySection(parent: StackPanel): void {
     parent.addControl(this.makeSectionHeader('ACCESSIBILITY'));
-    parent.addControl(this.makeSectionSubText('Color filters are applied to the game canvas in real-time.'));
 
     const row = new Rectangle('accessibilityFilterRow');
     row.width = '820px';
@@ -673,8 +684,6 @@ export class MainMenuScene {
 
     parent.addControl(row);
 
-    parent.addControl(this.makeSectionSubText('Cycle options: NONE -> PROTANOPIA -> DEUTERANOPIA -> TRITANOPIA -> HIGH CONTRAST.'));
-
     parent.addControl(this.makeToggleRow(
       'Enable CAT Easter Egg (God Mode)',
       'Adds CAT class to selection. CAT takes no damage and deals massive contact retaliation damage.',
@@ -687,7 +696,6 @@ export class MainMenuScene {
       }
     ));
 
-    // Developer Mode Toggle (Hidden in Production)
     if (!import.meta.env.PROD) {
       parent.addControl(this.makeToggleRow(
         'Enable Developer Mode (Local Only)',
@@ -701,6 +709,23 @@ export class MainMenuScene {
         }
       ));
     }
+
+    // RESET CODEX PROGRESSION — at the very bottom of settings
+    const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET CODEX PROGRESSION');
+    resetProgressBtn.width = '280px';
+    resetProgressBtn.height = '34px';
+    resetProgressBtn.color = '#FFE5E5';
+    resetProgressBtn.cornerRadius = 4;
+    resetProgressBtn.background = 'rgba(72,20,20,0.95)';
+    resetProgressBtn.thickness = 1;
+    resetProgressBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    resetProgressBtn.isPointerBlocker = true;
+    resetProgressBtn.isHitTestVisible = true;
+    this.bindButtonAction(resetProgressBtn, () => {
+      this.awaitingRebind = null;
+      this.eventBus.emit(GameEvents.CODEX_PROGRESS_RESET_REQUESTED);
+    });
+    parent.addControl(resetProgressBtn);
   }
 
   private makeSectionHeader(text: string): Rectangle {
@@ -1002,8 +1027,8 @@ export class MainMenuScene {
 
     if (this.captureHintText) {
       this.captureHintText.text = this.awaitingRebind
-        ? `Capturing input for ${this.getActionDisplayName(this.awaitingRebind)}... (ESC to cancel)`
-        : 'Click a key field to capture input';
+        ? `Capturing: ${this.getActionDisplayName(this.awaitingRebind)}  (ESC to cancel)`
+        : '';
       this.captureHintText.color = this.awaitingRebind ? '#FFD092' : '#8CC6BD';
     }
 
@@ -1056,15 +1081,7 @@ export class MainMenuScene {
       this.devModeCheckbox.isChecked = this.settingsSnapshot.accessibility.devModeEnabled;
     }
 
-    if (this.menuHint) {
-      if (this.settingsSnapshot.controls.keyboardOnlyMode) {
-        this.menuHint.text = 'KEYBOARD MODE ACTIVE // AUTO-AIM AVAILABLE IN SETTINGS';
-      } else if (this.settingsSnapshot.graphics.lightweightTexturesMode) {
-        this.menuHint.text = 'PERFORMANCE MODE ACTIVE // LIGHTWEIGHT TEXTURES ENABLED';
-      } else {
-        this.menuHint.text = 'SETTINGS: GRAPHICS / KEYBINDS / AUDIO / ACCESSIBILITY';
-      }
-    }
+
 
     this.isRefreshingUi = false;
   }

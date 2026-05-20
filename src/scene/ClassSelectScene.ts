@@ -118,6 +118,7 @@ export class ClassSelectScene {
   private postProcessConfig: PostProcessingConfig;
   private isNavigatingBack: boolean = false;
   private unsubscribeSettings: (() => void) | null = null;
+  private resizeObserver: any = null;
 
   constructor(
     private engine: Engine,
@@ -157,6 +158,10 @@ export class ClassSelectScene {
     });
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('ClassSelectUI', true, this.scene);
+    this.gui.idealWidth = 1920;
+    this.gui.idealHeight = 1080;
+    this.gui.useSmallestIdeal = true;
+    this.gui.renderAtIdealSize = true;
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
@@ -199,6 +204,10 @@ export class ClassSelectScene {
     if (this.unsubscribeSettings) {
       this.unsubscribeSettings();
       this.unsubscribeSettings = null;
+    }
+    if (this.resizeObserver) {
+      this.engine.onResizeObservable.remove(this.resizeObserver);
+      this.resizeObserver = null;
     }
     window.removeEventListener('keydown', this.keyHandler);
     this.roguePreviewPlayToken++;
@@ -294,6 +303,26 @@ export class ClassSelectScene {
   }
 
   private createUi(): { infoText: TextBlock; startButton: Button } {
+    const mainLayoutContainer = new Rectangle('mainLayout');
+    mainLayoutContainer.width = '1920px';
+    mainLayoutContainer.height = '1080px';
+    mainLayoutContainer.thickness = 0;
+    mainLayoutContainer.background = 'transparent';
+    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.gui.addControl(mainLayoutContainer);
+
+    const updateScale = () => {
+      const size = this.gui.getSize();
+      const scaleX = size.width / 1920;
+      const scaleY = size.height / 1080;
+      const scale = Math.min(1, scaleX, scaleY);
+      mainLayoutContainer.scaleX = scale;
+      mainLayoutContainer.scaleY = scale;
+    };
+    this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
+    updateScale();
+
     const backBtn = UIFactory.createTerminalButton('classSelectBackTopLeft', 'BACK', '96px', '36px');
     backBtn.left = '20px';
     backBtn.top = '20px';
@@ -303,45 +332,68 @@ export class ClassSelectScene {
     backBtn.onPointerClickObservable.add(() => {
       this.navigateBackToTitle();
     });
-    this.gui.addControl(backBtn);
+    mainLayoutContainer.addControl(backBtn);
 
     const title = UIFactory.createText('classSelectTitle', 'SELECT CLASS', 44, UITheme.colors.textHighlight);
     title.top = '-42%';
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.gui.addControl(title);
+    mainLayoutContainer.addControl(title);
 
-    const subtitle = UIFactory.createText('classSelectSubtitle', 'LEFT / RIGHT • Q/D • A/D', 16, UITheme.colors.borderBright);
-    subtitle.top = '-36%';
-    subtitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.gui.addControl(subtitle);
 
-    const infoPanel = UIFactory.createPanel('classSelectInfoPanel', 560, 120);
-    infoPanel.top = '34%';
-    this.gui.addControl(infoPanel);
-
-    const infoText = UIFactory.createText('classSelectInfoText', '', 20, '#FFFFFF');
-    infoText.top = '-28px';
-    infoText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    infoPanel.addControl(infoText);
+    // ── Central nav panel (navigation + START only) ──────────────────────────
+    const navPanel = UIFactory.createPanel('classSelectNavPanel', 320, 80);
+    navPanel.top = '38%';
+    mainLayoutContainer.addControl(navPanel);
 
     const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', '70px', '52px');
-    leftBtn.left = '-210px';
-    leftBtn.top = '22px';
+    leftBtn.left = '-110px';
+    leftBtn.top = '0px';
     leftBtn.onPointerClickObservable.add(() => this.rotateCarousel(1));
-    infoPanel.addControl(leftBtn);
+    navPanel.addControl(leftBtn);
 
     const rightBtn = UIFactory.createTerminalButton('classSelectRight', '>', '70px', '52px');
-    rightBtn.left = '210px';
-    rightBtn.top = '22px';
+    rightBtn.left = '110px';
+    rightBtn.top = '0px';
     rightBtn.onPointerClickObservable.add(() => this.rotateCarousel(-1));
-    infoPanel.addControl(rightBtn);
+    navPanel.addControl(rightBtn);
 
-    const startButton = UIFactory.createTerminalButton('classSelectStart', 'START AS MAGE', '260px', '46px');
-    startButton.top = '22px';
+    const startButton = UIFactory.createTerminalButton('classSelectStart', '[ START ]', '140px', '52px');
+    startButton.top = '0px';
+    startButton.left = '0px';
     startButton.onPointerClickObservable.add(() => {
       this.tryStartSelectedClass();
     });
-    infoPanel.addControl(startButton);
+    navPanel.addControl(startButton);
+
+    // ── Right-side class info overlay ─────────────────────────────────────────
+    const infoOverlay = new Rectangle('classInfoOverlay');
+    infoOverlay.width = '300px';
+    infoOverlay.height = '260px';
+    infoOverlay.thickness = 1;
+    infoOverlay.color = 'rgba(100,255,230,0.25)';
+    infoOverlay.background = 'rgba(4, 16, 20, 0.78)';
+    infoOverlay.cornerRadius = 4;
+    infoOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    infoOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    infoOverlay.left = '-32px';
+    infoOverlay.zIndex = 100;
+    mainLayoutContainer.addControl(infoOverlay);
+
+    const infoLabel = UIFactory.createText('classInfoLabel', '// CLASS DATA', 11, 'rgba(100,255,230,0.5)');
+    infoLabel.top = '-110px';
+    infoLabel.left = '10px';
+    infoLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    infoLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    infoOverlay.addControl(infoLabel);
+
+    const infoText = UIFactory.createText('classSelectInfoText', '', 14, '#CFFCF3');
+    infoText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    infoText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    infoText.textWrapping = true;
+    infoText.width = '274px';
+    infoText.left = '10px';
+    infoText.top = '10px';
+    infoOverlay.addControl(infoText);
 
     return { infoText, startButton };
   }
@@ -991,23 +1043,58 @@ export class ClassSelectScene {
     const selected = this.items[this.selectedIndex];
     if (!selected) return;
 
+    // Per-class flavor data displayed in the right-side info overlay
+    const CLASS_DATA: Record<string, { desc: string; hp: string; spd: string; atk: string; ult: string }> = {
+      mage: {
+        desc: 'Long-range arcane blaster. Fragile but devastating at distance.',
+        hp: '●○○', spd: '●●○', atk: 'Frost bolts', ult: 'Nova burst',
+      },
+      firewall: {
+        desc: 'Armored shock trooper. Nearly indestructible, dangerously slow.',
+        hp: '●●●', spd: '●○○', atk: 'Plasma cannon', ult: 'Shield wall',
+      },
+      rogue: {
+        desc: 'Hyper-mobile infiltrator. High risk, explosive close-range damage.',
+        hp: '●○○', spd: '●●●', atk: 'Blade flurry', ult: 'Phase dash',
+      },
+      cat: {
+        desc: '[CLASSIFIED DATA] // OwO what\'s this?',
+        hp: '???', spd: '???', atk: '???', ult: '???',
+      },
+    };
+
+    const data = CLASS_DATA[selected.id];
+
     if (selected.playable) {
-      this.infoText.text = `${selected.label} // READY`;
-      this.infoText.color = '#FFFFFF';
+      if (data) {
+        this.infoText.text =
+          `${selected.label}\n` +
+          `────────────────\n` +
+          `${data.desc}\n\n` +
+          `HP   ${data.hp}\n` +
+          `SPD  ${data.spd}\n` +
+          `ATK  ${data.atk}\n` +
+          `ULT  ${data.ult}`;
+      } else {
+        this.infoText.text = `${selected.label}\n// READY`;
+      }
+      this.infoText.color = '#CFFCF3';
+      this.infoText.fontSize = 13;
       this.startButton.isEnabled = true;
       this.startButton.background = '#1D3B3A';
       this.startButton.color = '#FFFFFF';
       if (this.startButton.textBlock) {
-        this.startButton.textBlock.text = `START AS ${selected.label}`;
+        this.startButton.textBlock.text = '[ START ]';
       }
     } else {
-      this.infoText.text = `${selected.label} // COMING SOON`;
+      this.infoText.text = `${selected.label}\n// COMING SOON`;
       this.infoText.color = '#7C9C98';
+      this.infoText.fontSize = 13;
       this.startButton.isEnabled = false;
       this.startButton.background = 'rgba(20,30,35,0.75)';
       this.startButton.color = '#7C9C98';
       if (this.startButton.textBlock) {
-        this.startButton.textBlock.text = 'UNAVAILABLE';
+        this.startButton.textBlock.text = '// LOCKED';
       }
     }
   }

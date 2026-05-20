@@ -152,9 +152,14 @@ export class DaemonVoiceSynth {
   private static instance: DaemonVoiceSynth;
   private loadedVoices: Set<string> = new Set();
   private audioContext: AudioContext | null = null;
+  private synthesisCache: Map<string, SynthesisResult> = new Map();
 
   private constructor() {
     this.ensureConfigLoaded();
+  }
+
+  public clearCache(): void {
+    this.synthesisCache.clear();
   }
 
   public static getInstance(): DaemonVoiceSynth {
@@ -187,6 +192,16 @@ export class DaemonVoiceSynth {
   public async synthesize(text: string, presetName: keyof typeof VOICE_PRESETS = 'cold_dual'): Promise<SynthesisResult> {
     if (!this.audioContext) {
       throw new Error('AudioContext not attached to DaemonVoiceSynth');
+    }
+
+    const cacheKey = `${presetName}::${text}`;
+    if (this.synthesisCache.has(cacheKey)) {
+      const cached = this.synthesisCache.get(cacheKey)!;
+      return {
+        buffer: cached.buffer,
+        duration: cached.duration,
+        glitchTimestamps: [...cached.glitchTimestamps]
+      };
     }
 
     // Select preset
@@ -292,7 +307,9 @@ export class DaemonVoiceSynth {
 
     // Combine layers into a single buffer
     const finalBuffer = this.mixLayers(renderedLayers, glitchMap);
-    return { buffer: finalBuffer, duration: finalBuffer.duration, glitchTimestamps };
+    const result: SynthesisResult = { buffer: finalBuffer, duration: finalBuffer.duration, glitchTimestamps };
+    this.synthesisCache.set(cacheKey, result);
+    return result;
   }
 
   private normalizeRawData(raw: any): ArrayBuffer {
