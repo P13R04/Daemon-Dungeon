@@ -214,6 +214,8 @@ export class PlayerController {
   private tankComboSecondSwingPending: boolean = false;
   private tankComboSecondSwingTimer: number = 0;
   private tankComboDirection: Vector3 = new Vector3(1, 0, 0);
+  private tankAimSmoothingFirstSwing: number = 0.72;
+  private tankAimSmoothingComboTracking: number = 12;
   private pendingTankShieldBash: {
     origin: Vector3;
     direction: Vector3;
@@ -766,13 +768,20 @@ export class PlayerController {
       this.tankShieldBashRecoveryTimer = Math.max(0, this.tankShieldBashRecoveryTimer - deltaTime);
     }
     if (this.classId === 'firewall' && this.tankComboSecondSwingPending) {
+      if (this.attackDirection.lengthSquared() > 0.0001) {
+        const trackAlpha = Math.max(0, Math.min(1, this.tankAimSmoothingComboTracking * deltaTime));
+        this.tankComboDirection = this.blendDirection(this.tankComboDirection, this.attackDirection, trackAlpha);
+      }
       this.tankComboSecondSwingTimer = Math.max(0, this.tankComboSecondSwingTimer - deltaTime);
       if (this.tankShieldBashRemaining > 0) {
         this.tankComboSecondSwingPending = false;
       } else if (this.tankComboSecondSwingTimer <= 0) {
+        const comboDir = this.tankComboDirection.lengthSquared() > 0.0001
+          ? this.tankComboDirection.clone().normalize()
+          : this.attackDirection.clone();
         this.pendingTankSweep = {
           origin: this.position.clone(),
-          direction: this.attackDirection.clone(),
+          direction: comboDir,
           swingDirection: 'right',
           range: this.tankPrimaryRange,
           coneAngleDeg: this.tankPrimaryConeAngleDeg,
@@ -796,6 +805,7 @@ export class PlayerController {
     this.updateMovement(deltaTime);
 
     if (this.classId === 'firewall' && this.tankShieldBashRemaining > 0) {
+      this.lockAttackFacing(this.tankShieldBashDirection, Math.max(0.2, this.tankShieldBashRemaining));
       this.velocity = this.tankShieldBashDirection.scale(this.tankShieldBashDashSpeed);
       this.tankShieldBashRemaining = Math.max(0, this.tankShieldBashRemaining - deltaTime);
       this.pendingTankShieldBash = {
@@ -829,6 +839,7 @@ export class PlayerController {
       }
     }
     if (this.isRogueLikeClass() && this.rogueDashRemaining > 0) {
+      this.lockAttackFacing(this.rogueDashDirection, Math.max(0.2, this.rogueDashRemaining));
       this.velocity = this.rogueDashDirection.scale(this.rogueDashSpeed);
       const dashStep = this.rogueDashSpeed * deltaTime;
       this.rogueDashDistanceRemaining = Math.max(0, this.rogueDashDistanceRemaining - dashStep);
@@ -1102,6 +1113,31 @@ export class PlayerController {
     this.attackTargetPoint = this.position.add(snappedDirection.scale(8));
   }
 
+  private lockAttackFacing(direction: Vector3, holdSeconds: number = 0.3): void {
+    if (direction.lengthSquared() <= 0.0001) return;
+    const dir = direction.normalize();
+    this.attackDirection = dir.clone();
+    this.lastAttackDirection = dir.clone();
+    this.wasJustAttacking = true;
+    this.justAttackingTimeLeft = Math.max(this.justAttackingTimeLeft, holdSeconds);
+    if (this.animationController) {
+      this.animationController.rotateTowardDirection(dir);
+    }
+  }
+
+  private blendDirection(current: Vector3, target: Vector3, alpha: number): Vector3 {
+    const a = Math.max(0, Math.min(1, alpha));
+    const blended = new Vector3(
+      (current.x * (1 - a)) + (target.x * a),
+      0,
+      (current.z * (1 - a)) + (target.z * a)
+    );
+    if (blended.lengthSquared() <= 0.0001) {
+      return target.lengthSquared() > 0.0001 ? target.normalize() : new Vector3(1, 0, 0);
+    }
+    return blended.normalize();
+  }
+
   private getNearestEnemy(enemies: EnemyController[]): EnemyController | null {
     if (!enemies || enemies.length === 0) return null;
     
@@ -1309,6 +1345,8 @@ export class PlayerController {
     if (this.autoPlayMode) {
       return;
     }
+
+    // Keep attack aim updated every frame from current input/cursor, like mage.
     this.updateAimDirection();
 
     void deltaTime;
@@ -1363,6 +1401,7 @@ export class PlayerController {
           bashDir = this.lastMovementDirection.normalize();
         }
         this.tankShieldBashDirection = bashDir;
+        this.lockAttackFacing(bashDir, Math.max(0.35, this.tankShieldBashDuration + 0.2));
         this.tankShieldBashRemaining = this.tankShieldBashDuration;
         this.tankComboSecondSwingPending = false;
         this.tankShieldBashCooldownTimer = this.tankShieldBashCooldown;
@@ -1379,16 +1418,33 @@ export class PlayerController {
         this.timeSinceLastAttack >= this.fireRate &&
         slot1Held
       ) {
+        let strikeDir = this.attackDirection.clone();
+        if (strikeDir.lengthSquared() <= 0.0001 && this.lastAttackDirection.lengthSquared() > 0.0001) {
+          strikeDir = this.lastAttackDirection.clone();
+        } else if (strikeDir.lengthSquared() <= 0.0001 && this.lastMovementDirection.lengthSquared() > 0.0001) {
+          strikeDir = this.lastMovementDirection.clone();
+        }
+        if (strikeDir.lengthSquared() <= 0.0001) {
+          strikeDir = new Vector3(1, 0, 0);
+        }
+        strikeDir.normalize();
+        const smoothedStrikeDir = this.blendDirection(
+          this.lastAttackDirection.lengthSquared() > 0.0001 ? this.lastAttackDirection : strikeDir,
+          strikeDir,
+          this.tankAimSmoothingFirstSwing
+        );
+
+        this.lockAttackFacing(smoothedStrikeDir, Math.max(0.25, this.fireRate * 0.9));
         this.pendingTankSweep = {
           origin: this.position.clone(),
-          direction: this.attackDirection.clone(),
+          direction: smoothedStrikeDir.clone(),
           swingDirection: 'left',
           range: this.tankPrimaryRange,
           coneAngleDeg: this.tankPrimaryConeAngleDeg,
           damage: this.computeOutgoingDamage(this.tankPrimaryDamage),
           knockback: this.tankPrimaryKnockback,
         };
-        this.tankComboDirection = this.attackDirection.clone();
+        this.tankComboDirection = smoothedStrikeDir.clone();
         this.tankComboSecondSwingPending = true;
         this.tankComboSecondSwingTimer = this.fireRate * 0.5;
         this.timeSinceLastAttack = 0;
@@ -1430,6 +1486,7 @@ export class PlayerController {
           dashDir = this.lastMovementDirection.normalize();
         }
         this.rogueDashDirection = dashDir;
+        this.lockAttackFacing(dashDir, Math.max(0.4, this.rogueDashRemaining + 0.15));
         this.rogueDashStartPosition = this.position.clone();
         this.rogueDashTrailLastPoint = this.position.clone();
         this.rogueDashTrailAccumulatedDistance = 0;
@@ -1447,6 +1504,7 @@ export class PlayerController {
         );
         this.isFiring = false;
       } else if (!this.rogueStealthActive && this.rogueDashRemaining <= 0 && this.timeSinceLastAttack >= this.fireRate && slot1Held) {
+        this.lockAttackFacing(this.attackDirection, Math.max(0.22, this.fireRate * 0.8));
         this.pendingRogueStrike = {
           origin: this.position.clone(),
           direction: this.attackDirection.clone(),
@@ -1489,8 +1547,28 @@ export class PlayerController {
 
     // Apply rotation based on state
     if (this.animationController && !(this.classId === 'firewall' && this.tankUltimateActive)) {
+      const tankBashInProgress = this.classId === 'firewall' && (
+        this.tankShieldBashRemaining > 0 || this.tankShieldBashRecoveryTimer > 0
+      );
+      const tankPrimaryComboInProgress = this.classId === 'firewall' && this.tankComboSecondSwingPending;
+      const rogueAttackInProgress = this.isRogueLikeClass() && (this.rogueDashRemaining > 0 || this.rogueDashImpactPending);
+      const enforceFacingAfterAnimations =
+        this.classId === 'firewall' &&
+        (tankBashInProgress || tankPrimaryComboInProgress || this.inputSlot1Held || this.isFiring);
+      this.animationController.setFacingEnforcedAfterAnimations(enforceFacingAfterAnimations);
+
       if (this.classId === 'firewall' && this.tankShieldActive) {
-        this.animationController.rotateTowardDirection(this.attackDirection);
+        this.animationController.faceDirectionImmediate(this.attackDirection);
+      } else if (tankBashInProgress) {
+        this.animationController.faceDirectionImmediate(this.tankShieldBashDirection);
+      } else if (tankPrimaryComboInProgress) {
+        this.animationController.faceDirectionImmediate(this.tankComboDirection);
+      } else if (rogueAttackInProgress) {
+        this.animationController.faceDirectionImmediate(this.rogueDashDirection);
+      } else if ((this.classId === 'firewall' || this.isRogueLikeClass()) && slot1Held) {
+        // Melee classes: while attack is held (or auto-fire holds it),
+        // model should always face attack direction, even while moving.
+        this.animationController.faceDirectionImmediate(this.attackDirection);
       } else if (this.isFiring) {
         this.animationController.rotateTowardDirection(this.attackDirection);
       } else if (!this.isMoving) {
@@ -1501,6 +1579,9 @@ export class PlayerController {
         }
       }
     } else if (this.mesh) {
+      if (this.animationController) {
+        this.animationController.setFacingEnforcedAfterAnimations(false);
+      }
       const rotY = Math.atan2(this.attackDirection.x, this.attackDirection.z);
       this.mesh.rotation.y = rotY;
     }

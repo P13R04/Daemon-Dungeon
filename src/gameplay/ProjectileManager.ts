@@ -625,8 +625,11 @@ export class ProjectileManager {
         if (projectile.data.friendly) {
           // Check collision with enemies
           for (const enemy of enemies) {
-            const distance = Vector3.Distance(projectile.data.position, enemy.getPosition());
-            if (distance < 1.0) {
+            const enemyPos = enemy.getPosition();
+            const dx = projectile.data.position.x - enemyPos.x;
+            const dz = projectile.data.position.z - enemyPos.z;
+            const planarDistance = Math.sqrt((dx * dx) + (dz * dz));
+            if (planarDistance < 1.0) {
               enemy.takeDamage(projectile.data.damage);
               player.onPlayerDealtDamage?.(projectile.data.damage);
 

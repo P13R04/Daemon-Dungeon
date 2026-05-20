@@ -332,8 +332,14 @@ export class HUDManager {
       console.warn('[HUDManager] Received ENEMY_SPAWNED without ID:', data);
       return;
     }
-    
-    // Queue for creation on the next update to ensure mesh and scene state are ready
+
+    // If we already have a valid mesh, build immediately.
+    if (data?.mesh && !data.mesh.isDisposed()) {
+      this.createEnemyHealthBar(enemyId, data.enemyName, data.mesh, data.healthBarOffset);
+      return;
+    }
+
+    // Otherwise queue for next frames (mesh can become available just after spawn).
     this.pendingEnemyHealthBars.push({ ...data, enemyId });
   }
 
@@ -375,6 +381,7 @@ export class HUDManager {
   private handleEnemyDiedEvent(data: EnemyEventPayload): void {
     const enemyId = data?.enemyId ?? data?.entityId;
     if (!enemyId) return;
+    this.pendingEnemyHealthBars = this.pendingEnemyHealthBars.filter((entry) => entry.enemyId !== enemyId);
     this.removeEnemyHealthBar(enemyId);
     
     const logs = [
@@ -1683,6 +1690,7 @@ export class HUDManager {
       bar.label.dispose();
       this.enemyHealthBars.delete(enemyId);
     }
+    this.pendingEnemyHealthBars = this.pendingEnemyHealthBars.filter((entry) => entry.enemyId !== enemyId);
   }
 
   private addDamageNumber(position: Vector3, damage: number, sourceId: string = 'unknown'): void {
