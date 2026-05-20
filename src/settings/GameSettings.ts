@@ -39,6 +39,7 @@ export interface AccessibilitySettings {
   colorFilter: ColorVisionFilter;
   catGodModeEnabled: boolean;
   devModeEnabled: boolean;
+  tutorialCompleted: boolean;
 }
 
 export interface GraphicsSettings {
@@ -87,6 +88,7 @@ const DEFAULT_SETTINGS: GameSettings = {
     colorFilter: 'none',
     catGodModeEnabled: false,
     devModeEnabled: false,
+    tutorialCompleted: false,
   },
   graphics: {
     lightweightTexturesMode: true,
@@ -257,6 +259,7 @@ export class GameSettingsStore {
         colorFilter: sanitizeFilter(parsed.accessibility?.colorFilter),
         catGodModeEnabled: !!parsed.accessibility?.catGodModeEnabled,
         devModeEnabled: !!parsed.accessibility?.devModeEnabled,
+        tutorialCompleted: !!parsed.accessibility?.tutorialCompleted,
       },
       graphics: {
         lightweightTexturesMode:

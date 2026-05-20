@@ -36,6 +36,7 @@ export interface BonusSystemCallbacks {
   getRoomOrderLength(): number;
   markBonusDiscovered(bonusId: string): void;
   recordBonusCollected(bonusId: string): void;
+  onTutorialShopInteraction?: (type: 'paid_rare' | 'reroll' | 'full_heal') => void;
 }
 
 export class BonusSystemManager {
@@ -46,8 +47,15 @@ export class BonusSystemManager {
   private freePicksRemaining: number = 0;
   private paidRarePurchased: boolean = false;
   private readonly bonusRerollCost: number = BONUS_TUNING.selection.rerollCost;
+  private forcedChoices: string[] | null = null;
+  private forcedRareChoice: string | null = null;
 
   constructor(private readonly callbacks: BonusSystemCallbacks) {}
+
+  forceNextChoices(choices: string[], rareChoice: string | null): void {
+    this.forcedChoices = choices;
+    this.forcedRareChoice = rareChoice;
+  }
 
   resetRun(): void {
     this.bonusPool.resetRun();
@@ -69,11 +77,20 @@ export class BonusSystemManager {
     this.freePicksRemaining = this.getFreePickCountForRoom(this.callbacks.getCurrentRoomIndex());
     this.paidRarePurchased = false;
     this.selectedChoiceIds.clear();
-    this.currentBonusChoices = this.rollChoices();
     
-    const excludeIds = new Set<string>();
-    this.currentBonusChoices.forEach((choice) => excludeIds.add(choice.id));
-    this.currentPaidRareChoice = this.rollPaidRareChoice(excludeIds);
+    if (this.forcedChoices) {
+      this.currentBonusChoices = this.forcedChoices
+        .map(id => this.bonusPool.getChoiceDef(id))
+        .filter((c): c is BonusChoice => c !== null);
+      this.currentPaidRareChoice = this.forcedRareChoice ? this.bonusPool.getChoiceDef(this.forcedRareChoice) : null;
+      this.forcedChoices = null;
+      this.forcedRareChoice = null;
+    } else {
+      this.currentBonusChoices = this.rollChoices();
+      const excludeIds = new Set<string>();
+      this.currentBonusChoices.forEach((choice) => excludeIds.add(choice.id));
+      this.currentPaidRareChoice = this.rollPaidRareChoice(excludeIds);
+    }
     
     this.showCurrentBonusChoices();
   }
@@ -142,6 +159,9 @@ export class BonusSystemManager {
     const expectedCost = this.getPaidRareCost();
     const requestedCost = Number.isFinite(cost) ? Math.max(0, Math.floor(cost)) : expectedCost;
     if (!this.callbacks.trySpendCurrency(requestedCost)) {
+      if (this.callbacks.onTutorialShopInteraction) {
+        this.callbacks.onTutorialShopInteraction('paid_rare');
+      }
       this.showCurrentBonusChoices();
       return;
     }
@@ -171,6 +191,9 @@ export class BonusSystemManager {
 
     const requestedCost = Number.isFinite(cost) ? Math.max(0, Math.floor(cost)) : this.bonusRerollCost;
     if (!this.callbacks.trySpendCurrency(requestedCost)) {
+      if (this.callbacks.onTutorialShopInteraction) {
+        this.callbacks.onTutorialShopInteraction('reroll');
+      }
       this.showCurrentBonusChoices();
       return;
     }
@@ -258,9 +281,12 @@ export class BonusSystemManager {
       return;
     }
 
-    const expectedCost = this.getFullHealCost();
-    const requestedCost = Number.isFinite(cost) ? Math.max(0, Math.floor(cost)) : expectedCost;
+    // Removed isFullHealEnabled check
+    const requestedCost = Number.isFinite(cost) ? Math.max(0, Math.floor(cost)) : this.getFullHealCost();
     if (!this.callbacks.trySpendCurrency(requestedCost)) {
+      if (this.callbacks.onTutorialShopInteraction) {
+        this.callbacks.onTutorialShopInteraction('full_heal');
+      }
       this.showCurrentBonusChoices();
       return;
     }

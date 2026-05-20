@@ -2342,6 +2342,10 @@ export class PlayerController {
     return this.position.clone();
   }
 
+  getAttackDirection(): Vector3 {
+    return this.attackDirection.clone();
+  }
+
   getHealth(): Health {
     return this.health;
   }

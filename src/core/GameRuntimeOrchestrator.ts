@@ -270,6 +270,19 @@ export class GameRuntimeOrchestrator {
         context.setRoomCleared(true);
         context.roomManager.setDoorActive(true);
         context.onRoomCleared(context.roomOrder[context.currentRoomIndex]);
+
+        // Immediately check: if the player is already standing at the door when the
+        // room clears, open the bonus shop right away instead of waiting a frame.
+        if (context.gameState === 'playing') {
+          const doorPos = context.roomManager.getDoorPosition();
+          if (doorPos) {
+            const playerPos = context.playerController.getPosition();
+            if (Vector3.Distance(playerPos, doorPos) < 1.2) {
+              context.openBonusChoices();
+              return;
+            }
+          }
+        }
       }
     }
 

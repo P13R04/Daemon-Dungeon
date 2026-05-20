@@ -48,23 +48,92 @@
     "obstacles": []
   },
   {
-    "id": "room_tutorial_base",
-    "name": "Tutorial Phase Room",
+    "id": "room_tutorial_movement",
+    "name": "Tutorial: Movement",
     "layout": [
       "VVV#########PPP",
-      "VVV.........PPP",
-      "VVV.........PPP",
-      "VVV.........PPP",
-      "VVV.........PPP",
-      "VVV.........PPP",
-      "VVV.........PPP",
-      "VVV.........PPP",
-      "VVV.........PPP",
-      "VVV.........PPP",
-      "VVV.........PPP",
-      "VVV.........PPP",
-      "VVV.........PPP",
-      "VVV.........PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#########PPP"
+    ],
+    "spawnPoints": [],
+    "obstacles": []
+  },
+  {
+    "id": "room_tutorial_shop",
+    "name": "Tutorial: Shop",
+    "layout": [
+      "VVV#########PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#########PPP"
+    ],
+    "spawnPoints": [],
+    "obstacles": []
+  },
+  {
+    "id": "room_tutorial_combat",
+    "name": "Tutorial: Combat",
+    "layout": [
+      "VVV#########PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#########PPP"
+    ],
+    "spawnPoints": [],
+    "obstacles": []
+  },
+  {
+    "id": "room_tutorial_playground",
+    "name": "Tutorial: Playground",
+    "layout": [
+      "VVV#########PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
+      "VVV#.......#PPP",
       "VVV#########PPP"
     ],
     "spawnPoints": [],
@@ -735,9 +804,21 @@
       "###############"
     ],
     "spawnPoints": [
-      { "x": 7, "y": 5, "enemyType": "laser_pattern_boss" },
-      { "x": 3, "y": 3, "enemyType": "turret" },
-      { "x": 11, "y": 7, "enemyType": "bullet_hell" }
+      {
+        "x": 7,
+        "y": 5,
+        "enemyType": "laser_pattern_boss"
+      },
+      {
+        "x": 3,
+        "y": 3,
+        "enemyType": "turret"
+      },
+      {
+        "x": 11,
+        "y": 7,
+        "enemyType": "bullet_hell"
+      }
     ],
     "obstacles": []
   }
