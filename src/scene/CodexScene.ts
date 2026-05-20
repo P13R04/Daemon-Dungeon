@@ -29,6 +29,7 @@ import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { CodexService } from '../services/CodexService';
 import type { EnemyConfigEntry } from '../types/config';
+import { applyResponsiveGuiScaling, DESIGN_WIDTH, DESIGN_HEIGHT } from '../ui/GuiScaling';
 
 type CodexSection = 'bestiary' | 'bonuses';
 type BestiaryGroup = 'normal' | 'boss';
@@ -190,10 +191,7 @@ export class CodexScene {
     createSynthwaveGridBackground(this.scene, SCENE_LAYER, true);
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('CodexUI', true, this.scene);
-    this.gui.idealWidth = 1920;
-    this.gui.idealHeight = 1080;
-    this.gui.useSmallestIdeal = true;
-    this.gui.renderAtIdealSize = true;
+    applyResponsiveGuiScaling(this.gui, this.engine);
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
@@ -218,12 +216,13 @@ export class CodexScene {
     root.addControl(mainLayoutContainer);
 
     const updateScale = () => {
-      const size = this.gui.getSize();
-      const scaleX = size.width / 1920;
-      const scaleY = size.height / 1080;
-      const scale = Math.min(scaleX, scaleY);
+      const size   = this.gui.getSize();
+      const scaleX = size.width  / DESIGN_WIDTH;
+      const scaleY = size.height / DESIGN_HEIGHT;
+      const scale  = Math.min(scaleX, scaleY);
       mainLayoutContainer.scaleX = scale;
       mainLayoutContainer.scaleY = scale;
+      applyResponsiveGuiScaling(this.gui, this.engine);
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     updateScale();

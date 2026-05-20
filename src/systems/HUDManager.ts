@@ -20,6 +20,7 @@ import { getSpecialMarkerAtDisplayIndex, stripAllSpecialMarkers } from './hud/Da
 import { BONUS_CODEX_ENTRIES } from '../data/codex/bonuses';
 import { getMergedAchievementDefinitions } from '../data/achievements/loadAchievementDefinitions';
 import type { BonusSelectionUiState } from './BonusSystemManager';
+import { applyResponsiveGuiScaling } from '../ui/GuiScaling';
 import type {
   AudioEngineLike,
   DamageNumber,
@@ -233,23 +234,22 @@ export class HUDManager {
   }
 
   private applyGuiScaling(): void {
-    const designWidth = 1920;
-    const designHeight = 1080;
+    applyResponsiveGuiScaling(this.guiFx,    this.scene.getEngine());
+    applyResponsiveGuiScaling(this.guiClean, this.scene.getEngine());
 
-    this.guiFx.idealWidth = designWidth;
-    this.guiFx.idealHeight = designHeight;
-    this.guiFx.useSmallestIdeal = true;
-    this.guiFx.renderAtIdealSize = true;
-
-    this.guiClean.idealWidth = designWidth;
-    this.guiClean.idealHeight = designHeight;
-    this.guiClean.useSmallestIdeal = true;
-    this.guiClean.renderAtIdealSize = true;
-
-    // Enemy bars must stay in raw screen space for projection alignment
+    // Enemy bars stay in raw screen space for world-space projection alignment
     if (this.enemyGui) {
       this.enemyGui.renderAtIdealSize = false;
       this.enemyGui.renderScale = 1;
+    }
+
+    // Re-apply on every engine resize (handles orientation changes on mobile)
+    if (!(this as any)._guiScaleResizeRegistered) {
+      (this as any)._guiScaleResizeRegistered = true;
+      this.scene.getEngine().onResizeObservable.add(() => {
+        applyResponsiveGuiScaling(this.guiFx,    this.scene.getEngine());
+        applyResponsiveGuiScaling(this.guiClean, this.scene.getEngine());
+      });
     }
   }
 
@@ -856,11 +856,11 @@ export class HUDManager {
     this.statusPanel.addControl(this.autoAimLabel);
 
     this.achievementToastContainer = new Rectangle('achievement_toast');
-    this.achievementToastContainer.width = '360px';
-    this.achievementToastContainer.height = '88px';
-    this.achievementToastContainer.thickness = 1;
+    this.achievementToastContainer.width = '460px';
+    this.achievementToastContainer.height = '112px';
+    this.achievementToastContainer.thickness = 2;
     this.achievementToastContainer.color = '#7CFFEA';
-    this.achievementToastContainer.background = 'rgba(4, 24, 28, 0.88)';
+    this.achievementToastContainer.background = 'rgba(4, 24, 28, 0.92)';
     this.achievementToastContainer.left = 16;
     this.achievementToastContainer.top = 88;
     this.achievementToastContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -871,13 +871,13 @@ export class HUDManager {
     this.guiClean.addControl(this.achievementToastContainer);
 
     this.achievementIconPlaceholder = new Rectangle('achievement_toast_icon');
-    this.achievementIconPlaceholder.width = '64px';
-    this.achievementIconPlaceholder.height = '64px';
+    this.achievementIconPlaceholder.width = '80px';
+    this.achievementIconPlaceholder.height = '80px';
     this.achievementIconPlaceholder.thickness = 1;
     this.achievementIconPlaceholder.color = '#5FFFE0';
     this.achievementIconPlaceholder.background = 'rgba(18, 44, 51, 0.9)';
-    this.achievementIconPlaceholder.left = 12;
-    this.achievementIconPlaceholder.top = 12;
+    this.achievementIconPlaceholder.left = 14;
+    this.achievementIconPlaceholder.top = 16;
     this.achievementIconPlaceholder.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.achievementIconPlaceholder.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.achievementToastContainer.addControl(this.achievementIconPlaceholder);
@@ -885,7 +885,7 @@ export class HUDManager {
     this.achievementIconText = new TextBlock('achievement_toast_icon_text');
     this.achievementIconText.text = '?';
     this.achievementIconText.fontFamily = fontFamily;
-    this.achievementIconText.fontSize = 24;
+    this.achievementIconText.fontSize = 30;
     this.achievementIconText.color = '#B8FFE6';
     this.achievementIconPlaceholder.addControl(this.achievementIconText);
 
@@ -893,13 +893,13 @@ export class HUDManager {
 
     this.achievementToastTitle = new TextBlock('achievement_toast_title');
     this.achievementToastTitle.text = 'ACHIEVEMENT UNLOCKED';
-    this.achievementToastTitle.fontSize = 16;
+    this.achievementToastTitle.fontSize = 18;
     this.achievementToastTitle.fontFamily = fontFamily;
     this.achievementToastTitle.color = '#7CFFEA';
-    this.achievementToastTitle.left = 88;
-    this.achievementToastTitle.top = 12;
-    this.achievementToastTitle.width = '256px';
-    this.achievementToastTitle.height = '24px';
+    this.achievementToastTitle.left = 106;
+    this.achievementToastTitle.top = 14;
+    this.achievementToastTitle.width = '340px';
+    this.achievementToastTitle.height = '28px';
     this.achievementToastTitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.achievementToastTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.achievementToastTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -907,13 +907,13 @@ export class HUDManager {
 
     this.achievementToastDescription = new TextBlock('achievement_toast_desc');
     this.achievementToastDescription.text = '';
-    this.achievementToastDescription.fontSize = 13;
+    this.achievementToastDescription.fontSize = 14;
     this.achievementToastDescription.fontFamily = fontFamily;
     this.achievementToastDescription.color = '#CFFCF3';
-    this.achievementToastDescription.left = 88;
-    this.achievementToastDescription.top = 34;
-    this.achievementToastDescription.width = '256px';
-    this.achievementToastDescription.height = '42px';
+    this.achievementToastDescription.left = 106;
+    this.achievementToastDescription.top = 46;
+    this.achievementToastDescription.width = '340px';
+    this.achievementToastDescription.height = '54px';
     this.achievementToastDescription.textWrapping = true;
     this.achievementToastDescription.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.achievementToastDescription.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -2064,8 +2064,8 @@ export class HUDManager {
       } else {
         this.achievementToastArtwork.source = buildHudAssetUrl(`achievements/${HUDManager.currentAchievement.id}.png`);
       }
-      this.achievementToastArtwork.width = '64px';
-      this.achievementToastArtwork.height = '64px';
+      this.achievementToastArtwork.width = '80px';
+      this.achievementToastArtwork.height = '80px';
       this.achievementToastArtwork.stretch = Image.STRETCH_UNIFORM;
       this.achievementIconPlaceholder.addControl(this.achievementToastArtwork);
     }
@@ -3429,8 +3429,8 @@ export class HUDManager {
     leftJoystickContainer.thickness = 0;
     leftJoystickContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     leftJoystickContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    leftJoystickContainer.left = '144px';
-    leftJoystickContainer.top = '-240px';
+    leftJoystickContainer.left = '100px';
+    leftJoystickContainer.top = '-100px';
     this.guiClean.addControl(leftJoystickContainer);
     this.mobileControls.push(leftJoystickContainer);
 
@@ -3451,20 +3451,20 @@ export class HUDManager {
     joystickThumb.background = '#2EF9C3';
     leftJoystickContainer.addControl(joystickThumb);
 
-    // 2. ACTION BUTTONS (Attack, Stance & Ultimate)
+    // 2. ACTION BUTTONS (Attack, Stance & Ultimate) — bigger for comfortable touch targets
     const attackBtn = Button.CreateSimpleButton('mobile_attack_btn', 'ATTACK');
-    attackBtn.width = '96px';
-    attackBtn.height = '96px';
+    attackBtn.width = '120px';
+    attackBtn.height = '120px';
     attackBtn.color = '#FFD782';
     attackBtn.background = 'rgba(20, 15, 10, 0.75)';
-    attackBtn.thickness = 2;
-    attackBtn.cornerRadius = 48;
+    attackBtn.thickness = 3;
+    attackBtn.cornerRadius = 60;
     attackBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     attackBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    attackBtn.left = '-140px';
-    attackBtn.top = '-240px';
+    attackBtn.left = '-80px';
+    attackBtn.top = '-80px';
     if (attackBtn.textBlock) {
-      attackBtn.textBlock.fontSize = 14;
+      attackBtn.textBlock.fontSize = 16;
       attackBtn.textBlock.fontFamily = fontFamily;
       attackBtn.textBlock.fontWeight = 'bold';
     }
@@ -3473,18 +3473,18 @@ export class HUDManager {
     this.mobileAttackBtn = attackBtn;
 
     const stanceBtn = Button.CreateSimpleButton('mobile_stance_btn', 'STANCE');
-    stanceBtn.width = '72px';
-    stanceBtn.height = '72px';
+    stanceBtn.width = '96px';
+    stanceBtn.height = '96px';
     stanceBtn.color = '#7CFFEA';
     stanceBtn.background = 'rgba(10, 30, 35, 0.75)';
-    stanceBtn.thickness = 2;
-    stanceBtn.cornerRadius = 36;
+    stanceBtn.thickness = 3;
+    stanceBtn.cornerRadius = 48;
     stanceBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     stanceBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    stanceBtn.left = '-270px';
-    stanceBtn.top = '-240px';
+    stanceBtn.left = '-240px';
+    stanceBtn.top = '-80px';
     if (stanceBtn.textBlock) {
-      stanceBtn.textBlock.fontSize = 12;
+      stanceBtn.textBlock.fontSize = 14;
       stanceBtn.textBlock.fontFamily = fontFamily;
       stanceBtn.textBlock.fontWeight = 'bold';
     }
@@ -3492,19 +3492,19 @@ export class HUDManager {
     this.mobileControls.push(stanceBtn);
     this.mobileStanceBtn = stanceBtn;
 
-    const ultBtn = Button.CreateSimpleButton('mobile_ult_btn', 'ULTIMATE');
-    ultBtn.width = '84px';
-    ultBtn.height = '84px';
+    const ultBtn = Button.CreateSimpleButton('mobile_ult_btn', 'ULT');
+    ultBtn.width = '108px';
+    ultBtn.height = '108px';
     ultBtn.color = '#FFFF00';
     ultBtn.background = 'rgba(35, 35, 10, 0.75)';
-    ultBtn.thickness = 2;
-    ultBtn.cornerRadius = 42;
+    ultBtn.thickness = 3;
+    ultBtn.cornerRadius = 54;
     ultBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     ultBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    ultBtn.left = '-190px';
-    ultBtn.top = '-370px';
+    ultBtn.left = '-170px';
+    ultBtn.top = '-240px';
     if (ultBtn.textBlock) {
-      ultBtn.textBlock.fontSize = 12;
+      ultBtn.textBlock.fontSize = 15;
       ultBtn.textBlock.fontFamily = fontFamily;
       ultBtn.textBlock.fontWeight = 'bold';
     }
@@ -3512,89 +3512,115 @@ export class HUDManager {
     this.mobileControls.push(ultBtn);
     this.mobileUltBtn = ultBtn;
 
-    // Interactive Drag Logic variables
+    // ── Joystick drag logic ──────────────────────────────────────────────────
+    // Uses scene.onPointerObservable (global) so the thumb tracks correctly even
+    // when the finger moves outside the joystick container bounds.
+    //
+    // DPR / hardware-scaling fix:
+    //   Touch events deliver CSS pixels (clientX/Y).
+    //   Babylon GUI internal coordinates are in render pixels.
+    //   canvas.width / rect.width gives the CSS→render scale factor.
+
     let isDraggingLeft = false;
     let leftPointerId = -1;
+    const maxRadius = 60;
 
-    const localPos = new Vector2();
-    const updateLeftJoystick = (px: number, py: number) => {
-      leftJoystickContainer.getLocalCoordinatesToRef(new Vector2(px, py), localPos);
-      let dx = localPos.x;
-      let dy = localPos.y;
-      const maxRadius = 60;
+    const toJoystickLocal = (clientX: number, clientY: number, result: Vector2): void => {
+      const engine = this.scene.getEngine();
+      const canvas = engine.getRenderingCanvas();
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const sx = canvas.width  / (rect.width  || 1);
+      const sy = canvas.height / (rect.height || 1);
+      const renderX = (clientX - rect.left) * sx;
+      const renderY = (clientY - rect.top)  * sy;
+      // Maps render-pixel canvas coords → control local space (origin = centre).
+      leftJoystickContainer.getLocalCoordinatesToRef(new Vector2(renderX, renderY), result);
+    };
+
+    const applyJoystickInput = (localX: number, localY: number) => {
+      let dx = localX;
+      let dy = localY;
       const distance = Math.sqrt(dx * dx + dy * dy);
-
       if (distance > maxRadius) {
         dx = (dx / distance) * maxRadius;
         dy = (dy / distance) * maxRadius;
       }
       joystickThumb.left = `${dx}px`;
-      joystickThumb.top = `${dy}px`;
+      joystickThumb.top  = `${dy}px`;
 
-      if (distance > 0) {
+      if (distance > 4) {
         const ndx = dx / maxRadius;
-        const ndy = -dy / maxRadius; // Invert Y for 3D coordinates (Z goes forward)
-
-        const rawVector = new Vector3(ndx, 0, ndy);
-        if (rawVector.length() > 0.15) {
-          const angle = Math.atan2(rawVector.x, rawVector.z);
-          const step = Math.PI / 4;
-          const snappedAngle = Math.round(angle / step) * step;
-          const quantized = new Vector3(Math.sin(snappedAngle), 0, Math.cos(snappedAngle)).normalize();
-          this.inputManager!.setJoystickMoveVector(quantized);
+        const ndy = -dy / maxRadius; // Invert Y: screen-down = 3D-backward
+        const rawVec = new Vector3(ndx, 0, ndy);
+        if (rawVec.length() > 0.15) {
+          const angle        = Math.atan2(rawVec.x, rawVec.z);
+          const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+          const quantized    = new Vector3(Math.sin(snappedAngle), 0, Math.cos(snappedAngle)).normalize();
+          if (this.inputManager) this.inputManager.setJoystickMoveVector(quantized);
         } else {
-          this.inputManager!.setJoystickMoveVector(Vector3.Zero());
+          if (this.inputManager) this.inputManager.setJoystickMoveVector(Vector3.Zero());
         }
       } else {
-        this.inputManager!.setJoystickMoveVector(Vector3.Zero());
+        if (this.inputManager) this.inputManager.setJoystickMoveVector(Vector3.Zero());
       }
     };
 
     const resetLeftJoystick = () => {
       joystickThumb.left = '0px';
-      joystickThumb.top = '0px';
-      this.inputManager!.setJoystickMoveVector(Vector3.Zero());
+      joystickThumb.top  = '0px';
+      isDraggingLeft = false;
+      leftPointerId  = -1;
+      if (this.inputManager) this.inputManager.setJoystickMoveVector(Vector3.Zero());
     };
 
-    // Global Pointer Event bindings on the scene for left movement joystick multi-touch tracking
-    this.scene.onPointerObservable.add((pointerInfo) => {
-      const event = pointerInfo.event;
-      if (!event) return;
-      const pointerId = (event as any).pointerId;
-      const type = pointerInfo.type;
-
+    const isInsideJoystick = (clientX: number, clientY: number): boolean => {
       const engine = this.scene.getEngine();
       const canvas = engine.getRenderingCanvas();
-      if (!canvas) return;
-      
-      const rect = canvas.getBoundingClientRect();
-      const rawX = (event as any).clientX - rect.left;
-      const rawY = (event as any).clientY - rect.top;
+      if (!canvas) return false;
+      const rect  = canvas.getBoundingClientRect();
+      const sx    = canvas.width  / (rect.width  || 1);
+      const sy    = canvas.height / (rect.height || 1);
+      const renderX = (clientX - rect.left) * sx;
+      const renderY = (clientY - rect.top)  * sy;
+      const local   = new Vector2();
+      leftJoystickContainer.getLocalCoordinatesToRef(new Vector2(renderX, renderY), local);
+      const hw = leftJoystickContainer.widthInPixels  / 2;
+      const hh = leftJoystickContainer.heightInPixels / 2;
+      return local.x >= -hw && local.x <= hw && local.y >= -hh && local.y <= hh;
+    };
 
-      const localCheckPos = new Vector2();
+    // Global scene observer — supports multi-touch, works outside container bounds
+    const jsLocal = new Vector2();
+    this.scene.onPointerObservable.add((pointerInfo) => {
+      const event = pointerInfo.event as PointerEvent;
+      if (!event) return;
 
-      if (type === PointerEventTypes.POINTERDOWN) {
-        const leftHalfW = leftJoystickContainer.widthInPixels / 2;
-        const leftHalfH = leftJoystickContainer.heightInPixels / 2;
-        leftJoystickContainer.getLocalCoordinatesToRef(new Vector2(rawX, rawY), localCheckPos);
-        const isInsideLeft = localCheckPos.x >= -leftHalfW && localCheckPos.x <= leftHalfW &&
-                             localCheckPos.y >= -leftHalfH && localCheckPos.y <= leftHalfH;
+      // Ignore if mobile controls are hidden (e.g. desktop mode)
+      if (!this.inputManager || !this.inputManager.isMobileMode()) return;
 
-        if (isInsideLeft) {
-          isDraggingLeft = true;
-          leftPointerId = pointerId;
-          updateLeftJoystick(rawX, rawY);
-        }
-      } else if (type === PointerEventTypes.POINTERMOVE) {
-        if (isDraggingLeft && pointerId === leftPointerId) {
-          updateLeftJoystick(rawX, rawY);
-        }
-      } else if (type === PointerEventTypes.POINTERUP) {
-        if (isDraggingLeft && pointerId === leftPointerId) {
-          isDraggingLeft = false;
-          leftPointerId = -1;
-          resetLeftJoystick();
-        }
+      const pid = (event as any).pointerId ?? 0;
+
+      switch (pointerInfo.type) {
+        case PointerEventTypes.POINTERDOWN:
+          if (!isDraggingLeft && isInsideJoystick(event.clientX, event.clientY)) {
+            isDraggingLeft = true;
+            leftPointerId  = pid;
+            toJoystickLocal(event.clientX, event.clientY, jsLocal);
+            applyJoystickInput(jsLocal.x, jsLocal.y);
+          }
+          break;
+
+        case PointerEventTypes.POINTERMOVE:
+          if (isDraggingLeft && pid === leftPointerId) {
+            toJoystickLocal(event.clientX, event.clientY, jsLocal);
+            applyJoystickInput(jsLocal.x, jsLocal.y);
+          }
+          break;
+
+        case PointerEventTypes.POINTERUP:
+          if (isDraggingLeft && pid === leftPointerId) resetLeftJoystick();
+          break;
       }
     });
 
@@ -3616,7 +3642,7 @@ export class HUDManager {
         this.inputManager!.setMobileStancePressed(false);
       } else {
         const currentResource = this.player.getSecondaryResourceCurrent();
-        const threshold = this.player.getSecondaryActivationThreshold();
+        const threshold       = this.player.getSecondaryActivationThreshold();
         if (currentResource >= threshold) {
           this.inputManager!.setMobileStancePressed(true);
         }
@@ -3633,6 +3659,7 @@ export class HUDManager {
       ultBtn.background = 'rgba(35, 35, 10, 0.75)';
     });
   }
+
 
   private updateMobileControlsState(deltaTime: number): void {
     if (!this.inputManager || !this.player) return;

@@ -23,6 +23,7 @@ import {
 } from '@babylonjs/gui';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
 import { UI_LAYER } from '../ui/uiLayers';
+import { applyResponsiveGuiScaling, DESIGN_WIDTH, DESIGN_HEIGHT } from '../ui/GuiScaling';
 
 // ─── Public config ────────────────────────────────────────────────────────────
 
@@ -219,10 +220,7 @@ export class BootSequenceScene {
     this.scene.activeCamera = this.camera;
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('BootUI', true, this.scene);
-    this.gui.idealWidth = 1920;
-    this.gui.idealHeight = 1080;
-    this.gui.useSmallestIdeal = true;
-    this.gui.renderAtIdealSize = true;
+    applyResponsiveGuiScaling(this.gui, this.scene.getEngine());
     if (this.gui.layer) this.gui.layer.layerMask = UI_LAYER;
 
     this._buildUI();

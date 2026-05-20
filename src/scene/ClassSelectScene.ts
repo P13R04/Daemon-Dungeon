@@ -30,6 +30,7 @@ import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { GameSettingsStore } from '../settings/GameSettings';
 import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
+import { applyResponsiveGuiScaling, DESIGN_WIDTH, DESIGN_HEIGHT } from '../ui/GuiScaling';
 
 interface ClassCarouselItem {
   id: 'mage' | 'firewall' | 'rogue' | 'cat';
@@ -159,10 +160,7 @@ export class ClassSelectScene {
     });
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('ClassSelectUI', true, this.scene);
-    this.gui.idealWidth = 1920;
-    this.gui.idealHeight = 1080;
-    this.gui.useSmallestIdeal = true;
-    this.gui.renderAtIdealSize = true;
+    applyResponsiveGuiScaling(this.gui, this.engine);
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
@@ -315,12 +313,13 @@ export class ClassSelectScene {
     this.gui.addControl(mainLayoutContainer);
 
     const updateScale = () => {
-      const size = this.gui.getSize();
-      const scaleX = size.width / 1920;
-      const scaleY = size.height / 1080;
-      const scale = Math.min(scaleX, scaleY);
+      const size   = this.gui.getSize();
+      const scaleX = size.width  / DESIGN_WIDTH;
+      const scaleY = size.height / DESIGN_HEIGHT;
+      const scale  = Math.min(scaleX, scaleY);
       mainLayoutContainer.scaleX = scale;
       mainLayoutContainer.scaleY = scale;
+      applyResponsiveGuiScaling(this.gui, this.engine);
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     updateScale();

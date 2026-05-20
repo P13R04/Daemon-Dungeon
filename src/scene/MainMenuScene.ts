@@ -28,6 +28,7 @@ import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { createMenuMatrixBackground } from './MenuMatrixBackground';
+import { applyResponsiveGuiScaling, DESIGN_WIDTH, DESIGN_HEIGHT } from '../ui/GuiScaling';
 
 type AudioChannel = keyof AudioSettings;
 
@@ -126,10 +127,7 @@ export class MainMenuScene {
     this.scene.activeCamera = camera;
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('MainMenuUI', true, this.scene);
-    this.gui.idealWidth = 1920;
-    this.gui.idealHeight = 1080;
-    this.gui.useSmallestIdeal = true;
-    this.gui.renderAtIdealSize = true;
+    applyResponsiveGuiScaling(this.gui, this.engine);
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
@@ -144,12 +142,14 @@ export class MainMenuScene {
     this.gui.addControl(this.mainLayoutContainer);
 
     const updateScale = () => {
-      const size = this.gui.getSize();
-      const scaleX = size.width / 1920;
-      const scaleY = size.height / 1080;
-      const scale = Math.min(scaleX, scaleY);
+      const size   = this.gui.getSize();
+      const scaleX = size.width  / DESIGN_WIDTH;
+      const scaleY = size.height / DESIGN_HEIGHT;
+      const scale  = Math.min(scaleX, scaleY);
       this.mainLayoutContainer.scaleX = scale;
       this.mainLayoutContainer.scaleY = scale;
+      // Re-apply responsive sizing in case orientation changed
+      applyResponsiveGuiScaling(this.gui, this.engine);
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     updateScale();

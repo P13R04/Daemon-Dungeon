@@ -115,7 +115,7 @@ export class DevConsole {
     const engine = this.scene.getEngine();
     const scaling = engine.getHardwareScalingLevel();
     const scaledWidth = engine.getRenderWidth(true) * scaling;
-    this.gui.renderAtIdealSize = true;
+    this.gui.renderAtIdealSize = false;
     this.gui.idealWidth = scaledWidth;
     this.gui.idealHeight = engine.getRenderHeight(true) * scaling;
     this.gui.renderScale = 1;

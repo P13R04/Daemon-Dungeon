@@ -345,7 +345,9 @@ export class GameManager {
     });
 
     // Initialize Babylon.js engine
-    this.engine = new Engine(canvas, true);
+    // adaptToDeviceRatio=true: renders at the device's native pixel density
+    // (e.g. 3× on recent iPhones). Critical for sharp text/UI on mobile.
+    this.engine = new Engine(canvas, true, { adaptToDeviceRatio: true });
 
     // Setup ResizeObserver on canvas to automatically resize engine dynamically
     this.resizeObserver = new ResizeObserver(() => {
