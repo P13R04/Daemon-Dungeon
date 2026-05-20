@@ -61,9 +61,6 @@ export class DevConsole {
   private fireRateText: TextBlock | null = null;
   private focusBonusText: TextBlock | null = null;
   private damageEvents: Array<{ t: number; dmg: number }> = [];
-  private roomIds: string[] = [];
-  private roomSelectIndex: number = 0;
-  private roomSelectLabel: TextBlock | null = null;
   private voicelineIds: string[] = [];
   private voicelineSelectIndex: number = 0;
   private voicelineSelectLabel: TextBlock | null = null;
@@ -698,75 +695,11 @@ export class DevConsole {
   }
 
   private createRoomTestingSection(parent: StackPanel): void {
-    const rooms = this.configLoader.getRoomsConfig();
-    this.roomIds = Array.isArray(rooms) ? rooms.map((room) => (room as { id?: string }).id).filter((id): id is string => typeof id === 'string' && id.length > 0) : [];
-    if (this.roomIds.length === 0) {
-      this.roomIds = ['room_test_dummies'];
-    }
+    const oldTestRooms = this.configLoader.getOldTestRoomsConfig() ?? [];
+    const realRooms = this.configLoader.getRealRoomsConfig() ?? [];
 
-    const sectionTitle = new TextBlock('roomTestTitle');
-    sectionTitle.text = '═══ ROOM TESTING ═══';
-    sectionTitle.fontSize = 15;
-    sectionTitle.fontWeight = 'bold';
-    sectionTitle.color = '#00FFAA';
-    sectionTitle.height = '34px';
-    sectionTitle.paddingTop = 6;
-    sectionTitle.paddingBottom = 6;
-    parent.addControl(sectionTitle);
-
-    const selectorRow = new StackPanel('roomSelectorRow');
-    selectorRow.isVertical = false;
-    selectorRow.height = '34px';
-    selectorRow.width = '440px';
-    selectorRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-
-    const prevBtn = Button.CreateSimpleButton('roomPrevBtn', '<');
-    prevBtn.width = '30px';
-    prevBtn.height = '26px';
-    prevBtn.color = '#00FFAA';
-    prevBtn.background = '#1A1A2A';
-    prevBtn.thickness = 1;
-    prevBtn.onPointerUpObservable.add(() => {
-      this.roomSelectIndex = (this.roomSelectIndex - 1 + this.roomIds.length) % this.roomIds.length;
-      this.updateRoomLabel();
-    });
-
-    this.roomSelectLabel = new TextBlock('roomSelectLabel');
-    this.roomSelectLabel.text = this.roomIds[this.roomSelectIndex];
-    this.roomSelectLabel.fontSize = 13;
-    this.roomSelectLabel.color = '#FFFFFF';
-    this.roomSelectLabel.width = '320px';
-    this.roomSelectLabel.height = '26px';
-    this.roomSelectLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-
-    const nextBtn = Button.CreateSimpleButton('roomNextBtn', '>');
-    nextBtn.width = '30px';
-    nextBtn.height = '26px';
-    nextBtn.color = '#00FFAA';
-    nextBtn.background = '#1A1A2A';
-    nextBtn.thickness = 1;
-    nextBtn.onPointerUpObservable.add(() => {
-      this.roomSelectIndex = (this.roomSelectIndex + 1) % this.roomIds.length;
-      this.updateRoomLabel();
-    });
-
-    selectorRow.addControl(prevBtn);
-    selectorRow.addControl(this.roomSelectLabel);
-    selectorRow.addControl(nextBtn);
-    parent.addControl(selectorRow);
-
-    const loadBtn = Button.CreateSimpleButton('roomLoadBtn', 'LOAD ROOM');
-    loadBtn.width = '200px';
-    loadBtn.height = '30px';
-    loadBtn.color = '#FFFFFF';
-    loadBtn.background = '#004400';
-    loadBtn.thickness = 1;
-    loadBtn.top = '4px';
-    loadBtn.onPointerUpObservable.add(() => {
-      const roomId = this.roomIds[this.roomSelectIndex];
-      this.eventBus.emit(GameEvents.DEV_ROOM_LOAD_REQUESTED, { roomId });
-    });
-    parent.addControl(loadBtn);
+    this.createRoomTestingSubsection(parent, '═══ OLD TEST ROOMS ═══', oldTestRooms, 'LOAD OLD ROOM', 'room_test_dummies', 'oldTestRooms');
+    const getRealRoomId = this.createRoomTestingSubsection(parent, '═══ REAL ROOMS ═══', realRooms, 'LOAD ROOM', 'room_boss_jumper', 'realRooms');
 
     // Add tile controls
     const tileSectionTitle = new TextBlock('tileSectionTitle');
@@ -804,7 +737,7 @@ export class DevConsole {
     loadTilesBtn.background = '#004400';
     loadTilesBtn.thickness = 1;
     loadTilesBtn.onPointerUpObservable.add(() => {
-      const roomId = this.roomIds[this.roomSelectIndex];
+      const roomId = getRealRoomId();
       this.eventBus.emit(GameEvents.DEV_TILE_LOAD_REQUESTED, { roomId });
       this.gameManager.setTilesEnabled(true);
     });
@@ -896,10 +829,92 @@ export class DevConsole {
     });
   }
 
-  private updateRoomLabel(): void {
-    if (this.roomSelectLabel) {
-      this.roomSelectLabel.text = this.roomIds[this.roomSelectIndex] ?? 'unknown';
-    }
+  private createRoomTestingSubsection(
+    parent: StackPanel,
+    titleText: string,
+    rooms: Array<{ id?: string }>,
+    loadButtonText: string,
+    fallbackRoomId: string,
+    sectionKey: string,
+  ): () => string {
+    const roomIds = rooms
+      .map((room) => room.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    const activeRoomIds = roomIds.length > 0 ? roomIds : [fallbackRoomId];
+    const state = {
+      roomSelectIndex: 0,
+      roomSelectLabel: null as TextBlock | null,
+    };
+
+    const sectionTitle = new TextBlock(`${sectionKey}-title`);
+    sectionTitle.text = titleText;
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#00FFAA';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    const selectorRow = new StackPanel(`${sectionKey}-roomSelectorRow`);
+    selectorRow.isVertical = false;
+    selectorRow.height = '34px';
+    selectorRow.width = '440px';
+    selectorRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const prevBtn = Button.CreateSimpleButton(`${sectionKey}-roomPrevBtn`, '<');
+    prevBtn.width = '30px';
+    prevBtn.height = '26px';
+    prevBtn.color = '#00FFAA';
+    prevBtn.background = '#1A1A2A';
+    prevBtn.thickness = 1;
+    prevBtn.onPointerUpObservable.add(() => {
+      state.roomSelectIndex = (state.roomSelectIndex - 1 + activeRoomIds.length) % activeRoomIds.length;
+      if (state.roomSelectLabel) {
+        state.roomSelectLabel.text = activeRoomIds[state.roomSelectIndex] ?? 'unknown';
+      }
+    });
+
+    state.roomSelectLabel = new TextBlock(`${sectionKey}-roomSelectLabel`);
+    state.roomSelectLabel.text = activeRoomIds[state.roomSelectIndex] ?? 'unknown';
+    state.roomSelectLabel.fontSize = 13;
+    state.roomSelectLabel.color = '#FFFFFF';
+    state.roomSelectLabel.width = '320px';
+    state.roomSelectLabel.height = '26px';
+    state.roomSelectLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const nextBtn = Button.CreateSimpleButton(`${sectionKey}-roomNextBtn`, '>');
+    nextBtn.width = '30px';
+    nextBtn.height = '26px';
+    nextBtn.color = '#00FFAA';
+    nextBtn.background = '#1A1A2A';
+    nextBtn.thickness = 1;
+    nextBtn.onPointerUpObservable.add(() => {
+      state.roomSelectIndex = (state.roomSelectIndex + 1) % activeRoomIds.length;
+      if (state.roomSelectLabel) {
+        state.roomSelectLabel.text = activeRoomIds[state.roomSelectIndex] ?? 'unknown';
+      }
+    });
+
+    selectorRow.addControl(prevBtn);
+    selectorRow.addControl(state.roomSelectLabel);
+    selectorRow.addControl(nextBtn);
+    parent.addControl(selectorRow);
+
+    const loadBtn = Button.CreateSimpleButton(`${sectionKey}-loadBtn`, loadButtonText);
+    loadBtn.width = '200px';
+    loadBtn.height = '30px';
+    loadBtn.color = '#FFFFFF';
+    loadBtn.background = '#004400';
+    loadBtn.thickness = 1;
+    loadBtn.top = '4px';
+    loadBtn.onPointerUpObservable.add(() => {
+      const roomId = activeRoomIds[state.roomSelectIndex];
+      this.eventBus.emit(GameEvents.DEV_ROOM_LOAD_REQUESTED, { roomId });
+    });
+    parent.addControl(loadBtn);
+
+    return () => activeRoomIds[state.roomSelectIndex] ?? fallbackRoomId;
   }
 
   private createVoicelineTestingSection(parent: StackPanel): void {

@@ -11,6 +11,8 @@ export class ConfigLoader {
   private enemiesConfig: EnemiesConfig | null = null;
   private gameplayConfig: GameplayConfig | null = null;
   private roomsConfig: RoomsConfig | null = null;
+  private realRoomsConfig: RoomsConfig | null = null;
+  private oldTestRoomsConfig: RoomsConfig | null = null;
 
   private constructor() {}
 
@@ -27,18 +29,32 @@ export class ConfigLoader {
       this.enemiesConfig = await this.loadJSON<EnemiesConfig>('data/config/enemies.json');
       this.gameplayConfig = await this.loadJSON<GameplayConfig>('data/config/gameplay.json');
 
-      const roomModules = import.meta.glob('../data/rooms/room_*.json', { eager: true }) as Record<
+      const realRoomModules = import.meta.glob('../data/rooms/room_*.json', { eager: true }) as Record<
         string,
         { default?: RoomConfig } | RoomConfig
       >;
-      const loadedRooms = Object.values(roomModules)
+      const oldTestRoomModules = import.meta.glob('../data/rooms/old_test_rooms/room_*.json', { eager: true }) as Record<
+        string,
+        { default?: RoomConfig } | RoomConfig
+      >;
+      const loadedRealRooms = Object.values(realRoomModules)
+        .map((module) => (module as { default?: RoomConfig }).default ?? (module as RoomConfig))
+        .filter((room): room is RoomConfig => Boolean(room && typeof room.id === 'string'));
+      const loadedOldTestRooms = Object.values(oldTestRoomModules)
         .map((module) => (module as { default?: RoomConfig }).default ?? (module as RoomConfig))
         .filter((room): room is RoomConfig => Boolean(room && typeof room.id === 'string'));
 
-      if (loadedRooms.length > 0) {
-        this.roomsConfig = loadedRooms.sort((a, b) => a.id.localeCompare(b.id));
+      const sortedRealRooms = loadedRealRooms.sort((a, b) => a.id.localeCompare(b.id));
+      const sortedOldTestRooms = loadedOldTestRooms.sort((a, b) => a.id.localeCompare(b.id));
+
+      if (sortedRealRooms.length > 0 || sortedOldTestRooms.length > 0) {
+        this.realRoomsConfig = sortedRealRooms;
+        this.oldTestRoomsConfig = sortedOldTestRooms;
+        this.roomsConfig = [...sortedRealRooms, ...sortedOldTestRooms].sort((a, b) => a.id.localeCompare(b.id));
       } else {
         this.roomsConfig = await this.loadJSON<RoomsConfig>('data/config/rooms.json');
+        this.realRoomsConfig = this.roomsConfig;
+        this.oldTestRoomsConfig = [];
       }
 
       console.log('All configs loaded successfully');
@@ -82,6 +98,14 @@ export class ConfigLoader {
 
   getRoomsConfig(): RoomsConfig | null {
     return this.roomsConfig;
+  }
+
+  getRealRoomsConfig(): RoomsConfig | null {
+    return this.realRoomsConfig;
+  }
+
+  getOldTestRoomsConfig(): RoomsConfig | null {
+    return this.oldTestRoomsConfig;
   }
 
   updatePlayerConfig(config: PlayerConfig): void {
