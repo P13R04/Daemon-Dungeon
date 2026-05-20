@@ -374,14 +374,14 @@ export class AchievementsScene {
 
     this.centerCardTitle = new TextBlock('centerTitle', '');
     this.centerCardTitle.fontFamily = this.terminalFont;
-    this.centerCardTitle.fontSize = 28;
+    this.centerCardTitle.fontSize = 30;
     this.centerCardTitle.color = '#FFFFFF';
     this.centerCardTitle.top = '150px';
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = new TextBlock('centerSubtitle', '');
     this.centerCardSubtitle.fontFamily = this.terminalFont;
-    this.centerCardSubtitle.fontSize = 18;
+    this.centerCardSubtitle.fontSize = 20;
     this.centerCardSubtitle.color = '#7DFFE8';
     this.centerCardSubtitle.top = '190px';
     this.centerCard.addControl(this.centerCardSubtitle);
@@ -400,7 +400,7 @@ export class AchievementsScene {
   private makeTerminalText(id: string, size: number, color: string): TextBlock {
     const t = new TextBlock(id, '');
     t.fontFamily = this.terminalFont;
-    t.fontSize = size;
+    t.fontSize = Math.round(size * 1.12);
     t.color = color;
     t.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     t.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -418,7 +418,7 @@ export class AchievementsScene {
     btn.cornerRadius = 2;
     btn.background = 'rgba(20, 30, 35, 0.6)';
     btn.fontFamily = this.terminalFont;
-    btn.fontSize = 16;
+    btn.fontSize = 18;
     btn.onPointerUpObservable.add(onClick);
     return btn;
   }
@@ -461,7 +461,7 @@ export class AchievementsScene {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
       btn.textBlock.fontFamily = 'Consolas';
-      btn.textBlock.fontSize = 16;
+      btn.textBlock.fontSize = 18;
     }
     return btn;
   }

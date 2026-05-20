@@ -357,14 +357,14 @@ export class HighscoresScene {
 
     this.centerCardTitle = new TextBlock('centerTitle', 'RUN SUMMARY');
     this.centerCardTitle.fontFamily = this.terminalFont;
-    this.centerCardTitle.fontSize = 28;
+    this.centerCardTitle.fontSize = 30;
     this.centerCardTitle.color = '#FFFFFF';
     this.centerCardTitle.top = `-${Math.round(centerCardHeight * 0.39)}px`;
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = new TextBlock('centerSubtitle', '');
     this.centerCardSubtitle.fontFamily = this.terminalFont;
-    this.centerCardSubtitle.fontSize = 18;
+    this.centerCardSubtitle.fontSize = 20;
     this.centerCardSubtitle.color = '#7DFFE8';
     this.centerCardSubtitle.top = `-${Math.round(centerCardHeight * 0.28)}px`;
     this.centerCard.addControl(this.centerCardSubtitle);
@@ -380,7 +380,7 @@ export class HighscoresScene {
 
     this.centerBonusLabel = new TextBlock('bonusLabel', 'EQUIPPED BONUSES');
     this.centerBonusLabel.fontFamily = this.terminalFont;
-    this.centerBonusLabel.fontSize = 16;
+    this.centerBonusLabel.fontSize = 18;
     this.centerBonusLabel.color = '#7CFFEA';
     this.centerBonusLabel.top = `-${Math.round(centerCardHeight * 0.19)}px`;
     this.centerBonusesContainer.addControl(this.centerBonusLabel);
@@ -424,7 +424,7 @@ export class HighscoresScene {
 
     this.centerDetailsTitle = new TextBlock('centerDetailsTitle', '> SYSTEM METRICS');
     this.centerDetailsTitle.fontFamily = this.terminalFont;
-    this.centerDetailsTitle.fontSize = 18;
+    this.centerDetailsTitle.fontSize = 20;
     this.centerDetailsTitle.color = '#7CFFEA';
     this.centerDetailsTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.centerDetailsTitle.height = '28px';
@@ -432,7 +432,7 @@ export class HighscoresScene {
 
     this.centerDetailsDesc = new TextBlock('centerDetailsDesc', 'Hover a module to analyze database metadata.');
     this.centerDetailsDesc.fontFamily = this.terminalFont;
-    this.centerDetailsDesc.fontSize = 16;
+    this.centerDetailsDesc.fontSize = 18;
     this.centerDetailsDesc.color = '#647D7D';
     this.centerDetailsDesc.textWrapping = true;
     this.centerDetailsDesc.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -453,7 +453,7 @@ export class HighscoresScene {
   private makeTerminalText(id: string, size: number, color: string): TextBlock {
     const t = new TextBlock(id, '');
     t.fontFamily = this.terminalFont;
-    t.fontSize = size;
+    t.fontSize = Math.round(size * 1.12);
     t.color = color;
     t.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     t.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -471,7 +471,7 @@ export class HighscoresScene {
     btn.cornerRadius = 2;
     btn.background = 'rgba(20, 30, 35, 0.6)';
     btn.fontFamily = this.terminalFont;
-    btn.fontSize = 18;
+    btn.fontSize = 20;
     btn.onPointerUpObservable.add(onClick);
     return btn;
   }
@@ -501,7 +501,7 @@ export class HighscoresScene {
       emptyBtn.thickness = 0;
       emptyBtn.color = '#647D7D';
       emptyBtn.fontFamily = 'Consolas';
-      emptyBtn.fontSize = 16;
+      emptyBtn.fontSize = 18;
       this.leftListStack.addControl(emptyBtn);
       return;
     }
@@ -535,7 +535,7 @@ export class HighscoresScene {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
       btn.textBlock.fontFamily = 'Consolas';
-      btn.textBlock.fontSize = 13;
+      btn.textBlock.fontSize = 15;
     }
     return btn;
   }
@@ -635,7 +635,7 @@ export class HighscoresScene {
 
           const badgeText = new TextBlock(`hs_bonus_badge_text_${bonus.id}`, `x${bonus.stacks}`);
           badgeText.fontFamily = this.terminalFont;
-          badgeText.fontSize = 10;
+          badgeText.fontSize = 12;
           badgeText.color = '#FFFFFF';
           badgeText.isHitTestVisible = false;
           badge.addControl(badgeText);
@@ -676,7 +676,7 @@ export class HighscoresScene {
 
       const noneText = new TextBlock('no_bonuses', 'NO BONUSES SELECTED');
       noneText.fontFamily = this.terminalFont;
-      noneText.fontSize = 13;
+      noneText.fontSize = 15;
       noneText.color = '#647D7D';
       noneText.isHitTestVisible = false;
       this.bonusIconsStack.addControl(noneText);

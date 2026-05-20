@@ -414,7 +414,7 @@ export class MainMenuScene {
     const buttonStep = Math.round((panelHeight / 7) * 0.9);
     this.menuButtonWidth = Math.round(panelWidth * 0.62);
     this.menuButtonHeight = Math.round(Math.max(56, panelHeight * 0.1));
-    this.menuButtonFontSize = this.isMobileLayout ? 18 : 19;
+    this.menuButtonFontSize = this.isMobileLayout ? 20 : 21;
 
     const panel = UIFactory.createPanel('menuPanel', panelWidth, panelHeight);
     panel.top = `${Math.round(this.layoutHeight * 0.05)}px`;
@@ -508,7 +508,7 @@ export class MainMenuScene {
     closeBtn.isPointerBlocker = true;
     closeBtn.isHitTestVisible = true;
     closeBtn.zIndex = 130;
-    if (closeBtn.textBlock) closeBtn.textBlock.fontSize = 16;
+    if (closeBtn.textBlock) closeBtn.textBlock.fontSize = 18;
     this.bindButtonAction(closeBtn, () => {
       this.awaitingRebind = null;
       this.closeSettingsOverlay();
@@ -527,7 +527,7 @@ export class MainMenuScene {
     resetBtn.isPointerBlocker = true;
     resetBtn.isHitTestVisible = true;
     resetBtn.zIndex = 130;
-    if (resetBtn.textBlock) resetBtn.textBlock.fontSize = 16;
+    if (resetBtn.textBlock) resetBtn.textBlock.fontSize = 18;
     this.bindButtonAction(resetBtn, () => {
       this.awaitingRebind = null;
       GameSettingsStore.resetToDefaults();

@@ -8,6 +8,7 @@ import {
   HemisphericLight,
   Mesh,
   MeshBuilder,
+  Material,
   PointerEventTypes,
   Scalar,
   Scene,
@@ -167,9 +168,9 @@ export class CodexScene {
       vignetteColor: [0, 0, 0, 1],
     };
 
-    this.camera = new ArcRotateCamera('codexCamera', -Math.PI / 2, 1.30, 14.5, new Vector3(0, 1.3, 0), this.scene);
-    this.camera.lowerRadiusLimit = 10;
-    this.camera.upperRadiusLimit = 28;
+    this.camera = new ArcRotateCamera('codexCamera', -Math.PI / 2, 1.45, 24, new Vector3(0, 1.3, 0), this.scene);
+    this.camera.lowerRadiusLimit = 18;
+    this.camera.upperRadiusLimit = 36;
     this.camera.wheelDeltaPercentage = 0.01;
     this.camera.layerMask = SCENE_LAYER;
 
@@ -274,6 +275,8 @@ export class CodexScene {
     tabsRow.width = `${Math.round(layoutWidth * 0.78)}px`;
     tabsRow.height = '54px';
     tabsRow.top = `-${Math.round(layoutHeight * 0.32)}px`;
+    tabsRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    tabsRow.left = '0px';
     mainLayoutContainer.addControl(tabsRow);
 
     tabsRow.addControl(this.makeTabButton('BESTIARY', () => {
@@ -518,7 +521,7 @@ export class CodexScene {
     btn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     btn.horizontalAlignment = alignment;
     btn.top = '20px';
-    if (btn.textBlock) btn.textBlock.fontSize = 16;
+    if (btn.textBlock) btn.textBlock.fontSize = 18;
     btn.onPointerClickObservable.add(onClick);
     return btn;
   }
@@ -526,7 +529,7 @@ export class CodexScene {
   private makeTabButton(label: string, onClick: () => void): Button {
     const btn = UIFactory.createTerminalButton(`tab_${label}`, label, '320px', '46px');
     DaemonGlitchFx.inject(btn, label, onClick, 0);
-    if (btn.textBlock) btn.textBlock.fontSize = 18;
+    if (btn.textBlock) btn.textBlock.fontSize = 20;
     return btn;
   }
 
@@ -535,16 +538,17 @@ export class CodexScene {
     btn.color = active ? UITheme.colors.textHighlight : UITheme.colors.borderBright;
     btn.background = active ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
     btn.onPointerClickObservable.add(onClick);
-    if (btn.textBlock) btn.textBlock.fontSize = 16;
+    if (btn.textBlock) btn.textBlock.fontSize = 18;
     return btn;
   }
+
 
   private makeTerminalPanel(id: string, width: number, height: number): Rectangle {
     return UIFactory.createPanel(id, width, height);
   }
 
   private makeTerminalText(id: string, size: number, color: string): TextBlock {
-    return UIFactory.createText(id, '', size, color);
+    return UIFactory.createText(id, '', Math.round(size * 1.12), color);
   }
 
   private setTerminalText(block: TextBlock, text: string, speed = 220, showCursor = true): void {
@@ -733,7 +737,7 @@ export class CodexScene {
     if (btn.textBlock) {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
-      btn.textBlock.fontSize = 16;
+      btn.textBlock.fontSize = 18;
     }
     return btn;
   }
@@ -775,10 +779,7 @@ export class CodexScene {
   }
 
   private async populateEnemyVisual(root: TransformNode, entry: EnemyCodexEntry, unlocked: boolean): Promise<AnimationGroup[]> {
-    if (!unlocked) {
-      this.createEnemyPlaceholder(root, new Color3(0.23, 0.23, 0.27), entry.behavior, entry.isBoss);
-      return [];
-    }
+    const isLocked = !unlocked;
 
     let urlPath = '';
     let fileName = '';
@@ -893,8 +894,10 @@ export class CodexScene {
           mesh.parent = root;
         }
         mesh.layerMask = SCENE_LAYER;
-        
-        if (useColor) {
+
+        if (isLocked) {
+          this.applySilhouetteMaterial(mesh);
+        } else if (useColor) {
           if (mesh.material && mesh.material.getClassName() === 'PBRMaterial') {
             (mesh.material as any).albedoColor = entry.color;
           } else if (mesh.material && mesh.material.getClassName() === 'StandardMaterial') {
@@ -903,7 +906,7 @@ export class CodexScene {
         }
       }
 
-      if (mainAnimName) {
+      if (mainAnimName && !isLocked) {
         const anim = result.animationGroups.find(g => g.name === mainAnimName);
         if (anim) {
           result.animationGroups.forEach(g => {
@@ -921,9 +924,24 @@ export class CodexScene {
       return result.animationGroups;
     } catch (error) {
       console.warn(`Failed to load model for ${entry.id}`, error);
-      this.createEnemyPlaceholder(root, entry.color, entry.behavior, entry.isBoss);
+      const fallbackColor = isLocked ? new Color3(0, 0, 0) : entry.color;
+      this.createEnemyPlaceholder(root, fallbackColor, entry.behavior, entry.isBoss);
       return [];
     }
+  }
+
+  private applySilhouetteMaterial(mesh: Mesh): void {
+    const mat = new StandardMaterial(`${mesh.name}_silhouette`, this.scene);
+    mat.diffuseColor = Color3.Black();
+    mat.emissiveColor = Color3.Black();
+    mat.specularColor = Color3.Black();
+    mat.ambientColor = Color3.Black();
+    mat.disableLighting = true;
+    mat.alpha = 1;
+    mat.alphaMode = Engine.ALPHA_DISABLE;
+    mat.transparencyMode = Material.MATERIAL_OPAQUE;
+    mesh.material = mat;
+    mesh.visibility = 1;
   }
 
   private createEnemyPlaceholder(root: TransformNode, color: Color3, behavior: string, isBoss: boolean): void {
@@ -994,8 +1012,8 @@ export class CodexScene {
   private updateBestiaryCamera(enemyCount: number): void {
     this.camera.setTarget(new Vector3(0, Scalar.Clamp(1.3 + enemyCount * 0.02, 1.3, 1.85), 0));
     this.camera.alpha = -Math.PI / 2;
-    this.camera.beta = Scalar.Clamp(1.30 + enemyCount * 0.003, 1.30, 1.36);
-    this.camera.radius = Scalar.Clamp(13.5 + enemyCount * 0.35, 13.5, 18.5);
+    this.camera.beta = 1.45;
+    this.camera.radius = 24;
   }
 
   private updateBestiaryCarouselLayout(): void {

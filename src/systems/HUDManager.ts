@@ -50,6 +50,7 @@ export class HUDManager {
   private mobileAttackBtn: Button | null = null;
   private mobileStanceBtn: Button | null = null;
   private mobileUltBtn: Button | null = null;
+  private resetMobileJoystick: (() => void) | null = null;
   private wasStanceActive: boolean = false;
   private mobileAttackHoldBlocked: boolean = false;
   private eventBus: EventBus;
@@ -271,17 +272,21 @@ export class HUDManager {
     }));
     this.unsubscribers.push(this.eventBus.on(GameEvents.ROOM_ENTERED, (data: RoomEnteredPayload) => {
       this.handleRoomEnteredEvent(data);
+      this.resetMobileInputState();
     }));
     this.unsubscribers.push(this.eventBus.on(GameEvents.ROOM_TRANSITION_START, () => {
       this.clearEnemyHealthBars();
+      this.resetMobileInputState();
     }));
     this.unsubscribers.push(this.eventBus.on(GameEvents.GAME_START_REQUESTED, () => {
       this.clearEnemyHealthBars();
       this.resetWaveCounter();
+      this.resetMobileInputState();
     }));
     this.unsubscribers.push(this.eventBus.on(GameEvents.GAME_RESTART_REQUESTED, () => {
       this.clearEnemyHealthBars();
       this.resetWaveCounter();
+      this.resetMobileInputState();
     }));
     this.unsubscribers.push(this.eventBus.on(GameEvents.DAEMON_TAUNT, async (data: DaemonTauntPayload) => {
       await this.handleDaemonTauntEvent(data);
@@ -3427,9 +3432,10 @@ export class HUDManager {
     const controlScale = isMobileLayout ? 1.1 : 1;
     const leftMargin = Math.round(Math.max(40, idealWidth * 0.04));
     const bottomMargin = Math.round(Math.max(40, idealHeight * 0.06));
+    const extraSafeLift = Math.round(Math.max(16, idealHeight * 0.04));
     const logPanelHeight = this.logPanel?.heightInPixels ?? 180;
     const statusPanelHeight = (this.statusPanel as Rectangle | null)?.heightInPixels ?? 180;
-    const bottomSafe = Math.round(Math.max(logPanelHeight, statusPanelHeight) + bottomMargin);
+    const bottomSafe = Math.round(Math.max(logPanelHeight, statusPanelHeight) + bottomMargin + extraSafeLift);
     const joystickSize = Math.round(180 * controlScale);
     const joystickBgSize = Math.round(120 * controlScale);
     const joystickThumbSize = Math.round(50 * controlScale);
@@ -3540,6 +3546,11 @@ export class HUDManager {
     let isDraggingLeft = false;
     let leftPointerId = -1;
     const maxRadius = joystickBgSize / 2;
+    const getJoystickHalfSize = () => {
+      const w = leftJoystickContainer.widthInPixels || joystickSize;
+      const h = leftJoystickContainer.heightInPixels || joystickSize;
+      return { halfW: w / 2, halfH: h / 2 };
+    };
 
     const toJoystickLocal = (clientX: number, clientY: number, result: Vector2): void => {
       const engine = this.scene.getEngine();
@@ -3550,8 +3561,11 @@ export class HUDManager {
       const sy = canvas.height / (rect.height || 1);
       const renderX = (clientX - rect.left) * sx;
       const renderY = (clientY - rect.top)  * sy;
-      // Maps render-pixel canvas coords → control local space (origin = centre).
+      // Maps render-pixel canvas coords → control local space.
       leftJoystickContainer.getLocalCoordinatesToRef(new Vector2(renderX, renderY), result);
+      const { halfW, halfH } = getJoystickHalfSize();
+      result.x -= halfW;
+      result.y -= halfH;
     };
 
     const applyJoystickInput = (localX: number, localY: number) => {
@@ -3589,6 +3603,7 @@ export class HUDManager {
       leftPointerId  = -1;
       if (this.inputManager) this.inputManager.setJoystickMoveVector(Vector3.Zero());
     };
+    this.resetMobileJoystick = resetLeftJoystick;
 
     const isInsideJoystick = (clientX: number, clientY: number): boolean => {
       const engine = this.scene.getEngine();
@@ -3601,9 +3616,10 @@ export class HUDManager {
       const renderY = (clientY - rect.top)  * sy;
       const local   = new Vector2();
       leftJoystickContainer.getLocalCoordinatesToRef(new Vector2(renderX, renderY), local);
-      const hw = leftJoystickContainer.widthInPixels  / 2;
-      const hh = leftJoystickContainer.heightInPixels / 2;
-      return local.x >= -hw && local.x <= hw && local.y >= -hh && local.y <= hh;
+      const { halfW, halfH } = getJoystickHalfSize();
+      const centeredX = local.x - halfW;
+      const centeredY = local.y - halfH;
+      return centeredX >= -halfW && centeredX <= halfW && centeredY >= -halfH && centeredY <= halfH;
     };
 
     // Global scene observer — supports multi-touch, works outside container bounds
@@ -3761,5 +3777,15 @@ export class HUDManager {
     }
 
     this.wasStanceActive = isStanceActive;
+  }
+
+  private resetMobileInputState(): void {
+    if (!this.inputManager || !this.inputManager.isMobileMode()) return;
+    this.resetMobileJoystick?.();
+    this.inputManager.setJoystickAimActive(false);
+    this.inputManager.setMobileStancePressed(false);
+    this.inputManager.setMobileUltPressed(false);
+    this.mobileAttackHoldBlocked = false;
+    this.wasStanceActive = false;
   }
 }
