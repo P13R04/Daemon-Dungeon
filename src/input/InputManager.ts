@@ -225,9 +225,6 @@ export class InputManager {
    * Returns normalized direction vector
    */
   getMovementInput(): Vector3 {
-    if (this.mobileMode) {
-      return this.joystickMoveVector;
-    }
     const input = new Vector3();
 
     if (this.isActionHeld('moveUp')) input.z += 1;
@@ -237,6 +234,10 @@ export class InputManager {
 
     if (input.length() > 0) {
       return input.normalize();
+    }
+
+    if (this.mobileMode) {
+      return this.joystickMoveVector;
     }
 
     return Vector3.Zero();

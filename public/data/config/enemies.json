@@ -136,12 +136,11 @@
       "jumpSpeedMultiplier": 2.6,
       "hitRange": 1.0,
       "jumpCooldown": 1.1,
-      "jumpHeight": 2.2,
-      "modelScale": 0.25
+      "jumpHeight": 2.2
     },
     "lootTable": [],
     "appearance": {
-      "size": 0.24,
+      "size": 0.95,
       "color": { "r": 0.9, "g": 0.6, "b": 0.9 }
     }
   },
@@ -368,12 +367,12 @@
     "baseStats": {
       "hp": 70,
       "damage": 8,
-      "speed": 2.0,
+      "speed": 2.4,
       "attackRange": 0.7,
       "attackCooldown": 1.2
     },
     "behavior": "artificer",
-    "selfKnockbackStrength": 4.0,
+    "selfKnockbackStrength": 20.0,
     "behaviorConfig": {
       "artificerMinRange": 3.0,
       "artificerMaxRange": 6.0,
@@ -393,7 +392,7 @@
       "impactDuration": 0.7,
       "finalDuration": 0.2,
       "projectileSpeed": 6.0,
-      "projectileRange": 10.0,
+      "projectileRange": 12.0,
       "leadTime": 0.2,
       "useCrowd": true,
       "separationRadius": 1.1,
@@ -520,17 +519,16 @@
       "jumpDuration": 0.85,
       "jumpSpeedMultiplier": 3.0,
       "hitRange": 1.2,
-      "jumpCooldown": 1.0,
+      "jumpCooldown": 2.5,
       "jumpHeight": 3.6,
       "shockwaveEnabled": true,
-      "shockwaveRadius": 7.5,
-      "shockwaveDuration": 0.75,
-      "shockwaveDamage": 25,
-      "modelScale": 0.67
+      "shockwaveRadius": 3.6,
+      "shockwaveDuration": 0.55,
+      "shockwaveDamage": 20
     },
     "lootTable": [],
     "appearance": {
-      "size": 0.8,
+      "size": 1.2,
       "color": { "r": 0.95, "g": 0.45, "b": 0.95 }
     }
   },
@@ -710,6 +708,65 @@
     "appearance": {
       "size": 0.9,
       "color": { "r": 0.8, "g": 0.6, "b": 0.2 }
+    }
+  },
+  "zombie_fast": {
+    "name": "Fast Zombie",
+    "description": "Processus corrompu avec planification prioritaire, plus rapide.",
+    "baseStats": {
+      "hp": 35,
+      "damage": 8,
+      "speed": 5.0,
+      "attackRange": 0.7,
+      "attackCooldown": 1.0
+    },
+    "behavior": "chase",
+    "behaviorPreset": "aggressive-melee",
+    "behaviorConfig": {
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "avoidObstacles": true,
+      "avoidDistance": 0.9
+    },
+    "lootTable": [
+      { "itemId": "health_potion_small", "dropChance": 0.2, "amount": 1 }
+    ],
+    "appearance": {
+      "size": 0.8,
+      "color": { "r": 0.7, "g": 1.0, "b": 0.7 }
+    }
+  },
+  "shooter": {
+    "name": "Shooter",
+    "description": "Tire à distance moyenne.",
+    "baseStats": {
+      "hp": 55,
+      "damage": 9,
+      "speed": 2.3,
+      "attackRange": 0.7,
+      "attackCooldown": 0.9
+    },
+    "behavior": "sentinel",
+    "behaviorConfig": {
+      "rangedMinRange": 3.0,
+      "rangedMaxRange": 6.5,
+      "rangedCooldown": 1.3,
+      "projectileSpeed": 6.5,
+      "projectileRange": 12.0,
+      "projectileBounces": 1,
+      "projectileBounceDamping": 0.92,
+      "leadTime": 0.2,
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "avoidObstacles": true,
+      "avoidDistance": 0.9
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 1.0, "g": 0.6, "b": 0.2 }
     }
   }
 }

@@ -95,7 +95,7 @@ export class ConfigLoader {
   }
 
   private async loadJSON<T>(path: string): Promise<T> {
-    const response = await fetch(path);
+    const response = await fetch(`${path}?t=${Date.now()}`);
     if (!response.ok) {
       throw new Error(`Failed to load ${path}: ${response.status}`);
     }

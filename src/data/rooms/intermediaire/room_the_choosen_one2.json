@@ -1,6 +1,6 @@
 {
-  "id": "room_the_choosen_one",
-  "name": "the_choosen_blob",
+  "id": "room_the_choosen_one2",
+  "name": "the_choosen_one2",
   "layout": [
     "###############",
     "#.............#",
@@ -20,38 +20,13 @@
   ],
   "spawnPoints": [
     {
-      "x": 3,
-      "y": 8.8,
+      "x": 11,
+      "y": 5.199999999999999,
       "enemyType": "healer"
     },
     {
-      "x": 3,
-      "y": 7.1,
-      "enemyType": "healer"
-    },
-    {
-      "x": 3,
-      "y": 5,
-      "enemyType": "healer"
-    },
-    {
-      "x": 4.1,
-      "y": 10,
-      "enemyType": "healer"
-    },
-    {
-      "x": 6,
-      "y": 10,
-      "enemyType": "healer"
-    },
-    {
-      "x": 8.1,
-      "y": 10,
-      "enemyType": "healer"
-    },
-    {
-      "x": 10,
-      "y": 10.1,
+      "x": 11,
+      "y": 6.9,
       "enemyType": "healer"
     },
     {
@@ -60,19 +35,24 @@
       "enemyType": "healer"
     },
     {
-      "x": 10.9,
+      "x": 3.1,
       "y": 7,
       "enemyType": "healer"
     },
     {
-      "x": 11,
-      "y": 5,
+      "x": 3,
+      "y": 9,
+      "enemyType": "healer"
+    },
+    {
+      "x": 3.1,
+      "y": 5.1,
       "enemyType": "healer"
     },
     {
       "x": 7,
-      "y": 7.1,
-      "enemyType": "jumper"
+      "y": 7,
+      "enemyType": "zombie_basic"
     }
   ],
   "friendlySpawnPoints": [],
