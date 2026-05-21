@@ -176,7 +176,7 @@ export class EnemyController {
   private dummyModelLoadPromise: Promise<void> | null = null;
   private instantiatedSkeletons: any[] = [];
   private zombieModelScale: number = 0.25;
-  private dummyModelScale: number = 0.14;
+  private dummyModelScale: number = 0.07;
   private knockbackStrength: number = 0;
   private selfKnockbackStrength: number = 0;
   private useCrowdSteering: boolean = false;
