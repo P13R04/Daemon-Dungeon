@@ -142,6 +142,9 @@ export class GameManager {
   private proceduralPrewarmTimer: number | null = null;
   private postTransitionMaintenanceTimer: number | null = null;
   private deferredRoomEnteredEventTimer: number | null = null;
+  private transitionSequenceId: number = 0;
+  private roomIntroSequencePendingIndex: number | null = null;
+  private roomIntroSequenceRunning: boolean = false;
   private gameState: RuntimeGameState = 'menu';
   private roomOrder: string[] = [];
   private currentRoomIndex: number = 0;
@@ -300,7 +303,7 @@ export class GameManager {
         this.applyBonus(bonusId);
       },
       startRoomTransition: (nextIndex) => {
-        this.startRoomTransition(nextIndex);
+        void this.startRoomTransitionSequence(nextIndex);
       },
       getCurrentRoomIndex: () => this.currentRoomIndex,
       getRoomOrderLength: () => this.roomOrder.length,
@@ -1655,6 +1658,14 @@ export class GameManager {
       applyPassiveIncome: (frameDelta) => this.applyPassiveIncome(frameDelta),
       detectAndStartPlayerVoidFall: () => this.detectAndStartPlayerVoidFall(),
       updatePlayerVoidFall: (frameDelta) => this.updatePlayerVoidFall(frameDelta),
+      runTransitionVisualTick: (frameDelta) => {
+        this.enemySpawner.updateSuppressedVisuals(
+          frameDelta,
+          this.playerController.getPosition(),
+          this.roomManager,
+          this.playerController.getVelocity(),
+        );
+      },
       applySecondaryEnemySlow: (enemies, center, radius, speedMultiplier) => this.applySecondaryEnemySlow(enemies, center, radius, speedMultiplier),
       resolveEntityCollisions: (enemies, frameDelta) => this.resolveEntityCollisions(enemies, frameDelta),
       applyHazardDamage: (frameDelta) => this.applyHazardDamage(frameDelta),
@@ -1673,11 +1684,7 @@ export class GameManager {
         this.primeTransitionRoomPreparation();
       },
       openBonusChoices: () => {
-        if (this.isTutorialRun && this.currentRoomIndex === 0) {
-          this.bonusSystemManager.forceNextChoices(['bonus_ms'], 'mage_autolock_patch');
-          this.eventBus.emit(GameEvents.TUTORIAL_SHOP_OPENED);
-        }
-        this.bonusSystemManager.openBonusChoices();
+        void this.startDoorToBonusSequence();
       },
       renderScene: () => {
         this.scene.render();
@@ -1932,23 +1939,17 @@ export class GameManager {
       this.prepareRunStateForStart();
       this.transitionGameState('transition');
       this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, false);
+      this.setLoadingOverlay(true, 'PRELOADING ENEMY MODEL CONTAINERS...', '90%');
+      await this.waitForNextPaint(1);
+      await this.enemySpawner.prewarmCoreEnemyModelsForRun();
       this.loadRoomByIndex(this.currentRoomIndex);
       this.setLoadingOverlay(true, 'HANDSHAKE WITH DAEMON CORE...', '100%');
       await this.waitForNextPaint(1);
       await this.waitForMs(1000);
-      this.transitionGameState('playing');
+      this.enemySpawner.pauseSuppressedActivationQueue(true);
+      this.enemySpawner.stageAllActiveEnemiesAsSuppressed();
+      void this.runRoomIntroSequence(this.currentRoomIndex);
       this.setLoadingOverlay(false);
-
-      // 3-2-1-GO countdown: freeze enemies and player during the window.
-      if (this.hudManager && !this.isTutorialRun) {
-        this.isCountingDown = true;
-        await new Promise<void>((resolve) => {
-          this.hudManager.showCountdown(() => {
-            this.isCountingDown = false;
-            resolve();
-          });
-        });
-      }
     } finally {
       this.gameplayStartInProgress = false;
       this.setLoadingOverlay(false);
@@ -2323,6 +2324,7 @@ export class GameManager {
     if (this.playerController) {
       this.playerController.resetBonuses();
       this.playerController.healToFull();
+      this.playerController.setInputSuppressed(false);
     }
     this.roomElapsedSeconds = 0;
     this.resetPlayerVoidFallState();
@@ -2392,7 +2394,7 @@ export class GameManager {
       this.enemySpawner.clearForRoomTransition();
       this.enemySpawner.prewarmRoomEnemyData(roomId, index, { prewarmHeavyAssets: false });
       if (!this.isTutorialRun) {
-        this.enemySpawner.spawnEnemiesForRoom(roomId);
+        this.enemySpawner.spawnEnemiesForRoom(roomId, { deferInitialSpawns: this.gameState === 'transition' });
       }
     }
 
@@ -2485,6 +2487,41 @@ export class GameManager {
     this.roomTransitionManager.startRoomTransition(nextIndex);
   }
 
+  private async startDoorToBonusSequence(): Promise<void> {
+    if (!this.gameplayInitialized) return;
+    if (this.gameState !== 'playing') return;
+    const sequenceId = ++this.transitionSequenceId;
+    this.transitionGameState('transition');
+    this.hudManager.hideOverlays();
+    this.hudManager.pushSystemLog('DOOR HANDSHAKE ACCEPTED. TRANSFER PIPELINE OPEN.');
+    this.playerController.setInputSuppressed(true);
+    await this.waitForMs(180);
+    if (!this.isSequenceCurrent(sequenceId)) return;
+
+    await this.animatePlayerRelocationFx({
+      fromVisibility: this.playerController.getRenderVisibility(),
+      toVisibility: 0,
+      fromYOffset: this.playerController.getExternalVerticalOffset(),
+      toYOffset: 0.55,
+      durationMs: 520,
+    }, sequenceId);
+    if (!this.isSequenceCurrent(sequenceId)) return;
+
+    if (this.isTutorialRun && this.currentRoomIndex === 0) {
+      this.bonusSystemManager.forceNextChoices(['bonus_ms'], 'mage_autolock_patch');
+      this.eventBus.emit(GameEvents.TUTORIAL_SHOP_OPENED);
+    }
+    this.bonusSystemManager.openBonusChoices();
+  }
+
+  private async startRoomTransitionSequence(nextIndex: number): Promise<void> {
+    if (!this.gameplayInitialized) return;
+    const sequenceId = ++this.transitionSequenceId;
+    this.roomIntroSequencePendingIndex = nextIndex;
+    this.roomTransitionManager.startRoomTransition(nextIndex);
+    if (!this.isSequenceCurrent(sequenceId)) return;
+  }
+
   private prepareRoomForTransition(nextIndex: number): void {
     const roomId = this.roomOrder[nextIndex];
     if (!roomId) {
@@ -2523,9 +2560,135 @@ export class GameManager {
     this.currentRoomIndex = nextIndex;
     this.loadRoomByIndex(nextIndex, { preferPreparedEnemies: true });
     this.primedTransitionRoomKey = null;
-    this.transitionGameState('playing');
+    this.transitionGameState('transition');
+    this.enemySpawner.pauseSuppressedActivationQueue(true);
+    this.enemySpawner.stageAllActiveEnemiesAsSuppressed();
+    this.roomIntroSequencePendingIndex = nextIndex;
+    void this.runRoomIntroSequence(nextIndex);
     this.deferPostTransitionRoomMaintenance(nextIndex);
     this.eventBus.emit(GameEvents.ROOM_TRANSITION_END);
+  }
+
+  private async runRoomIntroSequence(roomIndex: number): Promise<void> {
+    if (this.roomIntroSequenceRunning) return;
+    this.roomIntroSequenceRunning = true;
+    const sequenceId = ++this.transitionSequenceId;
+    try {
+      this.hudManager.pushSystemLog('ROOM STREAM READY. RE-INJECTING HOST PROCESS.');
+
+      const spawnPoint = this.roomManager.getPlayerSpawnPoint(this.roomOrder[roomIndex]) || Vector3.Zero();
+      this.playerController.setPosition(spawnPoint);
+      this.playerController.setRenderVisibility(0);
+      this.playerController.setExternalVerticalOffset(0.85);
+      this.playerController.setInputSuppressed(true);
+
+      await this.animatePlayerRelocationFx({
+        fromVisibility: 0,
+        toVisibility: 1,
+        fromYOffset: 0.85,
+        toYOffset: 0,
+        durationMs: 760,
+      }, sequenceId);
+      if (!this.isSequenceCurrent(sequenceId) || !this.gameplayInitialized || this.currentRoomIndex !== roomIndex) return;
+
+      // Ensure EVERY enemy of the room exists before reveal/countdown orchestration.
+      this.enemySpawner.materializePendingSpawnsAsSuppressed();
+      this.enemySpawner.stageAllActiveEnemiesAsSuppressed();
+      this.enemySpawner.configureSuppressedActivation({ intervalSeconds: 0.12, batchSize: 1 });
+      const needsCountdownGate = !this.isTutorialRun && roomIndex === 0;
+      this.enemySpawner.pauseSuppressedActivationQueue(true);
+      this.enemySpawner.revealSuppressedEnemiesWithoutAIRelease();
+      this.hudManager.pushSystemLog('THREAT PROCESSES MATERIALIZING. AI LOCK MAINTAINED.');
+      await this.waitForEnemyRevealReady(sequenceId, roomIndex, 2200);
+      if (!this.isSequenceCurrent(sequenceId) || !this.gameplayInitialized || this.currentRoomIndex !== roomIndex) return;
+
+      if (needsCountdownGate && this.hudManager) {
+        this.isCountingDown = true;
+        await new Promise<void>((resolve) => {
+          this.hudManager.showCountdown(() => {
+            this.isCountingDown = false;
+            resolve();
+          });
+        });
+      }
+      this.enemySpawner.releaseAllSuppressedEnemyAI();
+      this.enemySpawner.pauseSuppressedActivationQueue(false);
+
+      if (!this.isSequenceCurrent(sequenceId) || !this.gameplayInitialized || this.currentRoomIndex !== roomIndex) return;
+      this.transitionGameState('playing');
+      this.playerController.setExternalVerticalOffset(0);
+      this.playerController.setRenderVisibility(1);
+      this.playerController.setInputSuppressed(false);
+      this.hudManager.pushSystemLog('ROOM ONLINE. ENEMY AI UNLOCKED. COMBAT LOOP RESUMED.');
+      this.roomIntroSequencePendingIndex = null;
+    } finally {
+      this.roomIntroSequenceRunning = false;
+    }
+  }
+
+  private isSequenceCurrent(sequenceId: number): boolean {
+    return this.transitionSequenceId === sequenceId;
+  }
+
+  private async animatePlayerRelocationFx(
+    config: {
+      fromVisibility: number;
+      toVisibility: number;
+      fromYOffset: number;
+      toYOffset: number;
+      durationMs: number;
+    },
+    sequenceId: number,
+  ): Promise<void> {
+    const durationMs = Math.max(1, Math.floor(config.durationMs));
+    const start = performance.now();
+    await new Promise<void>((resolve) => {
+      const obs = this.scene.onBeforeRenderObservable.add(() => {
+        if (!this.isSequenceCurrent(sequenceId) || !this.gameplayInitialized) {
+          this.playerController.setTransitionOverlay(0);
+          this.scene.onBeforeRenderObservable.remove(obs);
+          resolve();
+          return;
+        }
+        const now = performance.now();
+        const t = Math.max(0, Math.min(1, (now - start) / durationMs));
+        const ease = t * t * (3 - 2 * t);
+        const vis = config.fromVisibility + ((config.toVisibility - config.fromVisibility) * ease);
+        const yOffset = config.fromYOffset + ((config.toYOffset - config.fromYOffset) * ease);
+        const bluePhase = Math.sin(Math.max(0, Math.min(1, t)) * Math.PI);
+        this.playerController.setTransitionOverlay(0.88 * bluePhase, new Color3(0.38, 0.95, 1.0));
+        this.playerController.setRenderVisibility(vis);
+        this.playerController.setExternalVerticalOffset(yOffset);
+        if (t >= 1) {
+          this.playerController.setTransitionOverlay(0);
+          this.scene.onBeforeRenderObservable.remove(obs);
+          resolve();
+        }
+      });
+    });
+  }
+
+  private async waitForEnemyRevealReady(
+    sequenceId: number,
+    roomIndex: number,
+    timeoutMs: number,
+  ): Promise<void> {
+    const start = performance.now();
+    while (true) {
+      if (!this.isSequenceCurrent(sequenceId) || !this.gameplayInitialized || this.currentRoomIndex !== roomIndex) {
+        return;
+      }
+      const noneMaterializing = !this.enemySpawner.hasAnyEnemyMaterializing();
+      const noPendingSpawns = this.enemySpawner.getPendingSpawnCount() === 0;
+      const hasEnemies = this.enemySpawner.getActiveEnemyCount() > 0;
+      if (hasEnemies && noPendingSpawns && noneMaterializing) {
+        return;
+      }
+      if ((performance.now() - start) >= timeoutMs) {
+        return;
+      }
+      await this.waitForNextPaint(1);
+    }
   }
 
   private deferPostTransitionRoomMaintenance(roomIndex: number): void {

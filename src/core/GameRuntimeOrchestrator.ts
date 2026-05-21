@@ -46,6 +46,7 @@ export type GameRuntimeFrameContext = {
   applyPassiveIncome: (deltaTime: number) => void;
   detectAndStartPlayerVoidFall: () => void;
   updatePlayerVoidFall: (deltaTime: number) => boolean;
+  runTransitionVisualTick: (deltaTime: number) => void;
   applySecondaryEnemySlow: (enemies: EnemyController[], center: Vector3, radius: number, speedMultiplier: number) => void;
   resolveEntityCollisions: (enemies: EnemyController[], deltaTime: number) => void;
   applyHazardDamage: (deltaTime: number) => void;
@@ -191,6 +192,9 @@ export class GameRuntimeOrchestrator {
   updateNonPlayingFrame(context: GameRuntimeFrameContext, deltaTime: number): void {
     context.playerController.setGameplayActive(false);
     context.projectileManager.setHostileProjectileSlowZone(null);
+    if (context.gameState === 'transition' && deltaTime > 0) {
+      context.runTransitionVisualTick(deltaTime);
+    }
     this.updateHudFrame(context, deltaTime);
   }
 

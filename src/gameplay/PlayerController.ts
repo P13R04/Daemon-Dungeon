@@ -14,6 +14,7 @@ import {
   ParticleSystem,
   DynamicTexture,
   Color4,
+  AbstractMesh,
 } from '@babylonjs/core';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { InputManager } from '../input/InputManager';
@@ -315,6 +316,10 @@ export class PlayerController {
   private damageBoostMultiplier: number = 1;
   private damageReductionTimer: number = 0;
   private damageReductionRatio: number = 0;
+  private damagePulseTimer: number = 0;
+  private readonly damagePulseDuration: number = 0.24;
+  private transitionOverlayAlpha: number = 0;
+  private transitionOverlayColor: Color3 = new Color3(0.35, 0.95, 1.0);
   
   // Frame input state
   private inputSlot1Held: boolean = false;
@@ -323,6 +328,7 @@ export class PlayerController {
 
   private catGodModeEnabled: boolean = false;
   private benchmarkInvulnerable: boolean = false;
+  private inputSuppressed: boolean = false;
   private catContactDamage: number = 260;
   private keyboardOnlyMode: boolean = false;
   private autoAimTowardMovement: boolean = true;
@@ -760,6 +766,7 @@ export class PlayerController {
     if (this.mageReactiveAoeCooldownRemaining > 0) {
       this.mageReactiveAoeCooldownRemaining = Math.max(0, this.mageReactiveAoeCooldownRemaining - deltaTime);
     }
+    this.updateDamagePulse(deltaTime);
 
     if (this.tankShieldBashCooldownTimer > 0) {
       this.tankShieldBashCooldownTimer = Math.max(0, this.tankShieldBashCooldownTimer - deltaTime);
@@ -925,7 +932,13 @@ export class PlayerController {
     }
 
     // Handle input
-    this.handleInput(deltaTime);
+    if (this.inputSuppressed) {
+      this.inputSlot1Held = false;
+      this.inputSlot1Pressed = false;
+      this.inputSlot2Held = false;
+    } else {
+      this.handleInput(deltaTime);
+    }
 
     if (this.classId === 'mage') {
       this.updateSecondaryStance(deltaTime);
@@ -956,6 +969,12 @@ export class PlayerController {
   }
 
   private updateMovement(deltaTime: number): void {
+    if (this.inputSuppressed) {
+      this.isMoving = false;
+      this.velocity = Vector3.Zero();
+      this.timeSinceMovement += deltaTime;
+      return;
+    }
     const input = this.inputManager.getMovementInput();
 
     if (input.length() > 0) {
@@ -3094,6 +3113,25 @@ export class PlayerController {
     this.gameplayActive = active;
   }
 
+  setTransitionOverlay(alpha: number, color?: Color3): void {
+    this.transitionOverlayAlpha = Math.max(0, Math.min(1, Number.isFinite(alpha) ? alpha : 0));
+    if (color) {
+      this.transitionOverlayColor = color.clone();
+    }
+    this.applyDamagePulseToVisuals();
+  }
+
+  setInputSuppressed(suppressed: boolean): void {
+    this.inputSuppressed = suppressed;
+    if (suppressed) {
+      this.velocity = Vector3.Zero();
+      this.isMoving = false;
+      this.inputSlot1Held = false;
+      this.inputSlot1Pressed = false;
+      this.inputSlot2Held = false;
+    }
+  }
+
   setBenchmarkInvulnerable(active: boolean): void {
     this.benchmarkInvulnerable = active;
   }
@@ -3131,6 +3169,7 @@ export class PlayerController {
     const totalReduction = Math.max(0, Math.min(0.95, this.damageReductionRatio + persistentFirewallReduction));
     const reducedDamage = amount * (1 - totalReduction);
     this.health.takeDamage(reducedDamage);
+    this.triggerDamagePulse();
     this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
       health: {
         current: this.health.getCurrentHP(),
@@ -3142,6 +3181,42 @@ export class PlayerController {
 
     if (this.health.getCurrentHP() <= 0) {
       this.eventBus.emit(GameEvents.PLAYER_DIED, { reason: 'damage' });
+    }
+  }
+
+  private triggerDamagePulse(): void {
+    this.damagePulseTimer = this.damagePulseDuration;
+    this.applyDamagePulseToVisuals();
+  }
+
+  private updateDamagePulse(deltaTime: number): void {
+    if (this.damagePulseTimer <= 0) return;
+    this.damagePulseTimer = Math.max(0, this.damagePulseTimer - Math.max(0, deltaTime));
+    this.applyDamagePulseToVisuals();
+  }
+
+  private applyDamagePulseToVisuals(): void {
+    const ratio = this.damagePulseDuration > 0
+      ? Math.max(0, Math.min(1, this.damagePulseTimer / this.damagePulseDuration))
+      : 0;
+    const pulse = ratio > 0 ? Math.sin((1 - ratio) * Math.PI) : 0;
+    const alpha = ratio * (0.65 + (0.35 * pulse));
+
+    const apply = (mesh: AbstractMesh): void => {
+      if (mesh.isDisposed()) return;
+      const damageOverlay = Math.min(1, alpha * 0.9);
+      const transitionOverlay = Math.max(0, Math.min(1, this.transitionOverlayAlpha));
+      const useTransition = transitionOverlay > damageOverlay;
+      mesh.renderOverlay = useTransition || damageOverlay > 0.01;
+      mesh.overlayColor = useTransition ? this.transitionOverlayColor : new Color3(1.0, 0.1, 0.1);
+      mesh.overlayAlpha = useTransition ? transitionOverlay : damageOverlay;
+    };
+
+    if (this.mesh && !this.mesh.isDisposed()) {
+      apply(this.mesh);
+      for (const child of this.mesh.getChildMeshes()) {
+        apply(child);
+      }
     }
   }
 
