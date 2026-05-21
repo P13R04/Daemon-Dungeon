@@ -1,8 +1,21 @@
-import { Vector3 } from '@babylonjs/core';
+import { Vector3, Scene, MeshBuilder, StandardMaterial, Color3, TransformNode, Mesh, Observer, Nullable } from '@babylonjs/core';
 import { EventBus, GameEvents } from './EventBus';
 import { GameStartRequestedPayload } from './GameEventBindings';
+import { HUDManager } from '../systems/HUDManager';
+import { GameSettingsStore } from '../settings/GameSettings';
+import { AdvancedDynamicTexture, Rectangle, TextBlock, Button, StackPanel, Control } from '@babylonjs/gui';
+import { UI_LAYER } from '../ui/uiLayers';
+import { PlayerController } from '../gameplay/PlayerController';
 
-export type TutorialPhase = 'init' | 'intro' | 'basic_attack' | 'class_mechanic' | 'ultimate' | 'shop' | 'playground' | 'completed';
+export type TutorialPhase = 'init' | 'movement_prompt' | 'movement_door' | 'shop_intro' | 'shop_buy' | 'shop_door' | 'combat_aim' | 'combat_dummy' | 'combat_stance' | 'combat_ultimate' | 'combat_door' | 'playground_mobs' | 'playground_completed';
+
+export interface TutorialDependencies {
+  getRoomCenter: () => Vector3;
+  getRoomIndex: () => number;
+  hudManager: HUDManager;
+  scene: Scene;
+  playerController?: PlayerController;
+}
 
 export class GameTutorialManager {
   private eventBus: EventBus;
@@ -14,24 +27,40 @@ export class GameTutorialManager {
   private phaseState: any = {};
   private timer: number | null = null;
   private introTriggered: boolean = false;
-  private dependencies: { getRoomCenter: () => Vector3; getRoomIndex: () => number } | null = null;
+  private dependencies: TutorialDependencies | null = null;
+  private promptGui: AdvancedDynamicTexture | null = null;
+  private forcedRoomIndex: number = -1;
+  private indicatorMesh: Mesh | null = null;
+  private aimIndicatorRoot: TransformNode | null = null;
+  private aimIndicatorObserver: Nullable<Observer<Scene>> | null = null;
 
   constructor() {
     this.eventBus = EventBus.getInstance();
-    // Subscribe to start request early so we don't miss it before initialize()
     this.unsubscribers.push(this.eventBus.on(GameEvents.TUTORIAL_START_REQUESTED, (payload: GameStartRequestedPayload) => {
       this.startTutorial(payload.classId || 'mage');
     }));
 
-    // Subscribe to gameplay events early so we don't miss room entry during startNewGame
     this.unsubscribers.push(this.eventBus.on(GameEvents.ROOM_ENTERED, () => this.handleRoomEntered()));
     this.unsubscribers.push(this.eventBus.on(GameEvents.ENEMY_DIED, () => this.handleEnemyDied()));
     this.unsubscribers.push(this.eventBus.on(GameEvents.ATTACK_PERFORMED, (data: any) => this.handleAttackPerformed(data)));
-    this.unsubscribers.push(this.eventBus.on(GameEvents.ENEMY_DAMAGED, () => this.handleEnemyDamaged()));
-    this.unsubscribers.push(this.eventBus.on(GameEvents.PLAYER_DAMAGED, () => this.handlePlayerDamaged()));
+    
+    this.unsubscribers.push(this.eventBus.on(GameEvents.TUTORIAL_SHOP_OPENED, () => {
+      if (this.isActive) this.triggerPhase('shop_intro');
+    }));
+    
+    this.unsubscribers.push(this.eventBus.on(GameEvents.TUTORIAL_SHOP_INTERACTED, (data: any) => {
+      if (!this.isActive) return;
+      if (data.type === 'paid_rare') {
+        this.daemonSay("You lack the credits to purchase premium daemons right now.", "neutral", 4);
+      } else if (data.type === 'full_heal') {
+        this.daemonSay("Full repair protocols require credits you do not have.", "neutral", 4);
+      } else if (data.type === 'reroll') {
+        this.daemonSay("Rerolling the registry costs credits. Pick the free upgrade instead.", "neutral", 4);
+      }
+    }));
   }
 
-  public initialize(dependencies?: { getRoomCenter: () => Vector3; getRoomIndex: () => number }): void {
+  public initialize(dependencies?: TutorialDependencies): void {
     if (dependencies) {
       this.dependencies = dependencies;
     }
@@ -51,7 +80,7 @@ export class GameTutorialManager {
     this.enemiesAlive = 0;
     this.phaseState = {};
     this.introTriggered = false;
-    console.log(`[GameTutorialManager] Tutorial started for class: ${classId}`);
+    this.forcedRoomIndex = -1;
   }
 
   public stopTutorial(): void {
@@ -61,7 +90,6 @@ export class GameTutorialManager {
     this.enemiesAlive = 0;
     this.introTriggered = false;
     
-    // Clear gameplay-specific listeners
     this.unsubscribers.forEach(u => u());
     this.unsubscribers = [];
 
@@ -69,6 +97,14 @@ export class GameTutorialManager {
       clearTimeout(this.timer);
       this.timer = null;
     }
+
+    if (this.promptGui) {
+      this.promptGui.dispose();
+      this.promptGui = null;
+    }
+    
+    this.clearIndicator();
+    this.stopAimIndicator();
   }
 
   public isTutorialActive(): boolean {
@@ -81,45 +117,70 @@ export class GameTutorialManager {
 
   private triggerPhase(phase: TutorialPhase): void {
     if (!this.isActive) return;
-    if (this.currentPhase === phase && phase !== 'init') return; // Prevent echoing
-    console.log(`[GameTutorialManager] triggerPhase: ${phase}`);
+    if (this.currentPhase === phase && phase !== 'init') return;
     this.currentPhase = phase;
     this.phaseState = {};
 
     switch (phase) {
-      case 'intro':
-        this.daemonSayById('tutorial_intro');
-        this.timer = window.setTimeout(() => this.triggerPhase('basic_attack'), 5000);
+      case 'movement_prompt':
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        if (!isMobile) {
+          this.showControlPrompt();
+        } else {
+          this.timer = window.setTimeout(() => this.triggerPhase('movement_door'), 500);
+        }
         break;
-      case 'basic_attack':
+      case 'movement_door':
+        this.daemonSay("Try moving around without falling. Reach the door to continue.", "neutral", 4);
+        this.pointTo(new Vector3(0, 0, 4)); // usually positive Z is north
+        this.eventBus.emit(GameEvents.TUTORIAL_PHASE_COMPLETED, { phaseId: 'unlock_door' });
+        break;
+      case 'shop_intro':
+        this.clearIndicator();
+        this.daemonSay("This is the daemon registry. Pick an upgrade to enhance your shell. You'll definitely need them... trust me, I've seen your skills.", "neutral", 6);
+        break;
+      case 'combat_aim':
+        this.clearIndicator();
+        this.daemonSay("Aim with your cursor — that glowing line shows where you're pointing. Line it up, then shoot.", "neutral", 5);
+        this.startAimIndicator();
+        this.timer = window.setTimeout(() => this.triggerPhase('combat_dummy'), 5000);
+        break;
+      case 'combat_dummy':
+        this.stopAimIndicator();
         this.spawnEnemy('tutorial_dummy_basic', new Vector3(0, 0, -2));
-        this.daemonSayById('tutorial_basic_attack');
+        this.pointTo(new Vector3(0, 0, -2));
         break;
-      case 'class_mechanic':
-        this.startClassMechanicPhase();
+      case 'combat_stance':
+        this.clearIndicator();
+        this.daemonSay("Hold [SHIFT] or your stance button, then attack to unleash your secondary.", "neutral", 6);
+        this.spawnEnemy('tutorial_dummy_mobile', new Vector3(0, 0, -2));
+        this.pointTo(new Vector3(0, 0, -2));
         break;
-      case 'ultimate':
+      case 'combat_ultimate':
+        this.clearIndicator();
+        this.daemonSay("Your core is charged. Press [SPACE] to unleash your ultimate.", "neutral", 5);
         this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_REFILL_REQUESTED);
-        this.daemonSayById('tutorial_ultimate');
         this.spawnEnemy('tutorial_dummy_basic', new Vector3(0, 0, -1));
         this.spawnEnemy('tutorial_dummy_basic', new Vector3(-1, 0, -1.5));
         this.spawnEnemy('tutorial_dummy_basic', new Vector3(1, 0, -1.5));
-        this.spawnEnemy('tutorial_dummy_basic', new Vector3(-0.5, 0, -2.5));
-        this.spawnEnemy('tutorial_dummy_basic', new Vector3(0.5, 0, -2.5));
+        this.pointTo(new Vector3(0, 0, -1.5));
         break;
-      case 'shop':
-        this.daemonSayById('tutorial_shop');
-        this.eventBus.emit(GameEvents.TUTORIAL_PHASE_COMPLETED, { phaseId: 'shop_start', gold: 50 });
+      case 'combat_door':
+        this.clearIndicator();
+        this.daemonSay("Excellent. Proceed to the final area.", "neutral", 3);
+        this.pointTo(new Vector3(0, 0, 4));
+        this.eventBus.emit(GameEvents.TUTORIAL_PHASE_COMPLETED, { phaseId: 'unlock_door' });
         break;
-      case 'playground':
-        this.daemonSayById('tutorial_playground');
+      case 'playground_mobs':
+        this.clearIndicator();
+        this.daemonSay("Clear the remaining corrupted processes.", "neutral", 4);
         this.spawnEnemy('tutorial_dummy_basic', new Vector3(-2, 0, -2));
         this.spawnEnemy('tutorial_dummy_basic', new Vector3(0, 0, -1));
         this.spawnEnemy('tutorial_dummy_basic', new Vector3(2, 0, -2));
-        // No timer to stop tutorial here; wait for enemies to die
         break;
-      case 'completed':
-        this.daemonSayById('tutorial_completed');
+      case 'playground_completed':
+        this.clearIndicator();
+        this.daemonSay("Initialization complete. Returning to host...", "neutral", 4);
         this.timer = window.setTimeout(() => {
           this.eventBus.emit(GameEvents.TUTORIAL_END_REQUESTED);
           this.stopTutorial();
@@ -128,35 +189,203 @@ export class GameTutorialManager {
     }
   }
 
-  private startClassMechanicPhase(): void {
-    if (this.classId === 'mage') {
-      this.daemonSayById('tutorial_mage_mechanic');
-      this.spawnEnemy('tutorial_dummy_mobile', new Vector3(0, 0, -2));
-    } else if (this.classId === 'firewall') {
-      this.daemonSayById('tutorial_tank_mechanic');
-      this.spawnEnemy('tutorial_turret', new Vector3(0, 0, 1));
-      this.phaseState.blocked = false;
-    } else {
-      // rogue or cat
-      this.daemonSayById('tutorial_rogue_mechanic');
-      this.spawnEnemy('tutorial_sentinel', new Vector3(0, 0, 1));
-      this.phaseState.dashed = false;
+  private pointTo(localOffset: Vector3): void {
+    this.clearIndicator();
+    if (!this.dependencies?.scene) return;
+    
+    const center = this.dependencies.getRoomCenter();
+    const position = center.add(localOffset);
+    
+    this.indicatorMesh = MeshBuilder.CreateCylinder("tutorialIndicator", { height: 1.5, diameterTop: 0, diameterBottom: 0.8, tessellation: 4 }, this.dependencies.scene);
+    this.indicatorMesh.position = position.add(new Vector3(0, 2, 0));
+    this.indicatorMesh.rotation.x = Math.PI; // point downwards
+    
+    const material = new StandardMaterial("indicatorMat", this.dependencies.scene);
+    material.emissiveColor = new Color3(0, 1, 0.8);
+    material.alpha = 0.7;
+    this.indicatorMesh.material = material;
+    
+    this.dependencies.scene.onBeforeRenderObservable.add(this.animateIndicator);
+  }
+
+  private animateIndicator = () => {
+    if (this.indicatorMesh) {
+      this.indicatorMesh.rotation.y += 0.05;
+      this.indicatorMesh.position.y += Math.sin(Date.now() / 200) * 0.01;
     }
+  };
+
+  private clearIndicator(): void {
+    if (this.indicatorMesh) {
+      if (this.dependencies?.scene) {
+        this.dependencies.scene.onBeforeRenderObservable.removeCallback(this.animateIndicator);
+      }
+      this.indicatorMesh.dispose();
+      this.indicatorMesh = null;
+    }
+  }
+
+  private startAimIndicator(): void {
+    this.stopAimIndicator();
+    const scene = this.dependencies?.scene;
+    if (!scene) return;
+
+    // Build a simple arrow: a thin box as shaft + a cone tip
+    this.aimIndicatorRoot = new TransformNode('aimIndicatorRoot', scene);
+
+    const shaft = MeshBuilder.CreateBox('aimShaft', { width: 0.06, height: 0.06, depth: 1.2 }, scene);
+    shaft.parent = this.aimIndicatorRoot;
+    shaft.position.set(0, 0, 0.6); // extend forward (+Z)
+
+    const tip = MeshBuilder.CreateCylinder('aimTip', { height: 0.4, diameterTop: 0, diameterBottom: 0.18, tessellation: 6 }, scene);
+    tip.parent = this.aimIndicatorRoot;
+    tip.position.set(0, 0, 1.4);
+    tip.rotation.x = Math.PI / 2; // point along +Z
+
+    const mat = new StandardMaterial('aimIndicatorMat', scene);
+    mat.emissiveColor = new Color3(1.0, 0.6, 0.1);
+    mat.alpha = 0.85;
+    mat.disableLighting = true;
+    shaft.material = mat;
+    tip.material = mat;
+
+    this.aimIndicatorObserver = scene.onBeforeRenderObservable.add(() => {
+      const pc = this.dependencies?.playerController;
+      const root = this.aimIndicatorRoot;
+      if (!pc || !root) return;
+
+      const playerPos = pc.getPosition();
+      root.position.set(playerPos.x, 1.15, playerPos.z);
+
+      const aimDir = pc.getAttackDirection();
+      if (aimDir && aimDir.lengthSquared() > 0.0001) {
+        const angle = Math.atan2(aimDir.x, aimDir.z);
+        root.rotation.y = angle;
+      }
+
+      // Pulsing opacity
+      const pulse = (Math.sin(Date.now() / 200) * 0.15) + 0.85;
+      mat.alpha = pulse;
+    });
+  }
+
+  private stopAimIndicator(): void {
+    if (this.aimIndicatorObserver && this.dependencies?.scene) {
+      this.dependencies.scene.onBeforeRenderObservable.remove(this.aimIndicatorObserver);
+      this.aimIndicatorObserver = null;
+    }
+    if (this.aimIndicatorRoot) {
+      this.aimIndicatorRoot.getChildMeshes().forEach(m => m.dispose());
+      this.aimIndicatorRoot.dispose();
+      this.aimIndicatorRoot = null;
+    }
+  }
+
+  private showControlPrompt(): void {
+    if (!this.dependencies?.scene) return;
+    
+    this.promptGui = AdvancedDynamicTexture.CreateFullscreenUI('TutorialPromptUI', true, this.dependencies.scene);
+    if (this.promptGui.layer) this.promptGui.layer.layerMask = UI_LAYER;
+
+    const overlay = new Rectangle('promptOverlay');
+    overlay.width = 1;
+    overlay.height = 1;
+    overlay.background = 'rgba(0, 0, 0, 0.8)';
+    overlay.thickness = 0;
+    this.promptGui.addControl(overlay);
+
+    const bgRect = new Rectangle('promptBg');
+    bgRect.width = '600px';
+    bgRect.height = '400px';
+    bgRect.background = 'rgba(10, 20, 20, 0.9)';
+    bgRect.color = '#7CFFEA';
+    bgRect.thickness = 2;
+    bgRect.cornerRadius = 8;
+    overlay.addControl(bgRect);
+
+    const container = new StackPanel('promptContainer');
+    container.paddingTop = '20px';
+    container.paddingBottom = '20px';
+    bgRect.addControl(container);
+
+    const title = new TextBlock('title', 'SELECT CONTROL SCHEME');
+    title.height = '40px';
+    title.color = '#00FFD1';
+    title.fontSize = 24;
+    title.fontFamily = 'Consolas';
+    container.addControl(title);
+
+    let isAutoAimOn = GameSettingsStore.get().controls.autoAimTowardMovement;
+    const toggleBtn = Button.CreateSimpleButton('autoAimToggle', `AUTO-AIM: ${isAutoAimOn ? 'ON' : 'OFF'}`);
+    toggleBtn.width = '400px';
+    toggleBtn.height = '40px';
+    toggleBtn.color = '#FF9900';
+    toggleBtn.background = '#331A00';
+    toggleBtn.fontFamily = 'Consolas';
+    toggleBtn.paddingBottom = '10px';
+    toggleBtn.onPointerUpObservable.add(() => {
+      isAutoAimOn = !isAutoAimOn;
+      GameSettingsStore.updateControls({ autoAimTowardMovement: isAutoAimOn });
+      if (toggleBtn.textBlock) {
+        toggleBtn.textBlock.text = `AUTO-AIM: ${isAutoAimOn ? 'ON' : 'OFF'}`;
+      }
+    });
+    container.addControl(toggleBtn);
+
+    const makeBtn = (text: string, action: () => void) => {
+      const btn = Button.CreateSimpleButton('btn', text);
+      btn.width = '400px';
+      btn.height = '50px';
+      btn.color = '#7CFFEA';
+      btn.background = '#1A332C';
+      btn.paddingTop = '10px';
+      btn.fontFamily = 'Consolas';
+      btn.onPointerUpObservable.add(action);
+      container.addControl(btn);
+    };
+
+    makeBtn('WASD', () => {
+      GameSettingsStore.setKeybinding('moveUp', 'w');
+      GameSettingsStore.setKeybinding('moveLeft', 'a');
+      GameSettingsStore.setKeybinding('moveDown', 's');
+      GameSettingsStore.setKeybinding('moveRight', 'd');
+      this.promptGui?.dispose();
+      this.promptGui = null;
+      this.triggerPhase('movement_door');
+    });
+
+    makeBtn('ZQSD', () => {
+      GameSettingsStore.setKeybinding('moveUp', 'z');
+      GameSettingsStore.setKeybinding('moveLeft', 'q');
+      GameSettingsStore.setKeybinding('moveDown', 's');
+      GameSettingsStore.setKeybinding('moveRight', 'd');
+      this.promptGui?.dispose();
+      this.promptGui = null;
+      this.triggerPhase('movement_door');
+    });
+
+    makeBtn('ARROWS', () => {
+      GameSettingsStore.setKeybinding('moveUp', 'arrowup');
+      GameSettingsStore.setKeybinding('moveLeft', 'arrowleft');
+      GameSettingsStore.setKeybinding('moveDown', 'arrowdown');
+      GameSettingsStore.setKeybinding('moveRight', 'arrowright');
+      this.promptGui?.dispose();
+      this.promptGui = null;
+      this.triggerPhase('movement_door');
+    });
   }
 
   private spawnEnemy(typeId: string, localOffset: Vector3): void {
     this.enemiesAlive++;
     const center = this.dependencies?.getRoomCenter() ?? new Vector3(0, 0, 0);
     const position = center.add(localOffset);
-    console.log(`[GameTutorialManager] Requesting spawn: type=${typeId}, roomCenter=${center.toString()}, localOffset=${localOffset.toString()}, finalPosition=${position.toString()}`);
     this.eventBus.emit(GameEvents.ENEMY_SPAWN_REQUESTED, { typeId, position });
   }
 
-  private daemonSayById(voicelineId: string): void {
-    console.log(`[GameTutorialManager] daemonSayById: ${voicelineId}`);
-    this.eventBus.emit(GameEvents.DAEMON_TAUNT, {
-      voicelineId
-    });
+  private daemonSay(message: string, emotion: string, duration: number): void {
+    if (this.dependencies?.hudManager) {
+      this.dependencies.hudManager.showDaemonMessage(message, emotion, { holdDuration: duration, canCrash: false, canGlitchFrames: false });
+    }
   }
 
   private handleEnemyDied(): void {
@@ -164,59 +393,40 @@ export class GameTutorialManager {
     this.enemiesAlive = Math.max(0, this.enemiesAlive - 1);
 
     if (this.enemiesAlive === 0) {
-      if (this.currentPhase === 'basic_attack') {
-        this.timer = window.setTimeout(() => this.triggerPhase('class_mechanic'), 1000);
-      } else if (this.currentPhase === 'class_mechanic') {
-        this.timer = window.setTimeout(() => this.triggerPhase('ultimate'), 1000);
-      } else if (this.currentPhase === 'ultimate') {
-        this.timer = window.setTimeout(() => this.triggerPhase('shop'), 1500);
-      } else if (this.currentPhase === 'playground') {
-        this.timer = window.setTimeout(() => this.triggerPhase('completed'), 1000);
+      if (this.currentPhase === 'combat_dummy') {
+        this.timer = window.setTimeout(() => this.triggerPhase('combat_stance'), 1000);
+      } else if (this.currentPhase === 'combat_stance') {
+        this.timer = window.setTimeout(() => this.triggerPhase('combat_ultimate'), 1000);
+      } else if (this.currentPhase === 'combat_ultimate') {
+        this.timer = window.setTimeout(() => this.triggerPhase('combat_door'), 1500);
+      } else if (this.currentPhase === 'playground_mobs') {
+        this.timer = window.setTimeout(() => this.triggerPhase('playground_completed'), 1000);
       }
     }
   }
 
   private handleRoomEntered(): void {
-    if (!this.isActive || !this.dependencies) {
-      console.log(`[GameTutorialManager] handleRoomEntered skipped: isActive=${this.isActive}, deps=${!!this.dependencies}`);
-      return;
-    }
+    if (!this.isActive || !this.dependencies) return;
     
     const roomIndex = this.dependencies.getRoomIndex();
-    console.log(`[GameTutorialManager] Room entered index: ${roomIndex}, currentPhase: ${this.currentPhase}`);
+    if (this.forcedRoomIndex === roomIndex) return; // Prevent double trigger
+    this.forcedRoomIndex = roomIndex;
 
-    if (roomIndex === 0 && !this.introTriggered) {
-      this.introTriggered = true;
-      console.log(`[GameTutorialManager] Triggering phase: intro (delayed)`);
-      this.timer = window.setTimeout(() => this.triggerPhase('intro'), 2000);
+    if (roomIndex === 0) {
+      this.timer = window.setTimeout(() => this.triggerPhase('movement_prompt'), 1000);
     } else if (roomIndex === 1) {
-      console.log(`[GameTutorialManager] Triggering phase: playground (delayed)`);
-      this.timer = window.setTimeout(() => this.triggerPhase('playground'), 2000);
+      this.timer = window.setTimeout(() => this.triggerPhase('combat_aim'), 1000);
+    } else if (roomIndex === 2) {
+      this.timer = window.setTimeout(() => this.triggerPhase('playground_mobs'), 1000);
     }
   }
 
   private handleAttackPerformed(data: any): void {
     if (!this.isActive) return;
-    if (this.currentPhase === 'class_mechanic') {
-      if (this.classId === 'firewall' && data?.type === 'shield_bash') {
-        this.phaseState.dashed = true; // wait for it to die from it
-      }
-      if (this.classId === 'rogue' && data?.type === 'dash') {
+    if (this.currentPhase === 'combat_stance') {
+      if (data?.type === 'mage_stance_explosion') {
         this.phaseState.dashed = true;
       }
     }
   }
-
-  private handleEnemyDamaged(): void {
-    // For tank block detection we might not have a direct event, but it's fine, the enemy will die from shield bash or damage
-  }
-
-  private handlePlayerDamaged(): void {
-    if (!this.isActive) return;
-    if (this.currentPhase === 'class_mechanic' && this.classId === 'firewall') {
-      // Just to annoy player
-    }
-  }
-
 }
-

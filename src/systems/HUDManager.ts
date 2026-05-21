@@ -126,6 +126,7 @@ export class HUDManager {
   private daemonHoldTimer: number = 0;
   private daemonHoldDuration: number = 3.5;
   private daemonVisible: boolean = false;
+  private allowDaemonDuringOverlays: boolean = false;
   private daemonGlitchTimer: number = 0;
   private daemonGlitchDuration: number = 0;
   private daemonFlashTimer: number = 0;
@@ -137,6 +138,15 @@ export class HUDManager {
   private activeVoicelineAudios: Set<Sound | AudioBufferSourceNode> = new Set();
   private voicelineGainNode: GainNode | null = null;
   private isVoicelineMuted: boolean = false;
+  
+  private daemonMessageQueue: Array<{
+    message: string,
+    emotion?: string,
+    options?: {
+      sequence?: string[]; frameInterval?: number; holdDuration?: number; preload?: boolean;
+      voicePreset?: string; canGlitchFrames?: boolean; canCrash?: boolean;
+    }
+  }> = [];
   
   private waveNumber: number = 0;
   private isEnabled: boolean = true;
@@ -322,8 +332,14 @@ export class HUDManager {
       console.warn('[HUDManager] Received ENEMY_SPAWNED without ID:', data);
       return;
     }
-    
-    // Queue for creation on the next update to ensure mesh and scene state are ready
+
+    // If we already have a valid mesh, build immediately.
+    if (data?.mesh && !data.mesh.isDisposed()) {
+      this.createEnemyHealthBar(enemyId, data.enemyName, data.mesh, data.healthBarOffset);
+      return;
+    }
+
+    // Otherwise queue for next frames (mesh can become available just after spawn).
     this.pendingEnemyHealthBars.push({ ...data, enemyId });
   }
 
@@ -365,6 +381,7 @@ export class HUDManager {
   private handleEnemyDiedEvent(data: EnemyEventPayload): void {
     const enemyId = data?.enemyId ?? data?.entityId;
     if (!enemyId) return;
+    this.pendingEnemyHealthBars = this.pendingEnemyHealthBars.filter((entry) => entry.enemyId !== enemyId);
     this.removeEnemyHealthBar(enemyId);
     
     const logs = [
@@ -937,7 +954,7 @@ export class HUDManager {
     this.daemonContainer.top = this.daemonBaseTop;
     this.daemonContainer.left = this.daemonBaseLeft;
     this.daemonContainer.isVisible = false;
-    this.daemonContainer.zIndex = 100;
+    this.daemonContainer.zIndex = 5000; // Always on top of ALL overlays (bonus screen, shop, etc.)
     this.guiClean.addControl(this.daemonContainer);
 
     this.daemonGlitchOverlay = new Rectangle('daemon_glitch_overlay');
@@ -1673,6 +1690,7 @@ export class HUDManager {
       bar.label.dispose();
       this.enemyHealthBars.delete(enemyId);
     }
+    this.pendingEnemyHealthBars = this.pendingEnemyHealthBars.filter((entry) => entry.enemyId !== enemyId);
   }
 
   private addDamageNumber(position: Vector3, damage: number, sourceId: string = 'unknown'): void {
@@ -2300,6 +2318,24 @@ export class HUDManager {
   ): Promise<void> {
     if (!this.daemonContainer || !this.daemonMessageText) return;
     
+    if (this.daemonVisible) {
+      this.daemonMessageQueue.push({ message, emotion, options });
+      return;
+    }
+    
+    await this.processDaemonMessage(message, emotion, options);
+  }
+
+  private async processDaemonMessage(
+    message: string,
+    emotion?: string,
+    options?: {
+      sequence?: string[]; frameInterval?: number; holdDuration?: number; preload?: boolean;
+      voicePreset?: string; canGlitchFrames?: boolean; canCrash?: boolean;
+    }
+  ): Promise<void> {
+    if (!this.daemonContainer || !this.daemonMessageText) return;
+    
     // Preload frames if requested
     if (options?.preload !== false && options?.sequence && options.sequence.length > 0) {
       await this.preloadAvatarFrames(options.sequence);
@@ -2532,6 +2568,11 @@ export class HUDManager {
       this.stopAllVoicelineAudio();
       
       this.daemonAvatarController.clearVoicelineState();
+      
+      if (this.daemonMessageQueue.length > 0) {
+        const nextMsg = this.daemonMessageQueue.shift()!;
+        void this.processDaemonMessage(nextMsg.message, nextMsg.emotion, nextMsg.options);
+      }
     }
   }
 
@@ -3030,6 +3071,7 @@ export class HUDManager {
     selectionState?: BonusSelectionUiState,
   ): void {
     if (!this.bonusScreen) return;
+    this.allowDaemonDuringOverlays = true;
     this.bonusScreen.isVisible = true;
     this.hideMenuScreens();
     this.setHudVisible(false);
@@ -3342,12 +3384,14 @@ export class HUDManager {
   }
 
   hideOverlays(): void {
+    this.allowDaemonDuringOverlays = false;
     this.forceHideOverlays();
     this.setHudVisible(true);
   }
 
   private setHudVisible(visible: boolean): void {
     if (visible) {
+      this.allowDaemonDuringOverlays = false;
       this.forceHideOverlays();
     }
     if (this.playerHealthDisplay) this.playerHealthDisplay.isVisible = visible;
@@ -3355,7 +3399,12 @@ export class HUDManager {
     if (this.topBar) this.topBar.isVisible = visible;
     if (this.logPanel) this.logPanel.isVisible = visible;
     if (this.statusPanel) this.statusPanel.isVisible = visible;
-    if (this.daemonContainer) this.daemonContainer.isVisible = visible && this.daemonVisible;
+    const daemonShouldShow = this.daemonVisible && (visible || this.allowDaemonDuringOverlays);
+    if (this.daemonContainer) this.daemonContainer.isVisible = daemonShouldShow;
+    if (!daemonShouldShow) {
+      if (this.daemonGlitchOverlay) this.daemonGlitchOverlay.isVisible = false;
+      if (this.daemonPopupFlashOverlay) this.daemonPopupFlashOverlay.isVisible = false;
+    }
   }
 
   private forceHideOverlays(): void {

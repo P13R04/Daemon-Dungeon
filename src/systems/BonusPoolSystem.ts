@@ -35,6 +35,12 @@ export class BonusPoolSystem {
     return this.definitions.get(bonusId) ?? null;
   }
 
+  getChoiceDef(bonusId: string): BonusChoice | null {
+    const def = this.definitions.get(bonusId);
+    if (!def) return null;
+    return this.toChoice(def);
+  }
+
   getStackCount(bonusId: string): number {
     return this.stacks.get(bonusId) ?? 0;
   }

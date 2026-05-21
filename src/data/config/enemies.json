@@ -643,18 +643,14 @@
     "name": "Mobile Dummy",
     "description": "Cible d'entraînement mobile, sans dégâts de contact.",
     "baseStats": {
-      "hp": 200,
+      "hp": 36,
       "damage": 0,
       "speed": 3.0,
       "attackRange": 0.0,
       "attackCooldown": 999
     },
-    "behavior": "pong",
-    "behaviorConfig": {
-      "initialAngleDeg": 45,
-      "contactDamageRatio": 0.0,
-      "contactKnockback": 0.0
-    },
+    "behavior": "scripted_rail",
+    "behaviorConfig": {},
     "lootTable": [],
     "appearance": {
       "size": 0.9,

@@ -49,6 +49,8 @@ export class PlayerAnimationController {
   private targetRotationY: number = 0; // Target angle to rotate towards
   private rotationSpeed: number = 12; // Radians per second - controls rotation smoothness
   private rotationOffsetY: number = 0; // Permanent rotation offset (e.g., Math.PI for tank 180° flip)
+  private enforceFacingAfterAnimations: boolean = false;
+  private afterAnimationsObserver: Nullable<Observer<Scene>> = null;
   
   // Height adjustment
   private heightOffset: number = -2; // Adjustable height offset (default -2 for mage)
@@ -95,6 +97,11 @@ export class PlayerAnimationController {
       // Rogue/cat rigs need to sit slightly higher than mage/tank in current scene setup.
       this.heightOffset = 0;
     }
+
+    this.afterAnimationsObserver = this.scene.onAfterAnimationsObservable.add(() => {
+      if (!this.enforceFacingAfterAnimations || !this.meshParent) return;
+      this.meshParent.rotation.y = this.targetRotationY;
+    });
   }
 
   /**
@@ -826,6 +833,11 @@ export class PlayerAnimationController {
    * Dispose of resources
    */
   dispose(): void {
+    if (this.afterAnimationsObserver) {
+      this.scene.onAfterAnimationsObservable.remove(this.afterAnimationsObserver);
+      this.afterAnimationsObserver = null;
+    }
+    this.enforceFacingAfterAnimations = false;
     if (this.tankThrusterParticles) {
       this.tankThrusterParticles.stop();
       this.tankThrusterParticles.dispose();
@@ -1287,6 +1299,19 @@ export class PlayerAnimationController {
     this.targetRotationY = Math.atan2(direction.x, direction.z) - Math.PI / 2 + this.rotationOffsetY;
   }
 
+  faceDirectionImmediate(direction: Vector3): void {
+    if (!this.meshParent || direction.lengthSquared() < 0.0001) {
+      return;
+    }
+    const target = Math.atan2(direction.x, direction.z) - Math.PI / 2 + this.rotationOffsetY;
+    this.targetRotationY = target;
+    this.meshParent.rotation.y = target;
+  }
+
+  setFacingEnforcedAfterAnimations(enabled: boolean): void {
+    this.enforceFacingAfterAnimations = enabled;
+  }
+
   /**
    * Update rotation smoothly toward target (call this every frame)
    * Should be called from PlayerController.update()
@@ -1294,8 +1319,10 @@ export class PlayerAnimationController {
   updateRotation(deltaTime: number): void {
     if (!this.meshParent) return;
 
+    const target = this.targetRotationY;
+
     const currentRotation = this.meshParent.rotation.y;
-    const diff = this.targetRotationY - currentRotation;
+    const diff = target - currentRotation;
 
     // Normalize angle difference to [-PI, PI] for shortest path
     const normalizedDiff = Math.atan2(Math.sin(diff), Math.cos(diff));
@@ -1309,7 +1336,7 @@ export class PlayerAnimationController {
       this.meshParent.rotation.y += Math.sign(normalizedDiff) * maxRotation;
     } else {
       // Close enough - snap to target
-      this.meshParent.rotation.y = this.targetRotationY;
+      this.meshParent.rotation.y = target;
     }
   }
 

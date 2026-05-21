@@ -212,6 +212,9 @@ export class EnemyController {
   private pongRadius: number = 0.35;
   private pongContactDamageRatio: number = 0.5;
   private pongContactKnockback: number = 0.55;
+  private railAnchor: Vector3 | null = null;
+  private railSlowMultiplier: number = 1;
+  private railSlowTimer: number = 0;
   private jumperState: 'chase' | 'aim' | 'jump' | 'cooldown' = 'chase';
   private jumperTimer: number = 0;
   private jumperLockedDirection: Vector3 = new Vector3(1, 0, 0);
@@ -469,7 +472,7 @@ export class EnemyController {
     this.mesh.position = this.position.clone();
     this.mesh.rotation = Vector3.Zero();
     // Ensure enemy is at correct height
-    const needsLowHeight = ['chase', 'flee', 'strategist', 'spike_strategist', 'bull', 'pong', 'jumper', 'fuyard'].includes(this.behavior);
+    const needsLowHeight = ['chase', 'flee', 'strategist', 'spike_strategist', 'bull', 'pong', 'jumper', 'fuyard', 'scripted_rail'].includes(this.behavior);
     this.mesh.position.y = (needsLowHeight ? 0.0 : 1.0) + EnemyController.globalHeightOffset;
     this.mesh.checkCollisions = true;
     this.mesh.metadata = { isEnemy: true, enemyId: this.id, typeId: this.typeId };
@@ -499,7 +502,7 @@ export class EnemyController {
       this.queueJumperModelLoad();
     }
     
-    if (this.behavior === 'pong') {
+    if (this.behavior === 'pong' || this.behavior === 'scripted_rail') {
       this.queuePongModelLoad();
     }
     
@@ -528,7 +531,6 @@ export class EnemyController {
     this.initParticleEffects();
     this.applyRenderSuppressionState();
   }
-
   private initParticleEffects(): void {
     if (['chase', 'flee', 'strategist', 'spike_strategist', 'bull', 'fuyard'].includes(this.behavior)) {
       this.movementDust = new ParticleSystem(`dust_${this.id}`, 80, this.scene);
@@ -729,6 +731,9 @@ export class EnemyController {
 
     if (this.behavior === 'bull') {
       this.updateBull(deltaTime, playerPosition, allEnemies, roomManager);
+    } else if (this.behavior === 'scripted_rail') {
+      this.updateScriptedRail(deltaTime);
+      return; // Bypass ALL post-update physics/separation
     } else if (this.behavior === 'pong') {
       this.updatePong(deltaTime, playerPosition, allEnemies, roomManager);
     } else if (this.behavior === 'jumper') {
@@ -1740,6 +1745,56 @@ export class EnemyController {
     this.applyMeshPosition();
   }
 
+  /**
+   * Scripted horizontal rail — tutorial_dummy_mobile ONLY.
+   * Pure sin-wave on X, anchor locked at spawn. NO external system can interfere:
+   *   - setPosition() is a no-op for this behavior (see above)
+   *   - isStationary() returns true → skipped by resolveEntityCollisions
+   *   - handleContactHit() returns null → no damage/knockback on player
+   *   - onWallCollision() is guarded → no direction reversal
+   * After computing position we write directly to mesh.position as a final guarantee.
+   */
+  private updateScriptedRail(deltaTime: number): void {
+    if (this.railSlowTimer > 0) {
+      this.railSlowTimer = Math.max(0, this.railSlowTimer - deltaTime);
+      if (this.railSlowTimer <= 0) {
+        this.railSlowMultiplier = 1;
+      }
+    }
+
+    // One-time anchor capture
+    if (!this.pongInitialized) {
+      this.railAnchor = this.position.clone();
+      this.railPhase = 0;
+      this.pongInitialized = true;
+    }
+
+    // Phase rate: so peak velocity = this.speed (units/s)
+    const amplitude = 2.0; // ±2 units left/right from anchor
+    const effectiveSpeed = this.speed * this.railSlowMultiplier;
+    this.railPhase += (effectiveSpeed / amplitude) * deltaTime;
+
+    // Deterministic X position — Y and Z locked
+    this.position.x = this.railAnchor!.x + Math.sin(this.railPhase) * amplitude;
+    this.position.y = this.railAnchor!.y;
+    this.position.z = this.railAnchor!.z;
+
+    // Write directly to mesh — final, unconditional, cannot be overridden
+    if (this.mesh && !this.mesh.isDisposed()) {
+      this.mesh.position.x = this.position.x;
+      this.mesh.position.y = this.verticalOffset + EnemyController.globalHeightOffset;
+      this.mesh.position.z = this.position.z;
+      this.mesh.computeWorldMatrix(true);
+    }
+
+    const idle = this.pongAnimGroups.get('idle');
+    if (idle && !idle.isPlaying) {
+      idle.start(true, 1.0, idle.from, idle.to, false);
+    }
+  }
+
+  private railPhase: number = 0;
+
   private updatePong(
     deltaTime: number,
     playerPosition: Vector3,
@@ -1994,6 +2049,11 @@ export class EnemyController {
       return null;
     }
 
+    // scripted_rail: completely passive, no contact, no damage
+    if (this.behavior === 'scripted_rail') {
+      return null;
+    }
+
     if (this.behavior === 'pong') {
       this.applyPongContactDamage();
       const knock = playerPosition.subtract(this.position);
@@ -2033,6 +2093,7 @@ export class EnemyController {
       this.jumperTimer = this.jumperCooldownDuration;
       this.velocity = Vector3.Zero();
     }
+    // scripted_rail does not respond to wall collisions
     if (this.behavior === 'pong' && this.pongDirection.lengthSquared() > 0.0001) {
       this.pongDirection = this.pongDirection.scale(-1);
       this.velocity = Vector3.Zero();
@@ -2553,6 +2614,8 @@ export class EnemyController {
   }
 
   setPosition(position: Vector3): void {
+    // scripted_rail position is computed exclusively by updateScriptedRail() — ignore all external writes
+    if (this.behavior === 'scripted_rail') return;
     this.position = position.clone();
     this.position.y = 1.0 + EnemyController.globalHeightOffset;
     if (!this.falling && this.mesh) {
@@ -2609,12 +2672,19 @@ export class EnemyController {
   }
 
   public isStationary(): boolean {
-    const stationary = ['turret', 'bullet_hell', 'mage_missile', 'missile'];
+    const stationary = ['turret', 'bullet_hell', 'mage_missile', 'missile', 'scripted_rail'];
     return stationary.includes(this.behavior) || this.behavior === 'pong';
   }
 
   isSlowable(): boolean {
     return this.isAlive && !this.isDisposed;
+  }
+
+  setRailSlowMultiplier(multiplier: number, duration: number = 0.12): void {
+    if (this.behavior !== 'scripted_rail') return;
+    const clamped = Math.max(0.05, Math.min(1, multiplier));
+    this.railSlowMultiplier = clamped;
+    this.railSlowTimer = Math.max(this.railSlowTimer, duration);
   }
 
   dispose(): void {
@@ -2771,7 +2841,7 @@ export class EnemyController {
   private applyMeshPosition(): void {
     if (!this.mesh) return;
     this.mesh.position = this.position.clone();
-    const needsLowHeight = ['chase', 'flee', 'strategist', 'spike_strategist', 'bull', 'pong', 'jumper', 'fuyard'].includes(this.behavior);
+    const needsLowHeight = ['chase', 'flee', 'strategist', 'spike_strategist', 'bull', 'pong', 'scripted_rail', 'jumper', 'fuyard'].includes(this.behavior);
     this.mesh.position.y = (needsLowHeight ? 0.0 : 1.0) + this.verticalOffset + this.fallOffset + EnemyController.globalHeightOffset;
     this.mesh.computeWorldMatrix(true);
     this.applyRenderSuppressionState();

@@ -115,6 +115,9 @@ export class DaemonVoicelineManager {
   private lastTriggerType: VoicelineTrigger | null = null;
   private roomFiredTriggers: Set<VoicelineTrigger> = new Set();
 
+  // Tutorial mode — silences all automatic/reactive triggers
+  private tutorialMode: boolean = false;
+
   // Delayed room entry trigger
   private roomEntryDelayTimer = 0;
   private isRoomEntryPending = false;
@@ -138,6 +141,20 @@ export class DaemonVoicelineManager {
     this.playerClass = classId;
   }
 
+  /** Enable/disable tutorial mode (silences all non-scripted voicelines) */
+  setTutorialMode(active: boolean): void {
+    this.tutorialMode = active;
+    if (active) {
+      // Reset all timers so nothing fires as soon as tutorial ends
+      this.ambientTimer = 0;
+      this.resetAmbientTimer();
+      this.idleTimer = 0;
+      this.isRoomEntryPending = false;
+      this.damageTimestamps = [];
+      this.lowHpFired = false;
+    }
+  }
+
   /** Called by GameManager when room changes */
   setCurrentRoom(roomNumber: number): void {
     this.currentRoom = roomNumber;
@@ -155,13 +172,14 @@ export class DaemonVoicelineManager {
     };
 
     on(GameEvents.GAME_START_REQUESTED, () => {
+      if (this.tutorialMode) return; // Tutorial uses its own scripted intro
       this.resetState();
       this.isRunActive = true;
       this.tryFire('game_start');
     });
 
     on(GameEvents.PLAYER_DAMAGED, (data: any) => {
-      if (!this.isRunActive) return;
+      if (!this.isRunActive || this.tutorialMode) return;
       const now = this.now();
       this.damageTimestamps.push(now);
       // Clean old timestamps
@@ -199,13 +217,13 @@ export class DaemonVoicelineManager {
     });
 
     on(GameEvents.PLAYER_DIED, () => {
-      if (!this.isRunActive) return;
+      if (!this.isRunActive || this.tutorialMode) return;
       this.tryFire('player_died');
       this.isRunActive = false;
     });
 
     on(GameEvents.ENEMY_DIED, (data: any) => {
-      if (!this.isRunActive) return;
+      if (!this.isRunActive || this.tutorialMode) return;
       const enemyType = (data?.enemyType ?? '').toLowerCase();
       if (enemyType === 'zombie') {
         if (this.tryFire('enemy_killed_zombie')) return;
@@ -214,29 +232,30 @@ export class DaemonVoicelineManager {
     });
 
     on(GameEvents.ROOM_ENTERED, (data: any) => {
-      this.isRunActive = true; 
+      if (this.tutorialMode) return; // Silence in tutorial
+      this.isRunActive = true;
       this.roomCleared = false;
       this.idleTimer = 0;
-      this.roomFiredTriggers.clear(); // Reset variety for new room
+      this.roomFiredTriggers.clear();
       this.isRoomEntryPending = true;
-      this.roomEntryDelayTimer = 2.5; // Wait 2.5s for loading to settle
+      this.roomEntryDelayTimer = 2.5;
       this.pendingRoomType = (data?.roomType ?? '').toLowerCase();
     });
 
     on(GameEvents.ROOM_CLEARED, () => {
-      if (!this.isRunActive) return;
+      if (!this.isRunActive || this.tutorialMode) return;
       this.roomCleared = true;
       this.idleTimer = 0;
       this.tryFire('room_cleared');
     });
 
     on(GameEvents.PLAYER_ULTIMATE_USED, () => {
-      if (!this.isRunActive) return;
+      if (!this.isRunActive || this.tutorialMode) return;
       this.tryFire('player_ult_used');
     });
 
     on(GameEvents.BONUS_SELECTED, () => {
-      if (!this.isRunActive) return;
+      if (!this.isRunActive || this.tutorialMode) return;
       this.tryFire('bonus_selected');
     });
   }
@@ -244,6 +263,7 @@ export class DaemonVoicelineManager {
   /** Called each frame by GameManager */
   update(deltaTime: number, playerIsMoving: boolean): void {
     if (!this.isRunActive || this.isDaemonActive) return;
+    if (this.tutorialMode) return; // Silence everything during tutorial
 
     // Idle detection
     if (this.roomCleared && !playerIsMoving) {
@@ -316,6 +336,7 @@ export class DaemonVoicelineManager {
 
   private tryFire(trigger: VoicelineTrigger): boolean {
     if (this.isDaemonActive) return false;
+    if (this.tutorialMode) return false; // Block all automatic fires during tutorial
 
     const now = this.now();
 

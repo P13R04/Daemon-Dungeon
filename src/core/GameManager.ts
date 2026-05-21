@@ -310,6 +310,11 @@ export class GameManager {
       recordBonusCollected: (bonusId) => {
         this.codexService.recordBonusCollected(bonusId);
       },
+      onTutorialShopInteraction: (type) => {
+        if (this.isTutorialRun) {
+          this.eventBus.emit(GameEvents.TUTORIAL_SHOP_INTERACTED, { type });
+        }
+      },
     });
 
     const achievementData = getMergedAchievementDefinitions();
@@ -452,7 +457,11 @@ export class GameManager {
         this.bootScene.dispose();
         this.bootScene = undefined;
       }
-      void this.openMainMenuScene();
+      if (!GameSettingsStore.get().accessibility.tutorialCompleted) {
+        this.eventCoordinator.emitTutorialStartRequested('mage');
+      } else {
+        void this.openMainMenuScene();
+      }
     });
     this.scene = this.bootScene.getScene();
   }
@@ -688,12 +697,20 @@ export class GameManager {
     this.inputManager.attachMouseListeners();
 
     const rooms = this.configLoader.getRoomsConfig();
-    const playableRooms = Array.isArray(rooms)
-      ? rooms.filter((room: LoadedRoomConfig) => this.shouldIncludeInRunOrder(room))
-      : [];
-    this.roomOrder = playableRooms.map((r: LoadedRoomConfig) => r.id);
-    if (this.roomOrder.length === 0) {
-      this.roomOrder = ['room_test_dummies'];
+    if (this.isTutorialRun) {
+      this.roomOrder = [
+        'room_tutorial_movement',
+        'room_tutorial_combat',
+        'room_tutorial_playground'
+      ];
+    } else {
+      const playableRooms = Array.isArray(rooms)
+        ? rooms.filter((room: LoadedRoomConfig) => this.shouldIncludeInRunOrder(room))
+        : [];
+      this.roomOrder = playableRooms.map((r: LoadedRoomConfig) => r.id);
+      if (this.roomOrder.length === 0) {
+        this.roomOrder = ['room_test_dummies'];
+      }
     }
 
     if (Array.isArray(rooms)) {
@@ -732,6 +749,7 @@ export class GameManager {
     this.daemonVoicelineManager = new DaemonVoicelineManager(this.eventBus);
     this.daemonVoicelineManager.setPlayerClass(this.selectedClassId === 'cat' ? 'rogue' : this.selectedClassId as any);
     this.daemonVoicelineManager.setOnVoicelineSelected((vl, forceCrash) => {
+      if (this.isTutorialRun) return; // Tutorial uses only scripted lines
       this.hudManager.showDaemonMessage(vl.message, vl.animationSequence[0]?.emotion, {
         holdDuration: vl.holdDuration,
         voicePreset: vl.voicePreset,
@@ -777,7 +795,10 @@ export class GameManager {
     this.gameplayInitialized = true;
     this.tutorialManager.initialize({
       getRoomCenter: () => this.roomManager.getCurrentRoomCenter(),
-      getRoomIndex: () => this.currentRoomIndex
+      getRoomIndex: () => this.currentRoomIndex,
+      hudManager: this.hudManager,
+      scene: this.scene,
+      playerController: this.playerController
     });
 
     if (this.textureRenderMode === 'proceduralRelief') {
@@ -892,9 +913,7 @@ export class GameManager {
           this.playerController.heal(9999);
           const spawnPoint = this.roomManager.getPlayerSpawnPoint(this.roomOrder[this.currentRoomIndex]) || Vector3.Zero();
           this.playerController.setPosition(spawnPoint);
-          this.eventBus.emit(GameEvents.DAEMON_TAUNT, {
-            voicelineId: 'tutorial_hazard'
-          });
+          this.hudManager.showDaemonMessage("the void doesn't have a safety net and my patience has limits", "neutral", { holdDuration: 4, canCrash: false, canGlitchFrames: false });
           return;
         }
         const finalScore = this.scoreManager.getScore();
@@ -971,21 +990,19 @@ export class GameManager {
         this.tutorialManager.startTutorial(this.selectedClassId as any || 'mage');
         this.tutorialManager.initialize({
           getRoomCenter: () => this.roomManager.getCurrentRoomCenter(),
-          getRoomIndex: () => this.currentRoomIndex
+          getRoomIndex: () => this.currentRoomIndex,
+          hudManager: this.hudManager,
+          scene: this.scene,
+          playerController: this.playerController
         });
+        this.daemonVoicelineManager?.setTutorialMode(true);
 
         this.codexService.startRunTracking(this.selectedClassId);
         void this.startNewGame();
       },
       onTutorialPhaseCompleted: (data) => {
         if (!this.gameplayInitialized || !this.isTutorialRun) return;
-        if (data?.phaseId === 'shop_start') {
-          this.enemySpawner.dispose();
-          const tutorialData = data as any;
-          if (tutorialData?.gold) {
-            this.runEconomy.addCurrency(tutorialData.gold);
-            this.hudManager.updateCurrency(this.runEconomy.getCurrency());
-          }
+        if (data?.phaseId === 'unlock_door') {
           this.roomCleared = true;
           this.roomManager.setDoorActive(true);
         }
@@ -995,6 +1012,7 @@ export class GameManager {
         this.codexService.recordTutorialCompleted(this.selectedClassId);
         this.codexService.endRunTracking();
         this.isTutorialRun = false;
+        this.daemonVoicelineManager?.setTutorialMode(false);
         void this.openMainMenuScene();
       },
       onPlayerUltimateRefillRequested: () => {
@@ -1011,6 +1029,9 @@ export class GameManager {
       },
       onCodexProgressResetRequested: () => {
         this.codexService.resetProgression();
+        GameSettingsStore.updateAccessibility({ tutorialCompleted: false });
+        try { sessionStorage.removeItem('daemonBootShown'); } catch { /* ignore */ }
+        window.location.reload();
       },
       onPauseToggleRequested: () => {
         this.togglePause();
@@ -1652,6 +1673,10 @@ export class GameManager {
         this.primeTransitionRoomPreparation();
       },
       openBonusChoices: () => {
+        if (this.isTutorialRun && this.currentRoomIndex === 0) {
+          this.bonusSystemManager.forceNextChoices(['bonus_ms'], 'mage_autolock_patch');
+          this.eventBus.emit(GameEvents.TUTORIAL_SHOP_OPENED);
+        }
         this.bonusSystemManager.openBonusChoices();
       },
       renderScene: () => {
@@ -1758,7 +1783,14 @@ export class GameManager {
     const clamped = Math.max(0.05, Math.min(1, speedMultiplier));
     for (const enemy of enemies) {
       const current = enemy.getPosition();
-      if (Vector3.Distance(current, center) > radius || !enemy.isSlowable()) continue;
+      const inZone = Vector3.Distance(current, center) <= radius && enemy.isSlowable();
+
+      if (enemy.getBehavior() === 'scripted_rail') {
+        enemy.setRailSlowMultiplier(inZone ? clamped : 1, 0.12);
+        continue;
+      }
+
+      if (!inZone) continue;
       const previous = enemy.getPreviousPosition?.() ?? current;
       const slowed = Vector3.Lerp(previous, current, clamped);
       enemy.setPosition(slowed);
@@ -2272,7 +2304,11 @@ export class GameManager {
 
   private prepareRunStateForStart(): void {
     if (this.isTutorialRun) {
-      this.roomOrder = ['room_tutorial_base', 'room_tutorial_base'];
+      this.roomOrder = [
+        'room_tutorial_movement',
+        'room_tutorial_combat',
+        'room_tutorial_playground'
+      ];
     } else {
       this.roomOrder = this.generateProceduralRunOrder();
     }
@@ -2562,7 +2598,9 @@ export class GameManager {
 
     this.ensureTransitionFogPlane();
 
-    const nextIndex = (this.currentRoomIndex + 1) % this.roomOrder.length;
+    // Clamp nextIndex to the last room instead of wrapping to 0, so the curtain
+    // keeps scrolling beyond the penultimate room rather than freezing.
+    const nextIndex = Math.min(this.currentRoomIndex + 1, this.roomOrder.length - 1);
     this.transitionFogDirectionSign = this.resolveTransitionFogDirection(nextIndex);
     this.updateFogCurtainPlacement(this.fogCurtainOffset, this.fogCurtainAlpha);
   }

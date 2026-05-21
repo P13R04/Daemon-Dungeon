@@ -120,6 +120,8 @@ export const GameEvents = {
   TUTORIAL_START_REQUESTED: 'game:tutorialStartRequested',
   TUTORIAL_PHASE_COMPLETED: 'game:tutorialPhaseCompleted',
   TUTORIAL_END_REQUESTED: 'game:tutorialEndRequested',
+  TUTORIAL_SHOP_OPENED: 'game:tutorialShopOpened',
+  TUTORIAL_SHOP_INTERACTED: 'game:tutorialShopInteracted',
 
   
   // UI events

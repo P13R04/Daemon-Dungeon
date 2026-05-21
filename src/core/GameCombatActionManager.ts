@@ -250,20 +250,31 @@ export class GameCombatActionManager {
   ): void {
     const dir = strike.direction.lengthSquared() > 0.0001 ? strike.direction.normalize() : new Vector3(1, 0, 0);
     const lateral = new Vector3(dir.z, 0, -dir.x).normalize();
-    const laneHalfWidth = Math.max(0.2, Math.min(0.58, (strike.range * 0.18) + (strike.coneAngleDeg * 0.002)));
+    const laneHalfWidth = Math.max(0.38, Math.min(0.74, (strike.range * 0.22) + (strike.coneAngleDeg * 0.0026)));
     this.spawnRoguePrimaryRangeVisual(strike.origin, dir, strike.range, laneHalfWidth);
     let bestEnemy: EnemyController | null = null;
     let bestForwardDistance = Number.POSITIVE_INFINITY;
+    let bestDistanceSq = Number.POSITIVE_INFINITY;
+    const laneLength = Math.max(0.7, strike.range * 0.95);
+    const laneVisualHalfWidth = Math.max(0.28, laneHalfWidth * 2.15) * 0.5;
+    const tipRadius = Math.max(0.14, laneHalfWidth * 0.85);
+    const maxForward = laneLength + tipRadius + 0.22;
+    const minForward = -0.08;
 
     for (const enemy of enemies) {
       const rel = enemy.getPosition().subtract(strike.origin);
       rel.y = 0;
       const forwardDistance = Vector3.Dot(rel, dir);
-      if (forwardDistance <= 0.05 || forwardDistance > strike.range) continue;
+      if (forwardDistance < minForward || forwardDistance > maxForward) continue;
       const lateralDistance = Math.abs(Vector3.Dot(rel, lateral));
-      if (lateralDistance > laneHalfWidth) continue;
-      if (forwardDistance < bestForwardDistance) {
+      if (lateralDistance > laneVisualHalfWidth) continue;
+      const distanceSq = rel.lengthSquared();
+      if (forwardDistance < bestForwardDistance - 0.0001) {
         bestForwardDistance = forwardDistance;
+        bestDistanceSq = distanceSq;
+        bestEnemy = enemy;
+      } else if (Math.abs(forwardDistance - bestForwardDistance) <= 0.0001 && distanceSq < bestDistanceSq) {
+        bestDistanceSq = distanceSq;
         bestEnemy = enemy;
       }
     }
