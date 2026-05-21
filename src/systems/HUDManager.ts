@@ -3407,9 +3407,7 @@ export class HUDManager {
     if (!this.inputManager) return;
 
     // Detect mobile device or developer query parameter override
-    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) 
-      || ('ontouchstart' in window) 
-      || (navigator.maxTouchPoints > 0);
+    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     const hasMobileQuery = typeof window !== 'undefined' && window.location && window.location.search.includes('mobile=true');
 
     if (isMobileDevice || hasMobileQuery || this.inputManager.isMobileMode()) {

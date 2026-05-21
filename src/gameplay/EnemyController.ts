@@ -171,11 +171,16 @@ export class EnemyController {
   private zombieMeshes: Array<Mesh | TransformNode> = [];
   private zombieModelLoadPromise: Promise<void> | null = null;
   private zombieAnimState: 'idle' | 'attack' | 'none' = 'none';
+  private dummyModelRoot: TransformNode | null = null;
+  private dummyMeshes: Array<Mesh | TransformNode> = [];
+  private dummyModelLoadPromise: Promise<void> | null = null;
   private instantiatedSkeletons: any[] = [];
   private zombieModelScale: number = 0.25;
+  private dummyModelScale: number = 0.14;
   private knockbackStrength: number = 0;
   private selfKnockbackStrength: number = 0;
   private useCrowdSteering: boolean = false;
+  private dummyInitialLookDone: boolean = false;
   private separationRadius: number = 1.1;
   private separationStrength: number = 1.0;
   private crowdMinDistance: number = 0.45;
@@ -469,6 +474,11 @@ export class EnemyController {
     this.mesh.checkCollisions = true;
     this.mesh.metadata = { isEnemy: true, enemyId: this.id, typeId: this.typeId };
 
+    if (this.behavior === 'dummy') {
+      this.mesh.isVisible = false;
+      this.mesh.visibility = 0;
+    }
+
     // Setup health
     const maxHP = this.config.baseStats?.hp || 40;
     this.health = new Health(maxHP, this.id);
@@ -505,6 +515,10 @@ export class EnemyController {
 
     if (this.behavior === 'missile') {
       this.queueMissileModelLoad();
+    }
+
+    if (this.behavior === 'dummy') {
+      this.queueDummyModelLoad();
     }
     
     if (['chase', 'flee', 'strategist', 'spike_strategist', 'fuyard'].includes(this.behavior)) {
@@ -906,12 +920,18 @@ export class EnemyController {
 
     this.artificerTimer -= deltaTime;
     if (this.artificerTimer <= 0 && distance <= this.artificerMaxRange) {
-      this.playCasterAnim('attack_1');
-      this.fireArtificerProjectile(playerPosition, playerVelocity);
-      this.artificerTimer = this.artificerCooldown;
-      if (this.selfKnockbackStrength > 0) {
-        const recoil = toPlayer.normalize().scale(-this.selfKnockbackStrength);
-        this.knockback.apply(recoil);
+      const blocked = roomManager ? this.pathBlockedWithRadius(this.position, playerPosition, roomManager, 0.1) : false;
+      if (!blocked) {
+        this.playCasterAnim('attack_1');
+        this.fireArtificerProjectile(playerPosition, playerVelocity);
+        this.artificerTimer = this.artificerCooldown;
+        if (this.selfKnockbackStrength > 0) {
+          const recoil = toPlayer.normalize().scale(-this.selfKnockbackStrength);
+          console.log(`[ARTIFICER] Firing! Applying recoil: ${recoil.x.toFixed(2)}, ${recoil.z.toFixed(2)}. Strength: ${this.selfKnockbackStrength}`);
+          this.knockback.apply(recoil);
+        } else {
+          console.log(`[ARTIFICER] Firing! But selfKnockbackStrength is ${this.selfKnockbackStrength}`);
+        }
       }
     }
   }
@@ -2507,6 +2527,13 @@ export class EnemyController {
     this.pongModelLoadPromise = null;
     this.missileModelLoadPromise = null;
     this.stopMissileTrail();
+    for (const visual of this.ephemeralVisuals) {
+      if (!visual.mesh.isDisposed()) {
+        visual.mesh.material?.dispose();
+        visual.mesh.dispose();
+      }
+    }
+    this.ephemeralVisuals = [];
     if (this.mesh) {
       this.mesh.dispose();
     }
@@ -2577,6 +2604,10 @@ export class EnemyController {
     return false;
   }
 
+  public isFalling(): boolean {
+    return this.falling;
+  }
+
   public isStationary(): boolean {
     const stationary = ['turret', 'bullet_hell', 'mage_missile', 'missile'];
     return stationary.includes(this.behavior) || this.behavior === 'pong';
@@ -2601,6 +2632,7 @@ export class EnemyController {
     this.disposeCasterMobileModel();
     this.disposePongModel();
     this.disposeMissileModel();
+    this.disposeDummyModel();
     this.disposeZombieModel();
     if (this.instantiatedSkeletons) {
       this.instantiatedSkeletons.forEach(s => {
@@ -2620,6 +2652,7 @@ export class EnemyController {
     this.casterMobileModelLoadPromise = null;
     this.pongModelLoadPromise = null;
     this.missileModelLoadPromise = null;
+    this.dummyModelLoadPromise = null;
     this.zombieModelLoadPromise = null;
     this.navPath = [];
     this.navPathCursor = 0;
@@ -4207,6 +4240,72 @@ export class EnemyController {
     this.zombieMeshes = [];
     this.zombieAnimGroups.forEach(g => g.dispose());
     this.zombieAnimGroups.clear();
+  }
+
+  private queueDummyModelLoad(): void {
+    if (this.isDisposed || this.mesh?.isDisposed() || this.dummyModelRoot || this.dummyModelLoadPromise) return;
+    this.dummyModelLoadPromise = this._loadDummyModel().finally(() => {
+      this.dummyModelLoadPromise = null;
+    });
+  }
+
+  private async _loadDummyModel(): Promise<void> {
+    if (this.isDisposed || this.dummyModelRoot || !this.mesh || this.mesh.isDisposed() || !this.isAlive) return;
+    try {
+      const normalizedBase = getHudAssetBaseUrl();
+      const rootUrl = `${normalizedBase}models/dummy/`;
+      const container = await EnemyController.getOrLoadModelContainer(this.scene, rootUrl, 'dummy.gltf');
+      if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.dummyModelRoot) {
+        return;
+      }
+
+      this.disposeDummyModel();
+      const result = container.instantiateModelsToScene();
+      if (result.skeletons) {
+        this.instantiatedSkeletons.push(...result.skeletons);
+      }
+
+      const root = new TransformNode(`dummy_root_${this.id}`, this.scene);
+      this.dummyMeshes = [];
+      result.rootNodes.forEach((node) => {
+        node.parent = root;
+        this.dummyMeshes.push(node as Mesh);
+      });
+      const allMeshes = root.getChildMeshes(false);
+      allMeshes.forEach((mesh) => {
+        mesh.layerMask = SCENE_LAYER;
+        this.dummyMeshes.push(mesh);
+      });
+
+      root.position = Vector3.Zero();
+      // Rotate by Math.PI (180) + Math.PI/2 (90 clockwise) = Math.PI * 1.5
+      root.rotation = new Vector3(0, Math.PI * 1.5, 0);
+      root.scaling = new Vector3(this.dummyModelScale, this.dummyModelScale, this.dummyModelScale);
+      root.parent = this.mesh;
+
+      this.mesh.isVisible = false;
+      this.dummyModelRoot = root;
+      this.applyRenderSuppressionState();
+    } catch (error) {
+      console.warn('Dummy model failed to load, using placeholder.', error);
+      if (this.mesh && !this.mesh.isDisposed()) {
+        this.mesh.isVisible = true;
+        this.mesh.visibility = 1;
+      }
+    }
+  }
+
+  private disposeDummyModel(): void {
+    if (this.dummyModelRoot) {
+      this.dummyModelRoot.dispose(false, false);
+      this.dummyModelRoot = null;
+    }
+    this.dummyMeshes.forEach((mesh) => {
+      if (!mesh.isDisposed()) {
+        mesh.dispose(false, false);
+      }
+    });
+    this.dummyMeshes = [];
   }
 
   private playZombieAnim(name: 'Zombie_idle' | 'Zombie_attack_1'): void {

@@ -350,3 +350,29 @@ main {
   color: white;
   font-weight: bold;
 }
+.room-entrance::after {
+  content: 'ENTRANCE';
+  position: absolute;
+  bottom: 2px;
+  font-size: 8px;
+  font-weight: bold;
+  color: #fff;
+  background: rgba(0, 150, 0, 0.7);
+  padding: 1px 2px;
+  border-radius: 2px;
+  z-index: 5;
+}
+
+.room-exit::after {
+  content: 'EXIT';
+  position: absolute;
+  top: 2px;
+  font-size: 8px;
+  font-weight: bold;
+  color: #fff;
+  background: rgba(150, 0, 0, 0.7);
+  padding: 1px 2px;
+  border-radius: 2px;
+  z-index: 5;
+}
+

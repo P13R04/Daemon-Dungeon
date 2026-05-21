@@ -367,12 +367,12 @@
     "baseStats": {
       "hp": 70,
       "damage": 8,
-      "speed": 2.0,
+      "speed": 2.4,
       "attackRange": 0.7,
       "attackCooldown": 1.2
     },
     "behavior": "artificer",
-    "selfKnockbackStrength": 4.0,
+    "selfKnockbackStrength": 20.0,
     "behaviorConfig": {
       "artificerMinRange": 3.0,
       "artificerMaxRange": 6.0,

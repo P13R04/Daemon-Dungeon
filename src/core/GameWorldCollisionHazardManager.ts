@@ -94,8 +94,9 @@ export class GameWorldCollisionHazardManager {
     }
 
     for (const enemy of enemies) {
-      if (enemy.isStationary?.()) continue;
+      if (!enemy.isAlive || enemy.isAirborne() || enemy.isFalling() || enemy.isStationary?.()) continue;
       const enemyPos = enemy.getPosition();
+      const enemyRadius = enemy.getRadius();
       
       const tileType = this.roomManager.getTileTypeAtWorld(enemyPos.x, enemyPos.z);
       const isAirborne = (enemy as any).isAirborne?.() ?? false;

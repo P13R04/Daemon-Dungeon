@@ -20,13 +20,8 @@
   ],
   "spawnPoints": [
     {
-      "x": 7.9,
-      "y": 7,
-      "enemyType": "dummy_tank"
-    },
-    {
       "x": 11,
-      "y": 5.2,
+      "y": 5.199999999999999,
       "enemyType": "healer"
     },
     {
@@ -40,31 +35,6 @@
       "enemyType": "healer"
     },
     {
-      "x": 9.9,
-      "y": 4,
-      "enemyType": "healer"
-    },
-    {
-      "x": 8,
-      "y": 4,
-      "enemyType": "healer"
-    },
-    {
-      "x": 5.9,
-      "y": 4,
-      "enemyType": "healer"
-    },
-    {
-      "x": 4,
-      "y": 3.9000000000000004,
-      "enemyType": "healer"
-    },
-    {
-      "x": 3,
-      "y": 5,
-      "enemyType": "healer"
-    },
-    {
       "x": 3.1,
       "y": 7,
       "enemyType": "healer"
@@ -73,6 +43,16 @@
       "x": 3,
       "y": 9,
       "enemyType": "healer"
+    },
+    {
+      "x": 3.1,
+      "y": 5.1,
+      "enemyType": "healer"
+    },
+    {
+      "x": 7,
+      "y": 7.1,
+      "enemyType": "dummy_tank"
     }
   ],
   "friendlySpawnPoints": [],

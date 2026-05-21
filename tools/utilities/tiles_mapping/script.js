@@ -575,9 +575,9 @@ function getEnemyDisplayPosition(spawn) {
   const stepX = cellWidth + gapX;
   const stepZ = cellHeight + gapZ;
 
-  // Visual layout is rotated 180°: invert coordinates when computing screen position
-  const visX = (grid.width - 1) - spawn.x;
-  const visZ = (grid.height - 1) - spawn.z;
+  // No visual rotation needed anymore, coordinates directly map to visual
+  const visX = spawn.x;
+  const visZ = spawn.z;
 
   return {
     left: visX * stepX + cellWidth / 2,
@@ -605,13 +605,13 @@ function gridPositionFromMouseEvent(event) {
   const localX = event.clientX - rect.left - borderLeft;
   const localZ = event.clientY - rect.top - borderTop;
 
-  // Compute raw indices then invert to match visual 180° rotation
+  // No visual rotation needed anymore
   const rawX = clamp((localX - cellWidth / 2) / stepX, 0, grid.width - 1);
   const rawZ = clamp((localZ - cellHeight / 2) / stepZ, 0, grid.height - 1);
 
   return {
-    x: clamp((grid.width - 1) - rawX, 0, grid.width - 1),
-    z: clamp((grid.height - 1) - rawZ, 0, grid.height - 1),
+    x: rawX,
+    z: rawZ,
   };
 }
 
@@ -644,9 +644,9 @@ function buildGrid() {
       cell.className = "cell";
       cell.dataset.x = x;
       cell.dataset.y = y;
-      // place cells so the visual layout is rotated 180° while keeping logical coords
-      cell.style.gridColumnStart = String(grid.width - x);
-      cell.style.gridRowStart = String(grid.height - y);
+      // Place cells matching logical layout
+      cell.style.gridColumnStart = String(x + 1);
+      cell.style.gridRowStart = String(y + 1);
       gridEl.appendChild(cell);
     }
   }
@@ -684,10 +684,19 @@ function render() {
       if (solved.texture) {
         const url = `${TILESET_PATH}/${solved.texture}`;
         cell.style.backgroundImage = `url('${url}')`;
-        // Adjust rotation so texture appears correctly after visual 180° rotation
-        cell.style.transform = `rotate(${solved.rotation - 180}deg)`;
+        // Use logical rotation since visual grid matches logical layout
+        cell.style.transform = `rotate(${solved.rotation}deg)`;
       } else {
         cell.classList.add(`edit-${type}`);
+      }
+    }
+
+    // Highlight entrance and exit
+    if (x === Math.floor(grid.width / 2)) {
+      if (y === grid.height - 2) {
+        cell.classList.add("room-entrance");
+      } else if (y === 1) {
+        cell.classList.add("room-exit");
       }
     }
   }
@@ -753,13 +762,13 @@ function buildRoomJSON() {
 
   const spawnPoints = enemySpawns.map(spawn => ({
     x: Math.round(spawn.x * 10) / 10,
-    y: grid.height - 1 - Math.round(spawn.z * 10) / 10,
+    y: Math.round(spawn.z * 10) / 10,
     enemyType: spawn.enemyType
   }));
 
   const friendlySpawnPoints = friendlySpawns.map(spawn => ({
     x: Math.round(spawn.x * 10) / 10,
-    y: grid.height - 1 - Math.round(spawn.z * 10) / 10,
+    y: Math.round(spawn.z * 10) / 10,
     friendlyType: spawn.friendlyType
   }));
 
@@ -807,7 +816,7 @@ function loadRoomFromJSON(room) {
   enemySpawns = Array.isArray(room.spawnPoints)
     ? room.spawnPoints.map((spawn) => ({
         x: clamp(Number(spawn.x) || 0, 0, width - 1),
-        z: clamp(height - 1 - (Number(spawn.y) || 0), 0, height - 1),
+        z: clamp(Number(spawn.y) || 0, 0, height - 1),
         enemyType: spawn.enemyType || "dummy_tank",
       }))
     : [];
@@ -815,7 +824,7 @@ function loadRoomFromJSON(room) {
   friendlySpawns = Array.isArray(room.friendlySpawnPoints)
     ? room.friendlySpawnPoints.map((spawn) => ({
         x: clamp(Number(spawn.x) || 0, 0, width - 1),
-        z: clamp(height - 1 - (Number(spawn.y) || 0), 0, height - 1),
+        z: clamp(Number(spawn.y) || 0, 0, height - 1),
         friendlyType: spawn.friendlyType || (FRIENDLY_TYPES[0]?.id ?? "shopkeeper_default"),
       }))
     : [];
