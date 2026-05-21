@@ -8,6 +8,7 @@ import { ConfigLoader } from '../utils/ConfigLoader';
 import { RoomManager } from './RoomManager';
 import { EventBus, GameEvents } from '../core/EventBus';
 import type { EnemyRuntimeConfig } from '../gameplay/enemy/EnemyControllerTypes';
+import { getHudAssetBaseUrl } from './hud/HudAssetPaths';
 
 interface EnemySpawnRequestPayload {
   typeId?: string;
@@ -51,6 +52,10 @@ export class EnemySpawner {
   private transitionPreparedEnemies: EnemyController[] = [];
   private deferredEnemyDisposalQueue: EnemyController[] = [];
   private suppressedAIActivationQueue: EnemyController[] = [];
+  private suppressActivationFlush: boolean = false;
+  private activationFlushAccumulator: number = 0;
+  private activationFlushInterval: number = 0.09;
+  private activationFlushBatchSize: number = 1;
   private fogMask: FogMask | null = null;
   private orphanBullCleanupAccumulator: number = 0;
   private unsubscriber: (() => void) | null = null;
@@ -69,7 +74,6 @@ export class EnemySpawner {
     this.unsubscriber = this.eventBus.on(GameEvents.ENEMY_SPAWN_REQUESTED, (data: EnemySpawnRequestPayload) => {
       const typeId = data?.typeId;
       const position = data?.position;
-      console.log(`[EnemySpawner] ENEMY_SPAWN_REQUESTED: typeId=${typeId}, pos=${position}`);
       if (!typeId || !position) return;
       this.spawnEnemyAt(typeId, position);
     });
@@ -142,6 +146,30 @@ export class EnemySpawner {
 
     if (shouldPrewarmHeavyAssets && this.heavyAssetPrewarmQueue.size > 0) {
       this.scheduleHeavyAssetPrewarm(0);
+    }
+  }
+
+  async prewarmCoreEnemyModelsForRun(): Promise<void> {
+    const normalizedBase = getHudAssetBaseUrl();
+    const candidates: Array<{ rootUrl: string; fileName: string }> = [
+      { rootUrl: `${normalizedBase}models/zombie/`, fileName: 'zombie.glb' },
+      { rootUrl: `${normalizedBase}models/bull/`, fileName: 'bull.glb' },
+      { rootUrl: `${normalizedBase}models/jumper/`, fileName: 'sauteur.glb' },
+      { rootUrl: `${normalizedBase}models/caster/`, fileName: 'caster_socle.glb' },
+      { rootUrl: `${normalizedBase}models/caster/`, fileName: 'caster_mobile.glb' },
+      { rootUrl: `${normalizedBase}models/caster/`, fileName: 'missile.glb' },
+      { rootUrl: `${normalizedBase}models/pong/`, fileName: 'pong.glb' },
+      { rootUrl: `${normalizedBase}models/healer/`, fileName: 'tde_float_yellow.glb' },
+      { rootUrl: `${normalizedBase}models/bullet_hell/`, fileName: 'tde_socle_bullet_hell(crying obsidian).glb' },
+      { rootUrl: `${normalizedBase}models/mage_missile/`, fileName: 'tde_socle_red_n_white.glb' },
+    ];
+
+    for (const entry of candidates) {
+      try {
+        await EnemyController.getOrLoadModelContainer(this.scene, entry.rootUrl, entry.fileName);
+      } catch (error) {
+        console.warn('[EnemySpawner] model prewarm failed', entry.fileName, error);
+      }
     }
   }
 
@@ -276,9 +304,7 @@ export class EnemySpawner {
         continue;
       }
 
-      enemy.setAISuppressed(false);
-      enemy.setRenderSuppressed(false);
-      enemy.revealSpawnEventIfSuppressed();
+      enemy.beginSpawnRevealFromSuppressed(0.9);
 
       if (i + 1 < adaptiveCount) {
         const now = (typeof performance !== 'undefined' && typeof performance.now === 'function')
@@ -291,7 +317,7 @@ export class EnemySpawner {
     }
   }
 
-  spawnEnemiesForRoom(roomId: string): void {
+  spawnEnemiesForRoom(roomId: string, options?: { deferInitialSpawns?: boolean }): void {
     const room = this.configLoader.getRoom(roomId);
     if (!room) {
       console.error('Missing room or enemy config!');
@@ -311,6 +337,7 @@ export class EnemySpawner {
       });
     }
 
+    const deferInitialSpawns = options?.deferInitialSpawns === true;
     if (!this.progressiveSpawningEnabled) {
       for (const request of requests) {
         this.spawnEnemyNow(request.typeId, request.position);
@@ -319,7 +346,9 @@ export class EnemySpawner {
     }
 
     this.pendingRoomSpawnQueue.push(...requests);
-    this.flushPendingRoomSpawns(this.spawnBatchSize);
+    if (!deferInitialSpawns) {
+      this.flushPendingRoomSpawns(this.spawnBatchSize);
+    }
   }
 
   hasPendingSpawns(): boolean {
@@ -340,6 +369,77 @@ export class EnemySpawner {
 
   getSuppressedActivationQueueCount(): number {
     return this.suppressedAIActivationQueue.length;
+  }
+
+  getActiveEnemyCount(): number {
+    return this.enemies.length;
+  }
+
+  hasAnyEnemyMaterializing(): boolean {
+    for (const enemy of this.enemies) {
+      if (enemy.isActive() && enemy.isSpawnMaterializing()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  releaseAllSuppressedEnemyAI(): void {
+    this.suppressedAIActivationQueue = this.suppressedAIActivationQueue.filter((enemy) => enemy.isActive());
+    for (const enemy of this.suppressedAIActivationQueue) {
+      enemy.releaseAIFromSuppressedState();
+    }
+    this.suppressedAIActivationQueue = [];
+  }
+
+  revealSuppressedEnemiesWithoutAIRelease(): void {
+    this.suppressedAIActivationQueue = this.suppressedAIActivationQueue.filter((enemy) => enemy.isActive());
+    for (const enemy of this.suppressedAIActivationQueue) {
+      enemy.beginSpawnRevealFromSuppressed(0.9, false);
+    }
+  }
+
+  materializePendingSpawnsAsSuppressed(): void {
+    if (this.pendingRoomSpawnQueue.length === 0) return;
+    while (this.pendingRoomSpawnQueue.length > 0) {
+      const request = this.pendingRoomSpawnQueue.shift();
+      if (!request) break;
+      this.spawnEnemyNow(request.typeId, request.position, {
+        suppressSpawnEvent: true,
+        suppressAI: true,
+        suppressRender: true,
+      });
+    }
+    this.stageAllActiveEnemiesAsSuppressed();
+  }
+
+  pauseSuppressedActivationQueue(paused: boolean): void {
+    this.suppressActivationFlush = paused;
+    if (!paused) {
+      this.activationFlushAccumulator = this.activationFlushInterval;
+    }
+  }
+
+  configureSuppressedActivation(config?: { intervalSeconds?: number; batchSize?: number }): void {
+    if (!config) return;
+    if (typeof config.intervalSeconds === 'number' && Number.isFinite(config.intervalSeconds)) {
+      this.activationFlushInterval = Math.max(0.01, Math.min(1.2, config.intervalSeconds));
+    }
+    if (typeof config.batchSize === 'number' && Number.isFinite(config.batchSize)) {
+      this.activationFlushBatchSize = Math.max(1, Math.min(12, Math.round(config.batchSize)));
+    }
+  }
+
+  stageAllActiveEnemiesAsSuppressed(): void {
+    this.suppressedAIActivationQueue = this.suppressedAIActivationQueue.filter((enemy) => enemy.isActive());
+    for (const enemy of this.enemies) {
+      if (!enemy.isActive()) continue;
+      enemy.setAISuppressed(true);
+      enemy.setRenderSuppressed(true);
+      if (!this.suppressedAIActivationQueue.includes(enemy)) {
+        this.suppressedAIActivationQueue.push(enemy);
+      }
+    }
   }
 
   private flushPendingRoomSpawns(batchSize: number): void {
@@ -372,7 +472,6 @@ export class EnemySpawner {
   }
 
   private spawnEnemyAt(typeId: string, position: Vector3): void {
-    console.log(`[EnemySpawner] Spawning ${typeId} at ${position.toString()}`);
     this.spawnEnemyNow(typeId, position);
   }
 
@@ -541,7 +640,13 @@ export class EnemySpawner {
       this.applyFogMaskToCollection(this.suppressedAIActivationQueue);
     }
 
-    this.flushSuppressedAIActivationQueue(1);
+    if (!this.suppressActivationFlush) {
+      this.activationFlushAccumulator += Math.max(0, deltaTime);
+      if (this.activationFlushAccumulator >= this.activationFlushInterval) {
+        this.activationFlushAccumulator = 0;
+        this.flushSuppressedAIActivationQueue(this.activationFlushBatchSize);
+      }
+    }
     this.processDeferredEnemyDisposals(1);
 
     this.orphanBullCleanupAccumulator += deltaTime;
@@ -562,6 +667,48 @@ export class EnemySpawner {
       EnemyController.cleanupOrphanCasterVisuals(this.scene, activeEnemyIds);
     }
 
+  }
+
+  updateSuppressedVisuals(
+    deltaTime: number,
+    playerPosition: Vector3,
+    roomManager?: RoomManager,
+    playerVelocity?: Vector3,
+    detectionRange?: number
+  ): void {
+    const detectionRangeSq = detectionRange == null ? null : detectionRange * detectionRange;
+    const resolvedVelocity = playerVelocity ?? EnemySpawner._zeroVelocity;
+
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const enemy = this.enemies[i];
+      if (!enemy.isActive()) {
+        this.enemies.splice(i, 1);
+        enemy.dispose();
+        continue;
+      }
+
+      const enemyPos = enemy.getPositionRef();
+      const dx = enemyPos.x - playerPosition.x;
+      const dz = enemyPos.z - playerPosition.z;
+      const distanceSq = (dx * dx) + (dz * dz);
+      const detected = detectionRangeSq == null || distanceSq <= detectionRangeSq;
+
+      enemy.update(
+        deltaTime,
+        playerPosition,
+        this.enemies,
+        roomManager,
+        resolvedVelocity,
+        detected,
+        true,
+      );
+    }
+
+    if (this.fogMask) {
+      this.applyFogMaskToCollection(this.transitionPreparedEnemies);
+      this.applyFogMaskToCollection(this.suppressedAIActivationQueue);
+    }
+    this.processDeferredEnemyDisposals(1);
   }
 
   private processDeferredEnemyDisposals(batchSize: number = 1): void {
@@ -599,6 +746,8 @@ export class EnemySpawner {
     this.pendingRoomSpawnQueue = [];
     this.suppressedAIActivationQueue.forEach(e => e.dispose());
     this.suppressedAIActivationQueue = [];
+    this.suppressActivationFlush = false;
+    this.activationFlushAccumulator = 0;
     this.deferredEnemyDisposalQueue.forEach(e => e.dispose());
     this.deferredEnemyDisposalQueue = [];
     this.orphanBullCleanupAccumulator = 0;

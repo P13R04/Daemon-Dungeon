@@ -3,7 +3,7 @@
  * Pixelation, chromatic aberration, CRT/scanlines, glow
  */
 
-import { Scene, Camera, DefaultRenderingPipeline, Color4, Engine, PostProcess, Effect } from '@babylonjs/core';
+import { Scene, Camera, DefaultRenderingPipeline, Color4, Engine, PostProcess, Effect, Observer } from '@babylonjs/core';
 import { EventBus, GameEvents } from '../core/EventBus';
 
 interface UiOptionChangedPayload {
@@ -36,6 +36,13 @@ export class PostProcessManager {
   private camera?: Camera;
   private eventBus: EventBus;
   private unsubscribeOptions: (() => void) | null = null;
+  private unsubscribePlayerDamaged: (() => void) | null = null;
+  private beforeRenderObserver: Observer<Scene> | null = null;
+  private damageFxTimer: number = 0;
+  private readonly damageFxDuration: number = 0.5;
+  private damageShakeTimer: number = 0;
+  private readonly damageShakeDuration: number = 0.11;
+  private damageShakeOffset = { x: 0, y: 0, z: 0 };
   private config: PostProcessingConfig = {
     enabled: true,
     pixelScale: 1.6,
@@ -57,6 +64,9 @@ export class PostProcessManager {
     this.engine = engine;
     this.eventBus = EventBus.getInstance();
     this.bindEvents();
+    this.beforeRenderObserver = this.scene.onBeforeRenderObservable.add(() => {
+      this.updateDamageFx();
+    });
   }
 
   setupPipeline(camera: Camera, config?: Partial<PostProcessingConfig>): void {
@@ -127,6 +137,7 @@ export class PostProcessManager {
     } else {
       this.disposeCrtLines();
     }
+    this.applyDamageFxToPipeline();
   }
 
   private bindEvents(): void {
@@ -173,6 +184,14 @@ export class PostProcessManager {
         case 'postProcessingVignetteWeight':
           this.applyConfig({ ...this.config, vignetteWeight: Number(data.value) });
           break;
+      }
+    });
+
+    this.unsubscribePlayerDamaged = this.eventBus.on(GameEvents.PLAYER_DAMAGED, (data: { damage?: number }) => {
+      if ((data?.damage ?? 0) > 0) {
+        this.damageFxTimer = this.damageFxDuration;
+        this.damageShakeTimer = this.damageShakeDuration;
+        this.applyDamageFxToPipeline();
       }
     });
   }
@@ -276,15 +295,105 @@ export class PostProcessManager {
     return Math.max(min, Math.min(max, value));
   }
 
+  private updateDamageFx(): void {
+    this.updateDamageCameraShake();
+    if (this.damageFxTimer <= 0) return;
+    const dt = this.scene.getEngine().getDeltaTime() / 1000;
+    if (dt <= 0) return;
+    this.damageFxTimer = Math.max(0, this.damageFxTimer - dt);
+    this.applyDamageFxToPipeline();
+  }
+
+  private applyDamageFxToPipeline(): void {
+    if (!this.pipeline) return;
+    const fxAlpha = this.damageFxDuration > 0
+      ? this.clamp(this.damageFxTimer / this.damageFxDuration, 0, 1)
+      : 0;
+    const pulse = fxAlpha > 0 ? Math.sin((1 - fxAlpha) * Math.PI) : 0;
+    const hitEnvelope = Math.pow(fxAlpha, 0.5) * (0.9 + (0.5 * pulse));
+
+    if (this.pipeline.chromaticAberration) {
+      this.pipeline.chromaticAberration.aberrationAmount = this.config.chromaticAmount + (900 * hitEnvelope);
+      this.pipeline.chromaticAberration.radialIntensity = this.config.chromaticRadial + (14.0 * hitEnvelope);
+      const aberration = this.pipeline.chromaticAberration as any;
+      if (aberration.direction) {
+        aberration.direction.x = 1;
+        aberration.direction.y = 0.25;
+      }
+      if (aberration.centerPosition) {
+        aberration.centerPosition.x = 0.5;
+        aberration.centerPosition.y = 0.5;
+      }
+    }
+
+    if (this.pipeline.imageProcessing) {
+      this.pipeline.imageProcessing.vignetteEnabled = true;
+      this.pipeline.imageProcessing.vignetteWeight = this.config.vignetteWeight + (5.0 * hitEnvelope);
+      this.pipeline.imageProcessing.vignetteColor = new Color4(
+        0.55 * hitEnvelope,
+        0.02 * hitEnvelope,
+        0.04 * hitEnvelope,
+        1
+      );
+    }
+  }
+
+  private updateDamageCameraShake(): void {
+    if (!this.camera || !(this.camera as any).position) {
+      return;
+    }
+    const cam = this.camera as any;
+    cam.position.x -= this.damageShakeOffset.x;
+    cam.position.y -= this.damageShakeOffset.y;
+    cam.position.z -= this.damageShakeOffset.z;
+    this.damageShakeOffset.x = 0;
+    this.damageShakeOffset.y = 0;
+    this.damageShakeOffset.z = 0;
+
+    if (this.damageShakeTimer <= 0) return;
+
+    const dt = this.scene.getEngine().getDeltaTime() / 1000;
+    this.damageShakeTimer = Math.max(0, this.damageShakeTimer - Math.max(0, dt));
+    const t = this.damageShakeDuration > 0 ? this.damageShakeTimer / this.damageShakeDuration : 0;
+    const amp = 0.055 * Math.pow(t, 0.45);
+    this.damageShakeOffset.x = (Math.random() * 2 - 1) * amp;
+    this.damageShakeOffset.y = (Math.random() * 2 - 1) * amp * 0.65;
+    this.damageShakeOffset.z = (Math.random() * 2 - 1) * amp * 0.45;
+    cam.position.x += this.damageShakeOffset.x;
+    cam.position.y += this.damageShakeOffset.y;
+    cam.position.z += this.damageShakeOffset.z;
+  }
+
+  private resetDamageCameraShake(): void {
+    if (!this.camera || !(this.camera as any).position) return;
+    const cam = this.camera as any;
+    cam.position.x -= this.damageShakeOffset.x;
+    cam.position.y -= this.damageShakeOffset.y;
+    cam.position.z -= this.damageShakeOffset.z;
+    this.damageShakeOffset.x = 0;
+    this.damageShakeOffset.y = 0;
+    this.damageShakeOffset.z = 0;
+    this.damageShakeTimer = 0;
+  }
+
   getPipeline(): DefaultRenderingPipeline | undefined {
     return this.pipeline;
   }
 
   dispose(): void {
+    this.resetDamageCameraShake();
     this.disablePipeline();
+    if (this.beforeRenderObserver) {
+      this.scene.onBeforeRenderObservable.remove(this.beforeRenderObserver);
+      this.beforeRenderObserver = null;
+    }
     if (this.unsubscribeOptions) {
       this.unsubscribeOptions();
       this.unsubscribeOptions = null;
+    }
+    if (this.unsubscribePlayerDamaged) {
+      this.unsubscribePlayerDamaged();
+      this.unsubscribePlayerDamaged = null;
     }
   }
 }

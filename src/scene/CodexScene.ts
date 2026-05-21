@@ -437,7 +437,7 @@ export class CodexScene {
         const lerpAmount = Math.min(1, dt * 0.01);
         this.carouselRotation = Scalar.Lerp(this.carouselRotation, this.carouselTargetRotation, lerpAmount);
         this.updateBestiaryCarouselLayout();
-        
+
         const time = performance.now() * 0.001;
         for (const item of this.bestiaryItems) {
           if (item.customUpdate) {
@@ -831,6 +831,16 @@ export class CodexScene {
       rotation = Vector3.Zero();
       mainAnimName = ['flee', 'strategist', 'spike_strategist', 'fuyard'].includes(entry.behavior) ? 'Zombie_idle' : 'Zombie_attack_1';
       useColor = true;
+    } else if (entry.behavior === 'dummy') {
+      urlPath = 'models/dummy/';
+      fileName = 'dummy.gltf';
+      scale = 0.14;
+      rotation = new Vector3(0, 0, 0);
+    } else if (entry.id === 'tutorial_dummy_mobile' || entry.behavior === 'scripted_rail') {
+      urlPath = 'models/pong/';
+      fileName = 'pong.glb';
+      scale = 0.24;
+      rotation = Vector3.Zero();
     } else {
       this.createEnemyPlaceholder(root, entry.color, entry.behavior, entry.isBoss);
       return [];
@@ -844,7 +854,7 @@ export class CodexScene {
         mainRoot.scaling.setAll(scale);
         mainRoot.position = Vector3.Zero();
         mainRoot.rotation = rotation;
-        
+
         const item = this.bestiaryItems.find(i => i.root === root);
         if (item) {
           if (entry.behavior === 'missile') {
@@ -858,11 +868,11 @@ export class CodexScene {
             const cooldown = 1.5;
             const jumpDuration = 1.4;
             const jumpAnim = result.animationGroups[0];
-            
+
             item.customUpdate = (dt) => {
               const dtSec = dt * 0.001;
               timer += dtSec;
-              
+
               if (state === 'idle') {
                 mainRoot.position.y = 0;
                 if (timer >= cooldown) {
@@ -1080,7 +1090,7 @@ export class CodexScene {
 
     const oldIndex = this.selectedBestiaryIndex;
     this.selectedBestiaryIndex = ((index % count) + count) % count;
-    
+
     let diff = this.selectedBestiaryIndex - oldIndex;
     if (diff > count / 2) diff -= count;
     else if (diff < -count / 2) diff += count;

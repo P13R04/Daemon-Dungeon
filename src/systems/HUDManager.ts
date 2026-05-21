@@ -63,7 +63,11 @@ export class HUDManager {
   private playerUltDisplay: TextBlock | null = null;
   private topBar: Rectangle | null = null;
   private healthBarFill: Rectangle | null = null;
+  private healthBarContainer: Rectangle | null = null;
+  private integrityLabel: TextBlock | null = null;
   private healthValueText: TextBlock | null = null;
+  private integrityDamagePulseTimer: number = 0;
+  private readonly integrityDamagePulseDuration: number = 0.34;
   private waveText: TextBlock | null = null;
   private currencyText: TextBlock | null = null;
   private logPanel: Rectangle | null = null;
@@ -165,6 +169,7 @@ export class HUDManager {
   private bonusScreen: Rectangle | null = null;
   private bonusButtons: Button[] = [];
   private bonusDynamicControls: Control[] = [];
+  private bonusDynamicRoot: Rectangle | null = null;
   private bonusRerollButton: Button | null = null;
   private bossAlertContainer: Rectangle | null = null;
   private bossAlertSubtitle: TextBlock | null = null;
@@ -400,6 +405,9 @@ export class HUDManager {
     const current = data?.health?.current ?? (data as any)?.currentHealth ?? 0;
     const max = data?.health?.max ?? (data as any)?.maxHealth ?? 100;
     this.updateHealthDisplay(current, max);
+    if ((data?.damage ?? 0) > 0) {
+      this.triggerIntegrityDamagePulse();
+    }
     
     if (Math.random() < 0.35) {
       const logs = [
@@ -737,6 +745,7 @@ export class HUDManager {
     integrityLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     integrityLabel.top = '0px';
     healthPanel.addControl(integrityLabel);
+    this.integrityLabel = integrityLabel;
 
     const healthBarContainer = new Rectangle('health_bar_container');
     healthBarContainer.width = '420px';
@@ -749,6 +758,7 @@ export class HUDManager {
     healthBarContainer.left = 0;
     healthBarContainer.top = '2px';
     healthPanel.addControl(healthBarContainer);
+    this.healthBarContainer = healthBarContainer;
 
     this.healthBarFill = new Rectangle('health_bar_fill');
     this.healthBarFill.width = '100%';
@@ -1768,6 +1778,7 @@ export class HUDManager {
     this.updateDaemonPopup(deltaTime);
     this.updateBossRoomAlert(deltaTime);
     this.updateAchievementToast(deltaTime);
+    this.updateIntegrityDamagePulse(deltaTime);
 
     // Process scheduled logs in the queue
     if (this.scheduledLogs.length > 0) {
@@ -1888,6 +1899,38 @@ export class HUDManager {
       const worldPos = dmg.position.add(new Vector3(0, 0.6 + dmg.timeElapsed * 0.6, 0));
       dmg.anchor.position.copyFrom(worldPos);
       dmg.text.alpha = 1.0 - dmg.timeElapsed / dmg.duration;
+    }
+  }
+
+  private triggerIntegrityDamagePulse(): void {
+    this.integrityDamagePulseTimer = this.integrityDamagePulseDuration;
+    this.applyIntegrityDamagePulse();
+  }
+
+  private updateIntegrityDamagePulse(deltaTime: number): void {
+    if (this.integrityDamagePulseTimer <= 0) return;
+    this.integrityDamagePulseTimer = Math.max(0, this.integrityDamagePulseTimer - Math.max(0, deltaTime));
+    this.applyIntegrityDamagePulse();
+  }
+
+  private applyIntegrityDamagePulse(): void {
+    const ratio = this.integrityDamagePulseDuration > 0
+      ? Math.max(0, Math.min(1, this.integrityDamagePulseTimer / this.integrityDamagePulseDuration))
+      : 0;
+    const pulse = ratio > 0 ? Math.sin((1 - ratio) * Math.PI) : 0;
+    const intensity = ratio * (0.7 + (0.3 * pulse));
+
+    if (this.integrityLabel) {
+      this.integrityLabel.color = intensity > 0.01 ? '#FF8EA0' : '#7CFFEA';
+    }
+    if (this.healthBarContainer) {
+      this.healthBarContainer.thickness = intensity > 0.01 ? 2 : 1;
+      this.healthBarContainer.color = intensity > 0.01 ? '#FF4A66' : '#7CFFEA';
+      this.healthBarContainer.scaleX = 1 + (0.06 * intensity);
+      this.healthBarContainer.scaleY = 1 + (0.08 * intensity);
+      this.healthBarContainer.background = intensity > 0.01
+        ? 'rgba(75, 8, 16, 0.92)'
+        : 'rgba(10, 30, 35, 0.7)';
     }
   }
 
@@ -3095,11 +3138,21 @@ export class HUDManager {
     }
 
     // Clear previous dynamic controls
-    this.bonusButtons.forEach(btn => btn.dispose());
     this.bonusButtons = [];
-    this.bonusDynamicControls.forEach(ctrl => ctrl.dispose());
     this.bonusDynamicControls = [];
     this.bonusRerollButton = null;
+    if (this.bonusDynamicRoot) {
+      this.bonusDynamicRoot.dispose();
+      this.bonusDynamicRoot = null;
+    }
+    const dynamicRoot = new Rectangle('bonus_dynamic_root');
+    dynamicRoot.width = 1;
+    dynamicRoot.height = 1;
+    dynamicRoot.thickness = 0;
+    dynamicRoot.background = 'rgba(0,0,0,0)';
+    dynamicRoot.isPointerBlocker = false;
+    this.bonusScreen.addControl(dynamicRoot);
+    this.bonusDynamicRoot = dynamicRoot;
 
     const subtitle = new TextBlock('bonus_shop_subtitle');
     subtitle.text = freePicksRemaining > 1 ? `PICK ${freePicksRemaining} FREE BONUSES` : 'PICK 1 FREE BONUS';
@@ -3108,7 +3161,7 @@ export class HUDManager {
     subtitle.fontFamily = 'Consolas';
     subtitle.top = '-210px';
     subtitle.height = '30px';
-    this.bonusScreen.addControl(subtitle);
+    dynamicRoot.addControl(subtitle);
     this.bonusDynamicControls.push(subtitle);
 
     const paidOfferVisible = !!paidRareChoice;
@@ -3177,7 +3230,7 @@ export class HUDManager {
       paidHint.fontFamily = 'Consolas';
       paidHint.top = '-184px';
       paidHint.height = '20px';
-      this.bonusScreen.addControl(paidHint);
+      dynamicRoot.addControl(paidHint);
       this.bonusDynamicControls.push(paidHint);
     }
 
@@ -3215,7 +3268,7 @@ export class HUDManager {
         }
         this.eventBus.emit(GameEvents.BONUS_SELECTED, { bonusId: card.id });
       });
-      this.bonusScreen.addControl(btn);
+      dynamicRoot.addControl(btn);
       this.bonusButtons.push(btn);
 
       const title = new TextBlock(`bonus_title_${card.id}${card.isPaid ? '_paid' : ''}`);
@@ -3342,7 +3395,7 @@ export class HUDManager {
     rerollButton.onPointerUpObservable.add(() => {
       this.eventBus.emit(GameEvents.BONUS_REROLL_REQUESTED, { cost: rerollCost });
     });
-    this.bonusScreen.addControl(rerollButton);
+    dynamicRoot.addControl(rerollButton);
     this.bonusDynamicControls.push(rerollButton);
     this.bonusRerollButton = rerollButton;
 
@@ -3367,7 +3420,7 @@ export class HUDManager {
         cost: fullHealCost,
       });
     });
-    this.bonusScreen.addControl(fullHealButton);
+    dynamicRoot.addControl(fullHealButton);
     this.bonusDynamicControls.push(fullHealButton);
 
     const paidChoiceCountLabel = new TextBlock('bonus_paid_choice_count_label');
@@ -3379,7 +3432,7 @@ export class HUDManager {
     paidChoiceCountLabel.fontFamily = 'Consolas';
     paidChoiceCountLabel.top = `${actionButtonsStacked ? actionSecondRowTop + 56 : actionTop + 56}px`;
     paidChoiceCountLabel.height = '20px';
-    this.bonusScreen.addControl(paidChoiceCountLabel);
+    dynamicRoot.addControl(paidChoiceCountLabel);
     this.bonusDynamicControls.push(paidChoiceCountLabel);
   }
 
@@ -3387,6 +3440,72 @@ export class HUDManager {
     this.allowDaemonDuringOverlays = false;
     this.forceHideOverlays();
     this.setHudVisible(true);
+  }
+
+  public pushSystemLog(message: string): void {
+    if (typeof message !== 'string' || message.trim().length === 0) return;
+    this.addLogMessage(message.trim());
+  }
+
+  async showCinematicBanner(titleText: string, subtitleText: string, durationMs: number = 900): Promise<void> {
+    const overlay = new Rectangle(`cinematic_banner_${Date.now()}`);
+    overlay.width = 1;
+    overlay.height = 1;
+    overlay.thickness = 0;
+    overlay.background = 'rgba(0,0,0,0.0)';
+    overlay.isPointerBlocker = false;
+    overlay.zIndex = 2600;
+    this.guiClean.addControl(overlay);
+
+    const title = new TextBlock(`${overlay.name}_title`);
+    title.text = titleText;
+    title.color = '#A7FFF2';
+    title.fontSize = 48;
+    title.fontFamily = 'Consolas';
+    title.top = '-24px';
+    title.alpha = 0;
+    overlay.addControl(title);
+
+    const subtitle = new TextBlock(`${overlay.name}_subtitle`);
+    subtitle.text = subtitleText;
+    subtitle.color = '#E6FFFB';
+    subtitle.fontSize = 20;
+    subtitle.fontFamily = 'Consolas';
+    subtitle.top = '34px';
+    subtitle.alpha = 0;
+    overlay.addControl(subtitle);
+
+    const fadeIn = Math.max(160, Math.floor(durationMs * 0.22));
+    const hold = Math.max(180, Math.floor(durationMs * 0.43));
+    const fadeOut = Math.max(180, durationMs - fadeIn - hold);
+
+    await new Promise<void>((resolve) => {
+      let elapsed = 0;
+      const obs = this.scene.onBeforeRenderObservable.add(() => {
+        const dt = this.scene.getEngine().getDeltaTime();
+        elapsed += dt;
+        let alpha = 0;
+        if (elapsed <= fadeIn) {
+          alpha = Math.max(0, Math.min(1, elapsed / fadeIn));
+        } else if (elapsed <= fadeIn + hold) {
+          alpha = 1;
+        } else {
+          const outT = (elapsed - fadeIn - hold) / fadeOut;
+          alpha = Math.max(0, 1 - outT);
+        }
+
+        title.alpha = alpha;
+        subtitle.alpha = alpha * 0.95;
+        title.scaleX = 1 + ((1 - alpha) * 0.14);
+        title.scaleY = title.scaleX;
+
+        if (elapsed >= durationMs) {
+          this.scene.onBeforeRenderObservable.remove(obs);
+          overlay.dispose();
+          resolve();
+        }
+      });
+    });
   }
 
   private setHudVisible(visible: boolean): void {

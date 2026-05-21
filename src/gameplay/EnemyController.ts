@@ -176,7 +176,7 @@ export class EnemyController {
   private dummyModelLoadPromise: Promise<void> | null = null;
   private instantiatedSkeletons: any[] = [];
   private zombieModelScale: number = 0.25;
-  private dummyModelScale: number = 0.14;
+  private dummyModelScale: number = 0.07;
   private knockbackStrength: number = 0;
   private selfKnockbackStrength: number = 0;
   private useCrowdSteering: boolean = false;
@@ -320,6 +320,20 @@ export class EnemyController {
   private fogRevealProgress: number = 1;
   private fogScanPulseTimer: number = 0;
   private fogScanPulseDuration: number = 0.62;
+  private hitPulseTimer: number = 0;
+  private readonly hitPulseDuration: number = 0.95;
+  private hitFxCooldownTimer: number = 0;
+  private readonly hitFxCooldownDuration: number = 0.09;
+  private isDying: boolean = false;
+  private deathDissolveTimer: number = 0;
+  private readonly deathDissolveDuration: number = 0.42;
+  private spawnMaterializeTimer: number = 0;
+  private spawnMaterializeDuration: number = 0;
+  private resumeAiAfterMaterialization: boolean = false;
+  private emitSpawnEventOnMaterializeComplete: boolean = false;
+  private spawnMaterializeYOffset: number = 0;
+  private readonly spawnMaterializeStartYOffset: number = 0.8;
+  private readonly damageVisualMeshScratch: Set<AbstractMesh> = new Set();
 
   constructor(
     scene: Scene,
@@ -637,7 +651,17 @@ export class EnemyController {
     playerDetected: boolean = true,
     freezeEnemies: boolean = false,
   ): void {
-    if (this.isDisposed || !this.isAlive || !this.mesh || this.mesh.isDisposed()) return;
+    if (this.isDisposed || !this.mesh || this.mesh.isDisposed()) return;
+
+    if (this.isDying) {
+      this.updateDeathDissolve(deltaTime);
+      return;
+    }
+
+    if (!this.isAlive) return;
+
+    this.updateHitPulse(deltaTime);
+    this.updateSpawnMaterialization(deltaTime);
 
     if (this.behavior === 'dummy') {
       this.previousPosition = this.position.clone();
@@ -671,7 +695,7 @@ export class EnemyController {
         const dot = this.dots[i];
         const dmg = dot.dps * deltaTime;
         if (dmg > 0) {
-          this.takeDamage(dmg);
+          this.takeDamage(dmg, { silentFx: true });
         }
         dot.remaining -= deltaTime;
         if (dot.remaining <= 0) {
@@ -2520,6 +2544,30 @@ export class EnemyController {
     this.applyRenderSuppressionState();
   }
 
+  startSpawnMaterialization(duration: number = 0.85): void {
+    this.spawnMaterializeDuration = Math.max(0.2, duration);
+    this.spawnMaterializeTimer = this.spawnMaterializeDuration;
+    this.spawnMaterializeYOffset = this.spawnMaterializeStartYOffset;
+    this.setRenderSuppressed(false);
+    this.updateSpawnMaterialization(0);
+  }
+
+  beginSpawnRevealFromSuppressed(duration: number = 0.85, releaseAiOnComplete: boolean = true): void {
+    this.resumeAiAfterMaterialization = releaseAiOnComplete;
+    this.emitSpawnEventOnMaterializeComplete = true;
+    this.startSpawnMaterialization(duration);
+  }
+
+  isSpawnMaterializing(): boolean {
+    return this.spawnMaterializeTimer > 0;
+  }
+
+  releaseAIFromSuppressedState(): void {
+    this.resumeAiAfterMaterialization = false;
+    this.setAISuppressed(false);
+    this.revealSpawnEventIfSuppressed();
+  }
+
   setFogMask(mask: EnemyFogMask | null): void {
     this.fogMask = mask;
     this.applyRenderSuppressionState();
@@ -2547,9 +2595,15 @@ export class EnemyController {
     }
   }
 
-  takeDamage(amount: number): void {
-    console.log(`[EnemyController] ${this.id} (${this.typeId}) took ${amount} damage at ${this.position}`);
+  takeDamage(amount: number, options?: { silentFx?: boolean }): void {
+    if (this.isDying || this.isDisposed || amount <= 0) return;
     this.health.takeDamage(amount);
+    const silentFx = options?.silentFx === true;
+    if (!silentFx && this.hitFxCooldownTimer <= 0) {
+      this.triggerHitPulse();
+      this.spawnGlitchHitParticles(this.position.clone(), 0.6);
+      this.hitFxCooldownTimer = this.hitFxCooldownDuration;
+    }
 
     this.eventBus.emit(GameEvents.ENEMY_DAMAGED, {
       entityId: this.id,
@@ -2568,11 +2622,22 @@ export class EnemyController {
   }
 
   private die(): void {
-    if (this.isDisposed) {
+    if (this.isDisposed || this.isDying) {
       return;
     }
-    this.isDisposed = true;
+    this.isDying = true;
     this.isAlive = false;
+    this.aiSuppressed = true;
+    this.stunRemaining = 0;
+    this.hitPulseTimer = 0;
+    this.deathDissolveTimer = this.deathDissolveDuration;
+    this.spawnGlitchHitParticles(this.position.clone(), 1.1);
+  }
+
+  private finalizeDeath(): void {
+    if (this.isDisposed) return;
+    this.isDisposed = true;
+    this.isDying = false;
     this.laserPatternSubsystem.dispose();
     this.spikeCastSubsystem.dispose();
     this.disposeBullVisuals();
@@ -2602,6 +2667,141 @@ export class EnemyController {
       entityId: this.id,
       enemyType: this.typeId,
       position: this.position.clone(),
+    });
+  }
+
+  private updateHitPulse(deltaTime: number): void {
+    if (this.hitFxCooldownTimer > 0) {
+      this.hitFxCooldownTimer = Math.max(0, this.hitFxCooldownTimer - Math.max(0, deltaTime));
+    }
+    if (this.hitPulseTimer <= 0) return;
+    this.hitPulseTimer = Math.max(0, this.hitPulseTimer - Math.max(0, deltaTime));
+    this.applyHitPulseVisuals();
+  }
+
+  private triggerHitPulse(): void {
+    this.hitPulseTimer = this.hitPulseDuration;
+    this.applyHitPulseVisuals();
+  }
+
+  private applyHitPulseVisuals(): void {
+    const ratio = this.hitPulseDuration > 0
+      ? Math.max(0, Math.min(1, this.hitPulseTimer / this.hitPulseDuration))
+      : 0;
+    const pulse = ratio > 0 ? Math.sin((1 - ratio) * Math.PI) : 0;
+    const alpha = Math.max(0, Math.pow(ratio, 0.28) * (0.82 + (0.2 * pulse)));
+    this.forEachDamageVisualMesh((mesh) => {
+      mesh.renderOverlay = alpha > 0.01;
+      mesh.overlayColor = new Color3(1.0, 0.08, 0.08);
+      mesh.overlayAlpha = Math.min(1, alpha);
+    });
+  }
+
+  private forEachDamageVisualMesh(visitor: (mesh: AbstractMesh) => void): void {
+    const visited = this.damageVisualMeshScratch;
+    visited.clear();
+    const visitMesh = (mesh: AbstractMesh | null | undefined): void => {
+      if (!mesh || mesh.isDisposed() || visited.has(mesh)) return;
+      visited.add(mesh);
+      visitor(mesh);
+    };
+    const visitChildren = (node: Node | null | undefined): void => {
+      if (!node || node.isDisposed()) return;
+      if ('getChildMeshes' in node && typeof (node as any).getChildMeshes === 'function') {
+        for (const child of (node as any).getChildMeshes(false) as AbstractMesh[]) {
+          visitMesh(child);
+        }
+      }
+    };
+
+    visitMesh(this.mesh);
+    visitChildren(this.mesh);
+    visitChildren(this.bullModelRoot);
+    visitChildren(this.jumperModelRoot);
+    visitChildren(this.casterModelRoot);
+    visitChildren(this.casterMobileModelRoot);
+    visitChildren(this.pongModelRoot);
+    visitChildren(this.missileModelRoot);
+    visited.clear();
+  }
+
+  private spawnGlitchHitParticles(position: Vector3, intensity: number): void {
+    const particles = new ParticleSystem(`enemy_glitch_hit_${this.id}_${Date.now()}`, Math.floor(120 * intensity), this.scene);
+    particles.particleTexture = EnemyController.getFlareTexture(this.scene);
+    particles.emitter = position.add(new Vector3(0, 0.7, 0));
+    particles.minSize = 0.03;
+    particles.maxSize = 0.16;
+    particles.minLifeTime = 0.08;
+    particles.maxLifeTime = 0.36;
+    particles.emitRate = Math.floor(900 * intensity);
+    particles.targetStopDuration = 0.09;
+    particles.disposeOnStop = true;
+    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+    particles.color1 = new Color4(1.0, 0.15, 0.15, 0.95);
+    particles.color2 = new Color4(0.35, 0.95, 1.0, 0.72);
+    particles.colorDead = new Color4(0.05, 0.08, 0.2, 0);
+    particles.gravity = new Vector3(0, -0.3, 0);
+    particles.minEmitPower = 1.8;
+    particles.maxEmitPower = 4.6;
+    particles.direction1 = new Vector3(-1, -0.2, -1);
+    particles.direction2 = new Vector3(1, 0.8, 1);
+    particles.updateSpeed = 0.018;
+    particles.layerMask = SCENE_LAYER;
+    particles.renderingGroupId = 0;
+    particles.start();
+  }
+
+  private updateDeathDissolve(deltaTime: number): void {
+    this.deathDissolveTimer = Math.max(0, this.deathDissolveTimer - Math.max(0, deltaTime));
+    const ratio = this.deathDissolveDuration > 0
+      ? Math.max(0, Math.min(1, this.deathDissolveTimer / this.deathDissolveDuration))
+      : 0;
+    const flicker = Math.sin((1 - ratio) * 42);
+    const visibility = Math.max(0, Math.min(1, ratio - ((flicker > 0.76 ? 0.2 : 0))));
+
+    this.forEachDamageVisualMesh((mesh) => {
+      mesh.visibility = visibility;
+      mesh.renderOverlay = true;
+      mesh.overlayColor = new Color3(0.7, 0.95, 1.0);
+      mesh.overlayAlpha = Math.max(0, (1 - ratio) * 0.6);
+    });
+
+    if (this.deathDissolveTimer <= 0) {
+      this.finalizeDeath();
+    }
+  }
+
+  private updateSpawnMaterialization(deltaTime: number): void {
+    if (this.spawnMaterializeTimer <= 0) {
+      if (this.emitSpawnEventOnMaterializeComplete) {
+        this.emitSpawnEventOnMaterializeComplete = false;
+        this.revealSpawnEventIfSuppressed();
+      }
+      if (this.resumeAiAfterMaterialization) {
+        this.resumeAiAfterMaterialization = false;
+        this.setAISuppressed(false);
+      }
+      this.spawnMaterializeYOffset = 0;
+      return;
+    }
+    if (deltaTime > 0) {
+      this.spawnMaterializeTimer = Math.max(0, this.spawnMaterializeTimer - Math.max(0, deltaTime));
+    }
+    const progress = this.spawnMaterializeDuration > 0
+      ? 1 - Math.max(0, Math.min(1, this.spawnMaterializeTimer / this.spawnMaterializeDuration))
+      : 1;
+    const ease = progress * progress * (3 - (2 * progress));
+    const vis = Math.max(0, Math.min(1, 0.4 + (0.6 * ease)));
+    const bluePhase = Math.sin(progress * Math.PI);
+    const overlayAlpha = Math.max(0, Math.min(1, 0.88 * bluePhase));
+    this.spawnMaterializeYOffset = this.spawnMaterializeStartYOffset * (1 - ease);
+    this.applyMeshPosition();
+
+    this.forEachDamageVisualMesh((mesh) => {
+      mesh.visibility = vis;
+      mesh.renderOverlay = overlayAlpha > 0.01;
+      mesh.overlayColor = new Color3(0.38, 0.95, 1.0);
+      mesh.overlayAlpha = overlayAlpha;
     });
   }
 
@@ -2842,7 +3042,12 @@ export class EnemyController {
     if (!this.mesh) return;
     this.mesh.position = this.position.clone();
     const needsLowHeight = ['chase', 'flee', 'strategist', 'spike_strategist', 'bull', 'pong', 'scripted_rail', 'jumper', 'fuyard'].includes(this.behavior);
-    this.mesh.position.y = (needsLowHeight ? 0.0 : 1.0) + this.verticalOffset + this.fallOffset + EnemyController.globalHeightOffset;
+    this.mesh.position.y =
+      (needsLowHeight ? 0.0 : 1.0) +
+      this.verticalOffset +
+      this.fallOffset +
+      EnemyController.globalHeightOffset +
+      this.spawnMaterializeYOffset;
     this.mesh.computeWorldMatrix(true);
     this.applyRenderSuppressionState();
   }
@@ -2942,6 +3147,10 @@ export class EnemyController {
   }
 
   private applyFogScanOverlay(intensity: number): void {
+    // Preserve the materialization blue overlay while enemies are spawning in.
+    if (this.spawnMaterializeTimer > 0) {
+      return;
+    }
     const overlayIntensity = Math.max(0, Math.min(1, intensity));
     const applyToMesh = (mesh: AbstractMesh | null | undefined): void => {
       if (!mesh || mesh.isDisposed()) {
