@@ -1,0 +1,95 @@
+{
+  "id": "room_kitting",
+  "name": "Kitting",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#......#......#",
+    "#...#..#..#...#",
+    "#...#.^^^.#...#",
+    "#.#.^^^.^^^.#.#",
+    "#.#^^.....^^#.#",
+    "#.^^.......^^.#",
+    "#^^.........^^#",
+    "#^...........^#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 1.9,
+      "y": 11,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 4,
+      "y": 9,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 6,
+      "y": 7.9,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 8,
+      "y": 8,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 9.8,
+      "y": 9,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 11.9,
+      "y": 11,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 4.9,
+      "y": 6,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 5.9,
+      "y": 5.1,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 8,
+      "y": 5.1,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 9,
+      "y": 6,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 11,
+      "y": 7.1,
+      "enemyType": "turret"
+    },
+    {
+      "x": 12.9,
+      "y": 9,
+      "enemyType": "turret"
+    },
+    {
+      "x": 1.1,
+      "y": 9.1,
+      "enemyType": "turret"
+    },
+    {
+      "x": 3,
+      "y": 6.9,
+      "enemyType": "turret"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

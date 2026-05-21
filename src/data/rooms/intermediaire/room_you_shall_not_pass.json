@@ -1,0 +1,60 @@
+{
+  "id": "room_you_shall_not_pass",
+  "name": "you_shall_not_pass",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.....#.#.....#",
+    "#...#.....#...#",
+    "#.#.........#.#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 11,
+      "y": 5.2,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 8.9,
+      "y": 4,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 7.1,
+      "y": 3.9,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 5,
+      "y": 3.9,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 3,
+      "y": 5.1,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 1.2,
+      "y": 6.8,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 13.1,
+      "y": 7,
+      "enemyType": "strategist"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

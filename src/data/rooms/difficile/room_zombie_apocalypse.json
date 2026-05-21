@@ -1,0 +1,165 @@
+{
+  "id": "room_zombie_apocalypse",
+  "name": "zombie_apocalypse",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#....PP.......#",
+    "#...PPPP......#",
+    "#...PPPPP.....#",
+    "#...PPPPPPP...#",
+    "#....PPPPPP...#",
+    "#.....PPPP....#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 5,
+      "y": 4.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 4.2,
+      "y": 4,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 4,
+      "y": 5,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 5,
+      "y": 5.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 5.2,
+      "y": 6.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 5.7,
+      "y": 6.8,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 6.3,
+      "y": 5.9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 6,
+      "y": 5.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 6,
+      "y": 4.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 7.1,
+      "y": 5.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 7.1,
+      "y": 5.7,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 8,
+      "y": 6,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 8,
+      "y": 7,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 7.2,
+      "y": 7,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 8.9,
+      "y": 7.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 8.1,
+      "y": 7.8,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 1.8,
+      "y": 2,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 1.1,
+      "y": 4.9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 2.1,
+      "y": 8.9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 1.8,
+      "y": 11.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 10.9,
+      "y": 11.2,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 9,
+      "y": 2.2,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 9,
+      "y": 3.9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 12.1,
+      "y": 4.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 12.1,
+      "y": 7,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 10.9,
+      "y": 8.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 12.1,
+      "y": 10.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 3.2,
+      "y": 10.2,
+      "enemyType": "zombie_basic"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

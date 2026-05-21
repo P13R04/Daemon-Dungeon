@@ -1,0 +1,50 @@
+{
+  "id": "room_toxic_bull",
+  "name": "Toxic_Bull",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#..PPP...PPP..#",
+    "#..PPP...PPP..#",
+    "#..PPP...PPP..#",
+    "#.............#",
+    "#.PPP.....PPP.#",
+    "#.PPP.....PPP.#",
+    "#.PPP.....PPP.#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 9.9,
+      "y": 4.1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 4,
+      "y": 3.9,
+      "enemyType": "bull"
+    },
+    {
+      "x": 3,
+      "y": 8.1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 11,
+      "y": 8.1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 7,
+      "y": 8,
+      "enemyType": "zombie_fast"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

@@ -1,0 +1,75 @@
+{
+  "id": "room_bullet_hell",
+  "name": "Bullet_Hell",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#V.V.V.V.V.V.V#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.#..#...#..#.#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 2.1,
+      "y": 3.1,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 4,
+      "y": 3,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 5.9,
+      "y": 3.1,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 8,
+      "y": 3,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 10,
+      "y": 3,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 11.9,
+      "y": 3,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 5,
+      "y": 8,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 9.1,
+      "y": 8.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 2,
+      "y": 8,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 8,
+      "enemyType": "zombie_fast"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}
