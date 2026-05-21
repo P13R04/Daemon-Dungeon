@@ -229,7 +229,7 @@ export const VOICELINES: Record<string, VoicelineConfig> = {
   },
   'tutorial_hazard': {
     id: 'tutorial_hazard',
-    message: "Watch your step. The void doesn't have a safety net, and my patience has limits.",
+    message: "Watch your step. The void doesn't have a safety net. And my patience has limits.",
     animationSequence: [{ emotion: 'rire', cycles: 1, frameInterval: 0.14 }],
     typingSpeed: 16,
     holdDuration: 4.0,

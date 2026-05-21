@@ -1,11 +1,15 @@
 import { Vector3 } from '@babylonjs/core';
 import { ConfigLoader } from '../utils/ConfigLoader';
 import { EnemyController } from '../gameplay/EnemyController';
+import { EventBus, GameEvents } from './EventBus';
 import { PlayerController } from '../gameplay/PlayerController';
 import { RoomManager } from '../systems/RoomManager';
 import { TileFloorManager } from '../systems/TileFloorManager';
 
 export class GameWorldCollisionHazardManager {
+  private readonly eventBus = EventBus.getInstance();
+  private poisonTauntCooldown = 0;
+  private spikesTauntCooldown = 0;
   constructor(
     private readonly playerController: PlayerController,
     private readonly roomManager: RoomManager,
@@ -134,6 +138,8 @@ export class GameWorldCollisionHazardManager {
   }
 
   applyHazardDamage(deltaTime: number, skipForVoidFall: boolean, tilesEnabled: boolean): void {
+    this.poisonTauntCooldown = Math.max(0, this.poisonTauntCooldown - Math.max(0, deltaTime));
+    this.spikesTauntCooldown = Math.max(0, this.spikesTauntCooldown - Math.max(0, deltaTime));
     if (skipForVoidFall) {
       return;
     }
@@ -175,9 +181,17 @@ export class GameWorldCollisionHazardManager {
     const tile = this.tileFloorManager.getTileAtWorld(playerPos.x, playerPos.z);
     if (tile?.type === 'poison' && poisonDps > 0) {
       this.playerController.applyDamage(poisonDps * deltaTime);
+      if (this.poisonTauntCooldown <= 0) {
+        this.poisonTauntCooldown = 2.2;
+        this.eventBus.emit(GameEvents.PLAYER_HAZARD_DAMAGED, { hazardType: 'poison' });
+      }
     }
     if (tile?.type === 'spikes' && spikesDps > 0 && this.tileFloorManager.isSpikeActiveAtWorld(playerPos.x, playerPos.z)) {
       this.playerController.applyDamage(spikesDps * deltaTime);
+      if (this.spikesTauntCooldown <= 0) {
+        this.spikesTauntCooldown = 2.2;
+        this.eventBus.emit(GameEvents.PLAYER_HAZARD_DAMAGED, { hazardType: 'spikes' });
+      }
     }
   }
 

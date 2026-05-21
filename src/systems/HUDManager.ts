@@ -109,6 +109,10 @@ export class HUDManager {
   private daemonGlitchOverlay: Rectangle | null = null;
   private daemonPopupFlashOverlay: Rectangle | null = null;
   private daemonAvatarImage: Image | null = null;
+  private daemonAvatarFrameHost: Rectangle | null = null;
+  private daemonAvatarFrameControls: Map<string, Image> = new Map();
+  private daemonAvatarCurrentFrame: string | null = null;
+  private readonly smoothDaemonAvatarMode: boolean = true;
   private daemonMessageText: TextBlock | null = null;
   private daemonTypewriterSynth: SciFiTypewriterSynth;
   private daemonVoiceSynth: DaemonVoiceSynth;
@@ -171,6 +175,29 @@ export class HUDManager {
   private bonusDynamicControls: Control[] = [];
   private bonusDynamicRoot: Rectangle | null = null;
   private bonusRerollButton: Button | null = null;
+  private bonusCardPool: Map<string, {
+    button: Button;
+    title: TextBlock;
+    modeText: TextBlock;
+    rarityText: TextBlock;
+    artworkGlow: Rectangle;
+    artworkFrame: Rectangle;
+    artworkImg: Image;
+    description: TextBlock;
+    stackText: TextBlock;
+    selectedTag: TextBlock;
+    lockText: TextBlock;
+  }> = new Map();
+  private bonusSubtitle: TextBlock | null = null;
+  private bonusPaidHint: TextBlock | null = null;
+  private bonusPaidChoiceCountLabel: TextBlock | null = null;
+  private bonusFullHealButton: Button | null = null;
+  private bonusCardClickState: Array<{ id: string; isPaid: boolean; cost?: number } | null> = [];
+  private bonusCurrentRerollCost: number = 0;
+  private bonusCurrentFullHealCost: number = 0;
+  private bonusInsufficientFlashOverlay: Rectangle | null = null;
+  private bonusInsufficientFlashTimer: number = 0;
+  private readonly bonusInsufficientFlashDuration: number = 0.3;
   private bossAlertContainer: Rectangle | null = null;
   private bossAlertSubtitle: TextBlock | null = null;
   private bossAlertPulseOverlay: Rectangle | null = null;
@@ -185,6 +212,8 @@ export class HUDManager {
   private lastDamageTauntTime: number = 0;
   private readonly DAMAGE_TAUNT_COOLDOWN: number = 15.0; // Cooldown for general damage taunts
   private avatarImageCache: Map<string, HTMLImageElement> = new Map();
+  private avatarResolvedSrcCache: Map<string, string> = new Map();
+  private avatarFrameLoadPromises: Map<string, Promise<void>> = new Map();
   private avatarPreloadPromise: Promise<void> | null = null;
   public readonly preloadPromise: Promise<void>;
   private readonly daemonAvatarSets: Record<string, string[]> = DAEMON_ANIMATION_PRESETS;
@@ -993,6 +1022,7 @@ export class HUDManager {
     avatarBox.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     avatarBox.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.daemonContainer.addControl(avatarBox);
+    this.daemonAvatarFrameHost = avatarBox;
 
     const initialFrame = this.getAvatarFrameSrc('init_01.png');
     console.log(`[HUDManager] Initializing with detected base URL: ${getHudAssetBaseUrl()}`);
@@ -1779,6 +1809,7 @@ export class HUDManager {
     this.updateBossRoomAlert(deltaTime);
     this.updateAchievementToast(deltaTime);
     this.updateIntegrityDamagePulse(deltaTime);
+    this.updateBonusInsufficientFlash(deltaTime);
 
     // Process scheduled logs in the queue
     if (this.scheduledLogs.length > 0) {
@@ -2401,7 +2432,11 @@ export class HUDManager {
     this.daemonVisible = true;
     this.daemonContainer.isVisible = true;
     this.primeDaemonTypingAudio();
-    this.startDaemonPopupGlitch(0.85);
+    if (!this.smoothDaemonAvatarMode) {
+      this.startDaemonPopupGlitch(0.85);
+    } else {
+      this.resetDaemonPopupGlitch();
+    }
 
     // Select synthesis preset
     const presetName = (options?.voicePreset ?? 'daemon_normal') as any;
@@ -2413,7 +2448,10 @@ export class HUDManager {
       this.setDaemonAvatarAnimation(message, emotion, options?.sequence, options?.frameInterval, duration);
       
       // Schedule glitch frame overlays if allowed
-      if (options?.canGlitchFrames !== false && glitchTimestamps.length > 0) {
+      const allowFrameGlitch = this.smoothDaemonAvatarMode
+        ? options?.canGlitchFrames === true
+        : options?.canGlitchFrames !== false;
+      if (allowFrameGlitch && glitchTimestamps.length > 0) {
         this.daemonAvatarController.scheduleGlitchFrames(glitchTimestamps);
       }
 
@@ -2916,12 +2954,13 @@ export class HUDManager {
 
   private getSecondaryEmotion(primary: string, message: string): string | null {
     const lowered = message.toLowerCase();
-    if (lowered.includes('!') || lowered.includes('?') || lowered.includes('...')) {
-      if (primary !== 'bsod') return 'bsod';
-      return 'error';
+    // Keep most emotions pure for stable, readable tutorial delivery.
+    if (primary === 'rire' || primary === 'surpris' || primary === 'superieur') return null;
+    if (primary === 'enerve') {
+      // Only blend anger with error on explicit post-crash line.
+      if (lowered.includes('made me crash')) return 'error';
+      return null;
     }
-    if (primary === 'rire') return 'goofy';
-    if (primary === 'enerve') return 'error';
     return null;
   }
 
@@ -2974,19 +3013,60 @@ export class HUDManager {
   }
 
   private updateDaemonAvatarImage(): void {
-    if (!this.daemonAvatarImage) return;
+    if (!this.daemonAvatarFrameHost) return;
     const fileName = this.daemonAvatarController.getCurrentFrame();
     if (!fileName) return;
+    if (this.daemonAvatarCurrentFrame === fileName) return;
 
-    const src = this.getAvatarFrameSrc(fileName);
-
-    // Use cached image if available for instant display
-    const cached = this.avatarImageCache.get(fileName);
-    if (cached && cached.complete) {
-      this.daemonAvatarImage.source = src;
-    } else {
-      this.daemonAvatarImage.source = src;
+    const currentControl = this.getOrCreateDaemonAvatarFrameControl(fileName);
+    if (currentControl) {
+      if (this.daemonAvatarCurrentFrame) {
+        const prev = this.daemonAvatarFrameControls.get(this.daemonAvatarCurrentFrame);
+        if (prev) prev.isVisible = false;
+      } else if (this.daemonAvatarImage) {
+        this.daemonAvatarImage.isVisible = false;
+      }
+      currentControl.isVisible = true;
+      this.daemonAvatarCurrentFrame = fileName;
+      return;
     }
+
+    // Keep the previous frame visible until the next one is fully loaded,
+    // to avoid one-frame black flashes on cache misses.
+    void this.loadAvatarFrame(fileName).then(() => {
+      if (!this.daemonAvatarFrameHost) return;
+      const current = this.daemonAvatarController.getCurrentFrame();
+      if (current !== fileName) return;
+      const nextControl = this.getOrCreateDaemonAvatarFrameControl(fileName);
+      if (!nextControl) return;
+      if (this.daemonAvatarCurrentFrame) {
+        const prev = this.daemonAvatarFrameControls.get(this.daemonAvatarCurrentFrame);
+        if (prev) prev.isVisible = false;
+      } else if (this.daemonAvatarImage) {
+        this.daemonAvatarImage.isVisible = false;
+      }
+      nextControl.isVisible = true;
+      this.daemonAvatarCurrentFrame = fileName;
+    });
+  }
+
+  private getOrCreateDaemonAvatarFrameControl(fileName: string): Image | null {
+    const existing = this.daemonAvatarFrameControls.get(fileName);
+    if (existing) return existing;
+    if (!this.daemonAvatarFrameHost) return null;
+
+    const resolvedSrc = this.avatarResolvedSrcCache.get(fileName);
+    const cached = this.avatarImageCache.get(fileName);
+    if (!resolvedSrc || !cached || !cached.complete) return null;
+
+    const frameImage = new Image(`daemon_avatar_frame_${fileName}`, resolvedSrc);
+    frameImage.width = '160px';
+    frameImage.height = '160px';
+    frameImage.stretch = Image.STRETCH_UNIFORM;
+    frameImage.isVisible = false;
+    this.daemonAvatarFrameHost.addControl(frameImage);
+    this.daemonAvatarFrameControls.set(fileName, frameImage);
+    return frameImage;
   }
 
   private getAvatarFrameSrc(fileName: string, normalization: 'NFC' | 'NFD' = 'NFC'): string {
@@ -3018,7 +3098,12 @@ export class HUDManager {
    * @param fileName The frame filename to load
    */
   private loadAvatarFrame(fileName: string): Promise<void> {
-    return new Promise<void>((resolve) => {
+    const existingPromise = this.avatarFrameLoadPromises.get(fileName);
+    if (existingPromise) {
+      return existingPromise;
+    }
+
+    const loadPromise = new Promise<void>((resolve) => {
       const img = document.createElement('img') as HTMLImageElement;
 
       // Try NFD first (macOS filesystem format)
@@ -3026,6 +3111,8 @@ export class HUDManager {
 
       img.onload = () => {
         this.avatarImageCache.set(fileName, img);
+        this.avatarResolvedSrcCache.set(fileName, srcNFD);
+        this.getOrCreateDaemonAvatarFrameControl(fileName);
         resolve();
       };
 
@@ -3036,6 +3123,8 @@ export class HUDManager {
 
         imgNFC.onload = () => {
           this.avatarImageCache.set(fileName, imgNFC);
+          this.avatarResolvedSrcCache.set(fileName, srcNFC);
+          this.getOrCreateDaemonAvatarFrameControl(fileName);
           resolve();
         };
 
@@ -3051,6 +3140,11 @@ export class HUDManager {
 
       img.src = srcNFD;
     });
+    this.avatarFrameLoadPromises.set(fileName, loadPromise);
+    loadPromise.finally(() => {
+      this.avatarFrameLoadPromises.delete(fileName);
+    });
+    return loadPromise;
   }
 
   /**
@@ -3119,6 +3213,11 @@ export class HUDManager {
     this.hideMenuScreens();
     this.setHudVisible(false);
     if (this.topBar) this.topBar.isVisible = true;
+    this.ensureBonusUiPool();
+    if (!this.bonusDynamicRoot || !this.bonusRerollButton || !this.bonusFullHealButton) {
+      console.warn('[HUDManager] Bonus UI pool incomplete, aborting showBonusChoices safely.');
+      return;
+    }
 
     const freePicksRemaining = Math.max(0, Math.floor(selectionState?.freePicksRemaining ?? 1));
     const paidRareChoice = selectionState?.paidRareChoice ?? null;
@@ -3126,7 +3225,10 @@ export class HUDManager {
     const paidRarePurchased = !!selectionState?.paidRarePurchased;
     const selectedBonusIds = new Set(selectionState?.selectedBonusIds ?? []);
     const rerollEnabled = selectionState?.rerollEnabled ?? true;
+    const hideRerollButton = !!selectionState?.hideRerollButton;
     const fullHealCost = Math.max(1, Math.floor(selectionState?.fullHealCost ?? (rerollCost * 3)));
+    const hideFullHealButton = !!selectionState?.hideFullHealButton;
+    const forceFullHealClickable = !!selectionState?.forceFullHealClickable;
     const playerHealthCurrent = Math.max(0, Math.floor(selectionState?.playerHealthCurrent ?? 0));
     const playerHealthMax = Math.max(playerHealthCurrent, Math.floor(selectionState?.playerHealthMax ?? playerHealthCurrent));
     const missingHealth = Math.max(0, playerHealthMax - playerHealthCurrent);
@@ -3137,32 +3239,18 @@ export class HUDManager {
       }
     }
 
-    // Clear previous dynamic controls
+    const dynamicRoot = this.bonusDynamicRoot!;
     this.bonusButtons = [];
     this.bonusDynamicControls = [];
-    this.bonusRerollButton = null;
-    if (this.bonusDynamicRoot) {
-      this.bonusDynamicRoot.dispose();
-      this.bonusDynamicRoot = null;
+    this.bonusCardClickState = [];
+    for (const ctrl of this.bonusCardPool.values()) {
+      ctrl.button.isVisible = false;
+      ctrl.button.isEnabled = false;
     }
-    const dynamicRoot = new Rectangle('bonus_dynamic_root');
-    dynamicRoot.width = 1;
-    dynamicRoot.height = 1;
-    dynamicRoot.thickness = 0;
-    dynamicRoot.background = 'rgba(0,0,0,0)';
-    dynamicRoot.isPointerBlocker = false;
-    this.bonusScreen.addControl(dynamicRoot);
-    this.bonusDynamicRoot = dynamicRoot;
-
-    const subtitle = new TextBlock('bonus_shop_subtitle');
-    subtitle.text = freePicksRemaining > 1 ? `PICK ${freePicksRemaining} FREE BONUSES` : 'PICK 1 FREE BONUS';
-    subtitle.color = '#FFD782';
-    subtitle.fontSize = 20;
-    subtitle.fontFamily = 'Consolas';
-    subtitle.top = '-210px';
-    subtitle.height = '30px';
-    dynamicRoot.addControl(subtitle);
-    this.bonusDynamicControls.push(subtitle);
+    if (this.bonusSubtitle) {
+      this.bonusSubtitle.text = freePicksRemaining > 1 ? `PICK ${freePicksRemaining} FREE BONUSES` : 'PICK 1 FREE BONUS';
+      this.bonusSubtitle.isVisible = true;
+    }
 
     const paidOfferVisible = !!paidRareChoice;
     const cards: Array<{
@@ -3174,6 +3262,7 @@ export class HUDManager {
       isPaid: boolean;
       isSelected: boolean;
       isEnabled: boolean;
+      isAffordable?: boolean;
       cost?: number;
     }> = choices.map((choice) => ({
       id: choice.id,
@@ -3188,7 +3277,8 @@ export class HUDManager {
 
     if (paidOfferVisible && paidRareChoice) {
       const paidAlreadyObtained = selectedBonusIds.has(paidRareChoice.id) || paidRarePurchased;
-      const paidEnabled = currency >= paidRareCost && !paidAlreadyObtained;
+      const paidEnabled = !paidAlreadyObtained;
+      const paidAffordable = currency >= paidRareCost;
       cards.push({
         id: paidRareChoice.id,
         title: paidRareChoice.title,
@@ -3198,6 +3288,7 @@ export class HUDManager {
         isPaid: true,
         isSelected: paidAlreadyObtained,
         isEnabled: paidEnabled,
+        isAffordable: paidAffordable,
         cost: paidRareCost,
       });
     }
@@ -3221,33 +3312,31 @@ export class HUDManager {
     const artworkFrameSize = Math.floor(170 * cardScale);
 
     if (!paidOfferVisible) {
-      const paidHint = new TextBlock('bonus_paid_hint');
-      paidHint.text = paidRarePurchased
+      if (this.bonusPaidHint) {
+        this.bonusPaidHint.text = paidRarePurchased
         ? 'EXTRA PAID CARD ALREADY PURCHASED'
         : 'NO PAID RARE CARD OFFER THIS ROOM';
-      paidHint.color = paidRarePurchased ? '#80FFB0' : '#A3B0BF';
-      paidHint.fontSize = 13;
-      paidHint.fontFamily = 'Consolas';
-      paidHint.top = '-184px';
-      paidHint.height = '20px';
-      dynamicRoot.addControl(paidHint);
-      this.bonusDynamicControls.push(paidHint);
+        this.bonusPaidHint.color = paidRarePurchased ? '#80FFB0' : '#A3B0BF';
+        this.bonusPaidHint.isVisible = true;
+      }
+    } else if (this.bonusPaidHint) {
+      this.bonusPaidHint.isVisible = false;
     }
 
     for (let i = 0; i < cards.length; i++) {
       const card = cards[i];
+      const poolKey = `${card.id}:${card.isPaid ? 'paid' : 'free'}`;
+      const uiCard = this.getOrCreateBonusCard(poolKey);
       const rarityStyle = card.isPaid
         ? { border: '#F3C872', glow: '#8D5E17', glowAlpha: 0.55, thickness: 4 }
         : this.getRarityVisual(card.rarity);
       const leftPx = startLeft + (i * (cardWidth + gap));
-
-      const btn = Button.CreateSimpleButton(`bonus_${card.id}${card.isPaid ? '_paid' : ''}`, '');
+      const btn = uiCard.button;
       btn.width = `${cardWidth}px`;
       btn.height = `${cardHeight}px`;
       btn.color = rarityStyle.border;
-      btn.cornerRadius = 14;
       if (card.isPaid) {
-        btn.background = card.isEnabled ? 'rgba(41, 29, 14, 0.94)' : 'rgba(52, 25, 24, 0.92)';
+        btn.background = (card.isAffordable ?? true) ? 'rgba(41, 29, 14, 0.94)' : 'rgba(52, 25, 24, 0.92)';
       } else if (card.isSelected) {
         btn.background = 'rgba(45, 49, 57, 0.9)';
       } else {
@@ -3258,121 +3347,63 @@ export class HUDManager {
       btn.left = `${leftPx}px`;
       btn.top = `${cardTop}px`;
       btn.isEnabled = card.isEnabled;
-      btn.onPointerUpObservable.add(() => {
-        if (card.isPaid) {
-          this.eventBus.emit(GameEvents.BONUS_PAID_PICK_REQUESTED, {
-            bonusId: card.id,
-            cost: card.cost,
-          });
-          return;
+      btn.isVisible = true;
+      this.bonusCardClickState[i] = { id: card.id, isPaid: card.isPaid, cost: card.cost };
+      if (btn.parent !== dynamicRoot) {
+        if (btn.parent) {
+          (btn.parent as any).removeControl?.(btn);
         }
-        this.eventBus.emit(GameEvents.BONUS_SELECTED, { bonusId: card.id });
-      });
-      dynamicRoot.addControl(btn);
+        dynamicRoot.addControl(btn);
+      }
       this.bonusButtons.push(btn);
-
-      const title = new TextBlock(`bonus_title_${card.id}${card.isPaid ? '_paid' : ''}`);
-      title.text = card.title;
-      title.color = '#F7FBFF';
-      title.fontFamily = 'Consolas';
-      title.fontSize = titleFontSize;
-      title.top = `${Math.round(-168 * cardScale)}px`;
-      title.height = '30px';
-      btn.addControl(title);
-
-      const modeText = new TextBlock(`bonus_mode_${card.id}${card.isPaid ? '_paid' : ''}`);
-      modeText.text = card.isSelected
+      uiCard.title.text = card.title;
+      uiCard.title.fontSize = titleFontSize;
+      uiCard.title.top = `${Math.round(-168 * cardScale)}px`;
+      uiCard.modeText.text = card.isSelected
         ? 'OBTAINED'
         : card.isPaid
           ? `PAID +1 BONUS${card.cost ? `  -  ${card.cost} CREDITS` : ''}`
           : 'FREE BONUS';
-      modeText.color = card.isSelected ? '#B7C0CD' : (card.isPaid ? '#FFD782' : '#9EF3C4');
-      modeText.fontFamily = 'Consolas';
-      modeText.fontSize = labelFontSize;
-      modeText.top = `${Math.round(-142 * cardScale)}px`;
-      modeText.height = '20px';
-      btn.addControl(modeText);
-
-      const rarityText = new TextBlock(`bonus_rarity_${card.id}${card.isPaid ? '_paid' : ''}`);
-      rarityText.text = card.rarity.toUpperCase();
-      rarityText.color = rarityStyle.border;
-      rarityText.fontFamily = 'Consolas';
-      rarityText.fontSize = rarityFontSize;
-      rarityText.top = `${Math.round(-118 * cardScale)}px`;
-      rarityText.height = '24px';
-      btn.addControl(rarityText);
-
-      const artworkGlow = new Rectangle(`bonus_art_glow_${card.id}${card.isPaid ? '_paid' : ''}`);
-      artworkGlow.width = `${artworkGlowSize}px`;
-      artworkGlow.height = `${artworkGlowSize}px`;
-      artworkGlow.thickness = 0;
-      artworkGlow.background = rarityStyle.glow;
-      artworkGlow.alpha = rarityStyle.glowAlpha;
-      artworkGlow.top = `${Math.round(-6 * cardScale)}px`;
-      btn.addControl(artworkGlow);
-
-      const artworkFrame = new Rectangle(`bonus_art_frame_${card.id}${card.isPaid ? '_paid' : ''}`);
-      artworkFrame.width = `${artworkFrameSize}px`;
-      artworkFrame.height = `${artworkFrameSize}px`;
-      artworkFrame.thickness = rarityStyle.thickness;
-      artworkFrame.color = rarityStyle.border;
-      artworkFrame.background = 'rgba(10, 12, 16, 0.9)';
-      artworkFrame.top = `${Math.round(-6 * cardScale)}px`;
-      btn.addControl(artworkFrame);
-
-      const artworkImg = new Image(`bonus_art_img_${card.id}`);
+      uiCard.modeText.color = card.isSelected ? '#B7C0CD' : (card.isPaid ? '#FFD782' : '#9EF3C4');
+      uiCard.modeText.fontSize = labelFontSize;
+      uiCard.modeText.top = `${Math.round(-142 * cardScale)}px`;
+      uiCard.rarityText.text = card.rarity.toUpperCase();
+      uiCard.rarityText.color = rarityStyle.border;
+      uiCard.rarityText.fontSize = rarityFontSize;
+      uiCard.rarityText.top = `${Math.round(-118 * cardScale)}px`;
+      uiCard.artworkGlow.width = `${artworkGlowSize}px`;
+      uiCard.artworkGlow.height = `${artworkGlowSize}px`;
+      uiCard.artworkGlow.background = rarityStyle.glow;
+      uiCard.artworkGlow.alpha = rarityStyle.glowAlpha;
+      uiCard.artworkGlow.top = `${Math.round(-6 * cardScale)}px`;
+      uiCard.artworkFrame.width = `${artworkFrameSize}px`;
+      uiCard.artworkFrame.height = `${artworkFrameSize}px`;
+      uiCard.artworkFrame.thickness = rarityStyle.thickness;
+      uiCard.artworkFrame.color = rarityStyle.border;
+      uiCard.artworkFrame.top = `${Math.round(-6 * cardScale)}px`;
       const cachedBonusImg = getCachedHudAsset(`bonuses/${card.id}.png`);
       if (cachedBonusImg) {
-        artworkImg.domImage = cachedBonusImg;
+        uiCard.artworkImg.domImage = cachedBonusImg;
       } else {
-        artworkImg.source = buildHudAssetUrl(`bonuses/${card.id}.png`);
+        uiCard.artworkImg.source = buildHudAssetUrl(`bonuses/${card.id}.png`);
       }
-      artworkImg.width = `${artworkFrameSize}px`;
-      artworkImg.height = `${artworkFrameSize}px`;
-      artworkImg.stretch = Image.STRETCH_UNIFORM;
-      artworkFrame.addControl(artworkImg);
-
-      const description = new TextBlock(`bonus_desc_${card.id}${card.isPaid ? '_paid' : ''}`);
-      description.text = card.description;
-      description.color = '#DDE6EF';
-      description.fontFamily = 'Consolas';
-      description.fontSize = descriptionFontSize;
-      description.textWrapping = true;
-      description.width = `${Math.max(170, cardWidth - 48)}px`;
-      description.height = `${Math.max(72, Math.floor(86 * cardScale))}px`;
-      description.top = `${Math.round(122 * cardScale)}px`;
-      btn.addControl(description);
-
-      const stackText = new TextBlock(`bonus_stack_${card.id}${card.isPaid ? '_paid' : ''}`);
-      stackText.text = card.stackLabel;
-      stackText.color = card.isPaid ? '#FFD782' : '#9FB3C6';
-      stackText.fontFamily = 'Consolas';
-      stackText.fontSize = stackFontSize;
-      stackText.top = `${Math.round(176 * cardScale)}px`;
-      stackText.height = '18px';
-      btn.addControl(stackText);
-
-      if (card.isSelected) {
-        const selectedTag = new TextBlock(`bonus_selected_${card.id}`);
-        selectedTag.text = 'OBTAINED';
-        selectedTag.color = '#D8DFEA';
-        selectedTag.fontFamily = 'Consolas';
-        selectedTag.fontSize = Math.max(12, Math.floor(14 * cardScale));
-        selectedTag.top = `${Math.round(190 * cardScale)}px`;
-        selectedTag.height = '22px';
-        btn.addControl(selectedTag);
-      }
-
-      if (card.isPaid && !card.isEnabled && !card.isSelected) {
-        const lockText = new TextBlock(`bonus_locked_${card.id}`);
-        lockText.text = 'TOO EXPENSIVE';
-        lockText.color = '#FF9A9A';
-        lockText.fontFamily = 'Consolas';
-        lockText.fontSize = Math.max(12, Math.floor(14 * cardScale));
-        lockText.top = `${Math.round(190 * cardScale)}px`;
-        lockText.height = '22px';
-        btn.addControl(lockText);
-      }
+      uiCard.artworkImg.width = `${artworkFrameSize}px`;
+      uiCard.artworkImg.height = `${artworkFrameSize}px`;
+      uiCard.description.text = card.description;
+      uiCard.description.fontSize = descriptionFontSize;
+      uiCard.description.width = `${Math.max(170, cardWidth - 48)}px`;
+      uiCard.description.height = `${Math.max(72, Math.floor(86 * cardScale))}px`;
+      uiCard.description.top = `${Math.round(122 * cardScale)}px`;
+      uiCard.stackText.text = card.stackLabel;
+      uiCard.stackText.color = card.isPaid ? '#FFD782' : '#9FB3C6';
+      uiCard.stackText.fontSize = stackFontSize;
+      uiCard.stackText.top = `${Math.round(176 * cardScale)}px`;
+      uiCard.selectedTag.isVisible = card.isSelected;
+      uiCard.selectedTag.fontSize = Math.max(12, Math.floor(14 * cardScale));
+      uiCard.selectedTag.top = `${Math.round(190 * cardScale)}px`;
+      uiCard.lockText.isVisible = card.isPaid && !(card.isAffordable ?? true) && !card.isSelected;
+      uiCard.lockText.fontSize = Math.max(12, Math.floor(14 * cardScale));
+      uiCard.lockText.top = `${Math.round(190 * cardScale)}px`;
     }
 
     const actionButtonsStacked = viewportWidth < 1300;
@@ -3380,60 +3411,252 @@ export class HUDManager {
     const actionButtonWidth = actionButtonsStacked ? 380 : 300;
     const actionSecondRowTop = actionTop + 60;
 
-    const rerollButton = Button.CreateSimpleButton('bonus_reroll', `REROLL  -  ${rerollCost} CREDITS`);
+    const rerollButton = this.bonusRerollButton!;
+    this.bonusCurrentRerollCost = rerollCost;
+    if (rerollButton.textBlock) {
+      rerollButton.textBlock.text = `REROLL  -  ${rerollCost} CREDITS`;
+    }
     rerollButton.width = `${actionButtonWidth}px`;
     rerollButton.height = '52px';
-    rerollButton.cornerRadius = 8;
-    rerollButton.thickness = 2;
     rerollButton.top = `${actionTop}px`;
     rerollButton.left = actionButtonsStacked ? '0px' : '-178px';
-    rerollButton.color = '#FFFFFF';
-    rerollButton.fontFamily = 'Consolas';
-    const rerollButtonEnabled = rerollEnabled && currency >= rerollCost;
-    rerollButton.background = rerollButtonEnabled ? '#2F3D55' : '#3B2020';
+    const rerollButtonEnabled = rerollEnabled;
+    const rerollAffordable = currency >= rerollCost;
+    rerollButton.background = rerollButtonEnabled ? (rerollAffordable ? '#2F3D55' : '#3B2020') : '#2A2A2A';
     rerollButton.isEnabled = rerollButtonEnabled;
-    rerollButton.onPointerUpObservable.add(() => {
-      this.eventBus.emit(GameEvents.BONUS_REROLL_REQUESTED, { cost: rerollCost });
-    });
-    dynamicRoot.addControl(rerollButton);
-    this.bonusDynamicControls.push(rerollButton);
-    this.bonusRerollButton = rerollButton;
+    rerollButton.isVisible = !hideRerollButton;
 
-    const fullHealEnabled = missingHealth > 0 && currency >= fullHealCost;
+    const fullHealEnabled = missingHealth > 0 || forceFullHealClickable;
+    const fullHealAffordable = currency >= fullHealCost;
     const fullHealLabel = missingHealth > 0
       ? `FULL HEAL  -  ${fullHealCost} CREDITS  (${playerHealthCurrent}/${playerHealthMax})`
       : `FULL HEAL  -  HP FULL  (${playerHealthCurrent}/${playerHealthMax})`;
-    const fullHealButton = Button.CreateSimpleButton('bonus_full_heal', fullHealLabel);
+    const fullHealButton = this.bonusFullHealButton!;
+    this.bonusCurrentFullHealCost = fullHealCost;
+    if (fullHealButton.textBlock) {
+      fullHealButton.textBlock.text = fullHealLabel;
+    }
     fullHealButton.width = `${actionButtonWidth}px`;
     fullHealButton.height = '52px';
-    fullHealButton.cornerRadius = 8;
-    fullHealButton.thickness = 2;
     fullHealButton.top = `${actionButtonsStacked ? actionSecondRowTop : actionTop}px`;
     fullHealButton.left = actionButtonsStacked ? '0px' : '178px';
-    fullHealButton.color = '#FFFFFF';
-    fullHealButton.fontFamily = 'Consolas';
-    fullHealButton.background = fullHealEnabled ? '#2E4A3A' : '#3B2020';
+    fullHealButton.background = fullHealEnabled ? (fullHealAffordable ? '#2E4A3A' : '#3B2020') : '#2A2A2A';
     fullHealButton.isEnabled = fullHealEnabled;
-    fullHealButton.onPointerUpObservable.add(() => {
-      this.eventBus.emit(GameEvents.SHOP_PURCHASE_REQUESTED, {
-        itemId: 'full_heal',
-        cost: fullHealCost,
-      });
-    });
-    dynamicRoot.addControl(fullHealButton);
-    this.bonusDynamicControls.push(fullHealButton);
+    fullHealButton.isVisible = !hideFullHealButton;
 
-    const paidChoiceCountLabel = new TextBlock('bonus_paid_choice_count_label');
-    paidChoiceCountLabel.text = paidOfferVisible
+    if (this.bonusPaidChoiceCountLabel) {
+      this.bonusPaidChoiceCountLabel.text = paidOfferVisible
       ? 'PAID CARD IS AN EXTRA PICK (+1), NOT A FREE CHOICE'
       : 'ONLY FREE CHOICES THIS ROOM';
-    paidChoiceCountLabel.color = paidOfferVisible ? '#FFD782' : '#90A2B8';
-    paidChoiceCountLabel.fontSize = 13;
-    paidChoiceCountLabel.fontFamily = 'Consolas';
-    paidChoiceCountLabel.top = `${actionButtonsStacked ? actionSecondRowTop + 56 : actionTop + 56}px`;
-    paidChoiceCountLabel.height = '20px';
-    dynamicRoot.addControl(paidChoiceCountLabel);
-    this.bonusDynamicControls.push(paidChoiceCountLabel);
+      this.bonusPaidChoiceCountLabel.color = paidOfferVisible ? '#FFD782' : '#90A2B8';
+      this.bonusPaidChoiceCountLabel.top = `${actionButtonsStacked ? actionSecondRowTop + 56 : actionTop + 56}px`;
+      this.bonusPaidChoiceCountLabel.isVisible = true;
+    }
+  }
+
+  private ensureBonusUiPool(): void {
+    if (!this.bonusScreen) return;
+    if (this.bonusDynamicRoot) {
+      this.ensureBonusActionControls(this.bonusDynamicRoot);
+      return;
+    }
+
+    const dynamicRoot = new Rectangle('bonus_dynamic_root');
+    dynamicRoot.width = 1;
+    dynamicRoot.height = 1;
+    dynamicRoot.thickness = 0;
+    dynamicRoot.background = 'rgba(0,0,0,0)';
+    dynamicRoot.isPointerBlocker = false;
+    this.bonusScreen.addControl(dynamicRoot);
+    this.bonusDynamicRoot = dynamicRoot;
+
+    this.bonusSubtitle = new TextBlock('bonus_shop_subtitle');
+    this.bonusSubtitle.color = '#FFD782';
+    this.bonusSubtitle.fontSize = 20;
+    this.bonusSubtitle.fontFamily = 'Consolas';
+    this.bonusSubtitle.top = '-210px';
+    this.bonusSubtitle.height = '30px';
+    dynamicRoot.addControl(this.bonusSubtitle);
+
+    this.bonusPaidHint = new TextBlock('bonus_paid_hint');
+    this.bonusPaidHint.fontSize = 13;
+    this.bonusPaidHint.fontFamily = 'Consolas';
+    this.bonusPaidHint.top = '-184px';
+    this.bonusPaidHint.height = '20px';
+    this.bonusPaidHint.isVisible = false;
+    dynamicRoot.addControl(this.bonusPaidHint);
+
+    this.ensureBonusActionControls(dynamicRoot);
+
+    this.bonusPaidChoiceCountLabel = new TextBlock('bonus_paid_choice_count_label');
+    this.bonusPaidChoiceCountLabel.fontSize = 13;
+    this.bonusPaidChoiceCountLabel.fontFamily = 'Consolas';
+    this.bonusPaidChoiceCountLabel.height = '20px';
+    dynamicRoot.addControl(this.bonusPaidChoiceCountLabel);
+
+    const insufficientOverlay = new Rectangle('bonus_insufficient_overlay');
+    insufficientOverlay.width = 1;
+    insufficientOverlay.height = 1;
+    insufficientOverlay.thickness = 0;
+    insufficientOverlay.background = '#FF2A3B';
+    insufficientOverlay.alpha = 0;
+    insufficientOverlay.isVisible = false;
+    insufficientOverlay.isPointerBlocker = false;
+    dynamicRoot.addControl(insufficientOverlay);
+    this.bonusInsufficientFlashOverlay = insufficientOverlay;
+  }
+
+  private ensureBonusActionControls(dynamicRoot: Rectangle): void {
+    if (!this.bonusRerollButton) {
+      const rerollButton = Button.CreateSimpleButton('bonus_reroll', 'REROLL');
+      rerollButton.cornerRadius = 8;
+      rerollButton.thickness = 2;
+      rerollButton.color = '#FFFFFF';
+      rerollButton.fontFamily = 'Consolas';
+      rerollButton.onPointerUpObservable.add(() => {
+        this.eventBus.emit(GameEvents.BONUS_REROLL_REQUESTED, { cost: this.bonusCurrentRerollCost });
+      });
+      dynamicRoot.addControl(rerollButton);
+      this.bonusRerollButton = rerollButton;
+    } else if (this.bonusRerollButton.parent !== dynamicRoot) {
+      this.bonusRerollButton.parent?.removeControl?.(this.bonusRerollButton);
+      dynamicRoot.addControl(this.bonusRerollButton);
+    }
+
+    if (!this.bonusFullHealButton) {
+      const fullHealButton = Button.CreateSimpleButton('bonus_full_heal', 'FULL HEAL');
+      fullHealButton.cornerRadius = 8;
+      fullHealButton.thickness = 2;
+      fullHealButton.color = '#FFFFFF';
+      fullHealButton.fontFamily = 'Consolas';
+      fullHealButton.onPointerUpObservable.add(() => {
+        this.eventBus.emit(GameEvents.SHOP_PURCHASE_REQUESTED, {
+          itemId: 'full_heal',
+          cost: this.bonusCurrentFullHealCost,
+        });
+      });
+      dynamicRoot.addControl(fullHealButton);
+      this.bonusFullHealButton = fullHealButton;
+    } else if (this.bonusFullHealButton.parent !== dynamicRoot) {
+      this.bonusFullHealButton.parent?.removeControl?.(this.bonusFullHealButton);
+      dynamicRoot.addControl(this.bonusFullHealButton);
+    }
+  }
+
+  public triggerBonusInsufficientFundsFx(): void {
+    this.bonusInsufficientFlashTimer = this.bonusInsufficientFlashDuration;
+    if (this.bonusInsufficientFlashOverlay) {
+      this.bonusInsufficientFlashOverlay.isVisible = true;
+      this.bonusInsufficientFlashOverlay.alpha = 0.18;
+    }
+  }
+
+  private updateBonusInsufficientFlash(deltaTime: number): void {
+    if (!this.bonusInsufficientFlashOverlay) return;
+    if (this.bonusInsufficientFlashTimer <= 0) {
+      if (this.bonusInsufficientFlashOverlay.isVisible || this.bonusInsufficientFlashOverlay.alpha > 0) {
+        this.bonusInsufficientFlashOverlay.alpha = 0;
+        this.bonusInsufficientFlashOverlay.isVisible = false;
+      }
+      return;
+    }
+
+    this.bonusInsufficientFlashTimer = Math.max(0, this.bonusInsufficientFlashTimer - deltaTime);
+    const ratio = this.bonusInsufficientFlashTimer / this.bonusInsufficientFlashDuration;
+    this.bonusInsufficientFlashOverlay.alpha = 0.04 + (0.2 * ratio);
+    this.bonusInsufficientFlashOverlay.isVisible = true;
+  }
+
+  private getOrCreateBonusCard(poolKey: string): {
+    button: Button;
+    title: TextBlock;
+    modeText: TextBlock;
+    rarityText: TextBlock;
+    artworkGlow: Rectangle;
+    artworkFrame: Rectangle;
+    artworkImg: Image;
+    description: TextBlock;
+    stackText: TextBlock;
+    selectedTag: TextBlock;
+    lockText: TextBlock;
+  } {
+    const cached = this.bonusCardPool.get(poolKey);
+    if (cached) return cached;
+
+    const btn = Button.CreateSimpleButton(`bonus_${poolKey}`, '');
+    btn.cornerRadius = 14;
+    btn.onPointerUpObservable.add(() => {
+      const index = this.bonusButtons.indexOf(btn);
+      const state = index >= 0 ? this.bonusCardClickState[index] : null;
+      if (!state) return;
+      if (state.isPaid) {
+        this.eventBus.emit(GameEvents.BONUS_PAID_PICK_REQUESTED, {
+          bonusId: state.id,
+          cost: state.cost,
+        });
+        return;
+      }
+      this.eventBus.emit(GameEvents.BONUS_SELECTED, { bonusId: state.id });
+    });
+
+    const title = new TextBlock(`bonus_title_${poolKey}`);
+    title.color = '#F7FBFF';
+    title.fontFamily = 'Consolas';
+    title.height = '30px';
+    btn.addControl(title);
+
+    const modeText = new TextBlock(`bonus_mode_${poolKey}`);
+    modeText.fontFamily = 'Consolas';
+    modeText.height = '20px';
+    btn.addControl(modeText);
+
+    const rarityText = new TextBlock(`bonus_rarity_${poolKey}`);
+    rarityText.fontFamily = 'Consolas';
+    rarityText.height = '24px';
+    btn.addControl(rarityText);
+
+    const artworkGlow = new Rectangle(`bonus_art_glow_${poolKey}`);
+    artworkGlow.thickness = 0;
+    btn.addControl(artworkGlow);
+
+    const artworkFrame = new Rectangle(`bonus_art_frame_${poolKey}`);
+    artworkFrame.background = 'rgba(10, 12, 16, 0.9)';
+    btn.addControl(artworkFrame);
+
+    const artworkImg = new Image(`bonus_art_img_${poolKey}`);
+    artworkImg.stretch = Image.STRETCH_UNIFORM;
+    artworkFrame.addControl(artworkImg);
+
+    const description = new TextBlock(`bonus_desc_${poolKey}`);
+    description.color = '#DDE6EF';
+    description.fontFamily = 'Consolas';
+    description.textWrapping = true;
+    btn.addControl(description);
+
+    const stackText = new TextBlock(`bonus_stack_${poolKey}`);
+    stackText.fontFamily = 'Consolas';
+    stackText.height = '18px';
+    btn.addControl(stackText);
+
+    const selectedTag = new TextBlock(`bonus_selected_${poolKey}`);
+    selectedTag.text = 'OBTAINED';
+    selectedTag.color = '#D8DFEA';
+    selectedTag.fontFamily = 'Consolas';
+    selectedTag.height = '22px';
+    selectedTag.isVisible = false;
+    btn.addControl(selectedTag);
+
+    const lockText = new TextBlock(`bonus_locked_${poolKey}`);
+    lockText.text = 'TOO EXPENSIVE';
+    lockText.color = '#FF9A9A';
+    lockText.fontFamily = 'Consolas';
+    lockText.height = '22px';
+    lockText.isVisible = false;
+    btn.addControl(lockText);
+
+    const card = { button: btn, title, modeText, rarityText, artworkGlow, artworkFrame, artworkImg, description, stackText, selectedTag, lockText };
+    this.bonusCardPool.set(poolKey, card);
+    return card;
   }
 
   hideOverlays(): void {

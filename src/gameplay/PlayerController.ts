@@ -329,6 +329,7 @@ export class PlayerController {
   private catGodModeEnabled: boolean = false;
   private benchmarkInvulnerable: boolean = false;
   private inputSuppressed: boolean = false;
+  private movementLocked: boolean = false;
   private catContactDamage: number = 260;
   private keyboardOnlyMode: boolean = false;
   private autoAimTowardMovement: boolean = true;
@@ -969,7 +970,7 @@ export class PlayerController {
   }
 
   private updateMovement(deltaTime: number): void {
-    if (this.inputSuppressed) {
+    if (this.inputSuppressed || this.movementLocked) {
       this.isMoving = false;
       this.velocity = Vector3.Zero();
       this.timeSinceMovement += deltaTime;
@@ -2302,6 +2303,10 @@ export class PlayerController {
       damagePerProjectile: this.secondaryBurstDamagePerProjectile,
       knockback: this.secondaryBurstKnockback,
     };
+    this.eventBus.emit(GameEvents.ATTACK_PERFORMED, {
+      attacker: 'player',
+      type: 'secondary_burst',
+    });
   }
 
   private fireProjectile(): void {
@@ -2318,7 +2323,6 @@ export class PlayerController {
     }
 
     // Rotate model to face attack direction at moment of firing
-    console.log(`🎯 Attack fired, rotating to: x=${this.attackDirection.x.toFixed(2)}, z=${this.attackDirection.z.toFixed(2)}`);
     if (this.animationController) {
       this.animationController.rotateTowardDirection(this.attackDirection);
     }
@@ -2357,6 +2361,10 @@ export class PlayerController {
   }
 
   private castUltimate(): void {
+    this.eventBus.emit(GameEvents.ATTACK_PERFORMED, {
+      attacker: 'player',
+      type: 'ultimate',
+    });
     if (this.classId === 'firewall') {
       const ultConfig = this.config.firewall?.ultimate ?? {};
       const duration = this.applyUltimateDurationModifier(this.readPositiveNumber(ultConfig.duration, 5));
@@ -3129,6 +3137,14 @@ export class PlayerController {
       this.inputSlot1Held = false;
       this.inputSlot1Pressed = false;
       this.inputSlot2Held = false;
+    }
+  }
+
+  setMovementLocked(locked: boolean): void {
+    this.movementLocked = locked;
+    if (locked) {
+      this.velocity = Vector3.Zero();
+      this.isMoving = false;
     }
   }
 

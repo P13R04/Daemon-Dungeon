@@ -15,7 +15,10 @@ export interface BonusSelectionUiState {
   paidRarePurchased: boolean;
   selectedBonusIds: string[];
   rerollEnabled: boolean;
+  hideRerollButton?: boolean;
   fullHealCost: number;
+  hideFullHealButton?: boolean;
+  forceFullHealClickable?: boolean;
   playerHealthCurrent: number;
   playerHealthMax: number;
 }
@@ -36,6 +39,7 @@ export interface BonusSystemCallbacks {
   getRoomOrderLength(): number;
   markBonusDiscovered(bonusId: string): void;
   recordBonusCollected(bonusId: string): void;
+  onInsufficientShopFunds?: () => void;
   onTutorialShopInteraction?: (type: 'paid_rare' | 'reroll' | 'full_heal') => void;
 }
 
@@ -49,12 +53,23 @@ export class BonusSystemManager {
   private readonly bonusRerollCost: number = BONUS_TUNING.selection.rerollCost;
   private forcedChoices: string[] | null = null;
   private forcedRareChoice: string | null = null;
+  private tutorialShopScriptStep: 'inactive' | 'paid_only' | 'await_free_reveal' | 'free_only' = 'inactive';
 
   constructor(private readonly callbacks: BonusSystemCallbacks) {}
 
   forceNextChoices(choices: string[], rareChoice: string | null): void {
     this.forcedChoices = choices;
     this.forcedRareChoice = rareChoice;
+  }
+
+  enableTutorialShopScriptedFlow(): void {
+    this.tutorialShopScriptStep = 'paid_only';
+  }
+
+  revealTutorialFreeChoice(): void {
+    if (this.tutorialShopScriptStep !== 'await_free_reveal') return;
+    this.tutorialShopScriptStep = 'free_only';
+    this.showCurrentBonusChoices();
   }
 
   resetRun(): void {
@@ -64,6 +79,7 @@ export class BonusSystemManager {
     this.selectedChoiceIds.clear();
     this.freePicksRemaining = 0;
     this.paidRarePurchased = false;
+    this.tutorialShopScriptStep = 'inactive';
   }
 
   getActiveBonuses(): { id: string; stacks: number }[] {
@@ -122,6 +138,9 @@ export class BonusSystemManager {
     this.selectedChoiceIds.add(bonusId);
 
     this.freePicksRemaining = Math.max(0, this.freePicksRemaining - 1);
+    if (this.tutorialShopScriptStep === 'free_only') {
+      this.tutorialShopScriptStep = 'inactive';
+    }
     if (this.freePicksRemaining > 0) {
       const hasSelectableChoice = this.currentBonusChoices.some(
         (choice) => !this.selectedChoiceIds.has(choice.id) && this.bonusPool.canApply(choice.id)
@@ -159,8 +178,12 @@ export class BonusSystemManager {
     const expectedCost = this.getPaidRareCost();
     const requestedCost = Number.isFinite(cost) ? Math.max(0, Math.floor(cost)) : expectedCost;
     if (!this.callbacks.trySpendCurrency(requestedCost)) {
+      this.callbacks.onInsufficientShopFunds?.();
       if (this.callbacks.onTutorialShopInteraction) {
         this.callbacks.onTutorialShopInteraction('paid_rare');
+      }
+      if (this.tutorialShopScriptStep === 'paid_only') {
+        this.tutorialShopScriptStep = 'await_free_reveal';
       }
       this.showCurrentBonusChoices();
       return;
@@ -191,6 +214,7 @@ export class BonusSystemManager {
 
     const requestedCost = Number.isFinite(cost) ? Math.max(0, Math.floor(cost)) : this.bonusRerollCost;
     if (!this.callbacks.trySpendCurrency(requestedCost)) {
+      this.callbacks.onInsufficientShopFunds?.();
       if (this.callbacks.onTutorialShopInteraction) {
         this.callbacks.onTutorialShopInteraction('reroll');
       }
@@ -276,7 +300,16 @@ export class BonusSystemManager {
 
     const current = Math.max(0, Math.floor(health.current));
     const max = Math.max(0, Math.floor(health.max));
-    if (max <= 0 || current >= max) {
+    const scriptedTutorialFreeShop = this.tutorialShopScriptStep === 'free_only';
+    if (max <= 0) {
+      this.showCurrentBonusChoices();
+      return;
+    }
+    if (current >= max) {
+      if (scriptedTutorialFreeShop) {
+        this.callbacks.onInsufficientShopFunds?.();
+        this.callbacks.onTutorialShopInteraction?.('full_heal');
+      }
       this.showCurrentBonusChoices();
       return;
     }
@@ -284,6 +317,7 @@ export class BonusSystemManager {
     // Removed isFullHealEnabled check
     const requestedCost = Number.isFinite(cost) ? Math.max(0, Math.floor(cost)) : this.getFullHealCost();
     if (!this.callbacks.trySpendCurrency(requestedCost)) {
+      this.callbacks.onInsufficientShopFunds?.();
       if (this.callbacks.onTutorialShopInteraction) {
         this.callbacks.onTutorialShopInteraction('full_heal');
       }
@@ -322,17 +356,20 @@ export class BonusSystemManager {
     const playerHealthMax = Math.max(playerHealthCurrent, Math.floor(health?.max ?? 0));
 
     this.callbacks.showBonusChoices(
-      this.currentBonusChoices,
+      (this.tutorialShopScriptStep === 'paid_only' || this.tutorialShopScriptStep === 'await_free_reveal') ? [] : this.currentBonusChoices,
       this.callbacks.getCurrency(),
       this.bonusRerollCost,
       {
         freePicksRemaining: this.freePicksRemaining,
-        paidRareChoice: this.currentPaidRareChoice,
+        paidRareChoice: this.tutorialShopScriptStep === 'free_only' ? null : this.currentPaidRareChoice,
         paidRareCost: this.getPaidRareCost(),
         paidRarePurchased: this.paidRarePurchased,
         selectedBonusIds: Array.from(this.selectedChoiceIds),
-        rerollEnabled: this.isRerollEnabled(),
+        rerollEnabled: this.tutorialShopScriptStep === 'free_only' ? true : this.isRerollEnabled(),
+        hideRerollButton: this.tutorialShopScriptStep === 'paid_only' || this.tutorialShopScriptStep === 'await_free_reveal',
         fullHealCost: this.getFullHealCost(),
+        hideFullHealButton: this.tutorialShopScriptStep === 'paid_only' || this.tutorialShopScriptStep === 'await_free_reveal',
+        forceFullHealClickable: this.tutorialShopScriptStep === 'free_only',
         playerHealthCurrent,
         playerHealthMax,
       }

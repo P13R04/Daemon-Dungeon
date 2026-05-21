@@ -537,6 +537,9 @@ let isPainting = false;
 let draggingEnemyIndex = null;
 let draggingFriendlyIndex = null;
 let roomIdManuallyEdited = false;
+const DRAFT_STORAGE_KEY = "daemon_dungeon_room_editor_draft_v1";
+let draftSaveTimer = null;
+let isRestoringDraft = false;
 
 function sanitizeRoomId(value) {
   const normalized = value
@@ -729,6 +732,8 @@ function render() {
     marker.title = `${friendlyType ? friendlyType.name : friendly.friendlyType} (${friendly.x.toFixed(2)}, ${friendly.z.toFixed(2)})`;
     gridEl.appendChild(marker);
   });
+
+  scheduleDraftSave();
 }
 
 function buildRoomJSON() {
@@ -832,6 +837,64 @@ function loadRoomFromJSON(room) {
   renderEnemyList();
   renderFriendlyList();
   buildGrid();
+  scheduleDraftSave();
+}
+
+function buildDraftState() {
+  const room = buildRoomJSON();
+  return {
+    roomName: roomNameInput.value || room.name || "Custom Room",
+    roomId: roomIdInput.value || room.id || "room_custom",
+    roomIdManuallyEdited: !!roomIdManuallyEdited,
+    room,
+  };
+}
+
+function scheduleDraftSave() {
+  if (isRestoringDraft) return;
+  if (draftSaveTimer !== null) {
+    window.clearTimeout(draftSaveTimer);
+  }
+  draftSaveTimer = window.setTimeout(() => {
+    draftSaveTimer = null;
+    try {
+      const payload = buildDraftState();
+      localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
+    } catch (error) {
+      console.warn("Failed to persist room editor draft:", error);
+    }
+  }, 120);
+}
+
+function tryRestoreDraft() {
+  let parsed = null;
+  try {
+    const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) return;
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    console.warn("Failed to parse room editor draft:", error);
+    return;
+  }
+
+  if (!parsed || !parsed.room || !Array.isArray(parsed.room.layout)) return;
+
+  try {
+    isRestoringDraft = true;
+    loadRoomFromJSON(parsed.room);
+    if (typeof parsed.roomName === "string" && parsed.roomName.trim().length > 0) {
+      roomNameInput.value = parsed.roomName;
+    }
+    if (typeof parsed.roomId === "string" && parsed.roomId.trim().length > 0) {
+      roomIdInput.value = sanitizeRoomId(parsed.roomId);
+    }
+    roomIdManuallyEdited = !!parsed.roomIdManuallyEdited;
+  } catch (error) {
+    console.warn("Failed to restore room editor draft:", error);
+  } finally {
+    isRestoringDraft = false;
+    scheduleDraftSave();
+  }
 }
 
 function exportRoomJSON() {
@@ -1348,8 +1411,18 @@ window.addEventListener("mouseup", () => {
   draggingFriendlyIndex = null;
 });
 
+window.addEventListener("beforeunload", () => {
+  try {
+    const payload = buildDraftState();
+    localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(payload));
+  } catch (error) {
+    // Best-effort persistence only.
+  }
+});
+
 setActiveTool("floor");
 roomIdInput.value = sanitizeRoomId(roomIdInput.value || roomNameInput.value);
 renderEnemyList();
 renderFriendlyList();
 buildGrid();
+tryRestoreDraft();

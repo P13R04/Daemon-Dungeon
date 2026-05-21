@@ -74,6 +74,7 @@ export const GameEvents = {
   // Player events
   PLAYER_HEALTH_CHANGED: 'player:healthChanged',
   PLAYER_DAMAGED: 'player:damaged',
+  PLAYER_HAZARD_DAMAGED: 'player:hazardDamaged',
   PLAYER_HEALED: 'player:healed',
   PLAYER_DIED: 'player:died',
   PLAYER_ULTIMATE_READY: 'player:ultReady',
@@ -145,4 +146,3 @@ export const GameEvents = {
   SCORE_COMBO_CHANGED: 'score:comboChanged',
   HIGH_SCORE_BEATEN: 'score:highScoreBeaten',
 };
-

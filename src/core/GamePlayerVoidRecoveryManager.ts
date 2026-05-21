@@ -6,6 +6,7 @@ type PlayerVoidFallState = {
   timer: number;
   duration: number;
   respawn: Vector3;
+  lockedXZ: Vector3;
 };
 
 export class GamePlayerVoidRecoveryManager {
@@ -44,6 +45,7 @@ export class GamePlayerVoidRecoveryManager {
       timer: this.playerVoidFallDuration,
       duration: this.playerVoidFallDuration,
       respawn,
+      lockedXZ: new Vector3(pos.x, 0, pos.z),
     };
     this.playerVoidFxTimer = 0;
     this.spawnPlayerVoidBurst(pos, 10);
@@ -51,6 +53,19 @@ export class GamePlayerVoidRecoveryManager {
 
   update(deltaTime: number): boolean {
     if (!this.playerVoidFallState) return false;
+
+    // Keep the player anchored on the void-fall X/Z so they cannot steer back to solid tiles.
+    const currentPos = this.playerController.getPosition();
+    if (
+      Math.abs(currentPos.x - this.playerVoidFallState.lockedXZ.x) > 0.0001
+      || Math.abs(currentPos.z - this.playerVoidFallState.lockedXZ.z) > 0.0001
+    ) {
+      this.playerController.setPosition(new Vector3(
+        this.playerVoidFallState.lockedXZ.x,
+        currentPos.y,
+        this.playerVoidFallState.lockedXZ.z,
+      ));
+    }
 
     this.playerVoidFallState.timer = Math.max(0, this.playerVoidFallState.timer - deltaTime);
     const progress = 1 - (this.playerVoidFallState.timer / Math.max(0.0001, this.playerVoidFallState.duration));

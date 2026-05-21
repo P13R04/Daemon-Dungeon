@@ -761,6 +761,22 @@ export class RoomManager {
     });
   }
 
+  public mapPointToWorld(point: { x: number; z?: number; y?: number }, yHeight: number = 0.5): Vector3 | null {
+    if (!this.currentRoom) return null;
+    if (!Number.isFinite(point.x)) return null;
+    const pointY = Number.isFinite(point.y) ? Number(point.y) : Number(point.z);
+    if (!Number.isFinite(pointY)) return null;
+
+    const origin = this.currentRoomKey ? this.roomOrigins.get(this.currentRoomKey) : new Vector3(0, 0, 0);
+    const layoutHeight = this.currentRoom.layout.length;
+    return this.mapSpawnPointToWorld(
+      { x: Number(point.x), y: Number(pointY) } as RoomConfig['spawnPoints'][number],
+      layoutHeight,
+      origin,
+      yHeight
+    );
+  }
+
   private isValidSpawnPoint(point: RoomConfig['spawnPoints'][number]): boolean {
     return Number.isFinite(point.x) && (Number.isFinite(point.y) || Number.isFinite(point.z));
   }

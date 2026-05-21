@@ -1,0 +1,40 @@
+{
+  "id": "room_tutorial_03",
+  "name": "tutorial_03",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.##.......P..#",
+    "#.##......PPP.#",
+    "#........PPP..#",
+    "#.......PPPP..#",
+    "#.......PPPPP.#",
+    "#........PPPP.#",
+    "#^^^^^...PPP..#",
+    "#^^^^^..PPPP..#",
+    "#.......PP....#",
+    "#..........##.#",
+    "#..........##.#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 2.5,
+      "y": 4.5,
+      "enemyType": "tutorial_dummy_tank"
+    },
+    {
+      "x": 6.5,
+      "y": 6.5,
+      "enemyType": "tutorial_dummy_tank"
+    },
+    {
+      "x": 3.5,
+      "y": 11.5,
+      "enemyType": "tutorial_dummy_tank"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

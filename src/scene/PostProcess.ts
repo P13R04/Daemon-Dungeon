@@ -43,6 +43,7 @@ export class PostProcessManager {
   private damageShakeTimer: number = 0;
   private readonly damageShakeDuration: number = 0.11;
   private damageShakeOffset = { x: 0, y: 0, z: 0 };
+  private readonly damageVignetteColor: Color4 = new Color4(0, 0, 0, 1);
   private config: PostProcessingConfig = {
     enabled: true,
     pixelScale: 1.6,
@@ -329,12 +330,11 @@ export class PostProcessManager {
     if (this.pipeline.imageProcessing) {
       this.pipeline.imageProcessing.vignetteEnabled = true;
       this.pipeline.imageProcessing.vignetteWeight = this.config.vignetteWeight + (5.0 * hitEnvelope);
-      this.pipeline.imageProcessing.vignetteColor = new Color4(
-        0.55 * hitEnvelope,
-        0.02 * hitEnvelope,
-        0.04 * hitEnvelope,
-        1
-      );
+      this.damageVignetteColor.r = 0.55 * hitEnvelope;
+      this.damageVignetteColor.g = 0.02 * hitEnvelope;
+      this.damageVignetteColor.b = 0.04 * hitEnvelope;
+      this.damageVignetteColor.a = 1;
+      this.pipeline.imageProcessing.vignetteColor = this.damageVignetteColor;
     }
   }
 

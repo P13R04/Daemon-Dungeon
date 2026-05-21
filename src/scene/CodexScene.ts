@@ -905,7 +905,7 @@ export class CodexScene {
         }
         mesh.layerMask = SCENE_LAYER;
 
-        if (isLocked) {
+        if (isLocked && mesh instanceof Mesh) {
           this.applySilhouetteMaterial(mesh);
         } else if (useColor) {
           if (mesh.material && mesh.material.getClassName() === 'PBRMaterial') {

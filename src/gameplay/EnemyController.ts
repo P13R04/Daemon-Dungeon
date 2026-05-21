@@ -30,6 +30,10 @@ type EnemyFogMask = {
 };
 
 export class EnemyController {
+  private static tutorialDamageGate: ((enemy: EnemyController, amount: number) => boolean) | null = null;
+  private static readonly LOW_HEIGHT_BEHAVIORS: Set<string> = new Set([
+    'chase', 'flee', 'strategist', 'spike_strategist', 'bull', 'pong', 'jumper', 'fuyard', 'scripted_rail',
+  ]);
   public mesh!: Mesh; // Public pour DevConsole
   private health!: Health;
   private eventBus: EventBus;
@@ -160,6 +164,7 @@ export class EnemyController {
   private casterAnimState: 'idle' | 'move' | 'attack' | 'none' = 'none';
   private pongModelRoot: TransformNode | null = null;
   private pongAnimGroups: Map<string, AnimationGroup> = new Map();
+  private pongAnimState: 'idle' | 'none' = 'none';
   private pongMeshes: Array<Mesh | TransformNode> = [];
   private pongModelLoadPromise: Promise<void> | null = null;
   private missileModelRoot: TransformNode | null = null;
@@ -181,6 +186,7 @@ export class EnemyController {
   private selfKnockbackStrength: number = 0;
   private useCrowdSteering: boolean = false;
   private dummyInitialLookDone: boolean = false;
+  private readonly needsLowHeight: boolean;
   private separationRadius: number = 1.1;
   private separationStrength: number = 1.0;
   private crowdMinDistance: number = 0.45;
@@ -357,6 +363,7 @@ export class EnemyController {
     this.damage = config.baseStats?.damage || 8;
     this.attackRange = config.baseStats?.attackRange || 1.5;
     this.behavior = config.behavior || 'chase';
+    this.needsLowHeight = EnemyController.LOW_HEIGHT_BEHAVIORS.has(this.behavior);
     this.suppressSpawnEvent = options?.suppressSpawnEvent === true;
     this.aiSuppressed = options?.suppressAI === true;
     this.renderSuppressed = options?.suppressRender === true;
@@ -486,8 +493,7 @@ export class EnemyController {
     this.mesh.position = this.position.clone();
     this.mesh.rotation = Vector3.Zero();
     // Ensure enemy is at correct height
-    const needsLowHeight = ['chase', 'flee', 'strategist', 'spike_strategist', 'bull', 'pong', 'jumper', 'fuyard', 'scripted_rail'].includes(this.behavior);
-    this.mesh.position.y = (needsLowHeight ? 0.0 : 1.0) + EnemyController.globalHeightOffset;
+    this.mesh.position.y = (this.needsLowHeight ? 0.0 : 1.0) + EnemyController.globalHeightOffset;
     this.mesh.checkCollisions = true;
     this.mesh.metadata = { isEnemy: true, enemyId: this.id, typeId: this.typeId };
 
@@ -756,7 +762,7 @@ export class EnemyController {
     if (this.behavior === 'bull') {
       this.updateBull(deltaTime, playerPosition, allEnemies, roomManager);
     } else if (this.behavior === 'scripted_rail') {
-      this.updateScriptedRail(deltaTime);
+      this.updateScriptedRail(deltaTime, roomManager);
       return; // Bypass ALL post-update physics/separation
     } else if (this.behavior === 'pong') {
       this.updatePong(deltaTime, playerPosition, allEnemies, roomManager);
@@ -956,10 +962,7 @@ export class EnemyController {
         this.artificerTimer = this.artificerCooldown;
         if (this.selfKnockbackStrength > 0) {
           const recoil = toPlayer.normalize().scale(-this.selfKnockbackStrength);
-          console.log(`[ARTIFICER] Firing! Applying recoil: ${recoil.x.toFixed(2)}, ${recoil.z.toFixed(2)}. Strength: ${this.selfKnockbackStrength}`);
           this.knockback.apply(recoil);
-        } else {
-          console.log(`[ARTIFICER] Firing! But selfKnockbackStrength is ${this.selfKnockbackStrength}`);
         }
       }
     }
@@ -1771,14 +1774,9 @@ export class EnemyController {
 
   /**
    * Scripted horizontal rail — tutorial_dummy_mobile ONLY.
-   * Pure sin-wave on X, anchor locked at spawn. NO external system can interfere:
-   *   - setPosition() is a no-op for this behavior (see above)
-   *   - isStationary() returns true → skipped by resolveEntityCollisions
-   *   - handleContactHit() returns null → no damage/knockback on player
-   *   - onWallCollision() is guarded → no direction reversal
-   * After computing position we write directly to mesh.position as a final guarantee.
+   * Inoffensive ping-pong movement on X axis, reversing only on left/right walls.
    */
-  private updateScriptedRail(deltaTime: number): void {
+  private updateScriptedRail(deltaTime: number, roomManager?: RoomManager): void {
     if (this.railSlowTimer > 0) {
       this.railSlowTimer = Math.max(0, this.railSlowTimer - deltaTime);
       if (this.railSlowTimer <= 0) {
@@ -1786,38 +1784,52 @@ export class EnemyController {
       }
     }
 
-    // One-time anchor capture
     if (!this.pongInitialized) {
       this.railAnchor = this.position.clone();
-      this.railPhase = 0;
+      this.railDirectionX = 1;
       this.pongInitialized = true;
     }
 
-    // Phase rate: so peak velocity = this.speed (units/s)
-    const amplitude = 2.0; // ±2 units left/right from anchor
-    const effectiveSpeed = this.speed * this.railSlowMultiplier;
-    this.railPhase += (effectiveSpeed / amplitude) * deltaTime;
+    const effectiveSpeed = Math.max(0, this.speed * this.railSlowMultiplier);
+    const radius = Math.max(0.28, this.getRadius());
+    const checkOffset = radius + 0.12;
+    const currentX = this.position.x;
+    const currentZ = this.railAnchor ? this.railAnchor.z : this.position.z;
+    let direction = this.railDirectionX >= 0 ? 1 : -1;
 
-    // Deterministic X position — Y and Z locked
-    this.position.x = this.railAnchor!.x + Math.sin(this.railPhase) * amplitude;
+    if (roomManager) {
+      const aheadX = currentX + (direction * checkOffset);
+      const tileAhead = roomManager.getTileTypeAtWorld(aheadX, currentZ);
+      if (tileAhead === 'wall' || tileAhead === 'out') {
+        direction *= -1;
+      }
+    }
+    this.railDirectionX = direction;
+
+    let nextX = currentX + (direction * effectiveSpeed * deltaTime);
+    if (roomManager) {
+      const probeX = nextX + (direction * checkOffset);
+      const tileAfterMove = roomManager.getTileTypeAtWorld(probeX, currentZ);
+      if (tileAfterMove === 'wall' || tileAfterMove === 'out') {
+        this.railDirectionX *= -1;
+        nextX = currentX;
+      }
+    }
+
+    this.position.x = nextX;
     this.position.y = this.railAnchor!.y;
     this.position.z = this.railAnchor!.z;
 
-    // Write directly to mesh — final, unconditional, cannot be overridden
     if (this.mesh && !this.mesh.isDisposed()) {
       this.mesh.position.x = this.position.x;
       this.mesh.position.y = this.verticalOffset + EnemyController.globalHeightOffset;
       this.mesh.position.z = this.position.z;
-      this.mesh.computeWorldMatrix(true);
     }
 
-    const idle = this.pongAnimGroups.get('idle');
-    if (idle && !idle.isPlaying) {
-      idle.start(true, 1.0, idle.from, idle.to, false);
-    }
+    this.playPongIdleAnim();
   }
 
-  private railPhase: number = 0;
+  private railDirectionX: number = 1;
 
   private updatePong(
     deltaTime: number,
@@ -1877,10 +1889,25 @@ export class EnemyController {
     this.velocity = this.pongDirection.scale(this.speed);
     this.applyMeshPosition();
 
-    const idle = this.pongAnimGroups.get('idle');
-    if (idle && !idle.isPlaying) {
-      idle.start(true, 1.0, idle.from, idle.to, false);
+    this.playPongIdleAnim();
+  }
+
+  private playPongIdleAnim(): void {
+    if (this.pongAnimState === 'idle') {
+      const currentIdle = this.pongAnimGroups.get('idle') ?? Array.from(this.pongAnimGroups.values())[0];
+      if (currentIdle?.isPlaying) return;
     }
+
+    const idle = this.pongAnimGroups.get('idle') ?? Array.from(this.pongAnimGroups.values())[0];
+    if (!idle) return;
+
+    for (const group of this.pongAnimGroups.values()) {
+      if (group !== idle) {
+        group.stop();
+      }
+    }
+    this.pongAnimState = 'idle';
+    idle.start(true, 1.0, idle.from, idle.to, false);
   }
 
   private updateJumper(
@@ -2570,7 +2597,6 @@ export class EnemyController {
 
   setFogMask(mask: EnemyFogMask | null): void {
     this.fogMask = mask;
-    this.applyRenderSuppressionState();
   }
 
   deactivateForTransition(): void {
@@ -2596,6 +2622,9 @@ export class EnemyController {
   }
 
   takeDamage(amount: number, options?: { silentFx?: boolean }): void {
+    if (EnemyController.tutorialDamageGate && !EnemyController.tutorialDamageGate(this, amount)) {
+      return;
+    }
     if (this.isDying || this.isDisposed || amount <= 0) return;
     this.health.takeDamage(amount);
     const silentFx = options?.silentFx === true;
@@ -2859,6 +2888,14 @@ export class EnemyController {
     return this.id;
   }
 
+  getTypeId(): string {
+    return this.typeId;
+  }
+
+  public static setTutorialDamageGate(gate: ((enemy: EnemyController, amount: number) => boolean) | null): void {
+    EnemyController.tutorialDamageGate = gate;
+  }
+
   getBehavior(): string {
     return this.behavior;
   }
@@ -2907,8 +2944,12 @@ export class EnemyController {
     if (this.instantiatedSkeletons) {
       this.instantiatedSkeletons.forEach(s => {
         try {
-          if (s && !s.isDisposed()) {
-            s.dispose();
+          if (!s) return;
+          const isDisposedFn = (s as { isDisposed?: () => boolean }).isDisposed;
+          const disposeFn = (s as { dispose?: () => void }).dispose;
+          const alreadyDisposed = typeof isDisposedFn === 'function' ? isDisposedFn.call(s) : false;
+          if (!alreadyDisposed && typeof disposeFn === 'function') {
+            disposeFn.call(s);
           }
         } catch (e) {
           console.warn("Failed to dispose skeleton clone", e);
@@ -3040,15 +3081,13 @@ export class EnemyController {
 
   private applyMeshPosition(): void {
     if (!this.mesh) return;
-    this.mesh.position = this.position.clone();
-    const needsLowHeight = ['chase', 'flee', 'strategist', 'spike_strategist', 'bull', 'pong', 'scripted_rail', 'jumper', 'fuyard'].includes(this.behavior);
+    this.mesh.position.copyFrom(this.position);
     this.mesh.position.y =
-      (needsLowHeight ? 0.0 : 1.0) +
+      (this.needsLowHeight ? 0.0 : 1.0) +
       this.verticalOffset +
       this.fallOffset +
       EnemyController.globalHeightOffset +
       this.spawnMaterializeYOffset;
-    this.mesh.computeWorldMatrix(true);
     this.applyRenderSuppressionState();
   }
 
@@ -4429,6 +4468,7 @@ export class EnemyController {
     this.pongMeshes = [];
     this.pongAnimGroups.forEach(g => g.dispose());
     this.pongAnimGroups.clear();
+    this.pongAnimState = 'none';
   }
 
   private queueZombieModelLoad(): void {

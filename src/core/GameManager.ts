@@ -313,6 +313,9 @@ export class GameManager {
       recordBonusCollected: (bonusId) => {
         this.codexService.recordBonusCollected(bonusId);
       },
+      onInsufficientShopFunds: () => {
+        this.hudManager.triggerBonusInsufficientFundsFx();
+      },
       onTutorialShopInteraction: (type) => {
         if (this.isTutorialRun) {
           this.eventBus.emit(GameEvents.TUTORIAL_SHOP_INTERACTED, { type });
@@ -702,9 +705,9 @@ export class GameManager {
     const rooms = this.configLoader.getRoomsConfig();
     if (this.isTutorialRun) {
       this.roomOrder = [
-        'room_tutorial_movement',
-        'room_tutorial_combat',
-        'room_tutorial_playground'
+        'room_tutorial_01',
+        'room_tutorial_02',
+        'room_tutorial_03'
       ];
     } else {
       const playableRooms = Array.isArray(rooms)
@@ -799,6 +802,12 @@ export class GameManager {
     this.tutorialManager.initialize({
       getRoomCenter: () => this.roomManager.getCurrentRoomCenter(),
       getRoomIndex: () => this.currentRoomIndex,
+      getPlayerSpawnPoint: () => this.roomManager.getPlayerSpawnPoint(this.roomOrder[this.currentRoomIndex]) || null,
+      getDoorPosition: () => this.roomManager.getDoorPosition(),
+      mapPointToWorld: (x: number, z: number, yHeight: number = 0.5) => this.roomManager.mapPointToWorld({ x, z }, yHeight),
+      getActiveEnemyCount: () => this.enemySpawner?.getEnemies()?.length ?? 0,
+      revealTutorialFreeChoice: () => this.bonusSystemManager.revealTutorialFreeChoice(),
+      setTutorialPopupAudioMuffle: (enabled: boolean) => this.musicManager?.setLowPass(enabled, 0.2),
       hudManager: this.hudManager,
       scene: this.scene,
       playerController: this.playerController
@@ -916,7 +925,6 @@ export class GameManager {
           this.playerController.heal(9999);
           const spawnPoint = this.roomManager.getPlayerSpawnPoint(this.roomOrder[this.currentRoomIndex]) || Vector3.Zero();
           this.playerController.setPosition(spawnPoint);
-          this.hudManager.showDaemonMessage("the void doesn't have a safety net and my patience has limits", "neutral", { holdDuration: 4, canCrash: false, canGlitchFrames: false });
           return;
         }
         const finalScore = this.scoreManager.getScore();
@@ -994,6 +1002,12 @@ export class GameManager {
         this.tutorialManager.initialize({
           getRoomCenter: () => this.roomManager.getCurrentRoomCenter(),
           getRoomIndex: () => this.currentRoomIndex,
+          getPlayerSpawnPoint: () => this.roomManager.getPlayerSpawnPoint(this.roomOrder[this.currentRoomIndex]) || null,
+          getDoorPosition: () => this.roomManager.getDoorPosition(),
+          mapPointToWorld: (x: number, z: number, yHeight: number = 0.5) => this.roomManager.mapPointToWorld({ x, z }, yHeight),
+          getActiveEnemyCount: () => this.enemySpawner?.getEnemies()?.length ?? 0,
+          revealTutorialFreeChoice: () => this.bonusSystemManager.revealTutorialFreeChoice(),
+          setTutorialPopupAudioMuffle: (enabled: boolean) => this.musicManager?.setLowPass(enabled, 0.2),
           hudManager: this.hudManager,
           scene: this.scene,
           playerController: this.playerController
@@ -2306,9 +2320,9 @@ export class GameManager {
   private prepareRunStateForStart(): void {
     if (this.isTutorialRun) {
       this.roomOrder = [
-        'room_tutorial_movement',
-        'room_tutorial_combat',
-        'room_tutorial_playground'
+        'room_tutorial_01',
+        'room_tutorial_02',
+        'room_tutorial_03'
       ];
     } else {
       this.roomOrder = this.generateProceduralRunOrder();
@@ -2393,9 +2407,7 @@ export class GameManager {
     if (!preparedActivated) {
       this.enemySpawner.clearForRoomTransition();
       this.enemySpawner.prewarmRoomEnemyData(roomId, index, { prewarmHeavyAssets: false });
-      if (!this.isTutorialRun) {
-        this.enemySpawner.spawnEnemiesForRoom(roomId, { deferInitialSpawns: this.gameState === 'transition' });
-      }
+      this.enemySpawner.spawnEnemiesForRoom(roomId, { deferInitialSpawns: this.gameState === 'transition' });
     }
 
     if (this.tilesEnabled) {
@@ -2509,6 +2521,7 @@ export class GameManager {
 
     if (this.isTutorialRun && this.currentRoomIndex === 0) {
       this.bonusSystemManager.forceNextChoices(['bonus_ms'], 'mage_autolock_patch');
+      this.bonusSystemManager.enableTutorialShopScriptedFlow();
       this.eventBus.emit(GameEvents.TUTORIAL_SHOP_OPENED);
     }
     this.bonusSystemManager.openBonusChoices();
@@ -2729,14 +2742,27 @@ export class GameManager {
       return;
     }
 
-    for (const plane of [...this.transitionFogPlanes, ...this.transitionFogTopPlanes]) {
+    for (const plane of this.transitionFogPlanes) {
+      if (!plane || plane.isDisposed()) {
+        continue;
+      }
+      plane.isVisible = false;
+    }
+    for (const plane of this.transitionFogTopPlanes) {
       if (!plane || plane.isDisposed()) {
         continue;
       }
       plane.isVisible = false;
     }
 
-    for (const material of [...this.transitionFogMaterials, ...this.transitionFogTopMaterials]) {
+    for (const material of this.transitionFogMaterials) {
+      if (!material) {
+        continue;
+      }
+      material.setFloat('uOpacity', 0);
+      material.alpha = 0;
+    }
+    for (const material of this.transitionFogTopMaterials) {
       if (!material) {
         continue;
       }

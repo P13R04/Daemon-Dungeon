@@ -69,6 +69,23 @@
       "color": { "r": 0.8, "g": 0.8, "b": 0.8 }
     }
   },
+  "tutorial_dummy_tank": {
+    "name": "Tutorial Dummy",
+    "description": "Cible d'entraînement de tutoriel (HP réduit).",
+    "baseStats": {
+      "hp": 100,
+      "damage": 0,
+      "speed": 0,
+      "attackRange": 0.0,
+      "attackCooldown": 999
+    },
+    "behavior": "dummy",
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 0.8, "g": 0.8, "b": 0.8 }
+    }
+  },
   "bull": {
     "name": "Bull",
     "description": "Verrouille sa cible puis charge brutalement.",
