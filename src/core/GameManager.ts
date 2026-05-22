@@ -193,6 +193,7 @@ export class GameManager {
   private benchmarkEnemyKillTimer: number = 0;
   private showBenchmarkReportOnFinish: boolean = false;
   private benchmarkReportOverlay: HTMLDivElement | null = null;
+  private tutorialPopupAudioMuffleActive: boolean = false;
   private benchmarkPreparationLastPumpMs: number = 0;
   private lastBenchmarkFrameProfile: RuntimeFrameProfileSnapshot | null = null;
   private lastBenchmarkLoopProfile: RuntimeFrameProfileSnapshot | null = null;
@@ -801,7 +802,7 @@ export class GameManager {
       mapPointToWorld: (x: number, z: number, yHeight: number = 0.5) => this.roomManager.mapPointToWorld({ x, z }, yHeight),
       getActiveEnemyCount: () => this.enemySpawner?.getEnemies()?.length ?? 0,
       revealTutorialFreeChoice: () => this.bonusSystemManager.revealTutorialFreeChoice(),
-      setTutorialPopupAudioMuffle: (enabled: boolean) => this.musicManager?.setLowPass(enabled, 0.2),
+      setTutorialPopupAudioMuffle: (enabled: boolean) => this.setTutorialPopupAudioMuffle(enabled),
       hudManager: this.hudManager,
       scene: this.scene,
       playerController: this.playerController
@@ -1002,7 +1003,7 @@ export class GameManager {
           mapPointToWorld: (x: number, z: number, yHeight: number = 0.5) => this.roomManager.mapPointToWorld({ x, z }, yHeight),
           getActiveEnemyCount: () => this.enemySpawner?.getEnemies()?.length ?? 0,
           revealTutorialFreeChoice: () => this.bonusSystemManager.revealTutorialFreeChoice(),
-          setTutorialPopupAudioMuffle: (enabled: boolean) => this.musicManager?.setLowPass(enabled, 0.2),
+          setTutorialPopupAudioMuffle: (enabled: boolean) => this.setTutorialPopupAudioMuffle(enabled),
           hudManager: this.hudManager,
           scene: this.scene,
           playerController: this.playerController
@@ -1253,12 +1254,13 @@ export class GameManager {
 
   private updateAudioState(nextState: RuntimeGameState, prevState: RuntimeGameState): void {
     if (!this.musicManager) return;
+    const keepMuffledForTutorialPopup = this.tutorialPopupAudioMuffleActive;
 
     switch (nextState) {
       case 'playing':
         // Ensure music is playing and exit the muffled state
         this.musicManager.playTrack('bgm', 0.8);
-        this.musicManager.setLowPass(false, 0.45);
+        this.musicManager.setLowPass(keepMuffledForTutorialPopup, 0.45);
         break;
       case 'bonus':
       case 'roomclear':
@@ -1271,6 +1273,22 @@ export class GameManager {
         this.musicManager.stop();
         break;
     }
+  }
+
+  private setTutorialPopupAudioMuffle(enabled: boolean): void {
+    this.tutorialPopupAudioMuffleActive = enabled;
+    if (!this.musicManager) return;
+
+    if (enabled) {
+      this.musicManager.setLowPass(true, 0.2);
+      return;
+    }
+
+    const shouldStayMuffledByState =
+      this.gameState === 'bonus'
+      || this.gameState === 'roomclear'
+      || this.gameState === 'transition';
+    this.musicManager.setLowPass(shouldStayMuffledByState, 0.25);
   }
 
 
