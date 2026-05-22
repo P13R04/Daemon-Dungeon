@@ -111,19 +111,26 @@ export class RoomManager {
     return roomConfig;
   }
 
-  loadRoomFromConfig(roomConfig: RoomConfig, instanceKey: string, origin: Vector3, setCurrent: boolean = true): RoomConfig {
+  loadRoomFromConfig(
+    roomConfig: RoomConfig,
+    instanceKey: string,
+    origin: Vector3,
+    setCurrent: boolean = true,
+    withPhysics: boolean = true
+  ): RoomConfig {
     this.roomOrigins.set(instanceKey, origin.clone());
-    this.createRoomGeometry(roomConfig, instanceKey, origin.clone());
+    this.createRoomGeometry(roomConfig, instanceKey, origin.clone(), withPhysics);
     if (setCurrent) {
       this.currentRoomKey = instanceKey;
       this.currentRoom = roomConfig;
       this.hazardZones = this.hazardZonesByRoom.get(instanceKey) || [];
       this.obstacleBounds = this.obstacleBoundsByRoom.get(instanceKey) || [];
+      this.ensurePhysicsForInstance(instanceKey);
     }
     return roomConfig;
   }
 
-  loadRoomInstance(roomId: string, instanceKey: string, origin: Vector3): RoomConfig | null {
+  loadRoomInstance(roomId: string, instanceKey: string, origin: Vector3, withPhysics: boolean = true): RoomConfig | null {
     const roomsData = this.configLoader.getRoomsConfig();
     if (!roomsData || !Array.isArray(roomsData)) {
       console.error('No rooms data loaded');
@@ -137,7 +144,7 @@ export class RoomManager {
     }
 
     this.roomOrigins.set(instanceKey, origin.clone());
-    this.createRoomGeometry(roomConfig, instanceKey, origin.clone());
+    this.createRoomGeometry(roomConfig, instanceKey, origin.clone(), withPhysics);
     return roomConfig;
   }
 
@@ -150,6 +157,7 @@ export class RoomManager {
     }
     this.hazardZones = this.hazardZonesByRoom.get(instanceKey) || [];
     this.obstacleBounds = this.obstacleBoundsByRoom.get(instanceKey) || [];
+    this.ensurePhysicsForInstance(instanceKey);
   }
 
   getLoadedRoomKeys(): string[] {
@@ -158,6 +166,17 @@ export class RoomManager {
 
   hasRoomInstance(instanceKey: string): boolean {
     return this.roomMeshes.has(instanceKey);
+  }
+
+  setVisibleRoomInstanceKeys(visibleKeys: Set<string>): void {
+    for (const [instanceKey, meshes] of this.roomMeshes.entries()) {
+      const shouldBeVisible = visibleKeys.has(instanceKey);
+      for (const mesh of meshes) {
+        if (mesh && !mesh.isDisposed()) {
+          mesh.setEnabled(shouldBeVisible);
+        }
+      }
+    }
   }
 
   unloadRoomInstance(instanceKey: string): void {
@@ -180,6 +199,8 @@ export class RoomManager {
         name.startsWith('f_mat_') ||
         name.startsWith('s_mat_') ||
         name.startsWith('w_mat_') ||
+        name === 'vp_floor_shared_mat' ||
+        name === 'vp_wall_shared_mat' ||
         name.startsWith('poison_') ||
         name.startsWith('relief_wall_core_')
       ) {
@@ -273,7 +294,7 @@ export class RoomManager {
     this.renderProfile = profile;
   }
 
-  private createRoomGeometry(config: RoomConfig, instanceKey: string, origin: Vector3): void {
+  private createRoomGeometry(config: RoomConfig, instanceKey: string, origin: Vector3, withPhysics: boolean): void {
     // Clear previous instance meshes
     const prevMeshes = this.roomMeshes.get(instanceKey);
     if (prevMeshes) {
@@ -588,6 +609,17 @@ export class RoomManager {
       });
     }
 
+    if (withPhysics) {
+      this.buildPhysicsForInstance(instanceKey);
+    } else {
+      this.disposePhysicsForInstance(instanceKey);
+    }
+  }
+
+  ensurePhysicsForInstance(instanceKey: string): void {
+    if (this.roomPhysicsAggregates.has(instanceKey)) {
+      return;
+    }
     this.buildPhysicsForInstance(instanceKey);
   }
 

@@ -5,6 +5,27 @@
 import { MeshBuilder, StandardMaterial, Color3, Mesh, Scene, Vector3 } from '@babylonjs/core';
 
 export class VisualPlaceholder {
+  private static sharedFloorMaterials: WeakMap<Scene, { floor: StandardMaterial; wall: StandardMaterial }> = new WeakMap();
+
+  private static getSharedFloorMaterials(scene: Scene): { floor: StandardMaterial; wall: StandardMaterial } {
+    const cached = this.sharedFloorMaterials.get(scene);
+    if (cached) {
+      return cached;
+    }
+
+    const floor = new StandardMaterial('vp_floor_shared_mat', scene);
+    floor.diffuseColor = new Color3(0.2, 0.2, 0.2);
+    floor.emissiveColor = new Color3(0.05, 0.05, 0.05);
+
+    const wall = new StandardMaterial('vp_wall_shared_mat', scene);
+    wall.diffuseColor = new Color3(0.3, 0.3, 0.3);
+    wall.emissiveColor = new Color3(0.1, 0.1, 0.1);
+
+    const materials = { floor, wall };
+    this.sharedFloorMaterials.set(scene, materials);
+    return materials;
+  }
+
   static applyAutoDispose(mesh: Mesh): void {
     mesh.onDisposeObservable.add(() => {
       if (mesh.material && typeof (mesh.material as any).dispose === 'function') {
@@ -61,18 +82,8 @@ export class VisualPlaceholder {
 
   static createFloorTile(scene: Scene, name: string, isWall: boolean = false): Mesh {
     const mesh = MeshBuilder.CreateBox(name, { size: 1.0 }, scene);
-    const material = new StandardMaterial(`${name}_mat`, scene);
-    
-    if (isWall) {
-      material.diffuseColor = new Color3(0.3, 0.3, 0.3);
-      material.emissiveColor = new Color3(0.1, 0.1, 0.1);
-    } else {
-      material.diffuseColor = new Color3(0.2, 0.2, 0.2);
-      material.emissiveColor = new Color3(0.05, 0.05, 0.05);
-    }
-    
-    mesh.material = material;
-    this.applyAutoDispose(mesh);
+    const shared = this.getSharedFloorMaterials(scene);
+    mesh.material = isWall ? shared.wall : shared.floor;
     return mesh;
   }
 

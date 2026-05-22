@@ -225,6 +225,9 @@ export interface GameplayConfig {
     enabled: boolean;
     godMode: boolean;
     infiniteUltimate: boolean;
+    infiniteStanceResource?: boolean;
+    infiniteCredits?: boolean;
+    fastCleanRoom?: boolean;
     freezeEnemies: boolean;
     showGrid?: boolean;
     daemonVoicelineTest?: boolean;
@@ -233,6 +236,9 @@ export interface GameplayConfig {
     enabled?: boolean;
     godMode: boolean;
     infiniteUltimate: boolean;
+    infiniteStanceResource?: boolean;
+    infiniteCredits?: boolean;
+    fastCleanRoom?: boolean;
     freezeEnemies: boolean;
     showGrid?: boolean;
     daemonVoicelineTest?: boolean;

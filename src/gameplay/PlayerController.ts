@@ -2168,6 +2168,10 @@ export class PlayerController {
       this.secondaryResource = Math.min(this.secondaryResourceMax, this.secondaryResource + (this.secondaryRegenPerSecond * efficiency) * deltaTime);
     }
 
+    if (this.isInfiniteStanceResourceEnabled()) {
+      this.secondaryResource = this.secondaryResourceMax;
+    }
+
     if (this.secondaryZoneMesh) {
       this.secondaryZoneMesh.isVisible = this.secondaryActive;
       this.secondaryZoneMesh.position.x = this.position.x;
@@ -2226,6 +2230,10 @@ export class PlayerController {
       const efficiency = this.getStanceEfficiencyMultiplier();
       this.tankStanceResource = Math.min(this.tankStanceResourceMax, this.tankStanceResource + (this.tankStanceRegenPerSecond * efficiency) * deltaTime);
     }
+
+    if (this.isInfiniteStanceResourceEnabled()) {
+      this.tankStanceResource = this.tankStanceResourceMax;
+    }
   }
 
   private updateRogueStealth(deltaTime: number): void {
@@ -2263,6 +2271,10 @@ export class PlayerController {
       this.rogueStealthResource = Math.min(this.rogueStealthResourceMax, this.rogueStealthResource + (this.rogueStealthRegenPerSecond * efficiency) * deltaTime);
     }
 
+    if (this.isInfiniteStanceResourceEnabled()) {
+      this.rogueStealthResource = this.rogueStealthResourceMax;
+    }
+
     if (this.rogueStealthZoneMesh) {
       this.rogueStealthZoneMesh.isVisible = this.rogueStealthActive;
       this.rogueStealthZoneMesh.position.x = this.position.x;
@@ -2292,6 +2304,11 @@ export class PlayerController {
   private computeRogueDamage(baseDamage: number): number {
     if (!this.isRogueLikeClass()) return baseDamage;
     return this.computeOutgoingDamage(baseDamage, true);
+  }
+
+  private isInfiniteStanceResourceEnabled(): boolean {
+    const gameplayConfig = ConfigLoader.getInstance().getGameplayConfig();
+    return gameplayConfig?.debugConfig?.infiniteStanceResource === true;
   }
 
   private consumeRogueOpeningStrike(baseDamage: number): number {

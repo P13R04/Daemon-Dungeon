@@ -1468,6 +1468,93 @@ export class DevConsole {
     infUltContainer.addControl(infUltLabel);
     parent.addControl(infUltContainer);
 
+    // Infinite stance resource
+    const infStanceContainer = new StackPanel('infStanceContainer');
+    infStanceContainer.isVertical = false;
+    infStanceContainer.height = '30px';
+    infStanceContainer.width = '440px';
+    infStanceContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const infStanceCheckbox = new Checkbox('infiniteStanceCheckbox');
+    infStanceCheckbox.isChecked = debugConfig.infiniteStanceResource ?? false;
+    infStanceCheckbox.width = '25px';
+    infStanceCheckbox.height = '25px';
+
+    const infStanceLabel = new TextBlock('infiniteStanceLabel');
+    infStanceLabel.text = '  Infinite Stance Resource';
+    infStanceLabel.fontSize = 13;
+    infStanceLabel.color = '#FFFFFF';
+    infStanceLabel.width = '400px';
+    infStanceLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    infStanceCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      debugConfig.infiniteStanceResource = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.DEBUG_FLAG_CHANGED, { flag: 'infiniteStanceResource', value: isChecked });
+    });
+
+    infStanceContainer.addControl(infStanceCheckbox);
+    infStanceContainer.addControl(infStanceLabel);
+    parent.addControl(infStanceContainer);
+
+    // Infinite credits
+    const infCreditsContainer = new StackPanel('infCreditsContainer');
+    infCreditsContainer.isVertical = false;
+    infCreditsContainer.height = '30px';
+    infCreditsContainer.width = '440px';
+    infCreditsContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const infCreditsCheckbox = new Checkbox('infiniteCreditsCheckbox');
+    infCreditsCheckbox.isChecked = debugConfig.infiniteCredits ?? false;
+    infCreditsCheckbox.width = '25px';
+    infCreditsCheckbox.height = '25px';
+
+    const infCreditsLabel = new TextBlock('infiniteCreditsLabel');
+    infCreditsLabel.text = '  Infinite Credits';
+    infCreditsLabel.fontSize = 13;
+    infCreditsLabel.color = '#FFFFFF';
+    infCreditsLabel.width = '400px';
+    infCreditsLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    infCreditsCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      debugConfig.infiniteCredits = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.DEBUG_FLAG_CHANGED, { flag: 'infiniteCredits', value: isChecked });
+    });
+
+    infCreditsContainer.addControl(infCreditsCheckbox);
+    infCreditsContainer.addControl(infCreditsLabel);
+    parent.addControl(infCreditsContainer);
+
+    // Fast clean room
+    const fastCleanContainer = new StackPanel('fastCleanContainer');
+    fastCleanContainer.isVertical = false;
+    fastCleanContainer.height = '30px';
+    fastCleanContainer.width = '440px';
+    fastCleanContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const fastCleanCheckbox = new Checkbox('fastCleanRoomCheckbox');
+    fastCleanCheckbox.isChecked = debugConfig.fastCleanRoom ?? false;
+    fastCleanCheckbox.width = '25px';
+    fastCleanCheckbox.height = '25px';
+
+    const fastCleanLabel = new TextBlock('fastCleanRoomLabel');
+    fastCleanLabel.text = '  Fast Clean Room (3s)';
+    fastCleanLabel.fontSize = 13;
+    fastCleanLabel.color = '#FFFFFF';
+    fastCleanLabel.width = '400px';
+    fastCleanLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    fastCleanCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      debugConfig.fastCleanRoom = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.DEBUG_FLAG_CHANGED, { flag: 'fastCleanRoom', value: isChecked });
+    });
+
+    fastCleanContainer.addControl(fastCleanCheckbox);
+    fastCleanContainer.addControl(fastCleanLabel);
+    parent.addControl(fastCleanContainer);
+
     // Freeze Enemies
     const freezeContainer = new StackPanel('freezeContainer');
     freezeContainer.isVertical = false;

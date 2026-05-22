@@ -58,7 +58,9 @@ export class EnemySpawner {
   private activationFlushBatchSize: number = 1;
   private fogMask: FogMask | null = null;
   private orphanBullCleanupAccumulator: number = 0;
+  private orphanCleanupEnemyIds: Set<string> = new Set();
   private unsubscriber: (() => void) | null = null;
+  private readonly cacheDifficultyWindow: number = 8;
 
   constructor(
     private scene: Scene,
@@ -371,6 +373,10 @@ export class EnemySpawner {
     return this.suppressedAIActivationQueue.length;
   }
 
+  getDeferredDisposalQueueCount(): number {
+    return this.deferredEnemyDisposalQueue.length;
+  }
+
   getActiveEnemyCount(): number {
     return this.enemies.length;
   }
@@ -582,6 +588,33 @@ export class EnemySpawner {
 
   setDifficultyLevel(level: number): void {
     this.difficultyLevel = level;
+    this.pruneDifficultyBoundCaches(level);
+  }
+
+  private pruneDifficultyBoundCaches(currentLevel: number): void {
+    const minLevelToKeep = Math.max(0, currentLevel - this.cacheDifficultyWindow);
+
+    for (const key of this.scaledEnemyConfigCache.keys()) {
+      const separatorIdx = key.lastIndexOf('::');
+      if (separatorIdx < 0) continue;
+      const levelPart = Number.parseInt(key.slice(separatorIdx + 2), 10);
+      if (Number.isFinite(levelPart) && levelPart < minLevelToKeep) {
+        this.scaledEnemyConfigCache.delete(key);
+      }
+    }
+
+    const pruneSet = (set: Set<string>): void => {
+      for (const key of set) {
+        const separatorIdx = key.lastIndexOf('::');
+        if (separatorIdx < 0) continue;
+        const levelPart = Number.parseInt(key.slice(separatorIdx + 2), 10);
+        if (Number.isFinite(levelPart) && levelPart < minLevelToKeep) {
+          set.delete(key);
+        }
+      }
+    };
+    pruneSet(this.prewarmedRoomDifficultyKeys);
+    pruneSet(this.heavyAssetPrewarmedRoomDifficultyKeys);
   }
 
   getEnemies(): EnemyController[] {
@@ -647,24 +680,26 @@ export class EnemySpawner {
         this.flushSuppressedAIActivationQueue(this.activationFlushBatchSize);
       }
     }
-    this.processDeferredEnemyDisposals(1);
+    const deferredCount = this.deferredEnemyDisposalQueue.length;
+    const adaptiveDisposeBatch = deferredCount > 24 ? 6 : deferredCount > 12 ? 4 : deferredCount > 6 ? 2 : 1;
+    this.processDeferredEnemyDisposals(adaptiveDisposeBatch);
 
     this.orphanBullCleanupAccumulator += deltaTime;
     if (this.orphanBullCleanupAccumulator >= 0.75) {
       this.orphanBullCleanupAccumulator = 0;
-      const activeEnemyIds = new Set<string>();
+      this.orphanCleanupEnemyIds.clear();
       const addIds = (collection: EnemyController[]): void => {
         for (const enemy of collection) {
-          activeEnemyIds.add(enemy.getId());
+          this.orphanCleanupEnemyIds.add(enemy.getId());
         }
       };
       addIds(this.enemies);
       addIds(this.transitionPreparedEnemies);
       addIds(this.suppressedAIActivationQueue);
       addIds(this.deferredEnemyDisposalQueue);
-      EnemyController.cleanupOrphanBullVisuals(this.scene, activeEnemyIds);
-      EnemyController.cleanupOrphanJumperVisuals(this.scene, activeEnemyIds);
-      EnemyController.cleanupOrphanCasterVisuals(this.scene, activeEnemyIds);
+      EnemyController.cleanupOrphanBullVisuals(this.scene, this.orphanCleanupEnemyIds);
+      EnemyController.cleanupOrphanJumperVisuals(this.scene, this.orphanCleanupEnemyIds);
+      EnemyController.cleanupOrphanCasterVisuals(this.scene, this.orphanCleanupEnemyIds);
     }
 
   }
@@ -708,7 +743,9 @@ export class EnemySpawner {
       this.applyFogMaskToCollection(this.transitionPreparedEnemies);
       this.applyFogMaskToCollection(this.suppressedAIActivationQueue);
     }
-    this.processDeferredEnemyDisposals(1);
+    const deferredCount = this.deferredEnemyDisposalQueue.length;
+    const adaptiveDisposeBatch = deferredCount > 24 ? 6 : deferredCount > 12 ? 4 : deferredCount > 6 ? 2 : 1;
+    this.processDeferredEnemyDisposals(adaptiveDisposeBatch);
   }
 
   private processDeferredEnemyDisposals(batchSize: number = 1): void {
@@ -720,7 +757,7 @@ export class EnemySpawner {
     const frameStart = (typeof performance !== 'undefined' && typeof performance.now === 'function')
       ? performance.now()
       : Date.now();
-    const frameBudgetMs = 0.75;
+    const frameBudgetMs = this.deferredEnemyDisposalQueue.length > 12 ? 1.4 : 0.75;
 
     for (let i = 0; i < count && this.deferredEnemyDisposalQueue.length > 0; i++) {
       const enemy = this.deferredEnemyDisposalQueue.shift();

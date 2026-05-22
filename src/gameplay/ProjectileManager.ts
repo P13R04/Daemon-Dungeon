@@ -204,6 +204,7 @@ export class ProjectileManager {
   private projectileParticleEffects: Map<Projectile, ParticleSystem> = new Map();
   private mageProjectileParticleTexture: DynamicTexture | null = null;
   private deferredMeshDisposalQueue: Mesh[] = [];
+  private readonly maxAoeVisualCells: number = 140;
   private unsubscriber: (() => void) | null = null;
 
   constructor(private scene: Scene, poolSize: number = 20) {
@@ -443,7 +444,9 @@ export class ProjectileManager {
   }
 
   update(deltaTime: number, enemies: ProjectileEnemy[], player: ProjectilePlayer, roomManager?: RoomManager): void {
-    this.processDeferredMeshDisposals(2);
+    const deferredCount = this.deferredMeshDisposalQueue.length;
+    const adaptiveDisposeBatch = deferredCount > 60 ? 8 : deferredCount > 30 ? 6 : deferredCount > 12 ? 4 : 2;
+    this.processDeferredMeshDisposals(adaptiveDisposeBatch);
     this.currentRoomManager = roomManager;
 
     // Update delayed explosions
@@ -771,6 +774,24 @@ export class ProjectileManager {
     return this.activeProjectiles;
   }
 
+  getRuntimeLoadStats(): {
+    activeProjectiles: number;
+    delayedExplosions: number;
+    activeAoeZones: number;
+    activeSplitTravels: number;
+    deferredMeshDisposals: number;
+    particleEffects: number;
+  } {
+    return {
+      activeProjectiles: this.activeProjectiles.length,
+      delayedExplosions: this.delayedExplosions.length,
+      activeAoeZones: this.activeAoeZones.length,
+      activeSplitTravels: this.activeSplitTravels.length,
+      deferredMeshDisposals: this.deferredMeshDisposalQueue.length,
+      particleEffects: this.projectileParticleEffects.size,
+    };
+  }
+
   setHostileProjectileSlowZone(zone: { center: Vector3; radius: number; multiplier: number } | null): void {
     this.hostileSlowZone = zone ? {
       center: zone.center.clone(),
@@ -908,7 +929,11 @@ export class ProjectileManager {
     if (!roomManager) {
       const mesh = VisualPlaceholder.createAoEPlaceholder(this.scene, `aoe_${Date.now()}`, radius);
       mesh.position = this.toGroundPosition(center);
-      setTimeout(() => mesh.dispose(), durationSec * 1000);
+      setTimeout(() => {
+        if (!mesh.isDisposed()) {
+          this.deferredMeshDisposalQueue.push(mesh);
+        }
+      }, durationSec * 1000);
       return;
     }
 
@@ -919,6 +944,9 @@ export class ProjectileManager {
 
     for (let x = center.x - radius; x <= center.x + radius; x += spacing) {
       for (let z = center.z - radius; z <= center.z + radius; z += spacing) {
+        if (visuals.length >= this.maxAoeVisualCells) {
+          break;
+        }
         const sample = new Vector3(x, center.y, z);
         if (Vector3.Distance(sample, center) > radius) continue;
         if (!roomManager.isWalkable(x, z)) continue;
@@ -930,10 +958,17 @@ export class ProjectileManager {
         mesh.position = new Vector3(x, this.aoeVisualY, z);
         visuals.push(mesh);
       }
+      if (visuals.length >= this.maxAoeVisualCells) {
+        break;
+      }
     }
 
     setTimeout(() => {
-      for (const mesh of visuals) mesh.dispose();
+      for (const mesh of visuals) {
+        if (!mesh.isDisposed()) {
+          this.deferredMeshDisposalQueue.push(mesh);
+        }
+      }
     }, durationSec * 1000);
   }
 
@@ -1180,7 +1215,7 @@ export class ProjectileManager {
     const frameStart = (typeof performance !== 'undefined' && typeof performance.now === 'function')
       ? performance.now()
       : Date.now();
-    const frameBudgetMs = 0.8;
+    const frameBudgetMs = this.deferredMeshDisposalQueue.length > 24 ? 1.6 : 0.8;
 
     for (let i = 0; i < count && this.deferredMeshDisposalQueue.length > 0; i++) {
       const mesh = this.deferredMeshDisposalQueue.shift();

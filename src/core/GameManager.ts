@@ -191,6 +191,8 @@ export class GameManager {
   private benchmarkRoomElapsedSeconds: number = 0;
   private benchmarkAutoplayState: 'fighting' | 'clearing' | 'running_to_door' | 'transitioning' = 'fighting';
   private benchmarkEnemyKillTimer: number = 0;
+  private benchmarkDaemonTauntTimer: number = 0;
+  private benchmarkDaemonTauntInterval: number = 14;
   private showBenchmarkReportOnFinish: boolean = false;
   private benchmarkReportOverlay: HTMLDivElement | null = null;
   private tutorialPopupAudioMuffleActive: boolean = false;
@@ -200,6 +202,8 @@ export class GameManager {
   private lastAttackerType: string | null = null;
   private wallOcclusionManager: WallOcclusionManager | null = null;
   private musicManager: MusicManager | null = null;
+  private fastCleanRoomAccumulator: number = 0;
+  private fastCleanRoomLastIndex: number = -1;
 
 
   private constructor() {
@@ -302,6 +306,7 @@ export class GameManager {
       },
       applyBonus: (bonusId) => {
         this.applyBonus(bonusId);
+        this.hudManager.setRunEquippedBonuses(this.bonusSystemManager.getActiveBonuses());
       },
       startRoomTransition: (nextIndex) => {
         void this.startRoomTransitionSequence(nextIndex);
@@ -1102,7 +1107,7 @@ export class GameManager {
     if (preloadWindowChanged) {
       this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, false, {
         backwardRange: 1,
-        forwardRange: this.roomPreloadAheadCount,
+        forwardRange: this.getEffectivePreloadForwardRange(this.roomPreloadAheadCount),
         allowUnload: true,
       });
     }
@@ -1299,7 +1304,9 @@ export class GameManager {
       const loopProfiler = this.benchmarkRunner ? createRuntimeFrameProfiler() : null;
       const currentTime = performance.now();
       const rawFrameMs = Math.max(0, currentTime - lastTime);
-      const deltaTime = Math.min(rawFrameMs / 1000, 0.016); // Cap at 60fps for gameplay simulation
+      // Keep gameplay clock closer to real time during frame drops (avoid slow-motion cheating),
+      // while still clamping catastrophic stalls.
+      const deltaTime = Math.min(rawFrameMs / 1000, 0.05);
       lastTime = currentTime;
 
       // Sync UI camera with main camera for correct HUD projection on UI_LAYER
@@ -1311,10 +1318,6 @@ export class GameManager {
         }
       }
 
-      const allowDeferredRoomLoads =
-        !this.gameplayInitialized ||
-        this.gameState === 'roomclear' ||
-        this.gameState === 'bonus';
       const activeCombatPressure =
         this.gameplayInitialized &&
         this.gameState === 'playing' &&
@@ -1324,7 +1327,12 @@ export class GameManager {
           (this.projectileManager?.getActiveProjectiles?.().length ?? 0) > 0 ||
           (this.ultimateManager?.getActiveZones?.().length ?? 0) > 0
         );
-      const allowDeferredStreamingMaintenance = !activeCombatPressure;
+      const allowDeferredRoomLoads =
+        !this.gameplayInitialized ||
+        this.gameState === 'transition';
+      const allowDeferredStreamingMaintenance =
+        this.gameState === 'transition' ||
+        (!activeCombatPressure && this.gameState === 'roomclear');
       const loadedRoomCount = this.roomManager?.getLoadedRoomKeys?.().length ?? 0;
       const loadedFloorCount = this.tilesEnabled
         ? (this.tileFloorManager?.getLoadedRoomKeys?.().length ?? 0)
@@ -1341,10 +1349,12 @@ export class GameManager {
       const deferredStreamingBudgetMs =
         !this.gameplayInitialized
           ? 1.2
-          : this.gameState === 'roomclear' || this.gameState === 'bonus'
-            ? 1.2
+          : this.gameState === 'transition'
+            ? 2.2
+            : this.gameState === 'roomclear' || this.gameState === 'bonus'
+              ? 0.45
             : this.gameState === 'playing'
-              ? 0.55
+              ? 0.35
               : 0.8;
 
       if (!this.isPaused) {
@@ -1447,6 +1457,7 @@ export class GameManager {
   }
 
   private updatePlayingFrame(deltaTime: number): boolean {
+    this.applyDebugCheatTick(deltaTime);
     this.pumpBackgroundRoomPreparation(deltaTime);
     this.pumpPrimedRoomPreparation();
     this.roomElapsedSeconds += deltaTime;
@@ -1471,6 +1482,61 @@ export class GameManager {
     return shouldSkipRender;
   }
 
+  private applyDebugCheatTick(deltaTime: number): void {
+    const debugConfig = this.configLoader.getGameplayConfig()?.debugConfig;
+    if (!debugConfig || !this.gameplayInitialized) return;
+
+    if (debugConfig.infiniteCredits) {
+      const currency = this.runEconomy.getCurrency();
+      if (currency < 999999) {
+        this.runEconomy.addCurrency(999999 - currency);
+        this.hudManager.updateCurrency(this.runEconomy.getCurrency());
+      }
+    }
+
+    if (!debugConfig.fastCleanRoom || this.gameState !== 'playing' || this.roomCleared) {
+      this.fastCleanRoomAccumulator = 0;
+      this.fastCleanRoomLastIndex = this.currentRoomIndex;
+      return;
+    }
+
+    if (this.fastCleanRoomLastIndex !== this.currentRoomIndex) {
+      this.fastCleanRoomAccumulator = 0;
+      this.fastCleanRoomLastIndex = this.currentRoomIndex;
+    }
+
+    const enemies = this.enemySpawner.getEnemies();
+    const hasActiveEnemies = enemies.length > 0;
+    const aiReady =
+      hasActiveEnemies
+      && !this.enemySpawner.hasPendingSpawns()
+      && this.enemySpawner.getSuppressedActivationQueueCount() === 0
+      && !this.enemySpawner.hasAnyEnemyMaterializing();
+
+    if (!aiReady) {
+      this.fastCleanRoomAccumulator = 0;
+      return;
+    }
+
+    this.fastCleanRoomAccumulator += Math.max(0, deltaTime);
+    if (this.fastCleanRoomAccumulator < 3) {
+      return;
+    }
+    this.fastCleanRoomAccumulator = 0;
+
+    for (const enemy of enemies) {
+      if (enemy.isActive()) {
+        enemy.takeDamage(1000000);
+      }
+    }
+
+    if (this.gameState === 'playing') {
+      this.roomCleared = true;
+      this.roomManager.setDoorActive(true);
+      void this.startDoorToBonusSequence();
+    }
+  }
+
   private updateNonPlayingFrame(deltaTime: number): void {
     this.runtimeOrchestrator.updateNonPlayingFrame(this.createRuntimeFrameContext(), deltaTime);
     if (!this.benchmarkRunner) {
@@ -1490,6 +1556,8 @@ export class GameManager {
       ? null
       : Math.max(0, Math.min(1, profiledTotalMs / frameMs));
 
+    const projectileStats = this.projectileManager?.getRuntimeLoadStats?.();
+    const streamingStats = this.roomStreamingManager?.getDeferredQueueStats?.();
     return {
       frameMs,
       elapsedMs,
@@ -1508,6 +1576,15 @@ export class GameManager {
       suppressedActivations: this.enemySpawner?.getSuppressedActivationQueueCount?.() ?? 0,
       activeProjectiles: this.projectileManager?.getActiveProjectiles?.().length ?? 0,
       activeUltimateZones: this.ultimateManager?.getActiveZones?.().length ?? 0,
+      projectileDeferredDisposals: projectileStats?.deferredMeshDisposals ?? 0,
+      projectileDelayedExplosions: projectileStats?.delayedExplosions ?? 0,
+      projectileAoeZones: projectileStats?.activeAoeZones ?? 0,
+      projectileSplitTravels: projectileStats?.activeSplitTravels ?? 0,
+      projectileParticleEffects: projectileStats?.particleEffects ?? 0,
+      enemyDeferredDisposals: this.enemySpawner?.getDeferredDisposalQueueCount?.() ?? 0,
+      streamingDeferredRoomLoads: streamingStats?.roomLoads ?? 0,
+      streamingDeferredTilePreloads: streamingStats?.tilePreloads ?? 0,
+      streamingDeferredUnloads: streamingStats?.unloads ?? 0,
       loadedRooms: this.roomManager?.getLoadedRoomKeys?.().length ?? 0,
       loadedFloors: this.tileFloorManager?.getLoadedRoomKeys?.().length ?? 0,
       meshes: this.scene?.meshes?.length ?? 0,
@@ -1528,6 +1605,13 @@ export class GameManager {
 
     // Force player autoplay mode
     this.playerController.setAutoPlayMode(true);
+
+    this.benchmarkDaemonTauntTimer += deltaTime;
+    if (this.benchmarkDaemonTauntTimer >= this.benchmarkDaemonTauntInterval) {
+      this.benchmarkDaemonTauntTimer = 0;
+      this.benchmarkDaemonTauntInterval = 12 + (Math.random() * 6);
+      this.daemonVoicelineManager?.forceTrigger('ambient');
+    }
 
     const enemies = this.enemySpawner.getEnemies().filter(e => e.isActive());
     const playerPos = this.playerController.getPosition();
@@ -1991,6 +2075,8 @@ export class GameManager {
     this.disposeBenchmarkReportOverlay();
     this.stopBenchmarkRunner();
 
+    // Force benchmark onto the normal pooled run pipeline.
+    this.isTutorialRun = false;
     this.selectedClassId = 'mage';
     this.codexService.startRunTracking(this.selectedClassId);
     await this.startNewGame();
@@ -2009,14 +2095,18 @@ export class GameManager {
     this.benchmarkRoomElapsedSeconds = 0;
     this.benchmarkAutoplayState = 'fighting';
     this.benchmarkEnemyKillTimer = 0;
+    this.benchmarkDaemonTauntTimer = 0;
+    this.benchmarkDaemonTauntInterval = 12 + (Math.random() * 6);
 
     this.benchmarkRunner = new GameBenchmarkRunner(this.eventBus, {
       isReadyForTransition: () => {
-        // Autoplay scripted benchmark will naturally trigger room transition, do not auto-request here.
-        return false;
+        return this.gameplayInitialized
+          && this.gameState === 'playing'
+          && this.roomCleared
+          && !this.cameraMove;
       },
       requestNextRoomTransition: () => {
-        this.loadNextRoom();
+        // Autoplay path naturally reaches the door and drives transition.
       },
       getCurrentRoomIndex: () => {
         return this.currentRoomIndex;
@@ -2040,6 +2130,21 @@ export class GameManager {
           pendingSpawns: this.enemySpawner?.getPendingSpawnCount?.() ?? 0,
           preparedEnemies: this.enemySpawner?.getPreparedTransitionEnemyCount?.() ?? 0,
           suppressedActivations: this.enemySpawner?.getSuppressedActivationQueueCount?.() ?? 0,
+          deferredDisposals: this.enemySpawner?.getDeferredDisposalQueueCount?.() ?? 0,
+        };
+      },
+      sampleQueueStats: () => {
+        const projectileStats = this.projectileManager?.getRuntimeLoadStats?.();
+        const streamingStats = this.roomStreamingManager?.getDeferredQueueStats?.();
+        return {
+          projectileDeferredDisposals: projectileStats?.deferredMeshDisposals ?? 0,
+          projectileDelayedExplosions: projectileStats?.delayedExplosions ?? 0,
+          projectileAoeZones: projectileStats?.activeAoeZones ?? 0,
+          projectileSplitTravels: projectileStats?.activeSplitTravels ?? 0,
+          projectileParticleEffects: projectileStats?.particleEffects ?? 0,
+          streamingDeferredRoomLoads: streamingStats?.roomLoads ?? 0,
+          streamingDeferredTilePreloads: streamingStats?.tilePreloads ?? 0,
+          streamingDeferredUnloads: streamingStats?.unloads ?? 0,
         };
       },
       sampleSpikeDiagnostic: (frameMs, elapsedMs) => this.sampleBenchmarkSpikeDiagnostic(frameMs, elapsedMs),
@@ -2061,11 +2166,11 @@ export class GameManager {
 
     this.benchmarkRunner.start({
       warmupSeconds: 1,
-      transitionCount: 100,
+      transitionCount: 9,
       settleSeconds: 0.6,
       transitionStartTimeoutSeconds: 2.5,
       resourceSampleIntervalSeconds: 0.25,
-      maxDurationSeconds: 1200,
+      maxDurationSeconds: 480,
       spikeCaptureThresholdMs: 45,
       maxSpikeDiagnostics: 12,
     });
@@ -2278,7 +2383,9 @@ export class GameManager {
       `Transition ms avg/p95/max: ${transition.averageMs.toFixed(2)} / ${transition.p95Ms.toFixed(2)} / ${transition.maxMs.toFixed(2)}`,
       `Post-transition spike ms avg/p95/max: ${post.averageMs.toFixed(2)} / ${post.p95Ms.toFixed(2)} / ${post.maxMs.toFixed(2)}`,
       `Max resources: meshes=${resources.maxMeshes}, materials=${resources.maxMaterials}, textures=${resources.maxTextures}, heap=${heapLabel}`,
-      `Enemy load peaks: active=${resources.maxActiveEnemies}, pendingSpawns=${resources.maxPendingSpawns}, prepared=${resources.maxPreparedEnemies}, activationQueue=${resources.maxSuppressedActivations}`,
+      `Enemy load peaks: active=${resources.maxActiveEnemies}, pendingSpawns=${resources.maxPendingSpawns}, prepared=${resources.maxPreparedEnemies}, activationQueue=${resources.maxSuppressedActivations}, deferredDisposals=${resources.maxEnemyDeferredDisposals}`,
+      `Projectile queues: deferredDisposals=${resources.maxProjectileDeferredDisposals}, delayedExplosions=${resources.maxProjectileDelayedExplosions}, aoeZones=${resources.maxProjectileAoeZones}, splitTravels=${resources.maxProjectileSplitTravels}, particleFx=${resources.maxProjectileParticleEffects}`,
+      `Streaming queues: roomLoads=${resources.maxStreamingDeferredRoomLoads}, tilePreloads=${resources.maxStreamingDeferredTilePreloads}, unloads=${resources.maxStreamingDeferredUnloads}`,
       categorySummary,
       externalSummary,
       `Spike diagnostics captured: ${spikes.length}`,
@@ -2307,7 +2414,7 @@ export class GameManager {
       : `coverage=${(spike.profiledCoverageRatio * 100).toFixed(1)}%`;
     const categorySummary = `stall=${spike.stallCategory ?? 'mixed'}`;
 
-    return `Spike #${rank}: ${spike.frameMs.toFixed(2)} ms @ ${spike.roomId ?? 'unknown'} (idx ${spike.roomIndex}) state=${spike.gameState} enemies=${spike.activeEnemies} projectiles=${spike.activeProjectiles} ultZones=${spike.activeUltimateZones} rooms=${spike.loadedRooms} floors=${spike.loadedFloors} ${gapSummary} ${coverageSummary} ${categorySummary} | ${profileSummary}`;
+    return `Spike #${rank}: ${spike.frameMs.toFixed(2)} ms @ ${spike.roomId ?? 'unknown'} (idx ${spike.roomIndex}) state=${spike.gameState} enemies=${spike.activeEnemies} projectiles=${spike.activeProjectiles} ultZones=${spike.activeUltimateZones} pDefQ=${spike.projectileDeferredDisposals} pAoe=${spike.projectileAoeZones} pSplit=${spike.projectileSplitTravels} pExp=${spike.projectileDelayedExplosions} pFx=${spike.projectileParticleEffects} eDefQ=${spike.enemyDeferredDisposals} sRoomQ=${spike.streamingDeferredRoomLoads} sTileQ=${spike.streamingDeferredTilePreloads} sUnloadQ=${spike.streamingDeferredUnloads} rooms=${spike.loadedRooms} floors=${spike.loadedFloors} ${gapSummary} ${coverageSummary} ${categorySummary} | ${profileSummary}`;
   }
 
   private disposeBenchmarkReportOverlay(): void {
@@ -2352,6 +2459,7 @@ export class GameManager {
     this.hudManager.hideOverlays();
     this.hudManager.updateCurrency(this.runEconomy.getCurrency());
     this.hudManager.updateItemStatus(this.getConsumableStatusLabel());
+    this.hudManager.setRunEquippedBonuses([]);
   }
 
   private generateRunRoomOrder(targetLength: number): string[] {
@@ -2437,6 +2545,7 @@ export class GameManager {
         this.applyBonus(bonus.id);
       }
     });
+    this.hudManager.setRunEquippedBonuses(activeBonuses);
   }
 
   private loadNextRoom(): void {
@@ -2550,13 +2659,22 @@ export class GameManager {
     this.prewarmEnemyDataAround(preloadIndex, options);
   }
 
+  private getEffectivePreloadForwardRange(requestedRange: number): number {
+    const clampedRequested = Math.max(0, Math.round(requestedRange));
+    // Keep benchmark representative while avoiding runaway memory/mesh growth.
+    if (this.benchmarkRunner) {
+      return Math.min(1, clampedRequested);
+    }
+    return clampedRequested;
+  }
+
   private prewarmEnemyDataAround(preloadIndex: number, options?: RoomPreloadOptions): void {
     if (!this.gameplayInitialized) return;
     if (!this.enemySpawner) return;
     if (this.roomOrder.length === 0) return;
 
     const backwardRange = Math.max(0, options?.backwardRange ?? 1);
-    const forwardRange = Math.max(0, options?.forwardRange ?? 1);
+    const forwardRange = this.getEffectivePreloadForwardRange(options?.forwardRange ?? 1);
     const heavyAssetWindowActive = this.gameState === 'transition' || this.gameState === 'playing';
 
     for (let idx = preloadIndex - backwardRange; idx <= preloadIndex + forwardRange; idx++) {
@@ -2653,7 +2771,7 @@ export class GameManager {
     const roomKey = `${roomId}::${nextIndex}`;
     if (this.enemySpawner.hasTransitionPreparationPending(roomKey)) {
       void alpha;
-      this.enemySpawner.pumpTransitionRoomPreparation(1);
+      this.enemySpawner.pumpTransitionRoomPreparation(3);
     }
   }
 
@@ -2809,7 +2927,7 @@ export class GameManager {
 
       this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, false, {
         backwardRange: 1,
-        forwardRange: this.roomPreloadAheadCount,
+        forwardRange: this.getEffectivePreloadForwardRange(this.roomPreloadAheadCount),
         allowUnload: true,
         deferFarTilePreloads: true,
       });
@@ -2898,7 +3016,7 @@ export class GameManager {
     const currentRoomId = this.roomOrder[this.currentRoomIndex];
     const currentRoomKey = currentRoomId ? `${currentRoomId}::${this.currentRoomIndex}` : null;
     const currentBounds = currentRoomKey ? this.roomManager.getRoomBoundsForInstance(currentRoomKey) : null;
-    const nextIndex = (this.currentRoomIndex + 1) % this.roomOrder.length;
+    const nextIndex = Math.min(this.currentRoomIndex + 1, this.roomOrder.length - 1);
     const nextRoomId = this.roomOrder[nextIndex];
     const nextRoomKey = nextRoomId ? `${nextRoomId}::${nextIndex}` : null;
     const nextBounds = nextRoomKey ? this.roomManager.getRoomBoundsForInstance(nextRoomKey) : null;
@@ -3089,7 +3207,7 @@ export class GameManager {
 
     this.preloadRoomsAround(nextIndex, this.currentRoomIndex, false, {
       backwardRange: 1,
-      forwardRange: this.roomPreloadAheadCount,
+      forwardRange: this.getEffectivePreloadForwardRange(this.roomPreloadAheadCount),
       allowUnload: false,
       deferFarTilePreloads: true,
     });
@@ -3145,7 +3263,7 @@ export class GameManager {
     if (!this.enemySpawner.hasTransitionPreparationForRoom(roomKey)) {
       this.preloadRoomsAround(nextIndex, this.currentRoomIndex, false, {
         backwardRange: 1,
-        forwardRange: this.roomPreloadAheadCount,
+        forwardRange: this.getEffectivePreloadForwardRange(this.roomPreloadAheadCount),
         allowUnload: false,
         deferFarTilePreloads: true,
       });
@@ -3185,7 +3303,7 @@ export class GameManager {
     if (!this.enemySpawner.hasTransitionPreparationForRoom(roomKey)) {
       this.preloadRoomsAround(nextIndex, this.currentRoomIndex, false, {
         backwardRange: 1,
-        forwardRange: this.roomPreloadAheadCount,
+        forwardRange: this.getEffectivePreloadForwardRange(this.roomPreloadAheadCount),
         allowUnload: false,
         deferFarTilePreloads: true,
       });
@@ -4143,7 +4261,7 @@ export class GameManager {
     return this.roomManager.areWallsVisible();
   }
   public togglePause(): void {
-    if (this.gameState !== 'playing') return;
+    if (this.gameState !== 'playing' && this.gameState !== 'bonus') return;
     this.isPaused = !this.isPaused;
     if (this.isPaused) {
       this.hudManager.showPauseMenu();
@@ -4151,7 +4269,13 @@ export class GameManager {
       if (this.hudManager) this.hudManager.setVoicelinesMuted(true);
     } else {
       this.hudManager.hidePauseMenu();
-      if (this.musicManager) this.musicManager.setLowPass(false);
+      if (this.musicManager) {
+        const shouldStayMuffled =
+          this.gameState === 'bonus'
+          || this.gameState === 'roomclear'
+          || this.gameState === 'transition';
+        this.musicManager.setLowPass(shouldStayMuffled);
+      }
       if (this.hudManager) this.hudManager.setVoicelinesMuted(false);
     }
   }

@@ -50,6 +50,7 @@ export class HUDManager {
   private mobileAttackBtn: Button | null = null;
   private mobileStanceBtn: Button | null = null;
   private mobileUltBtn: Button | null = null;
+  private mobilePointerObserver: any = null;
   private resetMobileJoystick: (() => void) | null = null;
   private wasStanceActive: boolean = false;
   private mobileAttackHoldBlocked: boolean = false;
@@ -62,6 +63,8 @@ export class HUDManager {
   private playerHealthDisplay: TextBlock | null = null;
   private playerUltDisplay: TextBlock | null = null;
   private topBar: Rectangle | null = null;
+  private pauseButton: Button | null = null;
+  private healthPanel: Rectangle | null = null;
   private healthBarFill: Rectangle | null = null;
   private healthBarContainer: Rectangle | null = null;
   private integrityLabel: TextBlock | null = null;
@@ -181,6 +184,9 @@ export class HUDManager {
     modeText: TextBlock;
     rarityText: TextBlock;
     artworkGlow: Rectangle;
+    energyWaveA: Rectangle;
+    energyWaveB: Rectangle;
+    energyHalo: Rectangle;
     artworkFrame: Rectangle;
     artworkImg: Image;
     description: TextBlock;
@@ -198,6 +204,33 @@ export class HUDManager {
   private bonusInsufficientFlashOverlay: Rectangle | null = null;
   private bonusInsufficientFlashTimer: number = 0;
   private readonly bonusInsufficientFlashDuration: number = 0.3;
+  private activeBonusCardFx: Array<{
+    id: string;
+    idSeed: number;
+    rarity: 'common' | 'uncommon' | 'rare' | 'epic';
+    isPaid: boolean;
+    affordable: boolean;
+    selected: boolean;
+    button: Button;
+    artworkGlow: Rectangle;
+    energyWaveA: Rectangle;
+    energyWaveB: Rectangle;
+    energyHalo: Rectangle;
+    auraShellA: Rectangle;
+    auraShellB: Rectangle;
+    auraShellC: Rectangle;
+    title: TextBlock;
+  }> = [];
+  private bonusCardFxAccumulator: number = 0;
+  private runBonusContainer: Rectangle | null = null;
+  private runBonusIconsStack: StackPanel | null = null;
+  private runBonusTooltip: Rectangle | null = null;
+  private runBonusTooltipImg: Image | null = null;
+  private runBonusTooltipTitle: TextBlock | null = null;
+  private runBonusTooltipDesc: TextBlock | null = null;
+  private runBonusTooltipTextStack: StackPanel | null = null;
+  private runEquippedBonuses: Array<{ id: string; stacks: number }> = [];
+  private runBonusLayoutWidth: number = 0;
   private bossAlertContainer: Rectangle | null = null;
   private bossAlertSubtitle: TextBlock | null = null;
   private bossAlertPulseOverlay: Rectangle | null = null;
@@ -403,6 +436,10 @@ export class HUDManager {
     this.unsubscribers.forEach(unsub => unsub());
     this.unsubscribers = [];
     this.clearEnemyHealthBars();
+    if (this.mobilePointerObserver) {
+      this.scene.onPointerObservable.remove(this.mobilePointerObserver);
+      this.mobilePointerObserver = null;
+    }
     
     if (this.enemyGui) {
       this.enemyGui.dispose();
@@ -589,11 +626,13 @@ export class HUDManager {
     // Top bar (transparent container for layout)
     this.topBar = new Rectangle('hud_top_bar');
     this.topBar.width = 1;
-    this.topBar.height = '140px';
+    // Keep a generous top HUD lane to prevent clipping of child panels on different DPIs/scales.
+    this.topBar.height = '210px';
     this.topBar.thickness = 0;
     this.topBar.background = 'transparent';
     this.topBar.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.topBar.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.topBar.zIndex = 1600;
     this.guiClean.addControl(this.topBar);
 
     // Stats Console (Top Right Container)
@@ -693,6 +732,7 @@ export class HUDManager {
     this.logPanel.top = -24;
     this.logPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.logPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    this.logPanel.zIndex = 1600;
     this.guiClean.addControl(this.logPanel);
 
     const logHeader = new TextBlock('log_header');
@@ -741,6 +781,7 @@ export class HUDManager {
     pauseBtn.top = 24;
     pauseBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     pauseBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    pauseBtn.zIndex = 1700;
     if (pauseBtn.textBlock) {
       pauseBtn.textBlock.fontSize = 20;
       pauseBtn.textBlock.fontFamily = fontFamily;
@@ -749,6 +790,86 @@ export class HUDManager {
       this.eventBus.emit(GameEvents.UI_PAUSE_TOGGLE);
     });
     this.guiClean.addControl(pauseBtn);
+    this.pauseButton = pauseBtn;
+
+    this.runBonusContainer = new Rectangle('run_bonus_container');
+    this.runBonusContainer.width = '520px';
+    this.runBonusContainer.height = '220px';
+    this.runBonusContainer.thickness = 0;
+    this.runBonusContainer.background = 'rgba(0,0,0,0)';
+    this.runBonusContainer.left = 98;
+    this.runBonusContainer.top = 20;
+    this.runBonusContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.runBonusContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.runBonusContainer.isPointerBlocker = false;
+    this.runBonusContainer.clipChildren = false;
+    this.runBonusContainer.zIndex = 1700;
+    this.guiClean.addControl(this.runBonusContainer);
+
+    this.runBonusIconsStack = new StackPanel('run_bonus_icons_stack');
+    this.runBonusIconsStack.isVertical = true;
+    this.runBonusIconsStack.height = '54px';
+    this.runBonusIconsStack.spacing = 8;
+    this.runBonusIconsStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.runBonusIconsStack.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.runBonusIconsStack.isPointerBlocker = false;
+    this.runBonusIconsStack.clipChildren = false;
+    this.runBonusContainer.addControl(this.runBonusIconsStack);
+
+    this.runBonusTooltip = new Rectangle('run_bonus_tooltip');
+    this.runBonusTooltip.width = '300px';
+    this.runBonusTooltip.height = '86px';
+    this.runBonusTooltip.top = '60px';
+    this.runBonusTooltip.thickness = 1;
+    this.runBonusTooltip.color = '#3B685C';
+    this.runBonusTooltip.background = 'rgba(10, 18, 22, 0.96)';
+    this.runBonusTooltip.cornerRadius = 6;
+    this.runBonusTooltip.isVisible = false;
+    this.runBonusTooltip.isPointerBlocker = false;
+    this.runBonusTooltip.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.runBonusTooltip.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.runBonusContainer.addControl(this.runBonusTooltip);
+
+    this.runBonusTooltipImg = new Image('run_bonus_tooltip_img', '');
+    this.runBonusTooltipImg.width = '42px';
+    this.runBonusTooltipImg.height = '42px';
+    this.runBonusTooltipImg.left = '10px';
+    this.runBonusTooltipImg.top = '-16px';
+    this.runBonusTooltipImg.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.runBonusTooltipImg.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.runBonusTooltipImg.isHitTestVisible = false;
+    this.runBonusTooltip.addControl(this.runBonusTooltipImg);
+
+    const tooltipTextStack = new StackPanel('run_bonus_tooltip_text');
+    tooltipTextStack.isVertical = true;
+    tooltipTextStack.left = '60px';
+    tooltipTextStack.width = '230px';
+    tooltipTextStack.height = '76px';
+    tooltipTextStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    tooltipTextStack.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    tooltipTextStack.spacing = 3;
+    tooltipTextStack.isHitTestVisible = false;
+    this.runBonusTooltip.addControl(tooltipTextStack);
+    this.runBonusTooltipTextStack = tooltipTextStack;
+
+    this.runBonusTooltipTitle = new TextBlock('run_bonus_tooltip_title', '');
+    this.runBonusTooltipTitle.fontFamily = fontFamily;
+    this.runBonusTooltipTitle.fontSize = 13;
+    this.runBonusTooltipTitle.color = '#7CFFEA';
+    this.runBonusTooltipTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.runBonusTooltipTitle.height = '20px';
+    tooltipTextStack.addControl(this.runBonusTooltipTitle);
+
+    this.runBonusTooltipDesc = new TextBlock('run_bonus_tooltip_desc', '');
+    this.runBonusTooltipDesc.fontFamily = fontFamily;
+    this.runBonusTooltipDesc.fontSize = 11;
+    this.runBonusTooltipDesc.color = '#CFFCF3';
+    this.runBonusTooltipDesc.textWrapping = true;
+    this.runBonusTooltipDesc.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.runBonusTooltipDesc.height = '52px';
+    tooltipTextStack.addControl(this.runBonusTooltipDesc);
+
+    this.refreshRunBonusIcons();
 
     // Bottom-center Integrity/Health Bar
     const healthPanel = new Rectangle('hud_health_panel');
@@ -760,7 +881,9 @@ export class HUDManager {
     healthPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     healthPanel.left = 0;
     healthPanel.top = -24;
+    healthPanel.zIndex = 1600;
     this.guiClean.addControl(healthPanel);
+    this.healthPanel = healthPanel;
 
     const integrityLabel = new TextBlock('integrity_label');
     integrityLabel.text = 'INTEGRITY';
@@ -823,6 +946,7 @@ export class HUDManager {
     this.statusPanel.top = -24;
     this.statusPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.statusPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    this.statusPanel.zIndex = 1600;
     this.guiClean.addControl(this.statusPanel);
 
     this.playerUltDisplay = new TextBlock('ultimate_status');
@@ -1130,6 +1254,7 @@ export class HUDManager {
     this.roomClearScreen.isVisible = false;
 
     this.bonusScreen = this.createOverlay('CHOOSE BONUS', '', () => {});
+    this.bonusScreen.zIndex = 1400;
     this.bonusScreen.isVisible = false;
   }
 
@@ -1810,6 +1935,8 @@ export class HUDManager {
     this.updateAchievementToast(deltaTime);
     this.updateIntegrityDamagePulse(deltaTime);
     this.updateBonusInsufficientFlash(deltaTime);
+    this.updateRunBonusLayout();
+    this.updateBonusCardJuice(deltaTime);
 
     // Process scheduled logs in the queue
     if (this.scheduledLogs.length > 0) {
@@ -2236,6 +2363,18 @@ export class HUDManager {
       return { border: '#FF8FCC', glow: '#8C2A62', glowAlpha: 0.55, thickness: 5 };
     }
     return { border: '#C0C8D3', glow: '#4B5666', glowAlpha: 0.28, thickness: 2 };
+  }
+
+  private formatCompactStackLabel(rawLabel: string): string {
+    const upper = (rawLabel || '').toUpperCase();
+    if (upper.includes('UNIQUE')) return 'UNIQUE';
+    const limited = upper.match(/(\d+)\s*\/\s*(\d+)/);
+    if (limited) return `${limited[1]}/${limited[2]}`;
+    if (upper.includes('+')) {
+      const current = upper.match(/(\d+)\s*\+/);
+      return `${current?.[1] ?? '0'}/∞`;
+    }
+    return 'UNIQUE';
   }
 
   /**
@@ -3213,6 +3352,11 @@ export class HUDManager {
     this.hideMenuScreens();
     this.setHudVisible(false);
     if (this.topBar) this.topBar.isVisible = true;
+    if (this.pauseButton) this.pauseButton.isVisible = true;
+    if (this.healthPanel) this.healthPanel.isVisible = true;
+    if (this.playerHealthDisplay) this.playerHealthDisplay.isVisible = true;
+    if (this.statusPanel) this.statusPanel.isVisible = true;
+    if (this.runBonusContainer) this.runBonusContainer.isVisible = true;
     this.ensureBonusUiPool();
     if (!this.bonusDynamicRoot || !this.bonusRerollButton || !this.bonusFullHealButton) {
       console.warn('[HUDManager] Bonus UI pool incomplete, aborting showBonusChoices safely.');
@@ -3243,6 +3387,7 @@ export class HUDManager {
     this.bonusButtons = [];
     this.bonusDynamicControls = [];
     this.bonusCardClickState = [];
+    this.activeBonusCardFx = [];
     for (const ctrl of this.bonusCardPool.values()) {
       ctrl.button.isVisible = false;
       ctrl.button.isEnabled = false;
@@ -3264,6 +3409,7 @@ export class HUDManager {
       isEnabled: boolean;
       isAffordable?: boolean;
       cost?: number;
+      footerLabel: string;
     }> = choices.map((choice) => ({
       id: choice.id,
       title: choice.title,
@@ -3273,6 +3419,7 @@ export class HUDManager {
       isPaid: false,
       isSelected: selectedBonusIds.has(choice.id),
       isEnabled: !selectedBonusIds.has(choice.id),
+      footerLabel: 'FREE',
     }));
 
     if (paidOfferVisible && paidRareChoice) {
@@ -3290,6 +3437,7 @@ export class HUDManager {
         isEnabled: paidEnabled,
         isAffordable: paidAffordable,
         cost: paidRareCost,
+        footerLabel: paidAffordable ? `${paidRareCost} CREDITS` : `${paidRareCost} CREDITS`,
       });
     }
 
@@ -3304,10 +3452,9 @@ export class HUDManager {
     const startLeft = -Math.floor(totalWidth / 2) + Math.floor(cardWidth / 2);
     const cardTop = totalCards >= 5 ? -26 : -10;
     const titleFontSize = Math.max(18, Math.floor(24 * cardScale));
-    const labelFontSize = Math.max(11, Math.floor(13 * cardScale));
-    const rarityFontSize = Math.max(12, Math.floor(16 * cardScale));
+    const labelFontSize = Math.max(13, Math.floor(16 * cardScale));
     const descriptionFontSize = Math.max(12, Math.floor(15 * cardScale));
-    const stackFontSize = Math.max(11, Math.floor(12 * cardScale));
+    const stackFontSize = Math.max(14, Math.floor(17 * cardScale));
     const artworkGlowSize = Math.floor(180 * cardScale);
     const artworkFrameSize = Math.floor(170 * cardScale);
 
@@ -3327,9 +3474,10 @@ export class HUDManager {
       const card = cards[i];
       const poolKey = `${card.id}:${card.isPaid ? 'paid' : 'free'}`;
       const uiCard = this.getOrCreateBonusCard(poolKey);
+      const rarityTitleStyle = this.getRarityVisual(card.rarity);
       const rarityStyle = card.isPaid
         ? { border: '#F3C872', glow: '#8D5E17', glowAlpha: 0.55, thickness: 4 }
-        : this.getRarityVisual(card.rarity);
+        : rarityTitleStyle;
       const leftPx = startLeft + (i * (cardWidth + gap));
       const btn = uiCard.button;
       btn.width = `${cardWidth}px`;
@@ -3357,25 +3505,35 @@ export class HUDManager {
       }
       this.bonusButtons.push(btn);
       uiCard.title.text = card.title;
+      uiCard.title.color = rarityTitleStyle.border;
       uiCard.title.fontSize = titleFontSize;
-      uiCard.title.top = `${Math.round(-168 * cardScale)}px`;
-      uiCard.modeText.text = card.isSelected
-        ? 'OBTAINED'
-        : card.isPaid
-          ? `PAID +1 BONUS${card.cost ? `  -  ${card.cost} CREDITS` : ''}`
-          : 'FREE BONUS';
+      uiCard.title.top = `${Math.round(-154 * cardScale)}px`;
+      uiCard.modeText.text = '';
+      uiCard.modeText.isVisible = false;
       uiCard.modeText.color = card.isSelected ? '#B7C0CD' : (card.isPaid ? '#FFD782' : '#9EF3C4');
       uiCard.modeText.fontSize = labelFontSize;
       uiCard.modeText.top = `${Math.round(-142 * cardScale)}px`;
-      uiCard.rarityText.text = card.rarity.toUpperCase();
-      uiCard.rarityText.color = rarityStyle.border;
-      uiCard.rarityText.fontSize = rarityFontSize;
-      uiCard.rarityText.top = `${Math.round(-118 * cardScale)}px`;
+      uiCard.rarityText.text = '';
+      uiCard.rarityText.isVisible = false;
       uiCard.artworkGlow.width = `${artworkGlowSize}px`;
       uiCard.artworkGlow.height = `${artworkGlowSize}px`;
       uiCard.artworkGlow.background = rarityStyle.glow;
-      uiCard.artworkGlow.alpha = rarityStyle.glowAlpha;
+      uiCard.artworkGlow.alpha = Math.max(0.1, rarityStyle.glowAlpha * 0.65);
       uiCard.artworkGlow.top = `${Math.round(-6 * cardScale)}px`;
+      uiCard.energyHalo.width = `${Math.floor(artworkFrameSize * 1.26)}px`;
+      uiCard.energyHalo.height = `${Math.floor(artworkFrameSize * 1.26)}px`;
+      uiCard.energyHalo.top = `${Math.round(-6 * cardScale)}px`;
+      uiCard.energyWaveA.top = `${Math.round(-6 * cardScale)}px`;
+      uiCard.energyWaveB.top = `${Math.round(-6 * cardScale)}px`;
+      uiCard.auraShellA.width = `${Math.floor(artworkFrameSize * 1.15)}px`;
+      uiCard.auraShellA.height = `${Math.floor(artworkFrameSize * 1.08)}px`;
+      uiCard.auraShellA.top = `${Math.round(-6 * cardScale)}px`;
+      uiCard.auraShellB.width = `${Math.floor(artworkFrameSize * 1.22)}px`;
+      uiCard.auraShellB.height = `${Math.floor(artworkFrameSize * 1.16)}px`;
+      uiCard.auraShellB.top = `${Math.round(-6 * cardScale)}px`;
+      uiCard.auraShellC.width = `${Math.floor(artworkFrameSize * 1.28)}px`;
+      uiCard.auraShellC.height = `${Math.floor(artworkFrameSize * 1.24)}px`;
+      uiCard.auraShellC.top = `${Math.round(-6 * cardScale)}px`;
       uiCard.artworkFrame.width = `${artworkFrameSize}px`;
       uiCard.artworkFrame.height = `${artworkFrameSize}px`;
       uiCard.artworkFrame.thickness = rarityStyle.thickness;
@@ -3392,18 +3550,40 @@ export class HUDManager {
       uiCard.description.text = card.description;
       uiCard.description.fontSize = descriptionFontSize;
       uiCard.description.width = `${Math.max(170, cardWidth - 48)}px`;
-      uiCard.description.height = `${Math.max(72, Math.floor(86 * cardScale))}px`;
-      uiCard.description.top = `${Math.round(122 * cardScale)}px`;
-      uiCard.stackText.text = card.stackLabel;
-      uiCard.stackText.color = card.isPaid ? '#FFD782' : '#9FB3C6';
+      uiCard.description.height = `${Math.max(72, Math.floor(84 * cardScale))}px`;
+      uiCard.description.top = `${Math.round(114 * cardScale)}px`;
+      const compactStack = this.formatCompactStackLabel(card.stackLabel);
+      const bottomMeta = `${card.footerLabel}  •  ${compactStack}`;
+      uiCard.stackText.text = bottomMeta;
+      uiCard.stackText.color = card.isPaid
+        ? ((card.isAffordable ?? true) ? '#FFD782' : '#FF9A9A')
+        : '#BDEED8';
       uiCard.stackText.fontSize = stackFontSize;
-      uiCard.stackText.top = `${Math.round(176 * cardScale)}px`;
+      uiCard.stackText.top = `${Math.round(186 * cardScale)}px`;
       uiCard.selectedTag.isVisible = card.isSelected;
       uiCard.selectedTag.fontSize = Math.max(12, Math.floor(14 * cardScale));
       uiCard.selectedTag.top = `${Math.round(190 * cardScale)}px`;
-      uiCard.lockText.isVisible = card.isPaid && !(card.isAffordable ?? true) && !card.isSelected;
+      uiCard.lockText.isVisible = false;
       uiCard.lockText.fontSize = Math.max(12, Math.floor(14 * cardScale));
       uiCard.lockText.top = `${Math.round(190 * cardScale)}px`;
+
+      this.activeBonusCardFx.push({
+        id: card.id,
+        idSeed: Array.from(card.id).reduce((acc, ch) => ((acc * 31) + ch.charCodeAt(0)) >>> 0, 7),
+        rarity: card.rarity,
+        isPaid: card.isPaid,
+        affordable: card.isAffordable ?? true,
+        selected: card.isSelected,
+        button: btn,
+        artworkGlow: uiCard.artworkGlow,
+        energyWaveA: uiCard.energyWaveA,
+        energyWaveB: uiCard.energyWaveB,
+        energyHalo: uiCard.energyHalo,
+        auraShellA: uiCard.auraShellA,
+        auraShellB: uiCard.auraShellB,
+        auraShellC: uiCard.auraShellC,
+        title: uiCard.title,
+      });
     }
 
     const actionButtonsStacked = viewportWidth < 1300;
@@ -3573,6 +3753,12 @@ export class HUDManager {
     modeText: TextBlock;
     rarityText: TextBlock;
     artworkGlow: Rectangle;
+    energyWaveA: Rectangle;
+    energyWaveB: Rectangle;
+    energyHalo: Rectangle;
+    auraShellA: Rectangle;
+    auraShellB: Rectangle;
+    auraShellC: Rectangle;
     artworkFrame: Rectangle;
     artworkImg: Image;
     description: TextBlock;
@@ -3619,6 +3805,59 @@ export class HUDManager {
     artworkGlow.thickness = 0;
     btn.addControl(artworkGlow);
 
+    const energyHalo = new Rectangle(`bonus_energy_halo_${poolKey}`);
+    energyHalo.width = '100%';
+    energyHalo.height = '100%';
+    energyHalo.thickness = 0;
+    energyHalo.background = '#7CFFEA';
+    energyHalo.alpha = 0;
+    energyHalo.isHitTestVisible = false;
+    btn.addControl(energyHalo);
+
+    const energyWaveA = new Rectangle(`bonus_energy_wave_a_${poolKey}`);
+    energyWaveA.width = '36px';
+    energyWaveA.height = '180%';
+    energyWaveA.thickness = 0;
+    energyWaveA.background = '#7CFFEA';
+    energyWaveA.alpha = 0;
+    energyWaveA.rotation = 0.35;
+    energyWaveA.isHitTestVisible = false;
+    btn.addControl(energyWaveA);
+
+    const energyWaveB = new Rectangle(`bonus_energy_wave_b_${poolKey}`);
+    energyWaveB.width = '22px';
+    energyWaveB.height = '165%';
+    energyWaveB.thickness = 0;
+    energyWaveB.background = '#7CFFEA';
+    energyWaveB.alpha = 0;
+    energyWaveB.rotation = -0.32;
+    energyWaveB.isHitTestVisible = false;
+    btn.addControl(energyWaveB);
+
+    const auraShellA = new Rectangle(`bonus_aura_shell_a_${poolKey}`);
+    auraShellA.thickness = 0;
+    auraShellA.background = '#72FFD1';
+    auraShellA.alpha = 0;
+    auraShellA.cornerRadius = 48;
+    auraShellA.isHitTestVisible = false;
+    btn.addControl(auraShellA);
+
+    const auraShellB = new Rectangle(`bonus_aura_shell_b_${poolKey}`);
+    auraShellB.thickness = 0;
+    auraShellB.background = '#5DB8FF';
+    auraShellB.alpha = 0;
+    auraShellB.cornerRadius = 42;
+    auraShellB.isHitTestVisible = false;
+    btn.addControl(auraShellB);
+
+    const auraShellC = new Rectangle(`bonus_aura_shell_c_${poolKey}`);
+    auraShellC.thickness = 0;
+    auraShellC.background = '#D67BFF';
+    auraShellC.alpha = 0;
+    auraShellC.cornerRadius = 54;
+    auraShellC.isHitTestVisible = false;
+    btn.addControl(auraShellC);
+
     const artworkFrame = new Rectangle(`bonus_art_frame_${poolKey}`);
     artworkFrame.background = 'rgba(10, 12, 16, 0.9)';
     btn.addControl(artworkFrame);
@@ -3647,14 +3886,14 @@ export class HUDManager {
     btn.addControl(selectedTag);
 
     const lockText = new TextBlock(`bonus_locked_${poolKey}`);
-    lockText.text = 'TOO EXPENSIVE';
+    lockText.text = '';
     lockText.color = '#FF9A9A';
     lockText.fontFamily = 'Consolas';
     lockText.height = '22px';
     lockText.isVisible = false;
     btn.addControl(lockText);
 
-    const card = { button: btn, title, modeText, rarityText, artworkGlow, artworkFrame, artworkImg, description, stackText, selectedTag, lockText };
+    const card = { button: btn, title, modeText, rarityText, artworkGlow, energyWaveA, energyWaveB, energyHalo, auraShellA, auraShellB, auraShellC, artworkFrame, artworkImg, description, stackText, selectedTag, lockText };
     this.bonusCardPool.set(poolKey, card);
     return card;
   }
@@ -3663,6 +3902,299 @@ export class HUDManager {
     this.allowDaemonDuringOverlays = false;
     this.forceHideOverlays();
     this.setHudVisible(true);
+  }
+
+  public setRunEquippedBonuses(bonuses: Array<{ id: string; stacks: number }>): void {
+    const normalized = (bonuses ?? [])
+      .filter((b) => !!b && typeof b.id === 'string' && b.id.length > 0)
+      .map((b) => ({ id: b.id, stacks: Math.max(1, Math.floor(b.stacks || 1)) }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    this.runEquippedBonuses = normalized;
+    this.refreshRunBonusIcons();
+  }
+
+  private updateRunBonusLayout(): void {
+    if (!this.runBonusContainer) return;
+    const width = this.scene.getEngine().getRenderWidth(true);
+    if (Math.abs(width - this.runBonusLayoutWidth) < 2) return;
+    this.runBonusLayoutWidth = width;
+    this.refreshRunBonusIcons();
+  }
+
+  private refreshRunBonusIcons(): void {
+    if (!this.runBonusContainer || !this.runBonusIconsStack || !this.runBonusTooltip || !this.runBonusTooltipImg || !this.runBonusTooltipTitle || !this.runBonusTooltipDesc || !this.runBonusTooltipTextStack) return;
+
+    const width = this.scene.getEngine().getRenderWidth(true);
+    const compact = width < 1200;
+    const iconSize = compact ? 48 : 56;
+    const tooltipWidth = compact ? 420 : 520;
+    const tooltipHeight = compact ? 144 : 168;
+    const maxPerRow = 10;
+    const rowGap = compact ? 6 : 8;
+    const colGap = compact ? 6 : 8;
+    const containerWidth = compact ? 560 : 660;
+
+    this.runBonusContainer.width = `${containerWidth}px`;
+    this.runBonusIconsStack.height = '0px';
+    this.runBonusIconsStack.width = `${containerWidth}px`;
+    this.runBonusIconsStack.spacing = rowGap;
+    this.runBonusIconsStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.runBonusIconsStack.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.runBonusTooltip.width = `${tooltipWidth}px`;
+    this.runBonusTooltip.height = `${tooltipHeight}px`;
+    this.runBonusTooltipImg.width = `${compact ? 44 : 50}px`;
+    this.runBonusTooltipImg.height = `${compact ? 44 : 50}px`;
+    this.runBonusTooltipTextStack.width = `${Math.max(230, tooltipWidth - (compact ? 84 : 92))}px`;
+    this.runBonusTooltipTextStack.height = `${tooltipHeight - 22}px`;
+    this.runBonusTooltipTitle.fontSize = compact ? 13 : 15;
+    this.runBonusTooltipDesc.fontSize = compact ? 12 : 13;
+    this.runBonusTooltipDesc.height = `${compact ? 106 : 126}px`;
+
+    const oldIconControls = [...this.runBonusIconsStack.children];
+    this.runBonusIconsStack.clearControls();
+    for (const ctrl of oldIconControls) {
+      ctrl.dispose();
+    }
+    this.runBonusTooltip.isVisible = false;
+
+    const visibleBonuses = this.runEquippedBonuses;
+    const rowCount = Math.max(1, Math.ceil(visibleBonuses.length / maxPerRow));
+    const rowsHeight = (rowCount * iconSize) + ((rowCount - 1) * rowGap) + 4;
+    const tooltipTop = rowsHeight + 12;
+    this.runBonusTooltip.top = `${tooltipTop}px`;
+    this.runBonusContainer.height = `${tooltipTop + tooltipHeight + 16}px`;
+    this.runBonusIconsStack.height = `${rowsHeight}px`;
+
+    const rowStacks: StackPanel[] = [];
+    for (let row = 0; row < rowCount; row++) {
+      const rowStack = new StackPanel(`run_bonus_icons_row_${row}`);
+      rowStack.isVertical = false;
+      rowStack.spacing = colGap;
+      rowStack.height = `${iconSize}px`;
+      rowStack.width = `${containerWidth}px`;
+      rowStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      rowStack.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+      rowStack.isPointerBlocker = false;
+      this.runBonusIconsStack.addControl(rowStack);
+      rowStacks.push(rowStack);
+    }
+
+    visibleBonuses.forEach((bonus, index) => {
+      const box = new Rectangle(`run_bonus_box_${bonus.id}_${index}`);
+      box.width = `${iconSize}px`;
+      box.height = `${iconSize}px`;
+      box.thickness = 1;
+      box.color = '#3B685C';
+      box.background = 'rgba(10, 18, 22, 0.9)';
+      box.cornerRadius = 4;
+      box.isPointerBlocker = true;
+      box.hoverCursor = 'pointer';
+
+      const img = new Image(`run_bonus_img_${bonus.id}_${index}`, buildHudAssetUrl(`bonuses/${bonus.id}.png`));
+      img.width = `${Math.floor(iconSize * 0.72)}px`;
+      img.height = `${Math.floor(iconSize * 0.72)}px`;
+      img.isHitTestVisible = false;
+      box.addControl(img);
+
+      if (bonus.stacks > 1) {
+        const badge = new Rectangle(`run_bonus_badge_${bonus.id}_${index}`);
+        badge.width = compact ? '17px' : '19px';
+        badge.height = compact ? '14px' : '16px';
+        badge.thickness = 0;
+        badge.background = '#FF3B5C';
+        badge.cornerRadius = 2;
+        badge.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+        badge.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+        badge.left = '4px';
+        badge.top = '4px';
+        badge.isHitTestVisible = false;
+
+        const badgeText = new TextBlock(`run_bonus_badge_text_${bonus.id}_${index}`, `x${bonus.stacks}`);
+        badgeText.fontFamily = 'Consolas, monospace';
+        badgeText.fontSize = compact ? 9 : 10;
+        badgeText.color = '#FFFFFF';
+        badgeText.isHitTestVisible = false;
+        badge.addControl(badgeText);
+        box.addControl(badge);
+      }
+
+      const def = BONUS_CODEX_ENTRIES.find((d) => d.id === bonus.id) || {
+        name: bonus.id.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+        description: 'Custom system upgrade module loaded during execution.',
+        effect: 'Standard performance parameters apply.',
+      };
+
+      box.onPointerEnterObservable.add(() => {
+        if (!this.runBonusTooltip || !this.runBonusTooltipImg || !this.runBonusTooltipTitle || !this.runBonusTooltipDesc) return;
+        this.runBonusTooltipImg.source = buildHudAssetUrl(`bonuses/${bonus.id}.png`);
+        this.runBonusTooltipTitle.text = `${def.name.toUpperCase()}${bonus.stacks > 1 ? ` (x${bonus.stacks})` : ''}`;
+        this.runBonusTooltipDesc.text = `${def.description}\nEffect: ${def.effect}`;
+        const col = index % maxPerRow;
+        const slotLeft = col * (iconSize + colGap);
+        const maxLeft = Math.max(0, (this.runBonusContainer!.widthInPixels || containerWidth) - tooltipWidth);
+        const clampedLeft = Math.max(0, Math.min(slotLeft, maxLeft));
+        this.runBonusTooltip.left = `${clampedLeft}px`;
+        this.runBonusTooltip.isVisible = true;
+      });
+      box.onPointerOutObservable.add(() => {
+        if (this.runBonusTooltip) this.runBonusTooltip.isVisible = false;
+      });
+
+      const rowIndex = Math.floor(index / maxPerRow);
+      rowStacks[Math.min(rowStacks.length - 1, rowIndex)]?.addControl(box);
+    });
+  }
+
+  private updateBonusCardJuice(deltaTime: number): void {
+    if (!this.bonusScreen?.isVisible || this.activeBonusCardFx.length === 0) return;
+    this.bonusCardFxAccumulator += Math.max(0, deltaTime);
+    if (this.bonusCardFxAccumulator < (1 / 30)) return;
+    this.bonusCardFxAccumulator = 0;
+    const t = performance.now() / 1000;
+    void deltaTime;
+    for (const card of this.activeBonusCardFx) {
+      if (!card.button.isVisible || card.selected) continue;
+
+      const base =
+        card.rarity === 'epic' ? 0.5
+        : card.rarity === 'rare' ? 0.36
+        : card.rarity === 'uncommon' ? 0.2
+        : 0.14;
+      const amp =
+        card.rarity === 'epic' ? 0.42
+        : card.rarity === 'rare' ? 0.28
+        : card.rarity === 'uncommon' ? 0.13
+        : 0.1;
+      const speed =
+        card.rarity === 'epic' ? 7.8
+        : card.rarity === 'rare' ? 4.2
+        : card.rarity === 'uncommon' ? 4.8
+        : 3.9;
+      const pulse = base + (Math.max(0, Math.sin((t * speed) + card.button.leftInPixels * 0.01)) * amp);
+      const idHash = card.idSeed;
+      const dirSignA = (idHash & 1) === 0 ? 1 : -1;
+      const dirSignB = (idHash & 2) === 0 ? 1 : -1;
+      const phaseA = (idHash % 17) * 0.37;
+      const phaseB = (idHash % 29) * 0.23;
+
+      const palette =
+        card.rarity === 'epic'
+          ? { a: '#FFE8FF', b: '#FF8DE5', c: '#A66BFF' }
+          : card.rarity === 'rare'
+            ? { a: '#2D7BFF', b: '#44B4FF', c: '#8ED8FF' }
+            : card.rarity === 'uncommon'
+              ? { a: '#A9FFD4', b: '#74F3BE', c: '#BDF9E1' }
+              : { a: '#86C8FF', b: '#86C8FF', c: '#86C8FF' };
+
+      // Common stays almost static by design (no flashy animation).
+      const chaoticA = 0.5 + 0.5 * Math.sin((t * (speed * 0.81)) + phaseA + Math.sin((t + phaseB) * 1.7));
+      const chaoticB = 0.5 + 0.5 * Math.sin((t * (speed * 1.13)) + 1.9 + phaseB + Math.sin((t + phaseA) * 2.3));
+      const chaoticC = 0.5 + 0.5 * Math.sin((t * (speed * 1.57)) + 3.6 + phaseA + Math.sin((t + phaseB) * 1.1));
+      const colorMixAB = chaoticA < 0.33 ? palette.a : (chaoticA < 0.66 ? palette.b : palette.c);
+      const colorMixBC = chaoticB < 0.33 ? palette.b : (chaoticB < 0.66 ? palette.c : palette.a);
+      const colorMixCA = chaoticC < 0.33 ? palette.c : (chaoticC < 0.66 ? palette.a : palette.b);
+
+      card.energyWaveA.background = colorMixAB;
+      card.energyWaveB.background = colorMixBC;
+      card.energyHalo.background = colorMixCA;
+      card.auraShellA.background = colorMixAB;
+      card.auraShellB.background = colorMixBC;
+      card.auraShellC.background = colorMixCA;
+
+      const waveTravelMultiplier =
+        card.rarity === 'epic' ? 52
+        : card.rarity === 'rare' ? 30
+        : 18;
+      const waveTravel = ((((t + phaseA) * (speed * waveTravelMultiplier) * dirSignA) % 460) + 460) % 460 - 230;
+      const waveTravelB = ((((t + 0.38 + phaseB) * (speed * (waveTravelMultiplier * 0.79)) * dirSignB) % 460) + 460) % 460 - 230;
+      card.energyWaveA.left = waveTravel;
+      card.energyWaveB.left = waveTravelB;
+
+      const haloBase =
+        card.rarity === 'epic' ? 0.22
+        : card.rarity === 'rare' ? 0.16
+        : card.rarity === 'uncommon' ? 0.11
+        : 0.05;
+      const haloPulse = haloBase + (Math.max(0, Math.sin((t * (speed * 0.7)) + 0.7)) * haloBase * 1.35);
+      const chaosScale =
+        card.rarity === 'epic' ? 1.45
+        : card.rarity === 'rare' ? 1.18
+        : card.rarity === 'uncommon' ? 0.8
+        : 0.45;
+      const shellJitter = Math.sin((t + phaseA) * (speed * 0.8)) * (6 * chaosScale);
+      const shellJitterB = Math.sin((t + phaseB) * (speed * 1.23) + 1.4) * (5 * chaosScale);
+      const shellJitterC = Math.sin((t + phaseA) * (speed * 1.61) + 2.2) * (7 * chaosScale);
+      card.auraShellA.left = shellJitter;
+      card.auraShellA.top = card.artworkGlow.topInPixels + shellJitterB * 0.3;
+      card.auraShellA.rotation = 0.12 + Math.sin(t * (speed * 0.56)) * 0.2;
+      card.auraShellB.left = shellJitterB;
+      card.auraShellB.top = card.artworkGlow.topInPixels + shellJitterC * 0.25;
+      card.auraShellB.rotation = -0.16 + Math.sin(t * (speed * 0.71)) * 0.24;
+      card.auraShellC.left = shellJitterC * 0.7;
+      card.auraShellC.top = card.artworkGlow.topInPixels + shellJitter * 0.2;
+      card.auraShellC.rotation = 0.08 + Math.sin(t * (speed * 0.93)) * 0.3;
+
+      if (card.rarity === 'common') {
+        card.artworkGlow.alpha = card.isPaid ? (card.affordable ? 0.22 : 0.12) : 0.16;
+        card.energyWaveA.alpha = 0;
+        card.energyWaveB.alpha = 0;
+        card.energyHalo.alpha = 0.04;
+        card.auraShellA.alpha = 0;
+        card.auraShellB.alpha = 0;
+        card.auraShellC.alpha = 0;
+        card.button.thickness = card.isPaid ? 3 : 2;
+      } else if (card.rarity === 'uncommon') {
+        // No horizontal bars for uncommon: visual tier starts at rare.
+        card.artworkGlow.alpha = Math.min(0.68, pulse + 0.02);
+        card.energyWaveA.alpha = 0;
+        card.energyWaveB.alpha = 0;
+        card.energyHalo.alpha = Math.min(0.22, haloPulse * 0.42);
+        card.auraShellA.alpha = Math.min(0.18, haloPulse * 0.5);
+        card.auraShellB.alpha = Math.min(0.13, haloPulse * 0.42);
+        card.auraShellC.alpha = Math.min(0.1, haloPulse * 0.35);
+      } else if (card.isPaid) {
+        if (card.affordable) {
+          card.artworkGlow.alpha = Math.min(0.98, pulse + 0.26);
+          card.energyWaveA.alpha = Math.min(0.72, haloPulse + 0.22);
+          card.energyWaveB.alpha = Math.min(0.56, haloPulse * 0.94);
+          card.energyHalo.alpha = Math.min(0.34, haloPulse * 0.52);
+          card.auraShellA.alpha = Math.min(0.42, haloPulse * 0.88);
+          card.auraShellB.alpha = Math.min(0.34, haloPulse * 0.7);
+          card.auraShellC.alpha = Math.min(0.28, haloPulse * 0.62);
+          card.button.thickness = 4;
+        } else {
+          card.artworkGlow.alpha = Math.min(0.46, base * 0.65);
+          card.energyWaveA.alpha = 0.08;
+          card.energyWaveB.alpha = 0.06;
+          card.energyHalo.alpha = 0.05;
+          card.auraShellA.alpha = 0.06;
+          card.auraShellB.alpha = 0.05;
+          card.auraShellC.alpha = 0.04;
+          card.button.thickness = 3;
+        }
+      } else {
+        if (card.rarity === 'epic') {
+          const rainbowPhase = (t * 1.45) + phaseA;
+          const rainbowColors = ['#FFFFFF', '#FF9AF2', '#B985FF', '#7FD1FF', '#FFFFFF'];
+          const rainbowIndex = Math.floor((((Math.sin(rainbowPhase) + 1) * 0.5) * rainbowColors.length)) % rainbowColors.length;
+          card.energyHalo.background = rainbowColors[rainbowIndex];
+          card.auraShellA.background = rainbowColors[(rainbowIndex + 1) % rainbowColors.length];
+          card.auraShellB.background = '#FFFFFF';
+          card.auraShellC.background = rainbowColors[(rainbowIndex + 2) % rainbowColors.length];
+        }
+        const isEpic = card.rarity === 'epic';
+        card.artworkGlow.alpha = Math.min(isEpic ? 1 : 0.9, pulse + (isEpic ? 0.2 : 0.1));
+        card.energyWaveA.alpha = Math.min(isEpic ? 0.72 : 0.5, haloPulse + (isEpic ? 0.24 : 0.05));
+        card.energyWaveB.alpha = Math.min(isEpic ? 0.56 : 0.38, haloPulse * 0.85 + (isEpic ? 0.18 : 0.02));
+        card.energyHalo.alpha = Math.min(isEpic ? 0.44 : 0.26, haloPulse * 0.47 + (isEpic ? 0.18 : 0.04));
+        card.auraShellA.alpha = Math.min(isEpic ? 0.52 : 0.34, haloPulse * (isEpic ? 1.08 : 0.78));
+        card.auraShellB.alpha = Math.min(isEpic ? 0.42 : 0.26, haloPulse * (isEpic ? 0.95 : 0.64));
+        card.auraShellC.alpha = Math.min(isEpic ? 0.34 : 0.2, haloPulse * (isEpic ? 0.84 : 0.56));
+      }
+
+      const titlePulse = 0.86 + (Math.max(0, Math.sin((t * (speed * 0.85)) + 1.2)) * 0.14);
+      card.title.alpha = Math.min(1, titlePulse + (card.rarity === 'epic' ? 0.06 : 0));
+    }
   }
 
   public pushSystemLog(message: string): void {
@@ -4022,7 +4554,7 @@ export class HUDManager {
 
     // Global scene observer — supports multi-touch, works outside container bounds
     const jsLocal = new Vector2();
-    this.scene.onPointerObservable.add((pointerInfo) => {
+    this.mobilePointerObserver = this.scene.onPointerObservable.add((pointerInfo) => {
       const event = pointerInfo.event as PointerEvent;
       if (!event) return;
 

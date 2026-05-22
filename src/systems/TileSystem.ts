@@ -51,6 +51,10 @@ interface PoisonParticleData {
 }
 
 export class TileSystem {
+  private static sharedTextureCache: WeakMap<Scene, Map<string, Texture>> = new WeakMap();
+  private static sharedClassicMaterialCache: WeakMap<Scene, Map<string, StandardMaterial>> = new WeakMap();
+  private static sharedSpikeMaterialCache: WeakMap<Scene, StandardMaterial> = new WeakMap();
+
   private scene: Scene;
   private tileSize: number = 1;
   private textureCache: TextureCache = {};
@@ -75,6 +79,24 @@ export class TileSystem {
   constructor(scene: Scene, tileSize: number = 1) {
     this.scene = scene;
     this.tileSize = tileSize;
+  }
+
+  private getSharedTextures(): Map<string, Texture> {
+    let cache = TileSystem.sharedTextureCache.get(this.scene);
+    if (!cache) {
+      cache = new Map<string, Texture>();
+      TileSystem.sharedTextureCache.set(this.scene, cache);
+    }
+    return cache;
+  }
+
+  private getSharedClassicMaterials(): Map<string, StandardMaterial> {
+    let cache = TileSystem.sharedClassicMaterialCache.get(this.scene);
+    if (!cache) {
+      cache = new Map<string, StandardMaterial>();
+      TileSystem.sharedClassicMaterialCache.set(this.scene, cache);
+    }
+    return cache;
   }
 
   private getTileKey(x: number, z: number): string {
@@ -551,14 +573,35 @@ export class TileSystem {
   }
 
   private getTexture(path: string): Texture {
+    const sharedTextures = this.getSharedTextures();
+    const shared = sharedTextures.get(path);
+    if (shared) {
+      this.textureCache[path] = shared;
+      return shared;
+    }
     if (!this.textureCache[path]) {
       const texture = new Texture(path, this.scene, undefined, true);
       texture.updateSamplingMode(Texture.NEAREST_SAMPLINGMODE);
       texture.uScale = 1;
       texture.vScale = 1;
       this.textureCache[path] = texture;
+      sharedTextures.set(path, texture);
     }
     return this.textureCache[path];
+  }
+
+  private getClassicTileMaterial(resolvedPath: string): StandardMaterial {
+    const sharedMaterials = this.getSharedClassicMaterials();
+    const cached = sharedMaterials.get(resolvedPath);
+    if (cached) {
+      return cached;
+    }
+
+    const material = new StandardMaterial(`tile_shared_mat_${resolvedPath}`, this.scene);
+    material.diffuseTexture = this.getTexture(resolvedPath);
+    material.emissiveColor.set(0, 0, 0);
+    sharedMaterials.set(resolvedPath, material);
+    return material;
   }
 
   createTileMesh(tile: TileData): Mesh | null {
@@ -640,10 +683,7 @@ export class TileSystem {
     } else {
       const resolvedPath = this.resolveTexturePath(renderData.texturePath);
       if (resolvedPath) {
-        const material = new StandardMaterial('tile_mat_' + key, this.scene);
-        material.diffuseTexture = this.getTexture(resolvedPath);
-        material.emissiveColor.set(0, 0, 0);
-        tileMesh.material = material;
+        tileMesh.material = this.getClassicTileMaterial(resolvedPath);
       }
     }
 
@@ -738,7 +778,7 @@ export class TileSystem {
     } else {
       const resolvedPath = this.resolveTexturePath(renderData.texturePath);
       if (!resolvedPath) return;
-      (mesh.material as StandardMaterial).diffuseTexture = this.getTexture(resolvedPath);
+      mesh.material = this.getClassicTileMaterial(resolvedPath);
     }
     
     const rotationDegrees = this.isProceduralReliefProfile() ? 0 : renderData.rotationDegrees;
@@ -763,7 +803,9 @@ export class TileSystem {
         !name.startsWith('s_mat_') &&
         !name.startsWith('w_mat_') &&
         !name.startsWith('poison_') &&
-        !name.startsWith('relief_wall_core_')
+        !name.startsWith('relief_wall_core_') &&
+        !name.startsWith('tile_shared_mat_') &&
+        name !== 'spike_shared_mat'
       ) {
         (mat as any).dispose(false, true);
       }
@@ -799,7 +841,7 @@ export class TileSystem {
 
   dispose(): void {
     this.clearTiles();
-    Object.values(this.textureCache).forEach(texture => texture.dispose());
+    // Shared texture cache is scene-wide; keep resources alive across room instances.
     this.textureCache = {};
     if (this.poisonParticleMaterial) {
       this.poisonParticleMaterial.dispose();
@@ -843,10 +885,14 @@ export class TileSystem {
   }
 
   private setupSpikeTileVisuals(key: string, tile: TileData, tileMesh: Mesh): void {
-    const spikeMaterial = new StandardMaterial(`spike_mat_${key}`, this.scene);
-    spikeMaterial.diffuseColor = new Color3(0.62, 0.08, 0.08);
-    spikeMaterial.emissiveColor = new Color3(0.24, 0.03, 0.03);
-    spikeMaterial.alpha = 0.95;
+    let spikeMaterial = TileSystem.sharedSpikeMaterialCache.get(this.scene);
+    if (!spikeMaterial) {
+      spikeMaterial = new StandardMaterial('spike_shared_mat', this.scene);
+      spikeMaterial.diffuseColor = new Color3(0.62, 0.08, 0.08);
+      spikeMaterial.emissiveColor = new Color3(0.24, 0.03, 0.03);
+      spikeMaterial.alpha = 0.95;
+      TileSystem.sharedSpikeMaterialCache.set(this.scene, spikeMaterial);
+    }
 
     const meshes: Mesh[] = [];
 

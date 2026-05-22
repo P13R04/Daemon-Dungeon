@@ -36,6 +36,15 @@ export interface BenchmarkResourceStats {
   maxPendingSpawns: number;
   maxPreparedEnemies: number;
   maxSuppressedActivations: number;
+  maxEnemyDeferredDisposals: number;
+  maxProjectileDeferredDisposals: number;
+  maxProjectileDelayedExplosions: number;
+  maxProjectileAoeZones: number;
+  maxProjectileSplitTravels: number;
+  maxProjectileParticleEffects: number;
+  maxStreamingDeferredRoomLoads: number;
+  maxStreamingDeferredTilePreloads: number;
+  maxStreamingDeferredUnloads: number;
   maxUsedHeapMB: number | null;
 }
 
@@ -68,6 +77,15 @@ export interface BenchmarkSpikeDiagnostic {
   suppressedActivations: number;
   activeProjectiles: number;
   activeUltimateZones: number;
+  projectileDeferredDisposals: number;
+  projectileDelayedExplosions: number;
+  projectileAoeZones: number;
+  projectileSplitTravels: number;
+  projectileParticleEffects: number;
+  enemyDeferredDisposals: number;
+  streamingDeferredRoomLoads: number;
+  streamingDeferredTilePreloads: number;
+  streamingDeferredUnloads: number;
   loadedRooms: number;
   loadedFloors: number;
   meshes: number;
@@ -119,6 +137,17 @@ export interface BenchmarkRuntimeHooks {
     pendingSpawns: number;
     preparedEnemies: number;
     suppressedActivations: number;
+    deferredDisposals: number;
+  };
+  sampleQueueStats(): {
+    projectileDeferredDisposals: number;
+    projectileDelayedExplosions: number;
+    projectileAoeZones: number;
+    projectileSplitTravels: number;
+    projectileParticleEffects: number;
+    streamingDeferredRoomLoads: number;
+    streamingDeferredTilePreloads: number;
+    streamingDeferredUnloads: number;
   };
   sampleSpikeDiagnostic(frameMs: number, elapsedMs: number): BenchmarkSpikeDiagnostic | null;
   copyToClipboard(text: string): Promise<boolean>;
@@ -179,6 +208,15 @@ export class GameBenchmarkRunner {
   private maxPendingSpawns: number = 0;
   private maxPreparedEnemies: number = 0;
   private maxSuppressedActivations: number = 0;
+  private maxEnemyDeferredDisposals: number = 0;
+  private maxProjectileDeferredDisposals: number = 0;
+  private maxProjectileDelayedExplosions: number = 0;
+  private maxProjectileAoeZones: number = 0;
+  private maxProjectileSplitTravels: number = 0;
+  private maxProjectileParticleEffects: number = 0;
+  private maxStreamingDeferredRoomLoads: number = 0;
+  private maxStreamingDeferredTilePreloads: number = 0;
+  private maxStreamingDeferredUnloads: number = 0;
   private maxUsedHeapMB: number | null = null;
 
   constructor(
@@ -220,6 +258,15 @@ export class GameBenchmarkRunner {
     this.maxPendingSpawns = 0;
     this.maxPreparedEnemies = 0;
     this.maxSuppressedActivations = 0;
+    this.maxEnemyDeferredDisposals = 0;
+    this.maxProjectileDeferredDisposals = 0;
+    this.maxProjectileDelayedExplosions = 0;
+    this.maxProjectileAoeZones = 0;
+    this.maxProjectileSplitTravels = 0;
+    this.maxProjectileParticleEffects = 0;
+    this.maxStreamingDeferredRoomLoads = 0;
+    this.maxStreamingDeferredTilePreloads = 0;
+    this.maxStreamingDeferredUnloads = 0;
     this.maxUsedHeapMB = null;
 
     this.bindEvents();
@@ -424,6 +471,17 @@ export class GameBenchmarkRunner {
     this.maxPendingSpawns = Math.max(this.maxPendingSpawns, enemyStats.pendingSpawns);
     this.maxPreparedEnemies = Math.max(this.maxPreparedEnemies, enemyStats.preparedEnemies);
     this.maxSuppressedActivations = Math.max(this.maxSuppressedActivations, enemyStats.suppressedActivations);
+    this.maxEnemyDeferredDisposals = Math.max(this.maxEnemyDeferredDisposals, enemyStats.deferredDisposals);
+
+    const queueStats = this.hooks.sampleQueueStats();
+    this.maxProjectileDeferredDisposals = Math.max(this.maxProjectileDeferredDisposals, queueStats.projectileDeferredDisposals);
+    this.maxProjectileDelayedExplosions = Math.max(this.maxProjectileDelayedExplosions, queueStats.projectileDelayedExplosions);
+    this.maxProjectileAoeZones = Math.max(this.maxProjectileAoeZones, queueStats.projectileAoeZones);
+    this.maxProjectileSplitTravels = Math.max(this.maxProjectileSplitTravels, queueStats.projectileSplitTravels);
+    this.maxProjectileParticleEffects = Math.max(this.maxProjectileParticleEffects, queueStats.projectileParticleEffects);
+    this.maxStreamingDeferredRoomLoads = Math.max(this.maxStreamingDeferredRoomLoads, queueStats.streamingDeferredRoomLoads);
+    this.maxStreamingDeferredTilePreloads = Math.max(this.maxStreamingDeferredTilePreloads, queueStats.streamingDeferredTilePreloads);
+    this.maxStreamingDeferredUnloads = Math.max(this.maxStreamingDeferredUnloads, queueStats.streamingDeferredUnloads);
 
     const memory = this.readHeapUsageMB();
     if (memory != null) {
@@ -458,6 +516,15 @@ export class GameBenchmarkRunner {
         maxPendingSpawns: this.maxPendingSpawns,
         maxPreparedEnemies: this.maxPreparedEnemies,
         maxSuppressedActivations: this.maxSuppressedActivations,
+        maxEnemyDeferredDisposals: this.maxEnemyDeferredDisposals,
+        maxProjectileDeferredDisposals: this.maxProjectileDeferredDisposals,
+        maxProjectileDelayedExplosions: this.maxProjectileDelayedExplosions,
+        maxProjectileAoeZones: this.maxProjectileAoeZones,
+        maxProjectileSplitTravels: this.maxProjectileSplitTravels,
+        maxProjectileParticleEffects: this.maxProjectileParticleEffects,
+        maxStreamingDeferredRoomLoads: this.maxStreamingDeferredRoomLoads,
+        maxStreamingDeferredTilePreloads: this.maxStreamingDeferredTilePreloads,
+        maxStreamingDeferredUnloads: this.maxStreamingDeferredUnloads,
         maxUsedHeapMB: this.maxUsedHeapMB == null ? null : this.round(this.maxUsedHeapMB, 2),
       },
     };

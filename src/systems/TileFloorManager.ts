@@ -66,6 +66,12 @@ export class TileFloorManager {
     this.activeInstanceKey = instanceKey;
   }
 
+  setVisibleRoomInstanceKeys(visibleKeys: Set<string>): void {
+    for (const [key, instance] of this.floorInstances.entries()) {
+      instance.parent.setEnabled(visibleKeys.has(key));
+    }
+  }
+
   loadRoomFloorInstance(
     instanceKey: string,
     roomLayout: RoomLayout,

@@ -114,6 +114,8 @@ export class CodexService {
   };
   private devUnlockCodexEntries: boolean = false;
   private syncAdapter?: CodexSyncAdapter;
+  private snapshotSaveTimer: number | null = null;
+  private snapshotDirty: boolean = false;
 
   constructor(syncAdapter?: CodexSyncAdapter) {
     this.syncAdapter = syncAdapter;
@@ -632,6 +634,19 @@ export class CodexService {
   }
 
   private saveLocalSnapshot(): void {
+    this.snapshotDirty = true;
+    if (this.snapshotSaveTimer !== null) {
+      return;
+    }
+    this.snapshotSaveTimer = window.setTimeout(() => {
+      this.snapshotSaveTimer = null;
+      if (!this.snapshotDirty) return;
+      this.snapshotDirty = false;
+      this.flushLocalSnapshotSave();
+    }, 250);
+  }
+
+  private flushLocalSnapshotSave(): void {
     try {
       const snapshot: CodexSnapshot = {
         version: 2,
@@ -723,6 +738,14 @@ export class CodexService {
     }
 
     try {
+      if (this.snapshotDirty) {
+        if (this.snapshotSaveTimer !== null) {
+          window.clearTimeout(this.snapshotSaveTimer);
+          this.snapshotSaveTimer = null;
+        }
+        this.snapshotDirty = false;
+        this.flushLocalSnapshotSave();
+      }
       const data = localStorage.getItem(this.storageKey);
       if (!data) {
         return;
