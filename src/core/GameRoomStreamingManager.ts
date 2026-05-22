@@ -102,6 +102,7 @@ export class GameRoomStreamingManager {
       if (this.context.isTilesEnabled()) {
         this.context.tileFloorManager.clearAllRoomInstances();
       }
+      this.clearDeferredRoomLoadQueue();
       this.clearDeferredTilePreloadQueue();
       this.clearDeferredUnloadQueue();
     }

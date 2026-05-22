@@ -710,13 +710,7 @@ export class GameManager {
         'room_tutorial_03'
       ];
     } else {
-      const playableRooms = Array.isArray(rooms)
-        ? rooms.filter((room: LoadedRoomConfig) => this.shouldIncludeInRunOrder(room))
-        : [];
-      this.roomOrder = playableRooms.map((r: LoadedRoomConfig) => r.id);
-      if (this.roomOrder.length === 0) {
-        this.roomOrder = ['room_test_dummies'];
-      }
+      this.roomOrder = this.generateRunRoomOrder(45); // 5 floors of 9 rooms (8 normal + 1 boss)
     }
 
     if (Array.isArray(rooms)) {
@@ -981,6 +975,7 @@ export class GameManager {
         console.log(`[GameManager] Room entered callback, index: ${this.currentRoomIndex}`);
         this.codexService.recordRoomReached(this.currentRoomIndex + 1);
         this.daemonVoicelineManager?.setCurrentRoom(this.currentRoomIndex);
+        this.recalculatePlayerStats();
       },
       onEnemyDamaged: () => {
         this.resetDaemonIdleTimer();
@@ -1952,7 +1947,7 @@ export class GameManager {
 
       this.prepareRunStateForStart();
       this.transitionGameState('transition');
-      this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, false);
+      this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, true);
       this.setLoadingOverlay(true, 'PRELOADING ENEMY MODEL CONTAINERS...', '90%');
       await this.waitForNextPaint(1);
       await this.enemySpawner.prewarmCoreEnemyModelsForRun();
@@ -2306,15 +2301,7 @@ export class GameManager {
   }
 
   private generateProceduralRunOrder(): string[] {
-    const rooms = this.configLoader.getRoomsConfig();
-    const playableRooms = Array.isArray(rooms)
-      ? rooms.filter((room: LoadedRoomConfig) => this.shouldIncludeInRunOrder(room))
-      : [];
-    let order = playableRooms.map((r: LoadedRoomConfig) => r.id);
-    if (order.length === 0) {
-      order = ['room_test_dummies'];
-    }
-    return order;
+    return this.generateRunRoomOrder(45); // 5 floors of 9 rooms (8 normal + 1 boss)
   }
 
   private prepareRunStateForStart(): void {
@@ -2347,6 +2334,91 @@ export class GameManager {
     this.hudManager.hideOverlays();
     this.hudManager.updateCurrency(this.runEconomy.getCurrency());
     this.hudManager.updateItemStatus(this.getConsumableStatusLabel());
+  }
+
+  private generateRunRoomOrder(targetLength: number): string[] {
+    const order: string[] = [];
+    
+    const facile = this.configLoader.getFacileRoomsConfig()?.map(r => r.id) || [];
+    const inter = this.configLoader.getIntermediaireRoomsConfig()?.map(r => r.id) || [];
+    const hard = this.configLoader.getDifficileRoomsConfig()?.map(r => r.id) || [];
+    const extreme = this.configLoader.getExtremeRoomsConfig()?.map(r => r.id) || [];
+    const bosses = this.configLoader.getBossRoomsConfig()?.map(r => r.id) || [];
+
+    const allRooms = this.configLoader.getRoomsConfig()?.map(r => r.id) || ['room_test_dummies'];
+    const safePick = (arr: string[]) => arr.length > 0 ? arr[Math.floor(Math.random() * arr.length)] : allRooms[Math.floor(Math.random() * allRooms.length)];
+
+    let lastPicked = '';
+
+    for (let i = 0; i < targetLength; i++) {
+      if ((i + 1) % 9 === 0) {
+        order.push(safePick(bosses));
+        continue;
+      }
+
+      const floorIndex = Math.floor(i / 9);
+      let pFacile = 0, pInter = 0, pHard = 0, pExtreme = 0;
+
+      switch (floorIndex) {
+        case 0:
+          pFacile = 0.8; pInter = 0.2;
+          break;
+        case 1:
+          pFacile = 0.2; pInter = 0.6; pHard = 0.2;
+          break;
+        case 2:
+          pInter = 0.3; pHard = 0.5; pExtreme = 0.2;
+          break;
+        case 3:
+          pHard = 0.5; pExtreme = 0.5;
+          break;
+        default:
+          pExtreme = 1.0;
+          break;
+      }
+
+      const roll = Math.random();
+      let pickedPool: string[] = [];
+      
+      if (roll < pFacile) pickedPool = facile;
+      else if (roll < pFacile + pInter) pickedPool = inter;
+      else if (roll < pFacile + pInter + pHard) pickedPool = hard;
+      else pickedPool = extreme;
+
+      if (pickedPool.length === 0) pickedPool = facile.length > 0 ? facile : allRooms;
+
+      let pick = safePick(pickedPool);
+      if (pick === lastPicked && pickedPool.length > 1) {
+        let retries = 5;
+        while (pick === lastPicked && retries > 0) {
+          pick = safePick(pickedPool);
+          retries--;
+        }
+      }
+
+      order.push(pick);
+      lastPicked = pick;
+    }
+
+    return order;
+  }
+
+  private recalculatePlayerStats(): void {
+    if (!this.playerController || !this.bonusSystemManager) return;
+    
+    // Set the scaling multiplier (e.g. +3% per room)
+    this.playerController.setRoomScalingMultiplier(1 + this.currentRoomIndex * 0.03);
+    
+    // Reset bonuses back to base (this also scales the base max HP without fully healing)
+    this.playerController.resetBonuses();
+    
+    // Reapply all active bonuses to restore max HP and damage multipliers
+    const activeBonuses = this.bonusSystemManager.getActiveBonuses();
+    activeBonuses.forEach(bonus => {
+      for (let i = 0; i < bonus.stacks; i++) {
+        this.applyBonus(bonus.id);
+      }
+    });
   }
 
   private loadNextRoom(): void {

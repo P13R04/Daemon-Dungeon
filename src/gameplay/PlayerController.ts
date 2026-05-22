@@ -145,6 +145,8 @@ export class PlayerController {
   private secondaryBurstCost: number = 50;
   private secondaryZoneRadius: number = 4.2;
   private secondarySlowMultiplier: number = 0.2; // 80% slow
+  
+  private roomScalingMultiplier: number = 1;
   private secondaryBurstBaseDamage: number = 18;
   private secondaryBurstDamagePerEnemy: number = 8;
   private secondaryBurstDamagePerProjectile: number = 5;
@@ -596,6 +598,14 @@ export class PlayerController {
 
   private getCritChance(): number {
     return Math.max(0, Math.min(1, this.bonusCritChance));
+  }
+
+  public setRoomScalingMultiplier(multiplier: number): void {
+    this.roomScalingMultiplier = multiplier;
+  }
+
+  public getRoomScalingMultiplier(): number {
+    return this.roomScalingMultiplier;
   }
 
   private getCritMultiplier(): number {
@@ -2731,9 +2741,10 @@ export class PlayerController {
     if (this.classId === 'firewall') this.applyTankConfig();
     if (this.isRogueLikeClass()) this.applyRogueConfig();
     
-    // Reset HP to base
+    // Reset HP to base (scaled) without fully healing
     if (this.health) {
-      this.health.setMaxHP(classConfig.baseStats.hp, true);
+      const scaledMaxHP = Math.floor(classConfig.baseStats.hp * this.roomScalingMultiplier);
+      this.health.setMaxHP(scaledMaxHP, false);
       this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
         health: {
           current: this.health.getCurrentHP(),
@@ -3294,7 +3305,7 @@ export class PlayerController {
   }
 
   private applyDamageModifiers(baseDamage: number): number {
-    return baseDamage * this.damageBoostMultiplier;
+    return baseDamage * this.damageBoostMultiplier * this.roomScalingMultiplier;
   }
 
   private computeOutgoingDamage(baseDamage: number, includeRogueCrit: boolean = false): number {
