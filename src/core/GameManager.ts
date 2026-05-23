@@ -197,6 +197,9 @@ export class GameManager {
   private benchmarkReportOverlay: HTMLDivElement | null = null;
   private tutorialPopupAudioMuffleActive: boolean = false;
   private benchmarkPreparationLastPumpMs: number = 0;
+  private interRoomPreloadPromise: Promise<void> | null = null;
+  private interRoomPreloadTargetIndex: number | null = null;
+  private interRoomPreloadPrimedRoomKey: string | null = null;
   private lastBenchmarkFrameProfile: RuntimeFrameProfileSnapshot | null = null;
   private lastBenchmarkLoopProfile: RuntimeFrameProfileSnapshot | null = null;
   private lastAttackerType: string | null = null;
@@ -1350,11 +1353,11 @@ export class GameManager {
         !this.gameplayInitialized
           ? 1.2
           : this.gameState === 'transition'
-            ? 2.2
+            ? 1.8
             : this.gameState === 'roomclear' || this.gameState === 'bonus'
               ? 0.45
-            : this.gameState === 'playing'
-              ? 0.35
+              : this.gameState === 'playing'
+                ? 0.35
               : 0.8;
 
       if (!this.isPaused) {
@@ -1538,6 +1541,7 @@ export class GameManager {
   }
 
   private updateNonPlayingFrame(deltaTime: number): void {
+    this.pumpInterRoomPreloadWork();
     this.runtimeOrchestrator.updateNonPlayingFrame(this.createRuntimeFrameContext(), deltaTime);
     if (!this.benchmarkRunner) {
       this.lastBenchmarkFrameProfile = null;
@@ -1792,7 +1796,6 @@ export class GameManager {
       },
       onRoomCleared: (roomId) => {
         this.eventCoordinator.emitRoomCleared(roomId);
-        this.primeTransitionRoomPreparation();
       },
       openBonusChoices: () => {
         void this.startDoorToBonusSequence();
@@ -2733,14 +2736,116 @@ export class GameManager {
       this.eventBus.emit(GameEvents.TUTORIAL_SHOP_OPENED);
     }
     this.bonusSystemManager.openBonusChoices();
+
+    // Shift heavy inter-room prep work into bonus phase (UI-open) instead of
+    // doing it right before opening the menu in gameplay state.
+    const nextIndex = (this.currentRoomIndex + 1) % this.roomOrder.length;
+    this.beginInterRoomPreload(nextIndex);
   }
 
   private async startRoomTransitionSequence(nextIndex: number): Promise<void> {
+    if (!this.gameplayInitialized) return;
+    await this.waitForInterRoomPreload(nextIndex);
     if (!this.gameplayInitialized) return;
     const sequenceId = ++this.transitionSequenceId;
     this.roomIntroSequencePendingIndex = nextIndex;
     this.roomTransitionManager.startRoomTransition(nextIndex);
     if (!this.isSequenceCurrent(sequenceId)) return;
+  }
+
+  private beginInterRoomPreload(nextIndex: number): void {
+    if (!this.gameplayInitialized || this.roomOrder.length === 0) {
+      return;
+    }
+    if (this.interRoomPreloadTargetIndex === nextIndex && this.interRoomPreloadPromise) {
+      return;
+    }
+
+    this.interRoomPreloadTargetIndex = nextIndex;
+    this.interRoomPreloadPromise = this.runInterRoomPreload(nextIndex);
+  }
+
+  private async waitForInterRoomPreload(nextIndex: number): Promise<void> {
+    if (!this.gameplayInitialized) {
+      return;
+    }
+    if (this.interRoomPreloadTargetIndex !== nextIndex || !this.interRoomPreloadPromise) {
+      this.beginInterRoomPreload(nextIndex);
+    }
+    const pending = this.interRoomPreloadPromise;
+    if (!pending) {
+      return;
+    }
+    try {
+      await pending;
+    } finally {
+      if (this.interRoomPreloadPromise === pending) {
+        this.interRoomPreloadPromise = null;
+        this.interRoomPreloadTargetIndex = null;
+      }
+    }
+  }
+
+  private async runInterRoomPreload(nextIndex: number): Promise<void> {
+    const roomId = this.roomOrder[nextIndex];
+    if (!roomId) {
+      return;
+    }
+    const roomKey = `${roomId}::${nextIndex}`;
+    // Heavy prep work is intentionally pumped from the main frame loop in
+    // non-playing states to avoid long async tasks outside profiler sections.
+    if (this.interRoomPreloadPrimedRoomKey !== roomKey) {
+      this.interRoomPreloadPrimedRoomKey = null;
+    }
+
+    const start = performance.now();
+    const timeoutMs = 2400;
+    while (this.gameplayInitialized) {
+      const queueStats = this.roomStreamingManager?.getDeferredQueueStats?.();
+      const queuesSettled =
+        (queueStats?.roomLoads ?? 0) === 0 &&
+        (queueStats?.tilePreloads ?? 0) === 0;
+      const enemyPrepSettled = !this.enemySpawner.hasTransitionPreparationPending(roomKey);
+      if (queuesSettled && enemyPrepSettled) {
+        break;
+      }
+      if (performance.now() - start >= timeoutMs) {
+        break;
+      }
+      await this.waitForNextPaint(1);
+    }
+  }
+
+  private pumpInterRoomPreloadWork(): void {
+    if (!this.gameplayInitialized || this.interRoomPreloadTargetIndex == null || this.roomOrder.length === 0) {
+      return;
+    }
+
+    const targetIndex = this.interRoomPreloadTargetIndex;
+    const roomId = this.roomOrder[targetIndex];
+    if (!roomId) {
+      return;
+    }
+
+    const roomKey = `${roomId}::${targetIndex}`;
+    if (this.interRoomPreloadPrimedRoomKey !== roomKey) {
+      this.preloadRoomsAround(targetIndex, this.currentRoomIndex, false, {
+        backwardRange: 1,
+        forwardRange: this.getEffectivePreloadForwardRange(this.roomPreloadAheadCount),
+        allowUnload: false,
+        deferFarTilePreloads: true,
+      });
+
+      if (!this.isTutorialRun && !this.enemySpawner.hasTransitionPreparationForRoom(roomKey)) {
+        this.enemySpawner.beginTransitionRoomPreparation(roomId, roomKey, targetIndex);
+      }
+
+      this.interRoomPreloadPrimedRoomKey = roomKey;
+    }
+
+    if (this.enemySpawner.hasTransitionPreparationPending(roomKey)) {
+      this.enemySpawner.pumpTransitionRoomPreparation(2);
+    }
   }
 
   private prepareRoomForTransition(nextIndex: number): void {

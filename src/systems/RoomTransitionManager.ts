@@ -113,7 +113,7 @@ export class RoomTransitionManager {
         from: cameraTarget.clone(),
         to: target,
         t: 0,
-        duration: 0.6,
+        duration: 0.8,
         nextIndex,
       });
       return;
