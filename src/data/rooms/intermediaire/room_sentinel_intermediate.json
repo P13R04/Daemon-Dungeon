@@ -1,0 +1,55 @@
+{
+  "id": "room_sentinel_intermediate",
+  "name": "sentinel_intermediate",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#.V........V..#",
+    "#.............#",
+    "#...V....V....#",
+    "#.............#",
+    "#.V........V..#",
+    "#.............#",
+    "#...V....V....#",
+    "#.............#",
+    "#.V........V..#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 2,
+      "y": 6,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 11,
+      "y": 6.1,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 2,
+      "y": 10,
+      "enemyType": "sentinel"
+    },
+    {
+      "x": 10.9,
+      "y": 10.1,
+      "enemyType": "sentinel"
+    },
+    {
+      "x": 11,
+      "y": 2,
+      "enemyType": "sentinel"
+    },
+    {
+      "x": 2,
+      "y": 2,
+      "enemyType": "sentinel"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

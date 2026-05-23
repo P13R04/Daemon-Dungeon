@@ -1,0 +1,35 @@
+{
+  "id": "room_toxic_firecraker",
+  "name": "toxic_firecraker",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#...PP...PPP..#",
+    "#..PPP...PPPP.#",
+    "#.PPPP...PPPP.#",
+    "#.PPPP....PPP.#",
+    "#.............#",
+    "#.............#",
+    "#..PP......PP.#",
+    "#.PPPP....PPP.#",
+    "#..PPP...PPPP.#",
+    "#..PPP...PPP..#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 3.9,
+      "y": 3.9,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 10.9,
+      "y": 4.2,
+      "enemyType": "artificer"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}
