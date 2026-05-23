@@ -141,6 +141,7 @@ export const GameEvents = {
   CODEX_ENTRY_UNLOCKED: 'codex:entryUnlocked',
   ACHIEVEMENT_UNLOCKED: 'achievement:unlocked',
   ACHIEVEMENT_PROGRESS: 'achievement:progress',
+  CREDITS_OPEN_REQUESTED: 'game:creditsOpenRequested',
   
   // Score events
   SCORE_CHANGED: 'score:changed',

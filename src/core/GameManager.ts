@@ -48,6 +48,7 @@ import { MainMenuScene } from '../scene/MainMenuScene';
 import { CodexScene } from '../scene/CodexScene';
 import { AchievementsScene } from '../scene/AchievementsScene';
 import { HighscoresScene } from '../scene/HighscoresScene';
+import { CreditsScene } from '../scene/CreditsScene';
 import { BootSequenceScene } from '../scene/BootSequenceScene';
 import { AchievementDefinition, CodexService } from '../services/CodexService';
 import { getMergedAchievementDefinitions } from '../data/achievements/loadAchievementDefinitions';
@@ -106,6 +107,7 @@ export class GameManager {
   private codexScene?: CodexScene;
   private achievementsScene?: AchievementsScene;
   private highscoresScene?: HighscoresScene;
+  private creditsScene?: CreditsScene;
   private codexService: CodexService;
   private audioUnlockHandler: (() => void) | null = null;
   private unsubscribeSettings: (() => void) | null = null;
@@ -508,6 +510,10 @@ export class GameManager {
       this.highscoresScene.dispose();
       this.highscoresScene = undefined;
     }
+    if (this.creditsScene) {
+      this.creditsScene.dispose();
+      this.creditsScene = undefined;
+    }
   }
 
   private async openMainMenuScene(): Promise<void> {
@@ -592,6 +598,23 @@ export class GameManager {
       this.transitionGameState('menu');
     } catch (error) {
       console.error('[GameManager] Failed to open Highscores scene:', error);
+      await this.openMainMenuScene();
+    }
+  }
+
+  private async openCreditsScene(): Promise<void> {
+    this.disposeFrontendScenes();
+    try {
+      this.creditsScene = new CreditsScene(
+        this.engine,
+        () => {
+          void this.openMainMenuScene();
+        }
+      );
+      this.scene = this.creditsScene.getScene();
+      this.transitionGameState('menu');
+    } catch (error) {
+      console.error('[GameManager] Failed to open Credits scene:', error);
       await this.openMainMenuScene();
     }
   }
@@ -892,6 +915,9 @@ export class GameManager {
       },
       onHighscoresOpenRequested: () => {
         void this.openHighscoresScene();
+      },
+      onCreditsOpenRequested: () => {
+        void this.openCreditsScene();
       },
       onRoomNextRequested: () => {
         if (!this.gameplayInitialized) return;

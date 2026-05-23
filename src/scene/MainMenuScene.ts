@@ -700,7 +700,7 @@ export class MainMenuScene {
     this.mainLayoutContainer.addControl(panel);
     this.menuPanel = panel;
 
-    const topOffsets = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5].map((mult) => Math.round(mult * buttonStep));
+    const topOffsets = [-3, -2, -1, 0, 1, 2, 3].map((mult) => Math.round(mult * buttonStep));
 
     const playBtn = this.makeActionButton('menuPlay', 'START RUN', topOffsets[0], () => {
       this.hidePanels();
@@ -736,6 +736,12 @@ export class MainMenuScene {
       this.openSettingsOverlay();
     });
     panel.addControl(settingsBtn);
+
+    const creditsBtn = this.makeActionButton('menuCredits', 'CREDITS', topOffsets[6], () => {
+      this.hidePanels();
+      this.eventBus.emit(GameEvents.CREDITS_OPEN_REQUESTED);
+    });
+    panel.addControl(creditsBtn);
 
     this.menuHint = null;
   }

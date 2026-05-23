@@ -714,6 +714,10 @@ export class PlayerController {
     this.syncVisualPosition();
   }
 
+  getExternalVerticalOffset(): number {
+    return this.externalVerticalOffset;
+  }
+
   public isDead(): boolean {
     return this.isDeadState;
   }
