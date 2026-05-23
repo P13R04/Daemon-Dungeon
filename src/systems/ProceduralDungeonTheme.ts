@@ -455,7 +455,7 @@ export class ProceduralDungeonTheme {
     );
 
     mat.backFaceCulling = false;
-    mat.alpha = 0.96;
+    mat.alpha = 1;
     mat.setFloat('time', 0);
     return mat;
   }
@@ -516,8 +516,7 @@ export class ProceduralDungeonTheme {
         color = mix(color, bright, streams * scan * 0.85);
         color += vec3(0.0, 0.08, 0.02) * flicker * 0.35;
 
-        float alpha = 0.82 + streams * 0.16;
-        gl_FragColor = vec4(color, alpha);
+        gl_FragColor = vec4(color, 1.0);
       }
     `;
 

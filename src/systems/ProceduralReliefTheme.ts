@@ -525,7 +525,7 @@ function ensurePoisonShader(): void {
 
       vec3 color = mix(dark, mid, streams);
       color = mix(color, bright, streams * scan * 0.85);
-      gl_FragColor = vec4(color, 0.9);
+      gl_FragColor = vec4(color, 1.0);
     }
   `;
 }
@@ -698,7 +698,7 @@ export class ProceduralReliefTheme {
       { attributes: ['position', 'normal', 'uv'], uniforms: ['worldViewProjection', 'time'] }
     );
     mat.setFloat('time', 0);
-    mat.alpha = 0.95;
+    mat.alpha = 1;
     mat.backFaceCulling = false;
     cache.poisonMats.add(mat);
     return mat;

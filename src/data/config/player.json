@@ -123,7 +123,7 @@
       "activationThreshold": 18,
       "drainPerSecond": 14,
       "regenPerSecond": 20,
-      "zoneRadius": 4.5
+      "zoneRadius": 3.8
     },
     "dashAttack": {
       "cost": 28,

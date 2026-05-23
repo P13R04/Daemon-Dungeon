@@ -671,7 +671,7 @@ export class ProjectileManager {
           const startPos = previousPosition ?? projectile.data.position;
           const playerPos = player.getPosition();
           const playerHitRadius = projectile.data.projectileType === 'artificer_main' ? 0.95 : 0.8;
-          const hitPoint = this.segmentSphereImpactPoint(startPos, projectile.data.position, playerPos, playerHitRadius);
+          const hitPoint = this.segmentCircleImpactPointXZ(startPos, projectile.data.position, playerPos, playerHitRadius);
 
           if (hitPoint) {
             const reflection = player.reflectProjectileIfShielding?.(
@@ -996,17 +996,22 @@ export class ProjectileManager {
     return lastWalkable;
   }
 
-  private segmentSphereImpactPoint(start: Vector3, end: Vector3, center: Vector3, radius: number): Vector3 | null {
+  private segmentCircleImpactPointXZ(start: Vector3, end: Vector3, center: Vector3, radius: number): Vector3 | null {
     const segment = end.subtract(start);
+    segment.y = 0;
     const segmentLengthSq = segment.lengthSquared();
     if (segmentLengthSq <= 0.000001) {
-      return Vector3.Distance(start, center) <= radius ? start.clone() : null;
+      const dx = start.x - center.x;
+      const dz = start.z - center.z;
+      return Math.sqrt((dx * dx) + (dz * dz)) <= radius ? start.clone() : null;
     }
 
-    const toCenter = center.subtract(start);
+    const toCenter = new Vector3(center.x - start.x, 0, center.z - start.z);
     const t = Math.max(0, Math.min(1, Vector3.Dot(toCenter, segment) / segmentLengthSq));
     const closest = start.add(segment.scale(t));
-    return Vector3.Distance(closest, center) <= radius ? closest : null;
+    const dx = closest.x - center.x;
+    const dz = closest.z - center.z;
+    return Math.sqrt((dx * dx) + (dz * dz)) <= radius ? closest : null;
   }
 
   private reflectDirection(direction: Vector3, normal: Vector3): Vector3 {

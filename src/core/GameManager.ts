@@ -2535,11 +2535,12 @@ export class GameManager {
   private recalculatePlayerStats(): void {
     if (!this.playerController || !this.bonusSystemManager) return;
     
-    // Set the scaling multiplier (e.g. +3% per room)
-    this.playerController.setRoomScalingMultiplier(1 + this.currentRoomIndex * 0.03);
+    // Set scaling multiplier (+3% per room) only in standard runs.
+    const roomScalingMultiplier = this.isTutorialRun ? 1 : (1 + this.currentRoomIndex * 0.03);
+    this.playerController.setRoomScalingMultiplier(roomScalingMultiplier);
     
-    // Reset bonuses back to base (this also scales the base max HP without fully healing)
-    this.playerController.resetBonuses();
+    // Reset bonuses back to base while preserving ultimate progression between rooms.
+    this.playerController.resetBonuses(true);
     
     // Reapply all active bonuses to restore max HP and damage multipliers
     const activeBonuses = this.bonusSystemManager.getActiveBonuses();
