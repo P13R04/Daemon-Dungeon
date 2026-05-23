@@ -19,7 +19,8 @@ export class GameWorldCollisionHazardManager {
 
   resolveEntityCollisions(enemies: EnemyController[], deltaTime: number): void {
     const playerRadius = 0.35;
-    let playerPos = this.playerController.getPosition();
+    const previousPlayerPos = this.playerController.getPosition();
+    let playerPos = previousPlayerPos.clone();
 
     for (const enemy of enemies) {
       const enemyPos = enemy.getPosition();
@@ -33,7 +34,7 @@ export class GameWorldCollisionHazardManager {
           this.playerController.applyKnockback(knockback);
         }
         const push = delta.normalize().scale(minDistance - distance);
-        const isStationary = enemy.isStationary?.() || enemy.getBehavior?.() === 'pong';
+        const isStationary = enemy.isStationary?.() || enemy.getBehavior?.() === 'pong' || enemy.isRooted?.();
 
         if (isStationary) {
           playerPos = playerPos.subtract(push);
@@ -57,8 +58,8 @@ export class GameWorldCollisionHazardManager {
 
         if (distance > 0 && distance < minDistance) {
           const push = delta.normalize().scale(minDistance - distance);
-          const aStationary = a.isStationary?.();
-          const bStationary = b.isStationary?.();
+          const aStationary = a.isStationary?.() || a.isRooted?.();
+          const bStationary = b.isStationary?.() || b.isRooted?.();
 
           if (aStationary && bStationary) {
             // Both stationary, no movement
@@ -87,8 +88,18 @@ export class GameWorldCollisionHazardManager {
       playerPos = this.resolveCircleAabb(playerPos, playerRadius, ob);
     }
 
+    const playerTileType = this.roomManager.getTileTypeAtWorld(playerPos.x, playerPos.z);
+    const playerBlockedByTile =
+      playerTileType === 'wall' ||
+      playerTileType === 'out' ||
+      playerTileType === 'void' ||
+      !this.roomManager.isWalkable(playerPos.x, playerPos.z);
+    if (playerBlockedByTile) {
+      playerPos = previousPlayerPos.clone();
+    }
+
     for (const enemy of enemies) {
-      if (enemy.isStationary?.()) continue;
+      if (enemy.isStationary?.() || enemy.isRooted?.()) continue;
       let enemyPos = enemy.getPosition();
       const radius = enemy.getRadius();
       for (const ob of obstacles) {
@@ -132,6 +143,17 @@ export class GameWorldCollisionHazardManager {
       playerPos.x = Math.max(minX, Math.min(maxX, playerPos.x));
       playerPos.z = Math.max(minZ, Math.min(maxZ, playerPos.z));
       playerPos.y = 1.0;
+
+      for (const enemy of enemies) {
+        if (!enemy.isAlive || enemy.isFalling()) continue;
+        const enemyPos = enemy.getPosition();
+        const radius = enemy.getRadius();
+        const clampedX = Math.max(minX + radius, Math.min(maxX - radius, enemyPos.x));
+        const clampedZ = Math.max(minZ + radius, Math.min(maxZ - radius, enemyPos.z));
+        if (Math.abs(clampedX - enemyPos.x) > 0.0001 || Math.abs(clampedZ - enemyPos.z) > 0.0001) {
+          enemy.setPosition(new Vector3(clampedX, enemyPos.y, clampedZ));
+        }
+      }
     }
 
     this.playerController.setPosition(playerPos);

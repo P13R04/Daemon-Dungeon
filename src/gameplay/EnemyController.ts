@@ -85,10 +85,12 @@ export class EnemyController {
 
   private static flareTextureCache: Texture | null = null;
   public static getFlareTexture(scene: Scene): Texture {
-    if (!this.flareTextureCache || this.flareTextureCache.getScene() !== scene) {
-      if (this.flareTextureCache) {
-        try { this.flareTextureCache.dispose(); } catch (e) {}
-      }
+    const cacheDisposed = this.flareTextureCache
+      && typeof (this.flareTextureCache as any).isDisposed === 'function'
+      && (this.flareTextureCache as any).isDisposed();
+    if (!this.flareTextureCache || cacheDisposed || this.flareTextureCache.getScene() !== scene) {
+      // Keep previous shared flare texture alive to avoid invalidating active particle systems
+      // that may still reference it during staggered cleanup phases.
       this.flareTextureCache = new Texture('https://assets.babylonjs.com/textures/flare.png', scene);
     }
     return this.flareTextureCache;
@@ -150,6 +152,8 @@ export class EnemyController {
     });
     this.modelCache.clear();
     this.modelLoadingPromises.clear();
+    // Do not dispose flare texture here: active missile trails can still reference it.
+    // It will be released with the owning scene lifecycle.
     this.flareTextureCache = null;
   }
 
@@ -171,6 +175,7 @@ export class EnemyController {
   private missileMeshes: Array<Mesh | TransformNode> = [];
   private missileModelLoadPromise: Promise<void> | null = null;
   private missileTrail: any | null = null; // ParticleSystem
+  private missileTrailTexture: Texture | null = null;
   private zombieModelRoot: TransformNode | null = null;
   private zombieAnimGroups: Map<string, AnimationGroup> = new Map();
   private zombieMeshes: Array<Mesh | TransformNode> = [];
@@ -1075,6 +1080,17 @@ export class EnemyController {
     playerPosition: Vector3,
     roomManager?: RoomManager
   ): void {
+    if (this.missileTrail && typeof (this.missileTrail as any).isDisposed === 'function' && (this.missileTrail as any).isDisposed()) {
+      this.missileTrail = null;
+    }
+    if (!this.missileTrail) {
+      this.startMissileTrail();
+    } else if (typeof this.missileTrail.isStarted === 'function' && !this.missileTrail.isStarted()) {
+      this.missileTrail.start();
+      this.missileTrail.emitter = this.mesh;
+      this.missileTrail.emitRate = Math.max(this.missileTrail.emitRate ?? 0, 200);
+    }
+
     const desired = playerPosition.subtract(this.position);
     desired.y = 0;
     if (desired.lengthSquared() <= 0.0001) return;
@@ -1096,6 +1112,16 @@ export class EnemyController {
     this.previousPosition = this.position.clone();
     const knock = this.knockback.update(deltaTime);
     const candidate = this.position.add(this.velocity.scale(deltaTime)).add(knock);
+
+    // Avoid tunneling through player at high missile speed.
+    const playerCollisionRadius = 0.4;
+    const missileCollisionRadius = this.getRadius();
+    if (this.segmentDistanceToPointXZ(this.position, candidate, playerPosition) <= (playerCollisionRadius + missileCollisionRadius)) {
+      this.explodeMissile(playerPosition, candidate, roomManager, true);
+      this.die();
+      return;
+    }
+
     if (roomManager) {
       const radius = this.getRadius();
       const hitsObstacle = this.collidesObstacle(candidate, roomManager, radius);
@@ -1114,17 +1140,41 @@ export class EnemyController {
     }
   }
 
+  private segmentDistanceToPointXZ(start: Vector3, end: Vector3, point: Vector3): number {
+    const sx = start.x;
+    const sz = start.z;
+    const ex = end.x;
+    const ez = end.z;
+    const px = point.x;
+    const pz = point.z;
+    const dx = ex - sx;
+    const dz = ez - sz;
+    const lenSq = (dx * dx) + (dz * dz);
+    if (lenSq <= 1e-6) {
+      const ox = px - sx;
+      const oz = pz - sz;
+      return Math.sqrt((ox * ox) + (oz * oz));
+    }
+    const t = Math.max(0, Math.min(1, (((px - sx) * dx) + ((pz - sz) * dz)) / lenSq));
+    const cx = sx + (dx * t);
+    const cz = sz + (dz * t);
+    const ox = px - cx;
+    const oz = pz - cz;
+    return Math.sqrt((ox * ox) + (oz * oz));
+  }
+
   private explodeMissile(
     playerPosition: Vector3,
     explosionPosition: Vector3 = this.position,
-    roomManager?: RoomManager
+    roomManager?: RoomManager,
+    forcePlayerHit: boolean = false
   ): void {
     const effectiveRadius = roomManager
       ? this.computeMaskedEffectRadius(explosionPosition, this.attackRange, roomManager)
       : this.attackRange;
 
     const distance = Vector3.Distance(playerPosition, explosionPosition);
-    if (distance <= effectiveRadius) {
+    if (forcePlayerHit || distance <= effectiveRadius) {
       this.attackPlayer();
     }
     const expMesh = VisualPlaceholder.createAoEPlaceholder(this.scene, `missile_ex_${Date.now()}`, effectiveRadius);
@@ -2864,6 +2914,7 @@ export class EnemyController {
   }
 
   applyExternalKnockback(force: Vector3): void {
+    if (this.isRooted()) return;
     this.knockback.apply(force);
   }
 
@@ -2909,8 +2960,13 @@ export class EnemyController {
   }
 
   public isStationary(): boolean {
-    const stationary = ['turret', 'bullet_hell', 'mage_missile', 'missile', 'scripted_rail'];
+    const stationary = ['turret', 'bullet_hell', 'mage_missile', 'missile', 'scripted_rail', 'dummy'];
     return stationary.includes(this.behavior) || this.behavior === 'pong';
+  }
+
+  public isRooted(): boolean {
+    const rooted = ['turret', 'bullet_hell', 'mage_missile', 'scripted_rail', 'dummy'];
+    return rooted.includes(this.behavior);
   }
 
   isSlowable(): boolean {
@@ -4665,7 +4721,6 @@ export class EnemyController {
       if (this.isDisposed || !this.mesh || this.mesh.isDisposed() || !this.isAlive || this.missileModelRoot) {
         return;
       }
-      this.disposeMissileModel();
       const result = container.instantiateModelsToScene();
       if (result.skeletons) {
         this.instantiatedSkeletons.push(...result.skeletons);
@@ -4708,28 +4763,49 @@ export class EnemyController {
 
   private startMissileTrail(): void {
     if (this.behavior !== 'missile') return;
-    if (this.missileTrail || this.isDisposed || !this.scene) return;
+    if (this.isDisposed || !this.scene) return;
+    if (this.missileTrail) {
+      const emitter = (this.missileTrail as any).emitter;
+      const emitterDisposed = emitter && typeof emitter.isDisposed === 'function' && emitter.isDisposed();
+      if (emitterDisposed) {
+        try { this.missileTrail.stop(); } catch {}
+        // Never dispose shared texture from one missile trail instance.
+        try { this.missileTrail.dispose(false); } catch {}
+        this.missileTrail = null;
+      }
+    }
+    if (this.missileTrail) {
+      if (typeof this.missileTrail.isStarted === 'function' && !this.missileTrail.isStarted()) {
+        this.missileTrail.start();
+      }
+      this.missileTrail.emitter = this.mesh;
+      return;
+    }
 
     // Fire trail
-    const particles = new ParticleSystem(`missile_trail_${this.id}`, 2000, this.scene);
-    particles.particleTexture = EnemyController.getFlareTexture(this.scene);
+    const particles = new ParticleSystem(`missile_trail_${this.id}_${Date.now()}`, 2000, this.scene);
+    if (this.missileTrailTexture) {
+      try { this.missileTrailTexture.dispose(); } catch {}
+      this.missileTrailTexture = null;
+    }
+    this.missileTrailTexture = new Texture('https://assets.babylonjs.com/textures/flare.png', this.scene);
+    particles.particleTexture = this.missileTrailTexture;
     
     particles.layerMask = SCENE_LAYER;
     
-    // Find the actual moving visual part of the model
-    const targetEmitter: any = this.mesh;
-    
-    particles.emitter = targetEmitter;
+    particles.emitter = this.mesh;
     
     // Bulletproof method: manually set the start position to the absolute position of the correct mesh
     particles.startPositionFunction = (worldMatrix, positionToUpdate) => {
-      if (targetEmitter && targetEmitter.absolutePosition) {
-        positionToUpdate.copyFrom(targetEmitter.absolutePosition);
+      const emitter: any = this.mesh;
+      if (emitter && emitter.absolutePosition) {
+        positionToUpdate.copyFrom(emitter.absolutePosition);
         
         // Offset the particles backwards so they start behind the missile
         if (this.missileDirection) {
             positionToUpdate.subtractInPlace(this.missileDirection.scale(0.3));
         }
+        positionToUpdate.y += 0.25;
         
         positionToUpdate.x += (Math.random() - 0.5) * 0.1;
         positionToUpdate.y += (Math.random() - 0.5) * 0.1;
@@ -4755,7 +4831,10 @@ export class EnemyController {
     particles.minEmitPower = 0.1;
     particles.maxEmitPower = 0.3;
     particles.updateSpeed = 0.012;
+    particles.renderingGroupId = 0;
     
+    particles.targetStopDuration = 0;
+    particles.disposeOnStop = false;
     particles.start();
     this.missileTrail = particles;
   }
@@ -4764,11 +4843,12 @@ export class EnemyController {
     if (this.missileTrail) {
       const ps = this.missileTrail;
       ps.stop();
-      // Allow particles to live out their life before disposing
-      setTimeout(() => {
-        if (ps) ps.dispose();
-      }, 3000);
+      ps.dispose(false);
       this.missileTrail = null;
+    }
+    if (this.missileTrailTexture) {
+      try { this.missileTrailTexture.dispose(); } catch {}
+      this.missileTrailTexture = null;
     }
   }
 }

@@ -39,6 +39,10 @@ export class GameCombatActionManager {
     private readonly projectileManager: ProjectileManager,
   ) {}
 
+  private canDisplaceEnemy(enemy: EnemyController): boolean {
+    return !(enemy as unknown as { isRooted?: () => boolean }).isRooted?.();
+  }
+
   dispose(): void {
     this.disposeTankUltimateZoneVisual();
     this.disposeRogueUltimateVisual();
@@ -89,7 +93,9 @@ export class GameCombatActionManager {
       const force = outward.lengthSquared() > 0.0001
         ? outward.normalize().scale(burst.knockback)
         : new Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize().scale(burst.knockback);
-      enemy.applyExternalKnockback(force);
+      if (this.canDisplaceEnemy(enemy)) {
+        enemy.applyExternalKnockback(force);
+      }
     }
 
     const blast = VisualPlaceholder.createAoEPlaceholder(this.scene, `player_secondary_burst_${Date.now()}`, burst.radius);
@@ -120,7 +126,9 @@ export class GameCombatActionManager {
       const force = outward.lengthSquared() > 0.0001
         ? outward.normalize().scale(burst.knockback)
         : new Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize().scale(burst.knockback);
-      enemy.applyExternalKnockback(force);
+      if (this.canDisplaceEnemy(enemy)) {
+        enemy.applyExternalKnockback(force);
+      }
     }
 
     const blast = VisualPlaceholder.createAoEPlaceholder(this.scene, `player_reactive_burst_${Date.now()}`, burst.radius);
@@ -157,7 +165,9 @@ export class GameCombatActionManager {
 
       enemy.takeDamage(sweep.damage);
       this.playerController.onPlayerDealtDamage(sweep.damage);
-      enemy.applyExternalKnockback(toEnemy.normalize().scale(sweep.knockback));
+      if (this.canDisplaceEnemy(enemy)) {
+        enemy.applyExternalKnockback(toEnemy.normalize().scale(sweep.knockback));
+      }
     }
   }
 
@@ -227,13 +237,17 @@ export class GameCombatActionManager {
       toLane.y = 0;
 
       const carryBlend = Math.min(1, bash.isFinisher ? 0.7 : 0.82);
-      const carriedPos = enemyPos.add(toLane.scale(carryBlend));
-      carriedPos.y = enemyPos.y;
-      enemy.setPosition(carriedPos);
+      if (this.canDisplaceEnemy(enemy)) {
+        const carriedPos = enemyPos.add(toLane.scale(carryBlend));
+        carriedPos.y = enemyPos.y;
+        enemy.setPosition(carriedPos);
+      }
 
       const pullForce = toLane.lengthSquared() > 0.0001 ? toLane.normalize().scale(bash.pullStrength) : Vector3.Zero();
       const shoveForce = forward.scale(bash.forwardPush + (bash.isFinisher ? bash.knockback : bash.knockback * 0.2));
-      enemy.applyExternalKnockback(pullForce.add(shoveForce));
+      if (this.canDisplaceEnemy(enemy)) {
+        enemy.applyExternalKnockback(pullForce.add(shoveForce));
+      }
     }
   }
 
@@ -285,7 +299,9 @@ export class GameCombatActionManager {
     this.applyRogueChainFromPrimaryHit(bestEnemy, strike.damage, enemies);
     const forceDir = bestEnemy.getPosition().subtract(strike.origin);
     if (forceDir.lengthSquared() > 0.0001) {
-      bestEnemy.applyExternalKnockback(forceDir.normalize().scale(strike.knockback));
+      if (this.canDisplaceEnemy(bestEnemy)) {
+        bestEnemy.applyExternalKnockback(forceDir.normalize().scale(strike.knockback));
+      }
     }
   }
 
@@ -323,7 +339,9 @@ export class GameCombatActionManager {
       this.applyRogueChainFromPrimaryHit(enemy, dash.damage, enemies);
       const forceDir = enemyPos.subtract(closestPoint);
       if (forceDir.lengthSquared() > 0.0001) {
-        enemy.applyExternalKnockback(forceDir.normalize().scale(dash.knockback));
+        if (this.canDisplaceEnemy(enemy)) {
+          enemy.applyExternalKnockback(forceDir.normalize().scale(dash.knockback));
+        }
       }
     }
   }

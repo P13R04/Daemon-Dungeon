@@ -1014,7 +1014,7 @@ export class PlayerController {
   }
 
   private updateAimDirection(): void {
-    if (this.isTankShieldActive()) {
+    if (this.isTankShieldActive() && (this.inputManager.isMobileMode() || (this.keyboardOnlyMode && this.autoAimTowardMovement))) {
       let nearestThreatDir: Vector3 | null = null;
       let nearestDistanceSq = Number.MAX_VALUE;
 
@@ -1423,12 +1423,19 @@ export class PlayerController {
 
       // Left Click: Primary Attack (Sweep) or Secondary Attack (Bash) under stance
       if (this.tankShieldActive && slot1Pressed && this.tankShieldBashCooldownTimer <= 0 && this.tankShieldBashRemaining <= 0 && this.tankStanceResource >= this.tankShieldBashCost) {
-        const movementInput = this.inputManager.getMovementInput();
         let bashDir = this.attackDirection.clone();
-        if (movementInput.lengthSquared() > 0.0001) {
-          bashDir = new Vector3(movementInput.x, 0, movementInput.z).normalize();
-        } else if (this.lastMovementDirection.lengthSquared() > 0.0001) {
+        if (bashDir.lengthSquared() <= 0.0001 && this.lastAttackDirection.lengthSquared() > 0.0001) {
+          bashDir = this.lastAttackDirection.clone();
+        } else if (bashDir.lengthSquared() <= 0.0001 && this.lastMovementDirection.lengthSquared() > 0.0001) {
           bashDir = this.lastMovementDirection.normalize();
+        }
+        if (bashDir.lengthSquared() <= 0.0001) {
+          const movementInput = this.inputManager.getMovementInput();
+          if (movementInput.lengthSquared() > 0.0001) {
+            bashDir = new Vector3(movementInput.x, 0, movementInput.z).normalize();
+          } else {
+            bashDir = new Vector3(1, 0, 0);
+          }
         }
         this.tankShieldBashDirection = bashDir;
         this.lockAttackFacing(bashDir, Math.max(0.35, this.tankShieldBashDuration + 0.2));
@@ -1508,12 +1515,15 @@ export class PlayerController {
           ? Vector3.Distance(this.position, this.attackTargetPoint)
           : maxDashDistance;
         const actualDistance = Math.max(0.001, Math.min(maxDashDistance, targetDistance));
-        const movementInput = this.inputManager.getMovementInput();
         let dashDir = this.attackDirection.clone();
-        if (movementInput.lengthSquared() > 0.0001) {
-          dashDir = new Vector3(movementInput.x, 0, movementInput.z).normalize();
-        } else if (this.lastMovementDirection.lengthSquared() > 0.0001) {
+        if (dashDir.lengthSquared() <= 0.0001 && this.lastMovementDirection.lengthSquared() > 0.0001) {
           dashDir = this.lastMovementDirection.normalize();
+        }
+        if (dashDir.lengthSquared() <= 0.0001) {
+          const movementInput = this.inputManager.getMovementInput();
+          if (movementInput.lengthSquared() > 0.0001) {
+            dashDir = new Vector3(movementInput.x, 0, movementInput.z).normalize();
+          }
         }
         this.rogueDashDirection = dashDir;
         this.lockAttackFacing(dashDir, Math.max(0.4, this.rogueDashRemaining + 0.15));
@@ -2687,9 +2697,9 @@ export class PlayerController {
   }
 
   applyRogueStealthZoneBonus(): void {
-    this.rogueStealthZoneRadius = Math.min(
+    this.rogueStealthZoneRadius = Math.max(
       BONUS_TUNING.rogue.stealthZoneRadiusCap,
-      this.rogueStealthZoneRadius + BONUS_TUNING.rogue.stealthZoneRadiusPerStack
+      this.rogueStealthZoneRadius - BONUS_TUNING.rogue.stealthZoneRadiusPerStack
     );
     this.rogueStealthDrainPerSecond = Math.max(
       BONUS_TUNING.rogue.stealthDrainMin,
@@ -2717,7 +2727,7 @@ export class PlayerController {
     this.rogueOpeningStrikeWindow += BONUS_TUNING.rogue.backdoorWindowBonusPerStack;
   }
 
-  public resetBonuses(): void {
+  public resetBonuses(keepUltimateProgress: boolean = false): void {
     const classConfig = this.getCurrentClassConfig();
     if (!classConfig) return;
 
@@ -2761,7 +2771,7 @@ export class PlayerController {
     // Reset HP to base (scaled) without fully healing
     if (this.health) {
       const scaledMaxHP = Math.floor(classConfig.baseStats.hp * this.roomScalingMultiplier);
-      this.health.setMaxHP(scaledMaxHP, false);
+      this.health.setMaxHP(scaledMaxHP, false, keepUltimateProgress);
       this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
         health: {
           current: this.health.getCurrentHP(),
@@ -2770,11 +2780,13 @@ export class PlayerController {
       });
     }
 
-    // Reset ultimate
-    this.ultimateActiveDuration = 0;
-    this.ultimateActiveDurationMax = 0;
-    this.ultCharge = 0;
-    this.ultCooldown = 0;
+    // Reset ultimate only on full run resets, not between rooms.
+    if (!keepUltimateProgress) {
+      this.ultimateActiveDuration = 0;
+      this.ultimateActiveDurationMax = 0;
+      this.ultCharge = 0;
+      this.ultCooldown = 0;
+    }
     this.secondaryResource = this.secondaryResourceMax;
     this.tankStanceResource = this.tankStanceResourceMax;
     this.rogueStealthResource = this.rogueStealthResourceMax;

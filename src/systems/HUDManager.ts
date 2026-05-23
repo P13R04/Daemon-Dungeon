@@ -58,7 +58,14 @@ export class HUDManager {
   private damageNumbers: DamageNumber[] = [];
   private damageNumberCooldowns: Map<string, { lastTime: number; pending: number; lastPosition: Vector3 }> = new Map();
   private damageNumberCooldown: number = 0.5;
-  private enemyHealthBars: Map<string, { container: Rectangle; bar: Rectangle; label: TextBlock }> = new Map();
+  private enemyHealthBars: Map<string, {
+    container: Rectangle;
+    bar: Rectangle;
+    label: TextBlock;
+    mesh: AbstractMesh | null;
+    anchor: TransformNode | null;
+    anchorObserver: any;
+  }> = new Map();
   private pendingEnemyHealthBars: Array<EnemyEventPayload & { enemyId: string }> = [];
   private playerHealthDisplay: TextBlock | null = null;
   private playerUltDisplay: TextBlock | null = null;
@@ -1799,6 +1806,12 @@ export class HUDManager {
   private createEnemyHealthBar(enemyId: string, enemyName?: string, mesh?: AbstractMesh, healthBarOffset?: number): void {
     const existing = this.enemyHealthBars.get(enemyId);
     if (existing) {
+      if (existing.anchorObserver && existing.mesh && !existing.mesh.isDisposed()) {
+        existing.mesh.getScene().onBeforeRenderObservable.remove(existing.anchorObserver);
+      }
+      if (existing.anchor && !existing.anchor.isDisposed()) {
+        existing.anchor.dispose();
+      }
       existing.container.dispose();
       existing.label.dispose();
       this.enemyHealthBars.delete(enemyId);
@@ -1828,12 +1841,14 @@ export class HUDManager {
     this.enemyGui?.addControl(container);
     this.enemyGui?.addControl(label);
 
+    let anchor: TransformNode | null = null;
+    let anchorObserver: any = null;
     if (mesh) {
-      const anchor = new TransformNode(`health_anchor_${enemyId}`, mesh.getScene());
-      const observer = mesh.getScene().onBeforeRenderObservable.add(() => {
+      anchor = new TransformNode(`health_anchor_${enemyId}`, mesh.getScene());
+      anchorObserver = mesh.getScene().onBeforeRenderObservable.add(() => {
         if (mesh.isDisposed()) {
           anchor.dispose();
-          mesh.getScene().onBeforeRenderObservable.remove(observer);
+          mesh.getScene().onBeforeRenderObservable.remove(anchorObserver);
         } else {
           anchor.position.copyFrom(mesh.position);
         }
@@ -1844,18 +1859,32 @@ export class HUDManager {
       label.linkOffsetY = (healthBarOffset ?? -60) - 20;
     }
 
-    this.enemyHealthBars.set(enemyId, { container, bar, label });
+    this.enemyHealthBars.set(enemyId, { container, bar, label, mesh: mesh ?? null, anchor, anchorObserver });
     this.updateEnemyHealthBarsVisibility();
   }
 
   private removeEnemyHealthBar(enemyId: string): void {
     const bar = this.enemyHealthBars.get(enemyId);
     if (bar) {
+      if (bar.anchorObserver && bar.mesh && !bar.mesh.isDisposed()) {
+        bar.mesh.getScene().onBeforeRenderObservable.remove(bar.anchorObserver);
+      }
+      if (bar.anchor && !bar.anchor.isDisposed()) {
+        bar.anchor.dispose();
+      }
       bar.container.dispose();
       bar.label.dispose();
       this.enemyHealthBars.delete(enemyId);
     }
     this.pendingEnemyHealthBars = this.pendingEnemyHealthBars.filter((entry) => entry.enemyId !== enemyId);
+  }
+
+  private pruneOrphanEnemyHealthBars(): void {
+    for (const [enemyId, bar] of this.enemyHealthBars.entries()) {
+      if (bar.mesh && bar.mesh.isDisposed()) {
+        this.removeEnemyHealthBar(enemyId);
+      }
+    }
   }
 
   private addDamageNumber(position: Vector3, damage: number, sourceId: string = 'unknown'): void {
@@ -1937,6 +1966,7 @@ export class HUDManager {
     this.updateBonusInsufficientFlash(deltaTime);
     this.updateRunBonusLayout();
     this.updateBonusCardJuice(deltaTime);
+    this.pruneOrphanEnemyHealthBars();
 
     // Process scheduled logs in the queue
     if (this.scheduledLogs.length > 0) {

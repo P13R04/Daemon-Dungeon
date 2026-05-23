@@ -37,10 +37,15 @@ export class Health implements IComponent {
     this.currentHP = Math.min(this.maxHP, this.currentHP + amount);
   }
 
-  setMaxHP(newMax: number, healToFull: boolean = false): void {
+  setMaxHP(newMax: number, healToFull: boolean = false, preserveRatio: boolean = false): void {
+    const previousMax = this.maxHP;
+    const previousCurrent = this.currentHP;
     this.maxHP = Math.max(1, newMax);
     if (healToFull) {
       this.currentHP = this.maxHP;
+    } else if (preserveRatio && previousMax > 0) {
+      const ratio = Math.max(0, Math.min(1, previousCurrent / previousMax));
+      this.currentHP = Math.max(1, Math.round(this.maxHP * ratio));
     } else {
       this.currentHP = Math.min(this.currentHP, this.maxHP);
     }
