@@ -267,6 +267,8 @@ export class GameRuntimeOrchestrator {
     hasPendingSpawns: boolean,
   ): void {
     let roomCleared = context.roomCleared;
+    const isFinalTutorialRoom =
+      context.isTutorialRun && context.currentRoomIndex >= context.roomOrder.length - 1;
 
     if (!roomCleared && enemies.length === 0 && !hasPendingSpawns) {
       if (!context.isTutorialRun) {
@@ -290,7 +292,7 @@ export class GameRuntimeOrchestrator {
       }
     }
 
-    if (!roomCleared || context.gameState !== 'playing') return;
+    if (!roomCleared || context.gameState !== 'playing' || isFinalTutorialRoom) return;
 
     const doorPos = context.roomManager.getDoorPosition();
     if (!doorPos) return;

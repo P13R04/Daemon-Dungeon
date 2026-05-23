@@ -52,6 +52,7 @@ export class SettingsMenuBuilder {
   private devModeCheckbox: Checkbox | null = null;
   private roomPreloadAheadSlider: Slider | null = null;
   private roomPreloadAheadValueText: TextBlock | null = null;
+  private resetProgressConfirmOverlay: Rectangle | null = null;
 
   public awaitingRebind: KeybindingAction | null = null;
 
@@ -160,6 +161,7 @@ export class SettingsMenuBuilder {
     this.addGameplaySection(content);
     this.addAudioSection(content);
     this.addAccessibilitySection(content);
+    this.createResetProgressConfirmOverlay(overlay);
     
     this.refreshSettingsUi();
     
@@ -342,23 +344,111 @@ export class SettingsMenuBuilder {
       ));
     }
 
-    // RESET CODEX PROGRESSION — at the very bottom of settings
-    const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET CODEX PROGRESSION');
+    // RESET PROGRESSION — at the very bottom of settings
+    const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET PROGRESSION');
     resetProgressBtn.width = '360px';
     resetProgressBtn.height = '38px';
     resetProgressBtn.color = '#FFE5E5';
     resetProgressBtn.cornerRadius = 4;
     resetProgressBtn.background = 'rgba(72,20,20,0.95)';
     resetProgressBtn.thickness = 1;
-    resetProgressBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    resetProgressBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    resetProgressBtn.top = '8px';
     resetProgressBtn.isPointerBlocker = true;
     resetProgressBtn.isHitTestVisible = true;
     if (resetProgressBtn.textBlock) resetProgressBtn.textBlock.fontSize = 16;
     this.bindButtonAction(resetProgressBtn, () => {
       this.awaitingRebind = null;
-      this.onResetProgress();
+      this.showResetProgressConfirmOverlay();
     });
     parent.addControl(resetProgressBtn);
+  }
+
+  private createResetProgressConfirmOverlay(parent: Rectangle): void {
+    const overlay = new Rectangle('settingsResetProgressConfirmOverlay');
+    overlay.width = 1;
+    overlay.height = 1;
+    overlay.thickness = 0;
+    overlay.background = 'rgba(0, 0, 0, 0.75)';
+    overlay.isPointerBlocker = true;
+    overlay.isVisible = false;
+    overlay.zIndex = 2600;
+    parent.addControl(overlay);
+    this.resetProgressConfirmOverlay = overlay;
+
+    const panel = new Rectangle('settingsResetProgressConfirmPanel');
+    panel.width = '680px';
+    panel.height = '300px';
+    panel.cornerRadius = 6;
+    panel.thickness = 1;
+    panel.color = '#8A3434';
+    panel.background = 'rgba(22, 10, 10, 0.96)';
+    panel.isPointerBlocker = true;
+    overlay.addControl(panel);
+
+    const title = new TextBlock('settingsResetProgressConfirmTitle');
+    title.text = 'RESET PROGRESSION';
+    title.color = '#FFE5E5';
+    title.fontSize = 32;
+    title.fontFamily = 'Consolas';
+    title.top = '-104px';
+    panel.addControl(title);
+
+    const body = new TextBlock('settingsResetProgressConfirmBody');
+    body.text = 'This will reset codex, achievements, settings, and tutorial completion.\nThe game will restart as a first launch.';
+    body.color = '#FFD0D0';
+    body.fontSize = 18;
+    body.fontFamily = 'Consolas';
+    body.width = '600px';
+    body.height = '110px';
+    body.textWrapping = true;
+    body.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    body.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    body.top = '-12px';
+    panel.addControl(body);
+
+    const buttons = new StackPanel('settingsResetProgressConfirmButtons');
+    buttons.isVertical = false;
+    buttons.spacing = 16;
+    buttons.top = '104px';
+    panel.addControl(buttons);
+
+    const cancel = Button.CreateSimpleButton('settingsResetProgressConfirmCancel', 'CANCEL');
+    cancel.width = '220px';
+    cancel.height = '48px';
+    cancel.color = '#DDFCF3';
+    cancel.background = 'rgba(22,48,44,0.95)';
+    cancel.thickness = 1;
+    cancel.cornerRadius = 4;
+    if (cancel.textBlock) cancel.textBlock.fontSize = 18;
+    this.bindButtonAction(cancel, () => this.hideResetProgressConfirmOverlay());
+    buttons.addControl(cancel);
+
+    const confirm = Button.CreateSimpleButton('settingsResetProgressConfirmApply', 'RESET & RESTART');
+    confirm.width = '220px';
+    confirm.height = '48px';
+    confirm.color = '#FFE5E5';
+    confirm.background = 'rgba(110,28,28,0.98)';
+    confirm.thickness = 1;
+    confirm.cornerRadius = 4;
+    if (confirm.textBlock) confirm.textBlock.fontSize = 18;
+    this.bindButtonAction(confirm, () => {
+      this.hideResetProgressConfirmOverlay();
+      this.onResetProgress();
+    });
+    buttons.addControl(confirm);
+  }
+
+  private showResetProgressConfirmOverlay(): void {
+    if (this.resetProgressConfirmOverlay) {
+      this.resetProgressConfirmOverlay.isVisible = true;
+    }
+  }
+
+  private hideResetProgressConfirmOverlay(): void {
+    if (this.resetProgressConfirmOverlay) {
+      this.resetProgressConfirmOverlay.isVisible = false;
+    }
   }
 
   private makeSectionHeader(text: string): Rectangle {

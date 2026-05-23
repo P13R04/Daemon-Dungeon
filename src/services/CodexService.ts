@@ -267,7 +267,13 @@ export class CodexService {
       this.achievementState.set(definition.id, { progress: 0, unlocked: false });
     }
 
-    this.saveLocalSnapshot();
+    // Persist reset state immediately so a following page reload cannot restore stale progression.
+    if (this.snapshotSaveTimer !== null) {
+      window.clearTimeout(this.snapshotSaveTimer);
+      this.snapshotSaveTimer = null;
+    }
+    this.snapshotDirty = false;
+    this.flushLocalSnapshotSave();
   }
 
   getAchievementsProgress(): AchievementProgress[] {
@@ -534,6 +540,11 @@ export class CodexService {
     }
 
     this.saveLocalSnapshot();
+  }
+
+  hasCompletedTutorialForClass(classId: 'mage' | 'firewall' | 'rogue' | 'cat'): boolean {
+    const classKey = classId === 'cat' ? 'rogue' : classId;
+    return this.stats.tutorialCompletedByClass.includes(classKey);
   }
 
   private bumpAchievement(id: string, delta: number): void {

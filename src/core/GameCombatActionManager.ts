@@ -40,6 +40,8 @@ export class GameCombatActionManager {
   ) {}
 
   private canDisplaceEnemy(enemy: EnemyController): boolean {
+    const tutorialBypass = (enemy as unknown as { canBeDisplacedByTutorialBash?: () => boolean }).canBeDisplacedByTutorialBash?.() ?? false;
+    if (tutorialBypass) return true;
     return !(enemy as unknown as { isRooted?: () => boolean }).isRooted?.();
   }
 
@@ -215,14 +217,29 @@ export class GameCombatActionManager {
       const lateralDist = Math.abs(Vector3.Dot(rel, lateralAxis));
       const insideFrontBar = forwardDist >= -rearReach && forwardDist <= barDepth && lateralDist <= barHalfWidth;
       const nearGatherCenter = Vector3.Distance(enemyPos, gatherCenter) <= bash.radius * 1.25;
-      if (!insideFrontBar && !nearGatherCenter) continue;
+      const enemyTypeId = enemy.getTypeId?.() ?? '';
+      const isTutorialBashDummy =
+        enemyTypeId === 'tutorial_dummy_mobile' ||
+        enemyTypeId === 'tutorial_dummy_mobile_bash';
+      const tutorialFallbackHit =
+        bash.isFinisher &&
+        isTutorialBashDummy &&
+        Vector3.Distance(enemyPos, bash.origin) <= Math.max(3.2, bash.groupDistance + bash.radius * 1.6);
+      if (!insideFrontBar && !nearGatherCenter && !tutorialFallbackHit) continue;
 
       if (bash.damage > 0) {
         enemy.takeDamage(bash.damage);
         this.playerController.onPlayerDealtDamage(bash.damage);
       }
-      if (bash.isFinisher && bash.stunDuration > 0) {
+      const shouldForceTutorialStun = isTutorialBashDummy;
+      if ((bash.isFinisher || shouldForceTutorialStun) && bash.stunDuration > 0) {
         enemy.applyStun?.(stunDuration);
+      }
+      // Tutorial fallback: keep the mobile dummy pinned forever after tank shield-bash impact.
+      // This makes it reliably displaceable once, then fixed in place until death.
+      if (bash.isFinisher && enemyTypeId === 'tutorial_dummy_mobile') {
+        enemy.enableTutorialBashKnockbackMode?.();
+        enemy.applyStun?.(Number.POSITIVE_INFINITY);
       }
 
       const relativeToGather = enemyPos.subtract(gatherCenter);
@@ -244,7 +261,8 @@ export class GameCombatActionManager {
       }
 
       const pullForce = toLane.lengthSquared() > 0.0001 ? toLane.normalize().scale(bash.pullStrength) : Vector3.Zero();
-      const shoveForce = forward.scale(bash.forwardPush + (bash.isFinisher ? bash.knockback : bash.knockback * 0.2));
+      const tutorialExtraKnockback = isTutorialBashDummy ? 1.45 : 1;
+      const shoveForce = forward.scale((bash.forwardPush + (bash.isFinisher ? bash.knockback : bash.knockback * 0.2)) * tutorialExtraKnockback);
       if (this.canDisplaceEnemy(enemy)) {
         enemy.applyExternalKnockback(pullForce.add(shoveForce));
       }

@@ -65,6 +65,7 @@ export class PlayerController {
   private classId: PlayerClassId;
   private autoPlayMode: boolean = false;
   private position: Vector3 = Vector3.Zero();
+  private previousFramePosition: Vector3 = Vector3.Zero();
   private velocity: Vector3 = Vector3.Zero();
   private externalVerticalOffset: number = 0;
   private renderVisibility: number = 1;
@@ -702,6 +703,7 @@ export class PlayerController {
   }
 
   setPosition(position: Vector3): void {
+    this.previousFramePosition = this.position.clone();
     this.position = position.clone();
     this.position.y = 1.0; // Keep player at floor level
     this.syncVisualPosition();
@@ -769,6 +771,7 @@ export class PlayerController {
   update(deltaTime: number): void {
     if (!this.mesh) return;
     const previousPosition = this.position.clone();
+    this.previousFramePosition = previousPosition.clone();
     const rogueDashWasActiveAtFrameStart = this.isRogueLikeClass() && this.rogueDashRemaining > 0;
 
     if (this.damageBoostTimer > 0) {
@@ -2494,6 +2497,10 @@ export class PlayerController {
 
   getPosition(): Vector3 {
     return this.position.clone();
+  }
+
+  getPreviousFramePosition(): Vector3 {
+    return this.previousFramePosition.clone();
   }
 
   getAttackDirection(): Vector3 {

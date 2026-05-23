@@ -127,6 +127,8 @@ export class GameManager {
   private gameplayInitialized: boolean = false;
   private gameplayStartInProgress: boolean = false;
   private isTutorialRun: boolean = false;
+  private tutorialReplayRun: boolean = false;
+  private pendingPostTutorialClass: 'mage' | 'firewall' | 'rogue' | 'cat' | null = null;
   private eventListenersBound: boolean = false;
   private eventBusUnsubscribers: Array<() => void> = [];
   private resizeObserver: ResizeObserver | null = null;
@@ -531,6 +533,12 @@ export class GameManager {
     this.scene = this.mainMenuScene.getScene();
   }
 
+  private shouldLaunchShortClassTutorial(classId: 'mage' | 'firewall' | 'rogue' | 'cat'): boolean {
+    const classKey = classId === 'cat' ? 'rogue' : classId;
+    if (classKey === 'mage') return false;
+    return !this.codexService.hasCompletedTutorialForClass(classId);
+  }
+
   private async openCodexScene(): Promise<void> {
     this.disposeFrontendScenes();
     this.codexService.recordCodexOpened();
@@ -682,6 +690,7 @@ export class GameManager {
     this.ultimateManager = new UltimateManager(this.scene);
     this.hudManager = new HUDManager(this.scene);
     this.hudManager.setInputManager(this.inputManager);
+    this.hudManager.setPauseTutorialMode(this.isTutorialRun, this.selectedClassId);
     this.musicManager = new MusicManager(this.scene);
     void this.musicManager.loadTrack('bgm', 'music/bgm.mp3').then(() => {
       if (this.gameState === 'playing' || this.gameState === 'bonus' || this.gameState === 'roomclear') {
@@ -713,11 +722,19 @@ export class GameManager {
 
     const rooms = this.configLoader.getRoomsConfig();
     if (this.isTutorialRun) {
-      this.roomOrder = [
-        'room_tutorial_01',
-        'room_tutorial_02',
-        'room_tutorial_03'
-      ];
+      if (this.selectedClassId === 'mage') {
+        if (this.tutorialReplayRun) {
+          this.roomOrder = ['room_tutorial_02'];
+        } else {
+          this.roomOrder = [
+            'room_tutorial_01',
+            'room_tutorial_02',
+            'room_tutorial_03'
+          ];
+        }
+      } else {
+        this.roomOrder = ['room_tutorial_02'];
+      }
     } else {
       this.roomOrder = this.generateRunRoomOrder(45); // 5 floors of 9 rooms (8 normal + 1 boss)
     }
@@ -848,7 +865,14 @@ export class GameManager {
         if (classId) {
           this.selectedClassId = classId;
         }
+        if (data?.mode !== 'tutorial' && this.shouldLaunchShortClassTutorial(this.selectedClassId)) {
+          this.pendingPostTutorialClass = this.selectedClassId;
+          this.eventCoordinator.emitTutorialStartRequested(this.selectedClassId);
+          return;
+        }
         this.isTutorialRun = data?.mode === 'tutorial';
+        this.tutorialReplayRun = this.isTutorialRun && !!this.codexService.hasCompletedTutorialForClass(this.selectedClassId);
+        this.hudManager?.setPauseTutorialMode(this.isTutorialRun, this.selectedClassId);
         this.codexService.startRunTracking(this.selectedClassId);
         void this.startNewGame();
       },
@@ -856,6 +880,8 @@ export class GameManager {
         this.tryUnlockAudioNow();
         this.codexService.startRunTracking(this.selectedClassId);
         this.isTutorialRun = false;
+        this.tutorialReplayRun = false;
+        this.hudManager?.setPauseTutorialMode(false);
         void this.startNewGame();
       },
       onCodexOpenRequested: () => {
@@ -996,13 +1022,14 @@ export class GameManager {
           this.selectedClassId = classId;
         }
         this.isTutorialRun = true;
+        this.tutorialReplayRun = !!this.codexService.hasCompletedTutorialForClass(this.selectedClassId);
         
         // Re-create tutorial manager to ensure fresh state and listeners
         if (this.tutorialManager) {
           this.tutorialManager.dispose();
         }
         this.tutorialManager = new GameTutorialManager();
-        this.tutorialManager.startTutorial(this.selectedClassId as any || 'mage');
+        this.tutorialManager.startTutorial(this.selectedClassId as any || 'mage', { replay: this.tutorialReplayRun });
         this.tutorialManager.initialize({
           getRoomCenter: () => this.roomManager.getCurrentRoomCenter(),
           getRoomIndex: () => this.currentRoomIndex,
@@ -1017,6 +1044,7 @@ export class GameManager {
           playerController: this.playerController
         });
         this.daemonVoicelineManager?.setTutorialMode(true);
+        this.hudManager?.setPauseTutorialMode(true, this.selectedClassId);
 
         this.codexService.startRunTracking(this.selectedClassId);
         void this.startNewGame();
@@ -1030,10 +1058,60 @@ export class GameManager {
       },
       onTutorialEndRequested: () => {
         if (!this.gameplayInitialized || !this.isTutorialRun) return;
+        this.tutorialManager?.stopTutorial();
+        const classToFinalize = this.selectedClassId;
+        const hadPendingRunStart = this.pendingPostTutorialClass && this.pendingPostTutorialClass === this.selectedClassId;
         this.codexService.recordTutorialCompleted(this.selectedClassId);
+        if (this.selectedClassId === 'mage') {
+          GameSettingsStore.updateAccessibility({ tutorialCompleted: true });
+        }
         this.codexService.endRunTracking();
         this.isTutorialRun = false;
+        this.tutorialReplayRun = false;
         this.daemonVoicelineManager?.setTutorialMode(false);
+        this.hudManager?.setPauseTutorialMode(false);
+        if (hadPendingRunStart) {
+          this.pendingPostTutorialClass = null;
+          void (async () => {
+            await this.playTutorialExitFx();
+            this.codexService.startRunTracking(classToFinalize);
+            await this.startNewGame();
+          })();
+          return;
+        }
+        void (async () => {
+          await this.playTutorialExitFx();
+          await this.openMainMenuScene();
+        })();
+      },
+      onTutorialSkipRequested: () => {
+        if (!this.gameplayInitialized || !this.isTutorialRun) return;
+        this.tutorialManager?.stopTutorial();
+        this.isPaused = false;
+        this.hudManager?.hidePauseMenu();
+        this.hudManager?.setVoicelinesMuted(false);
+        const classKey = this.selectedClassId === 'cat' ? 'rogue' : this.selectedClassId;
+        if (classKey === 'firewall' || classKey === 'rogue') {
+          this.codexService.recordTutorialCompleted(this.selectedClassId);
+          this.codexService.endRunTracking();
+          this.isTutorialRun = false;
+          this.tutorialReplayRun = false;
+          this.pendingPostTutorialClass = null;
+          this.daemonVoicelineManager?.setTutorialMode(false);
+          this.hudManager?.setPauseTutorialMode(false);
+          this.codexService.startRunTracking(this.selectedClassId);
+          void this.startNewGame();
+          return;
+        }
+        // Mage keeps legacy behavior: skip returns to main menu.
+        this.codexService.recordTutorialCompleted(this.selectedClassId);
+        GameSettingsStore.updateAccessibility({ tutorialCompleted: true });
+        this.isPaused = false;
+        this.pendingPostTutorialClass = null;
+        this.codexService.endRunTracking();
+        this.tutorialReplayRun = false;
+        this.daemonVoicelineManager?.setTutorialMode(false);
+        this.hudManager?.setPauseTutorialMode(false);
         void this.openMainMenuScene();
       },
       onPlayerUltimateRefillRequested: () => {
@@ -1041,16 +1119,38 @@ export class GameManager {
       },
       onMainMenuRequested: () => {
         this.isPaused = false;
+        const classKey = this.selectedClassId === 'cat' ? 'rogue' : this.selectedClassId;
+        if (this.isTutorialRun) {
+          this.tutorialManager?.stopTutorial();
+          // Mage skip button is wired through MAIN_MENU_REQUESTED in pause overlay.
+          if (classKey === 'mage') {
+            this.codexService.recordTutorialCompleted(this.selectedClassId);
+            GameSettingsStore.updateAccessibility({ tutorialCompleted: true });
+          }
+        }
+        this.pendingPostTutorialClass = null;
+        this.tutorialReplayRun = false;
         this.codexService.endRunTracking();
+        this.hudManager?.setPauseTutorialMode(false);
         void this.openMainMenuScene();
       },
       onClassSelectRequested: () => {
+        this.pendingPostTutorialClass = null;
         this.codexService.endRunTracking();
+        this.hudManager?.setPauseTutorialMode(false);
         void this.openClassSelectScene(false);
       },
       onCodexProgressResetRequested: () => {
         this.codexService.resetProgression();
+        GameSettingsStore.resetToDefaults();
         GameSettingsStore.updateAccessibility({ tutorialCompleted: false });
+        try {
+          localStorage.removeItem('achievements');
+          localStorage.removeItem('runSave');
+          localStorage.removeItem('daemon_dungeon_highscore');
+        } catch {
+          // ignore storage cleanup failures
+        }
         try { sessionStorage.removeItem('daemonBootShown'); } catch { /* ignore */ }
         window.location.reload();
       },
@@ -2028,8 +2128,27 @@ export class GameManager {
     this.combatActionManager?.resolveRogueDashTrailSegment(segment);
   }
 
+  private async playTutorialExitFx(): Promise<void> {
+    if (!this.gameplayInitialized) return;
+    const sequenceId = ++this.transitionSequenceId;
+    this.transitionGameState('transition');
+    this.hudManager.hideOverlays();
+    this.playerController.setInputSuppressed(true);
+    await this.waitForMs(140);
+    if (!this.isSequenceCurrent(sequenceId)) return;
+    await this.animatePlayerRelocationFx({
+      fromVisibility: this.playerController.getRenderVisibility(),
+      toVisibility: 0,
+      fromYOffset: this.playerController.getExternalVerticalOffset(),
+      toYOffset: 0.7,
+      durationMs: 560,
+    }, sequenceId);
+  }
+
   private async startNewGame(): Promise<void> {
     if (this.gameplayStartInProgress) return;
+    // Invalidate any pending async transition/bonus sequence from a previous state.
+    this.transitionSequenceId++;
     this.disposeBenchmarkReportOverlay();
     this.stopBenchmarkRunner();
     this.gameplayStartInProgress = true;
@@ -2434,11 +2553,19 @@ export class GameManager {
 
   private prepareRunStateForStart(): void {
     if (this.isTutorialRun) {
-      this.roomOrder = [
-        'room_tutorial_01',
-        'room_tutorial_02',
-        'room_tutorial_03'
-      ];
+      if (this.selectedClassId === 'mage') {
+        if (this.tutorialReplayRun) {
+          this.roomOrder = ['room_tutorial_02'];
+        } else {
+          this.roomOrder = [
+            'room_tutorial_01',
+            'room_tutorial_02',
+            'room_tutorial_03'
+          ];
+        }
+      } else {
+        this.roomOrder = ['room_tutorial_02'];
+      }
     } else {
       this.roomOrder = this.generateProceduralRunOrder();
     }
@@ -2454,6 +2581,7 @@ export class GameManager {
       this.playerController.resetBonuses();
       this.playerController.healToFull();
       this.playerController.setInputSuppressed(false);
+      this.playerController.setMovementLocked(false);
     }
     this.roomElapsedSeconds = 0;
     this.resetPlayerVoidFallState();

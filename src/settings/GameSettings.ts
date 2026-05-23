@@ -75,7 +75,7 @@ const DEFAULT_SETTINGS: GameSettings = {
       ultimate: 'space',
     },
     keyboardOnlyMode: false,
-    autoAimTowardMovement: true,
+    autoAimTowardMovement: false,
   },
   audio: {
     master: 1,

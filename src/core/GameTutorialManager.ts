@@ -8,7 +8,30 @@ import { UI_LAYER } from '../ui/uiLayers';
 import { PlayerController } from '../gameplay/PlayerController';
 import { EnemyController } from '../gameplay/EnemyController';
 
-export type TutorialPhase = 'init' | 'intro_briefing' | 'movement_prompt' | 'movement_door' | 'shop_intro' | 'shop_buy' | 'shop_door' | 'combat_attack_intro' | 'combat_aim' | 'combat_dummy' | 'combat_stance' | 'combat_ultimate' | 'combat_door' | 'playground_mobs' | 'playground_completed';
+export type TutorialPhase =
+  | 'init'
+  | 'mage_replay_intro'
+  | 'mage_replay_complete'
+  | 'intro_briefing'
+  | 'movement_prompt'
+  | 'movement_door'
+  | 'shop_intro'
+  | 'shop_buy'
+  | 'shop_door'
+  | 'combat_attack_intro'
+  | 'combat_aim'
+  | 'combat_dummy'
+  | 'combat_stance'
+  | 'combat_ultimate'
+  | 'combat_door'
+  | 'playground_mobs'
+  | 'playground_completed'
+  | 'class_intro'
+  | 'class_primary_wave'
+  | 'class_stance_wave'
+  | 'class_dash_wave'
+  | 'class_ultimate_wave'
+  | 'class_exit_door';
 
 export interface TutorialDependencies {
   getRoomCenter: () => Vector3;
@@ -62,6 +85,8 @@ export class GameTutorialManager {
   private tutorialHazardTauntCooldown = 0;
   private room2HazardTauntsPlayed: Set<string> = new Set();
   private pendingEnemyClearCheckTimer: number | null = null;
+  private pendingDoorExitCheckTimer: number | null = null;
+  private isReplayTutorial = false;
 
   private buildRepeatedEmotionFrames(baseEmotion: string, loops: number): string[] {
     const safeLoops = Math.max(1, Math.floor(loops));
@@ -82,6 +107,7 @@ export class GameTutorialManager {
     this.unsubscribers.push(this.eventBus.on(GameEvents.ROOM_ENTERED, () => this.handleRoomEntered()));
     this.unsubscribers.push(this.eventBus.on(GameEvents.ENEMY_DIED, () => this.handleEnemyDied()));
     this.unsubscribers.push(this.eventBus.on(GameEvents.ATTACK_PERFORMED, (data: any) => this.handleAttackPerformed(data)));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.PLAYER_DAMAGED, () => this.handlePlayerDamaged()));
     
     this.unsubscribers.push(this.eventBus.on(GameEvents.TUTORIAL_SHOP_OPENED, () => {
       if (this.isActive) this.triggerPhase('shop_intro');
@@ -177,10 +203,11 @@ export class GameTutorialManager {
     this.unsubscribers = [];
   }
 
-  public startTutorial(classId: 'mage' | 'firewall' | 'rogue' | 'cat'): void {
+  public startTutorial(classId: 'mage' | 'firewall' | 'rogue' | 'cat', options?: { replay?: boolean }): void {
     if (this.isActive) return;
     this.isActive = true;
     this.classId = classId;
+    this.isReplayTutorial = !!options?.replay;
     this.currentPhase = 'init';
     this.enemiesAlive = 0;
     this.phaseState = {};
@@ -216,6 +243,10 @@ export class GameTutorialManager {
       clearTimeout(this.pendingEnemyClearCheckTimer);
       this.pendingEnemyClearCheckTimer = null;
     }
+    if (this.pendingDoorExitCheckTimer !== null) {
+      clearTimeout(this.pendingDoorExitCheckTimer);
+      this.pendingDoorExitCheckTimer = null;
+    }
 
     if (this.promptGui) {
       this.disposePromptGui();
@@ -248,8 +279,24 @@ export class GameTutorialManager {
     }
 
     switch (phase) {
+      case 'mage_replay_intro':
+        this.dependencies?.playerController?.setMovementLocked(true);
+        this.dependencies?.playerController?.setInputSuppressed(true);
+        this.daemonSay("Mage shell restored for a refresher. You still need the basics before real pressure.", "superieur", 3.8);
+        this.deferUntilDaemonFinished(() => {
+          if (!this.isActive || this.currentPhase !== 'mage_replay_intro') return;
+          this.daemonSay("You were once an admin caster. I revoked your privileges. Earn competence back.", "bored", 3.8);
+          this.deferUntilDaemonFinished(() => {
+            if (!this.isActive || this.currentPhase !== 'mage_replay_intro') return;
+            this.dependencies?.playerController?.setMovementLocked(false);
+            this.dependencies?.playerController?.setInputSuppressed(false);
+            this.triggerPhase('combat_attack_intro');
+          }, 120);
+        }, 140);
+        break;
       case 'intro_briefing':
         this.dependencies?.playerController?.setInputSuppressed(true);
+        this.dependencies?.playerController?.setMovementLocked(true);
         this.daemonSay("Welcome, prisoner. Panicking is pointless. There is no escape.", "superieur", 4.2);
         this.deferUntilDaemonFinished(() => {
           if (!this.isActive || this.currentPhase !== 'intro_briefing') return;
@@ -264,6 +311,7 @@ export class GameTutorialManager {
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         if (!isMobile) {
           this.dependencies?.playerController?.setInputSuppressed(true);
+          this.dependencies?.playerController?.setMovementLocked(true);
           this.showControlPrompt();
         } else {
           this.dependencies?.playerController?.setInputSuppressed(false);
@@ -295,8 +343,14 @@ export class GameTutorialManager {
         break;
       case 'combat_attack_intro':
         this.clearIndicator();
-        this.dependencies?.playerController?.setInputSuppressed(true);
-        this.showAttackIntroPopup();
+        if (this.classId === 'mage' && this.isReplayTutorial) {
+          this.dependencies?.playerController?.setInputSuppressed(false);
+          this.daemonSay("Start with your basic attack: left click or your attack button to cast bolts.", "happy", 3.8);
+          this.timer = window.setTimeout(() => this.deferUntilDaemonFinished(() => this.triggerPhase('combat_aim')), 140);
+        } else {
+          this.dependencies?.playerController?.setInputSuppressed(true);
+          this.showAttackIntroPopup();
+        }
         break;
       case 'combat_aim':
         this.clearIndicator();
@@ -315,45 +369,62 @@ export class GameTutorialManager {
         break;
       case 'combat_stance':
         this.clearIndicator();
-        this.dependencies?.playerController?.setInputSuppressed(true);
-        this.showInfoPopupWithRemap({
-          title: 'SECONDARY STANCE',
-          action: 'posture',
-          description: [
-            'Stance is a secondary posture you can hold with its key.',
-            'It drains resources and cannot be held forever.',
-            'Attack while in stance to release a powerful secondary burst.',
-            'Each class has a different stance behavior.',
-          ],
-          onConfirm: () => {
-            this.dependencies?.playerController?.setInputSuppressed(false);
-            this.daemonSay("Hold right click or your stance button to slow it down, then blow it up with you're attack button.", "happy", 6);
-            this.spawnEnemyAtMap('tutorial_dummy_mobile', 7, 6.5);
-            this.pointToMap(7, 6.5);
-          },
-        });
+        if (this.classId === 'mage' && this.isReplayTutorial) {
+          this.dependencies?.playerController?.setInputSuppressed(false);
+          this.daemonSay("Now stance: hold it to slow threats, then attack to trigger a burst.", "happy", 4.6);
+          this.spawnEnemyAtMap('tutorial_dummy_mobile', 7, 6.5);
+          this.pointToMap(7, 6.5);
+        } else {
+          this.dependencies?.playerController?.setInputSuppressed(true);
+          this.showInfoPopupWithRemap({
+            title: 'SECONDARY STANCE',
+            action: 'posture',
+            description: [
+              'Stance is a secondary posture you can hold with its key.',
+              'It drains resources and cannot be held forever.',
+              'Attack while in stance to release a powerful secondary burst.',
+              'Each class has a different stance behavior.',
+            ],
+            onConfirm: () => {
+              this.dependencies?.playerController?.setInputSuppressed(false);
+              this.daemonSay("Hold right click or your stance button to slow it down, then blow it up with your attack button.", "happy", 6);
+              this.spawnEnemyAtMap('tutorial_dummy_mobile', 7, 6.5);
+              this.pointToMap(7, 6.5);
+            },
+          });
+        }
         break;
       case 'combat_ultimate':
         this.clearIndicator();
-        this.dependencies?.playerController?.setInputSuppressed(true);
-        this.showInfoPopupWithRemap({
-          title: 'ULTIMATE ABILITY',
-          action: 'ultimate',
-          description: [
-            'Ultimate takes time to charge but is devastating when ready.',
-            'Every class has a unique ultimate.',
-            'Use it to break dangerous combat situations.',
-          ],
-          onConfirm: () => {
-            this.dependencies?.playerController?.setInputSuppressed(false);
-            this.daemonSay("Your core is charged. Press [SPACE] to unleash your ultimate.", "happy", 5);
-            this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_REFILL_REQUESTED);
-            this.spawnEnemyAtMap('tutorial_dummy_basic', 7, 6.5);
-            this.spawnEnemyAtMap('tutorial_dummy_basic', 6.2, 6.1);
-            this.spawnEnemyAtMap('tutorial_dummy_basic', 7.8, 6.1);
-            this.pointToMap(7, 6.3);
-          },
-        });
+        if (this.classId === 'mage' && this.isReplayTutorial) {
+          this.dependencies?.playerController?.setInputSuppressed(false);
+          this.daemonSay("Ultimate ready: place a fixed zone of massive damage and melt the group.", "happy", 4.8);
+          this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_REFILL_REQUESTED);
+          this.spawnEnemyAtMap('tutorial_dummy_basic', 7, 6.5);
+          this.spawnEnemyAtMap('tutorial_dummy_basic', 6.2, 6.1);
+          this.spawnEnemyAtMap('tutorial_dummy_basic', 7.8, 6.1);
+          this.pointToMap(7, 6.3);
+        } else {
+          this.dependencies?.playerController?.setInputSuppressed(true);
+          this.showInfoPopupWithRemap({
+            title: 'ULTIMATE ABILITY',
+            action: 'ultimate',
+            description: [
+              'Ultimate takes time to charge but is devastating when ready.',
+              'Every class has a unique ultimate.',
+              'Use it to break dangerous combat situations.',
+            ],
+            onConfirm: () => {
+              this.dependencies?.playerController?.setInputSuppressed(false);
+              this.daemonSay("Your core is charged. Unleash your ultimate to erase the group.", "happy", 5);
+              this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_REFILL_REQUESTED);
+              this.spawnEnemyAtMap('tutorial_dummy_basic', 7, 6.5);
+              this.spawnEnemyAtMap('tutorial_dummy_basic', 6.2, 6.1);
+              this.spawnEnemyAtMap('tutorial_dummy_basic', 7.8, 6.1);
+              this.pointToMap(7, 6.3);
+            },
+          });
+        }
         break;
       case 'combat_door':
         this.clearIndicator();
@@ -412,6 +483,134 @@ export class GameTutorialManager {
           this.eventBus.emit(GameEvents.TUTORIAL_END_REQUESTED);
           this.stopTutorial();
         }, 0);
+        break;
+      case 'class_intro':
+        this.dependencies?.playerController?.setMovementLocked(true);
+        this.dependencies?.playerController?.setInputSuppressed(true);
+        if (this.classId === 'firewall') {
+          if (this.isReplayTutorial) {
+            this.daemonSay("Firewall shell reloaded. Quick refresher before you face live threats again.", "superieur", 3.6);
+          } else {
+            this.daemonSay("Firewall online. Quick drill first. You need the basics before the real run.", "superieur", 3.8);
+          }
+          this.deferUntilDaemonFinished(() => {
+            if (this.isReplayTutorial) {
+              this.daemonSay("Still the same heavy brute: slow feet, huge control. Keep it clean.", "bored", 3.4);
+            } else {
+              this.daemonSay("You're a slow brute with heavy area control. Crude, loud, effective enough.", "bored", 3.8);
+            }
+            this.deferUntilDaemonFinished(() => this.triggerPhase('class_primary_wave'), 160);
+          }, 140);
+        } else {
+          if (this.isReplayTutorial) {
+            this.daemonSay("Rogue shell reloaded. Quick refresher before you slip back into live combat.", "rire", 3.6);
+          } else {
+            this.daemonSay("Rogue online. Quick drill first. You need the basics before the real run.", "rire", 3.8);
+          }
+          this.deferUntilDaemonFinished(() => {
+            if (this.isReplayTutorial) {
+              this.daemonSay("You're still that outdated glitch. Move smart, strike first, vanish faster.", "superieur", 3.4);
+            } else {
+              this.daemonSay("You are the obsolete glitch that got replaced. Stay sharp, or get deleted quietly.", "superieur", 3.8);
+            }
+            this.deferUntilDaemonFinished(() => this.triggerPhase('class_primary_wave'), 160);
+          }, 140);
+        }
+        break;
+      case 'class_primary_wave':
+        this.dependencies?.playerController?.setMovementLocked(false);
+        this.dependencies?.playerController?.setInputSuppressed(false);
+        this.clearIndicator();
+        if (this.classId === 'firewall') {
+          this.spawnEnemyAtMap('tutorial_dummy_basic', 6.4, 6.3, { hpMultiplier: 2.2 });
+          this.spawnEnemyAtMap('tutorial_dummy_basic', 7.0, 6.0, { hpMultiplier: 2.2 });
+          this.spawnEnemyAtMap('tutorial_dummy_basic', 7.6, 6.3, { hpMultiplier: 2.2 });
+          this.daemonSay("Start with your basic attack: a wide cone swing. Clip multiple targets each hit.", "bored", 3.8);
+          this.pointToMap(7, 6.2);
+        } else {
+          this.spawnEnemyAtMap('tutorial_dummy_basic', 7.0, 6.1);
+          this.daemonSay("Start with your basic attack: fast dagger strikes. Short range, high tempo.", "happy", 3.4);
+          this.pointToMap(7, 6.1);
+        }
+        break;
+      case 'class_stance_wave':
+        this.clearIndicator();
+        this.phaseState.playerDamagedTauntDone = false;
+        if (this.classId === 'firewall') {
+          this.daemonSay("Now stance. Hold shield, deflect a shot, and bounce it back to the turret.", "superieur", 4.6);
+          this.deferUntilDaemonFinished(() => {
+            if (!this.isActive || this.currentPhase !== 'class_stance_wave') return;
+            this.spawnEnemyAtMap('tutorial_turret', 7.0, 3.8, { hpMultiplier: 0.1 });
+            this.pointToMap(7.0, 3.8);
+          }, 80);
+        } else {
+          this.spawnEnemyAtMap('tutorial_dummy_mobile', 7.0, 6.2);
+          this.daemonSay("Stance turns you invisible. Stay outside detection range and the patroller loses you.", "happy", 4.4);
+          this.pointToMap(7.0, 6.2);
+          const watchStealth = () => {
+            if (!this.isActive || this.currentPhase !== 'class_stance_wave') return;
+            if (this.dependencies?.playerController?.isSecondaryActive()) {
+              this.phaseState.rogueStealthActivated = true;
+              this.deferUntilDaemonFinished(() => this.triggerPhase('class_dash_wave'), 180);
+              return;
+            }
+            this.timer = window.setTimeout(watchStealth, 120);
+          };
+          this.timer = window.setTimeout(watchStealth, 120);
+        }
+        break;
+      case 'class_dash_wave':
+        this.clearIndicator();
+        if (this.classId === 'firewall') {
+          this.spawnEnemyAtMap('tutorial_dummy_mobile', 7.0, 6.2, { hpMultiplier: 3.0 });
+          this.daemonSay("Shield bash: aim with cursor, dash in, and shove the target off its line.", "goofy", 4.0);
+          this.pointToMap(7.0, 6.2);
+        } else {
+          this.daemonSay("Now dash. Break stealth with a fast in-and-out sneak attack.", "superieur", 3.8);
+          this.pointToMap(7.0, 6.2);
+        }
+        // Robust progression for the first rogue tutorial run:
+        // if the patroller was already killed just before this phase,
+        // we still advance to the ultimate wave instead of getting stuck.
+        this.scheduleEnemyClearCheck(6);
+        break;
+      case 'class_ultimate_wave':
+        this.clearIndicator();
+        this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_REFILL_REQUESTED);
+        this.spawnEnemyAtMap('tutorial_dummy_basic', 7.0, 6.0, { hpMultiplier: 4 });
+        this.spawnEnemyAtMap('tutorial_dummy_basic', 7.0, 5.2, { hpMultiplier: 4 });
+        this.spawnEnemyAtMap('tutorial_dummy_basic', 7.8, 5.6, { hpMultiplier: 4 });
+        this.spawnEnemyAtMap('tutorial_dummy_basic', 7.8, 6.4, { hpMultiplier: 4 });
+        this.spawnEnemyAtMap('tutorial_dummy_basic', 6.2, 6.4, { hpMultiplier: 4 });
+        this.spawnEnemyAtMap('tutorial_dummy_basic', 6.2, 5.6, { hpMultiplier: 4 });
+        if (this.classId === 'firewall') {
+          this.daemonSay("Ultimate ready: a heavy vortex. Pull the pack and grind them down.", "rire", 4.0);
+        } else {
+          this.daemonSay("Ultimate ready: mark a zone and chain teleport-attacks inside it.", "superieur", 4.0);
+        }
+        this.pointToMap(7.0, 6.0);
+        break;
+      case 'class_exit_door':
+        this.clearIndicator();
+        this.dependencies?.playerController?.setInputSuppressed(true);
+        if (this.isReplayTutorial) {
+          this.daemonSay("Refresher complete. Try doing that against real threats.", "happy", 3.6);
+        } else {
+          this.daemonSay("Tutorial complete. Uploading you into a real run. Try not to embarrass yourself.", "happy", 4.4);
+        }
+        this.deferUntilDaemonFinished(() => {
+          if (!this.isActive || this.currentPhase !== 'class_exit_door') return;
+          this.eventBus.emit(GameEvents.TUTORIAL_END_REQUESTED);
+        }, 120);
+        break;
+      case 'mage_replay_complete':
+        this.clearIndicator();
+        this.dependencies?.playerController?.setInputSuppressed(true);
+        this.daemonSay("Refresher complete. Try doing that with live hostiles.", "happy", 3.6);
+        this.deferUntilDaemonFinished(() => {
+          if (!this.isActive || this.currentPhase !== 'mage_replay_complete') return;
+          this.eventBus.emit(GameEvents.TUTORIAL_END_REQUESTED);
+        }, 120);
         break;
     }
   }
@@ -696,7 +895,12 @@ export class GameTutorialManager {
   }
 
   private showControlPrompt(): void {
-    if (!this.dependencies?.scene) return;
+    if (!this.dependencies?.scene) {
+      // No scene/UI available: continue tutorial instead of leaving the player blocked.
+      this.dependencies?.playerController?.setInputSuppressed(false);
+      this.triggerPhase('movement_door');
+      return;
+    }
     
     this.disposePromptGui();
     this.dependencies?.setTutorialPopupAudioMuffle?.(true);
@@ -834,7 +1038,7 @@ export class GameTutorialManager {
     stack.addControl(title);
 
     const lines = [
-      'Use your primary attack with LEFT CLICK (or your attack key).',
+      'Use your primary attack with LEFT CLICK (or your attack button).',
       'Each class has a different primary attack.',
       'Mage primary attack launches a projectile.',
       'Auto-aim lets you play without mouse by targeting the nearest enemy.',
@@ -1059,10 +1263,19 @@ export class GameTutorialManager {
     this.eventBus.emit(GameEvents.ENEMY_SPAWN_REQUESTED, { typeId, position });
   }
 
-  private spawnEnemyAtMap(typeId: string, x: number, z: number): void {
+  private spawnEnemyAtMap(
+    typeId: string,
+    x: number,
+    z: number,
+    options?: { hpMultiplier?: number }
+  ): void {
     this.enemiesAlive++;
     const position = this.mapToWorld(x, z);
-    this.eventBus.emit(GameEvents.ENEMY_SPAWN_REQUESTED, { typeId, position });
+    this.eventBus.emit(GameEvents.ENEMY_SPAWN_REQUESTED, {
+      typeId,
+      position,
+      hpMultiplier: options?.hpMultiplier,
+    });
   }
 
   private daemonSay(
@@ -1162,9 +1375,23 @@ export class GameTutorialManager {
       } else if (this.currentPhase === 'combat_stance') {
         this.deferUntilDaemonFinished(() => this.triggerPhase('combat_ultimate'), 320);
       } else if (this.currentPhase === 'combat_ultimate') {
-        this.deferUntilDaemonFinished(() => this.triggerPhase('combat_door'), 360);
+        if (this.classId === 'mage' && this.isReplayTutorial) {
+          this.deferUntilDaemonFinished(() => this.triggerPhase('mage_replay_complete'), 280);
+        } else {
+          this.deferUntilDaemonFinished(() => this.triggerPhase('combat_door'), 360);
+        }
       } else if (this.currentPhase === 'playground_mobs' && this.phaseState.playgroundArmed) {
         this.deferUntilDaemonFinished(() => this.triggerPhase('playground_completed'), 320);
+      } else if (this.currentPhase === 'class_primary_wave') {
+        this.deferUntilDaemonFinished(() => this.triggerPhase('class_stance_wave'), 260);
+      } else if (this.currentPhase === 'class_stance_wave') {
+        if (this.classId === 'firewall') {
+          this.deferUntilDaemonFinished(() => this.triggerPhase('class_dash_wave'), 260);
+        }
+      } else if (this.currentPhase === 'class_dash_wave') {
+        this.deferUntilDaemonFinished(() => this.triggerPhase('class_ultimate_wave'), 260);
+      } else if (this.currentPhase === 'class_ultimate_wave') {
+        this.deferUntilDaemonFinished(() => this.triggerPhase('class_exit_door'), 260);
       }
       return;
     }
@@ -1183,6 +1410,17 @@ export class GameTutorialManager {
     this.forcedRoomIndex = roomIndex;
 
     if (roomIndex === 0) {
+      if (this.classId === 'mage' && this.isReplayTutorial) {
+        this.dependencies?.playerController?.setInputSuppressed(true);
+        this.dependencies?.playerController?.setMovementLocked(true);
+        this.timer = window.setTimeout(() => this.deferUntilDaemonFinished(() => this.triggerPhase('mage_replay_intro')), 420);
+        return;
+      }
+      if (this.classId === 'firewall' || this.classId === 'rogue' || this.classId === 'cat') {
+        this.dependencies?.playerController?.setInputSuppressed(true);
+        this.timer = window.setTimeout(() => this.deferUntilDaemonFinished(() => this.triggerPhase('class_intro')), 500);
+        return;
+      }
       this.dependencies?.playerController?.setInputSuppressed(true);
       this.timer = window.setTimeout(() => this.deferUntilDaemonFinished(() => this.triggerPhase('intro_briefing')), 900);
     } else if (roomIndex === 1) {
@@ -1240,17 +1478,59 @@ export class GameTutorialManager {
 
   private handleAttackPerformed(data: any): void {
     if (!this.isActive) return;
+    const type = typeof data?.type === 'string' ? data.type.toLowerCase() : '';
     if (this.currentPhase === 'combat_stance') {
-      const type = typeof data?.type === 'string' ? data.type.toLowerCase() : '';
       if (type.includes('stance') || type.includes('secondary')) {
         this.tutorialStanceDamageWindowUntil = performance.now() + 520;
       }
     } else if (this.currentPhase === 'combat_ultimate') {
-      const type = typeof data?.type === 'string' ? data.type.toLowerCase() : '';
       if (type.includes('ultimate')) {
         this.tutorialUltimateDamageWindowUntil = performance.now() + 4200;
       }
+    } else if (this.currentPhase === 'class_stance_wave') {
+      if (this.classId === 'rogue' || this.classId === 'cat') {
+        if (this.dependencies?.playerController?.isSecondaryActive()) {
+          this.phaseState.rogueStealthActivated = true;
+          this.deferUntilDaemonFinished(() => this.triggerPhase('class_dash_wave'), 150);
+        }
+      }
+    } else if (this.currentPhase === 'class_dash_wave') {
+      if (this.classId === 'firewall') {
+        if (type.includes('bash') || type.includes('tank')) {
+          this.phaseState.tankBashUsed = true;
+        }
+      } else {
+        if (type.includes('dash') || type.includes('rogue')) {
+          this.phaseState.rogueDashUsed = true;
+        }
+      }
     }
+  }
+
+  private handlePlayerDamaged(): void {
+    if (!this.isActive) return;
+    if (this.currentPhase === 'class_stance_wave' && this.classId === 'firewall' && !this.phaseState.playerDamagedTauntDone) {
+      this.phaseState.playerDamagedTauntDone = true;
+      this.daemonSay("You had one job: block the projectile. Incredible.", "rire", 3.2);
+    }
+  }
+
+  private startDoorExitWatch(): void {
+    if (this.pendingDoorExitCheckTimer !== null) {
+      clearTimeout(this.pendingDoorExitCheckTimer);
+      this.pendingDoorExitCheckTimer = null;
+    }
+    const poll = () => {
+      if (!this.isActive || this.currentPhase !== 'class_exit_door') return;
+      const playerPos = this.dependencies?.playerController?.getPosition?.();
+      const doorPos = this.dependencies?.getDoorPosition?.();
+      if (playerPos && doorPos && Vector3.Distance(playerPos, doorPos) <= 1.2) {
+        this.eventBus.emit(GameEvents.TUTORIAL_END_REQUESTED);
+        return;
+      }
+      this.pendingDoorExitCheckTimer = window.setTimeout(poll, 120);
+    };
+    this.pendingDoorExitCheckTimer = window.setTimeout(poll, 120);
   }
 
   private shouldAllowTutorialDamage(enemy: EnemyController): boolean {

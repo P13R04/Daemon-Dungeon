@@ -19,8 +19,8 @@ export class GameWorldCollisionHazardManager {
 
   resolveEntityCollisions(enemies: EnemyController[], deltaTime: number): void {
     const playerRadius = 0.35;
-    const previousPlayerPos = this.playerController.getPosition();
-    let playerPos = previousPlayerPos.clone();
+    const previousPlayerPos = this.playerController.getPreviousFramePosition();
+    let playerPos = this.playerController.getPosition();
 
     for (const enemy of enemies) {
       const enemyPos = enemy.getPosition();
@@ -88,12 +88,10 @@ export class GameWorldCollisionHazardManager {
       playerPos = this.resolveCircleAabb(playerPos, playerRadius, ob);
     }
 
-    const playerTileType = this.roomManager.getTileTypeAtWorld(playerPos.x, playerPos.z);
-    const playerBlockedByTile =
-      playerTileType === 'wall' ||
-      playerTileType === 'out' ||
-      playerTileType === 'void' ||
-      !this.roomManager.isWalkable(playerPos.x, playerPos.z);
+    // Anti-tunneling for high-speed dash (rogue): resolve blocked path against frame-local previous position.
+    playerPos = this.resolvePlayerPathAgainstBlockedTiles(previousPlayerPos, playerPos);
+
+    const playerBlockedByTile = this.isPlayerBlockedTile(playerPos);
     if (playerBlockedByTile) {
       playerPos = previousPlayerPos.clone();
     }
@@ -157,6 +155,43 @@ export class GameWorldCollisionHazardManager {
     }
 
     this.playerController.setPosition(playerPos);
+  }
+
+  private isPlayerBlockedTile(position: Vector3): boolean {
+    const playerTileType = this.roomManager.getTileTypeAtWorld(position.x, position.z);
+    return (
+      playerTileType === 'wall' ||
+      playerTileType === 'out' ||
+      playerTileType === 'void' ||
+      !this.roomManager.isWalkable(position.x, position.z)
+    );
+  }
+
+  private resolvePlayerPathAgainstBlockedTiles(from: Vector3, to: Vector3): Vector3 {
+    const delta = to.subtract(from);
+    const travel = Math.sqrt((delta.x * delta.x) + (delta.z * delta.z));
+    if (travel <= 0.001) {
+      return to;
+    }
+
+    const sampleSpacing = 0.22;
+    const steps = Math.max(1, Math.ceil(travel / sampleSpacing));
+    let lastSafe = from.clone();
+
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const sample = new Vector3(
+        from.x + (delta.x * t),
+        to.y,
+        from.z + (delta.z * t),
+      );
+      if (this.isPlayerBlockedTile(sample)) {
+        return lastSafe;
+      }
+      lastSafe = sample;
+    }
+
+    return to;
   }
 
   applyHazardDamage(deltaTime: number, skipForVoidFall: boolean, tilesEnabled: boolean): void {

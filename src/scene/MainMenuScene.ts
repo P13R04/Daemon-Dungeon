@@ -5,6 +5,7 @@ import {
   Checkbox,
   Control,
   Rectangle,
+  Ellipse,
   ScrollViewer,
   Slider,
   StackPanel,
@@ -79,13 +80,26 @@ export class MainMenuScene {
   private roomPreloadAheadSlider: Slider | null = null;
   private roomPreloadAheadValueText: TextBlock | null = null;
   private captureHintText: TextBlock | null = null;
+  private resetProgressConfirmOverlay: Rectangle | null = null;
 
   private awaitingRebind: KeybindingAction | null = null;
   private readonly eventBus: EventBus = EventBus.getInstance();
   private achievementToast: Rectangle | null = null;
+  private achievementToastGlowOuter: Rectangle | null = null;
+  private achievementToastGlowInner: Rectangle | null = null;
+  private achievementToastGlowShimmerA: Rectangle | null = null;
+  private achievementToastAccentTop: Rectangle | null = null;
+  private achievementToastAccentSide: Rectangle | null = null;
+  private achievementToastInnerCircleA: Ellipse | null = null;
+  private achievementToastInnerCircleB: Ellipse | null = null;
+  private achievementToastInnerCircleABaseLeft: number = 0;
+  private achievementToastInnerCircleABaseTop: number = 0;
+  private achievementToastInnerCircleBBaseLeft: number = 0;
+  private achievementToastInnerCircleBBaseTop: number = 0;
   private achievementToastTitle: TextBlock | null = null;
   private achievementToastDescription: TextBlock | null = null;
   private achievementToastTimer: number = 0;
+  private achievementToastPulseTime: number = 0;
   private achievementToastObserver: any = null;
   private unsubscribeAchievementToast: (() => void) | null = null;
   private achievementIconPlaceholder: Rectangle | null = null;
@@ -237,31 +251,147 @@ export class MainMenuScene {
   }
 
   private createAchievementToast(): void {
+    const compact = this.isMobileLayout || this.layoutWidth < 980;
+    const width = compact ? 420 : 500;
+    const height = compact ? 122 : 132;
+    const icon = compact ? 82 : 92;
+    const titleFont = compact ? 20 : 23;
+    const descFont = compact ? 16 : 18;
+    const textLeft = compact ? 112 : 124;
+    const textWidth = compact ? 294 : 360;
+
     const toast = new Rectangle('menuAchievementToast');
-    toast.width = '360px';
-    toast.height = '88px';
-    toast.thickness = 1;
-    toast.color = '#7CFFEA';
-    toast.background = 'rgba(4, 24, 28, 0.88)';
+    toast.width = `${width}px`;
+    toast.height = `${height}px`;
+    toast.thickness = 3;
+    toast.color = '#FF84CA';
+    toast.background = 'rgba(8, 14, 24, 0.94)';
     toast.left = 16;
-    toast.top = 20;
+    toast.top = 22;
     toast.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     toast.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     toast.isPointerBlocker = false;
     toast.isVisible = false;
-    toast.zIndex = 1000;
+    toast.zIndex = 9000;
     this.mainLayoutContainer.addControl(toast);
     this.achievementToast = toast;
+
+    this.achievementToastGlowOuter = new Rectangle('menuAchievementToastGlowOuter');
+    this.achievementToastGlowOuter.width = `${width + 20}px`;
+    this.achievementToastGlowOuter.height = `${height + 20}px`;
+    this.achievementToastGlowOuter.thickness = 6;
+    this.achievementToastGlowOuter.color = '#FF84CA';
+    this.achievementToastGlowOuter.background = 'rgba(0,0,0,0)';
+    this.achievementToastGlowOuter.left = 6;
+    this.achievementToastGlowOuter.top = 12;
+    this.achievementToastGlowOuter.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastGlowOuter.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastGlowOuter.isVisible = false;
+    this.achievementToastGlowOuter.isPointerBlocker = false;
+    this.achievementToastGlowOuter.alpha = 0.4;
+    this.achievementToastGlowOuter.zIndex = 8988;
+    this.mainLayoutContainer.addControl(this.achievementToastGlowOuter);
+
+    this.achievementToastGlowInner = new Rectangle('menuAchievementToastGlowInner');
+    this.achievementToastGlowInner.width = `${width + 4}px`;
+    this.achievementToastGlowInner.height = `${height + 4}px`;
+    this.achievementToastGlowInner.thickness = 2;
+    this.achievementToastGlowInner.color = '#FF9AB0';
+    this.achievementToastGlowInner.background = 'rgba(0,0,0,0)';
+    this.achievementToastGlowInner.left = 14;
+    this.achievementToastGlowInner.top = 20;
+    this.achievementToastGlowInner.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastGlowInner.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastGlowInner.isVisible = false;
+    this.achievementToastGlowInner.isPointerBlocker = false;
+    this.achievementToastGlowInner.alpha = 0.5;
+    this.achievementToastGlowInner.zIndex = 8990;
+    this.mainLayoutContainer.addControl(this.achievementToastGlowInner);
+
+    this.achievementToastGlowShimmerA = new Rectangle('menuAchievementToastGlowShimmerA');
+    this.achievementToastGlowShimmerA.width = `${width + 34}px`;
+    this.achievementToastGlowShimmerA.height = `${height + 34}px`;
+    this.achievementToastGlowShimmerA.thickness = 10;
+    this.achievementToastGlowShimmerA.color = '#FBA3FF';
+    this.achievementToastGlowShimmerA.background = 'rgba(0,0,0,0)';
+    this.achievementToastGlowShimmerA.left = -1;
+    this.achievementToastGlowShimmerA.top = 5;
+    this.achievementToastGlowShimmerA.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastGlowShimmerA.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastGlowShimmerA.isVisible = false;
+    this.achievementToastGlowShimmerA.isPointerBlocker = false;
+    this.achievementToastGlowShimmerA.alpha = 0.12;
+    this.achievementToastGlowShimmerA.zIndex = 8986;
+    this.mainLayoutContainer.addControl(this.achievementToastGlowShimmerA);
+
+    this.achievementToastAccentTop = new Rectangle('menuAchievementToastAccentTop');
+    this.achievementToastAccentTop.width = `${width}px`;
+    this.achievementToastAccentTop.height = '5px';
+    this.achievementToastAccentTop.thickness = 0;
+    this.achievementToastAccentTop.background = '#FF84CA';
+    this.achievementToastAccentTop.left = 16;
+    this.achievementToastAccentTop.top = 19;
+    this.achievementToastAccentTop.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastAccentTop.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastAccentTop.isVisible = false;
+    this.achievementToastAccentTop.isPointerBlocker = false;
+    this.achievementToastAccentTop.alpha = 0.8;
+    this.achievementToastAccentTop.zIndex = 8996;
+    this.mainLayoutContainer.addControl(this.achievementToastAccentTop);
+
+    this.achievementToastAccentSide = new Rectangle('menuAchievementToastAccentSide');
+    this.achievementToastAccentSide.width = '6px';
+    this.achievementToastAccentSide.height = `${height}px`;
+    this.achievementToastAccentSide.thickness = 0;
+    this.achievementToastAccentSide.background = '#B98BFF';
+    this.achievementToastAccentSide.left = 12;
+    this.achievementToastAccentSide.top = 22;
+    this.achievementToastAccentSide.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastAccentSide.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastAccentSide.isVisible = false;
+    this.achievementToastAccentSide.isPointerBlocker = false;
+    this.achievementToastAccentSide.alpha = 0.74;
+    this.achievementToastAccentSide.zIndex = 8996;
+    this.mainLayoutContainer.addControl(this.achievementToastAccentSide);
+
+    this.achievementToastInnerCircleA = new Ellipse('menuAchievementToastInnerCircleA');
+    this.achievementToastInnerCircleA.width = `${Math.round(height * 2)}px`;
+    this.achievementToastInnerCircleA.height = `${Math.round(height * 2)}px`;
+    this.achievementToastInnerCircleABaseLeft = Math.round(width * 0.46);
+    this.achievementToastInnerCircleABaseTop = Math.round(-height * 0.52);
+    this.achievementToastInnerCircleA.left = `${this.achievementToastInnerCircleABaseLeft}px`;
+    this.achievementToastInnerCircleA.top = `${this.achievementToastInnerCircleABaseTop}px`;
+    this.achievementToastInnerCircleA.thickness = 2;
+    this.achievementToastInnerCircleA.color = '#FF9ECD';
+    this.achievementToastInnerCircleA.background = 'rgba(255,215,245,0.09)';
+    this.achievementToastInnerCircleA.alpha = 0.22;
+    this.achievementToastInnerCircleA.isPointerBlocker = false;
+    toast.addControl(this.achievementToastInnerCircleA);
+
+    this.achievementToastInnerCircleB = new Ellipse('menuAchievementToastInnerCircleB');
+    this.achievementToastInnerCircleB.width = `${Math.round(height * 1.4)}px`;
+    this.achievementToastInnerCircleB.height = `${Math.round(height * 1.4)}px`;
+    this.achievementToastInnerCircleBBaseLeft = Math.round(width * 0.62);
+    this.achievementToastInnerCircleBBaseTop = Math.round(-height * 0.24);
+    this.achievementToastInnerCircleB.left = `${this.achievementToastInnerCircleBBaseLeft}px`;
+    this.achievementToastInnerCircleB.top = `${this.achievementToastInnerCircleBBaseTop}px`;
+    this.achievementToastInnerCircleB.thickness = 1;
+    this.achievementToastInnerCircleB.color = '#82D5FF';
+    this.achievementToastInnerCircleB.background = 'rgba(196,229,255,0.07)';
+    this.achievementToastInnerCircleB.alpha = 0.2;
+    this.achievementToastInnerCircleB.isPointerBlocker = false;
+    toast.addControl(this.achievementToastInnerCircleB);
 
     const title = new TextBlock('menuAchievementToastTitle');
     title.text = 'ACHIEVEMENT UNLOCKED';
     title.color = '#7CFFEA';
-    title.fontFamily = UITheme.fonts.primary;
-    title.fontSize = 16;
-    title.left = 88;
-    title.top = 10;
-    title.width = '260px';
-    title.height = '24px';
+    title.fontFamily = 'Consolas';
+    title.fontSize = titleFont;
+    title.left = textLeft;
+    title.top = 14;
+    title.width = `${textWidth}px`;
+    title.height = '38px';
+    title.textWrapping = true;
     title.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     title.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -271,12 +401,12 @@ export class MainMenuScene {
     const description = new TextBlock('menuAchievementToastDescription');
     description.text = '';
     description.color = '#CFFCF3';
-    description.fontFamily = UITheme.fonts.primary;
-    description.fontSize = 13;
-    description.left = 88;
-    description.top = 34;
-    description.width = '260px';
-    description.height = '40px';
+    description.fontFamily = 'Consolas';
+    description.fontSize = descFont;
+    description.left = textLeft;
+    description.top = 55;
+    description.width = `${textWidth}px`;
+    description.height = '64px';
     description.textWrapping = true;
     description.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     description.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -285,21 +415,21 @@ export class MainMenuScene {
     this.achievementToastDescription = description;
 
     this.achievementIconPlaceholder = new Rectangle('menuAchievementToastIcon');
-    this.achievementIconPlaceholder.width = '64px';
-    this.achievementIconPlaceholder.height = '64px';
-    this.achievementIconPlaceholder.thickness = 1;
+    this.achievementIconPlaceholder.width = `${icon}px`;
+    this.achievementIconPlaceholder.height = `${icon}px`;
+    this.achievementIconPlaceholder.thickness = 2;
     this.achievementIconPlaceholder.color = '#5FFFE0';
     this.achievementIconPlaceholder.background = 'rgba(18, 44, 51, 0.9)';
-    this.achievementIconPlaceholder.left = 12;
-    this.achievementIconPlaceholder.top = 12;
+    this.achievementIconPlaceholder.left = 18;
+    this.achievementIconPlaceholder.top = 20;
     this.achievementIconPlaceholder.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.achievementIconPlaceholder.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     toast.addControl(this.achievementIconPlaceholder);
 
     const achievementIconText = new TextBlock('menuAchievementToastIconText');
     achievementIconText.text = '?';
-    achievementIconText.fontFamily = UITheme.fonts.primary;
-    achievementIconText.fontSize = 24;
+    achievementIconText.fontFamily = 'Consolas';
+    achievementIconText.fontSize = 32;
     achievementIconText.color = '#B8FFE6';
     this.achievementIconPlaceholder.addControl(achievementIconText);
   }
@@ -315,9 +445,11 @@ export class MainMenuScene {
 
     if (this.achievementToastTitle) {
       this.achievementToastTitle.text = `UNLOCKED: ${HUDManager.currentAchievement.name}`;
+      this.achievementToastTitle.fontSize = this.computeAchievementToastTitleSize(HUDManager.currentAchievement.name);
     }
     if (this.achievementToastDescription) {
       this.achievementToastDescription.text = HUDManager.currentAchievement.description;
+      this.achievementToastDescription.fontSize = this.computeAchievementToastDescriptionSize(HUDManager.currentAchievement.description);
     }
 
     if (this.achievementIconPlaceholder) {
@@ -331,16 +463,22 @@ export class MainMenuScene {
       } else {
         this.achievementToastArtwork.source = buildHudAssetUrl(`achievements/${HUDManager.currentAchievement.id}.png`);
       }
-      this.achievementToastArtwork.width = '64px';
-      this.achievementToastArtwork.height = '64px';
+      this.achievementToastArtwork.width = this.achievementIconPlaceholder.width;
+      this.achievementToastArtwork.height = this.achievementIconPlaceholder.height;
       this.achievementToastArtwork.stretch = Image.STRETCH_UNIFORM;
       this.achievementIconPlaceholder.addControl(this.achievementToastArtwork);
     }
 
     HUDManager.achievementToastActive = true;
     this.achievementToastTimer = 4;
+    this.achievementToastPulseTime = 0;
     this.achievementToast.alpha = 1;
     this.achievementToast.isVisible = true;
+    if (this.achievementToastGlowOuter) this.achievementToastGlowOuter.isVisible = true;
+    if (this.achievementToastGlowInner) this.achievementToastGlowInner.isVisible = true;
+    if (this.achievementToastGlowShimmerA) this.achievementToastGlowShimmerA.isVisible = true;
+    if (this.achievementToastAccentTop) this.achievementToastAccentTop.isVisible = true;
+    if (this.achievementToastAccentSide) this.achievementToastAccentSide.isVisible = true;
   }
 
   private updateAchievementToast(deltaTime: number): void {
@@ -361,9 +499,67 @@ export class MainMenuScene {
     }
 
     this.achievementToastTimer -= deltaTime;
+    this.achievementToastPulseTime += Math.max(0, deltaTime);
+    const pulse = 0.5 + Math.sin(this.achievementToastPulseTime * 8) * 0.5;
+    const shouldShake = this.achievementToastPulseTime < 1.0;
+    const jitterX = shouldShake ? Math.sin(this.achievementToastPulseTime * 10.5) * 0.22 : 0;
+    const jitterY = shouldShake ? Math.cos(this.achievementToastPulseTime * 8.6) * 0.18 : 0;
+    const color = this.getEpicToastColor(this.achievementToastPulseTime * 0.9);
+    this.achievementToast.color = color;
+    this.achievementToast.left = 16 + jitterX;
+    this.achievementToast.top = 22 + jitterY;
+    if (this.achievementToastGlowOuter) {
+      this.achievementToastGlowOuter.color = color;
+      this.achievementToastGlowOuter.left = 6 + jitterX;
+      this.achievementToastGlowOuter.top = 12 + jitterY;
+      this.achievementToastGlowOuter.alpha = 0.36 + pulse * 0.3;
+    }
+    if (this.achievementToastGlowInner) {
+      this.achievementToastGlowInner.color = color;
+      this.achievementToastGlowInner.left = 14 + jitterX;
+      this.achievementToastGlowInner.top = 20 + jitterY;
+      this.achievementToastGlowInner.alpha = 0.45 + pulse * 0.24;
+    }
+    if (this.achievementToastGlowShimmerA) {
+      this.achievementToastGlowShimmerA.color = this.getEpicToastColor(this.achievementToastPulseTime * 0.95 + 0.7);
+      this.achievementToastGlowShimmerA.left = -1 + jitterX;
+      this.achievementToastGlowShimmerA.top = 5 + jitterY;
+      this.achievementToastGlowShimmerA.alpha = 0.12 + pulse * 0.12;
+    }
+    if (this.achievementToastAccentTop) {
+      this.achievementToastAccentTop.background = color;
+      this.achievementToastAccentTop.left = 16 + jitterX;
+      this.achievementToastAccentTop.top = 19 + jitterY;
+      this.achievementToastAccentTop.alpha = 0.54 + pulse * 0.24;
+    }
+    if (this.achievementToastAccentSide) {
+      this.achievementToastAccentSide.background = color;
+      this.achievementToastAccentSide.left = 12 + jitterX;
+      this.achievementToastAccentSide.top = 22 + jitterY;
+      this.achievementToastAccentSide.alpha = 0.48 + pulse * 0.22;
+    }
+    if (this.achievementToastInnerCircleA) {
+      this.achievementToastInnerCircleA.alpha = 0.20 + pulse * 0.10;
+      this.achievementToastInnerCircleA.color = this.getEpicToastColor(this.achievementToastPulseTime * 0.55 + 0.4);
+      const leftSweep = (this.achievementToastPulseTime * 24) % 96;
+      this.achievementToastInnerCircleA.left = `${this.achievementToastInnerCircleABaseLeft - leftSweep + Math.sin(this.achievementToastPulseTime * 0.9) * 7}px`;
+      this.achievementToastInnerCircleA.top = `${this.achievementToastInnerCircleABaseTop + Math.cos(this.achievementToastPulseTime * 0.7) * 5}px`;
+    }
+    if (this.achievementToastInnerCircleB) {
+      this.achievementToastInnerCircleB.alpha = 0.17 + pulse * 0.08;
+      this.achievementToastInnerCircleB.color = this.getEpicToastColor(this.achievementToastPulseTime * 0.55 + 1.2);
+      const leftSweep = (this.achievementToastPulseTime * 28) % 112;
+      this.achievementToastInnerCircleB.left = `${this.achievementToastInnerCircleBBaseLeft - leftSweep + Math.cos(this.achievementToastPulseTime * 0.76) * 6}px`;
+      this.achievementToastInnerCircleB.top = `${this.achievementToastInnerCircleBBaseTop + Math.sin(this.achievementToastPulseTime * 0.88) * 4}px`;
+    }
     if (this.achievementToastTimer <= 0) {
       this.achievementToast.isVisible = false;
       this.achievementToast.alpha = 1;
+      if (this.achievementToastGlowOuter) this.achievementToastGlowOuter.isVisible = false;
+      if (this.achievementToastGlowInner) this.achievementToastGlowInner.isVisible = false;
+      if (this.achievementToastGlowShimmerA) this.achievementToastGlowShimmerA.isVisible = false;
+      if (this.achievementToastAccentTop) this.achievementToastAccentTop.isVisible = false;
+      if (this.achievementToastAccentSide) this.achievementToastAccentSide.isVisible = false;
       HUDManager.achievementToastActive = false;
       HUDManager.currentAchievement = null;
       if (HUDManager.achievementToastQueue.length > 0) {
@@ -373,8 +569,51 @@ export class MainMenuScene {
     }
 
     if (this.achievementToastTimer < 0.35) {
-        this.achievementToast.alpha = Math.max(0, this.achievementToastTimer / 0.35);
+      const fade = Math.max(0, this.achievementToastTimer / 0.35);
+      this.achievementToast.alpha = fade;
+      if (this.achievementToastGlowOuter) this.achievementToastGlowOuter.alpha *= fade;
+      if (this.achievementToastGlowInner) this.achievementToastGlowInner.alpha *= fade;
+      if (this.achievementToastGlowShimmerA) this.achievementToastGlowShimmerA.alpha *= fade;
+      if (this.achievementToastAccentTop) this.achievementToastAccentTop.alpha *= fade;
+      if (this.achievementToastAccentSide) this.achievementToastAccentSide.alpha *= fade;
+      if (this.achievementToastInnerCircleA) this.achievementToastInnerCircleA.alpha *= fade;
+      if (this.achievementToastInnerCircleB) this.achievementToastInnerCircleB.alpha *= fade;
     }
+  }
+
+  private computeAchievementToastTitleSize(title: string): number {
+    const len = (title || '').trim().length;
+    const base = this.isMobileLayout || this.layoutWidth < 980 ? 20 : 23;
+    if (len > 46) return base - 4;
+    if (len > 34) return base - 2;
+    return base;
+  }
+
+  private computeAchievementToastDescriptionSize(description: string): number {
+    const len = (description || '').trim().length;
+    const base = this.isMobileLayout || this.layoutWidth < 980 ? 16 : 18;
+    if (len > 125) return base - 3;
+    if (len > 92) return base - 2;
+    if (len > 66) return base - 1;
+    return base;
+  }
+
+  private getEpicToastColor(phase: number): string {
+    const colors = ['#FF7BCF', '#FF9AB0', '#B98BFF', '#72C9FF', '#FF7BCF'];
+    const wrapped = ((phase % (colors.length - 1)) + (colors.length - 1)) % (colors.length - 1);
+    const idx = Math.floor(wrapped);
+    const t = wrapped - idx;
+    return this.lerpHexColor(colors[idx], colors[idx + 1], t);
+  }
+
+  private lerpHexColor(a: string, b: string, t: number): string {
+    const parse = (hex: string, offset: number) => parseInt(hex.slice(offset, offset + 2), 16);
+    const ar = parse(a, 1), ag = parse(a, 3), ab = parse(a, 5);
+    const br = parse(b, 1), bg = parse(b, 3), bb = parse(b, 5);
+    const rr = Math.round(ar + (br - ar) * t).toString(16).padStart(2, '0');
+    const rg = Math.round(ag + (bg - ag) * t).toString(16).padStart(2, '0');
+    const rb = Math.round(ab + (bb - ab) * t).toString(16).padStart(2, '0');
+    return `#${rr}${rg}${rb}`;
   }
 
   private createMainButtons(): void {
@@ -595,6 +834,7 @@ export class MainMenuScene {
     this.addGameplaySection(content);
     this.addAudioSection(content);
     this.addAccessibilitySection(content);
+    this.createResetProgressConfirmOverlay(overlay);
   }
 
   private addGameplaySection(parent: StackPanel): void {
@@ -775,23 +1015,107 @@ export class MainMenuScene {
       ));
     }
 
-    // RESET CODEX PROGRESSION — at the very bottom of settings
-    const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET CODEX PROGRESSION');
+    // RESET PROGRESSION — at the very bottom of settings
+    const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET PROGRESSION');
     resetProgressBtn.width = '340px';
     resetProgressBtn.height = '38px';
     resetProgressBtn.color = '#FFE5E5';
     resetProgressBtn.cornerRadius = 4;
     resetProgressBtn.background = 'rgba(72,20,20,0.95)';
     resetProgressBtn.thickness = 1;
-    resetProgressBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    resetProgressBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    resetProgressBtn.top = '8px';
     resetProgressBtn.isPointerBlocker = true;
     resetProgressBtn.isHitTestVisible = true;
     if (resetProgressBtn.textBlock) resetProgressBtn.textBlock.fontSize = 16;
     this.bindButtonAction(resetProgressBtn, () => {
       this.awaitingRebind = null;
-      this.eventBus.emit(GameEvents.CODEX_PROGRESS_RESET_REQUESTED);
+      this.showResetProgressConfirmOverlay();
     });
     parent.addControl(resetProgressBtn);
+  }
+
+  private createResetProgressConfirmOverlay(parent: Rectangle): void {
+    const overlay = new Rectangle('menuResetProgressConfirmOverlay');
+    overlay.width = 1;
+    overlay.height = 1;
+    overlay.thickness = 0;
+    overlay.background = 'rgba(0, 0, 0, 0.75)';
+    overlay.isPointerBlocker = true;
+    overlay.isVisible = false;
+    overlay.zIndex = 2600;
+    parent.addControl(overlay);
+    this.resetProgressConfirmOverlay = overlay;
+
+    const panel = new Rectangle('menuResetProgressConfirmPanel');
+    panel.width = '680px';
+    panel.height = '300px';
+    panel.cornerRadius = 6;
+    panel.thickness = 1;
+    panel.color = '#8A3434';
+    panel.background = 'rgba(22, 10, 10, 0.96)';
+    panel.isPointerBlocker = true;
+    overlay.addControl(panel);
+
+    const title = new TextBlock('menuResetProgressConfirmTitle');
+    title.text = 'RESET PROGRESSION';
+    title.color = '#FFE5E5';
+    title.fontSize = 32;
+    title.fontFamily = 'Consolas';
+    title.top = '-104px';
+    panel.addControl(title);
+
+    const body = new TextBlock('menuResetProgressConfirmBody');
+    body.text = 'This will reset codex, achievements, settings, and tutorial completion.\nThe game will restart as a first launch.';
+    body.color = '#FFD0D0';
+    body.fontSize = 18;
+    body.fontFamily = 'Consolas';
+    body.width = '600px';
+    body.height = '110px';
+    body.textWrapping = true;
+    body.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    body.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    body.top = '-12px';
+    panel.addControl(body);
+
+    const buttons = new StackPanel('menuResetProgressConfirmButtons');
+    buttons.isVertical = false;
+    buttons.spacing = 16;
+    buttons.top = '104px';
+    panel.addControl(buttons);
+
+    const cancel = Button.CreateSimpleButton('menuResetProgressConfirmCancel', 'CANCEL');
+    cancel.width = '220px';
+    cancel.height = '48px';
+    cancel.color = '#DDFCF3';
+    cancel.background = 'rgba(22,48,44,0.95)';
+    cancel.thickness = 1;
+    cancel.cornerRadius = 4;
+    if (cancel.textBlock) cancel.textBlock.fontSize = 18;
+    this.bindButtonAction(cancel, () => this.hideResetProgressConfirmOverlay());
+    buttons.addControl(cancel);
+
+    const confirm = Button.CreateSimpleButton('menuResetProgressConfirmApply', 'RESET & RESTART');
+    confirm.width = '220px';
+    confirm.height = '48px';
+    confirm.color = '#FFE5E5';
+    confirm.background = 'rgba(110,28,28,0.98)';
+    confirm.thickness = 1;
+    confirm.cornerRadius = 4;
+    if (confirm.textBlock) confirm.textBlock.fontSize = 18;
+    this.bindButtonAction(confirm, () => {
+      this.hideResetProgressConfirmOverlay();
+      this.eventBus.emit(GameEvents.CODEX_PROGRESS_RESET_REQUESTED);
+    });
+    buttons.addControl(confirm);
+  }
+
+  private showResetProgressConfirmOverlay(): void {
+    if (this.resetProgressConfirmOverlay) this.resetProgressConfirmOverlay.isVisible = true;
+  }
+
+  private hideResetProgressConfirmOverlay(): void {
+    if (this.resetProgressConfirmOverlay) this.resetProgressConfirmOverlay.isVisible = false;
   }
 
   private makeSectionHeader(text: string): Rectangle {

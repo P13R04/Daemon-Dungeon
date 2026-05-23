@@ -1841,6 +1841,7 @@ export class EnemyController {
     }
 
     const effectiveSpeed = Math.max(0, this.speed * this.railSlowMultiplier);
+    const allowsRailDisplacement = this.tutorialBashKnockbackEnabled || this.typeId === 'tutorial_dummy_mobile_bash';
     const radius = Math.max(0.28, this.getRadius());
     const checkOffset = radius + 0.12;
     const currentX = this.position.x;
@@ -1866,9 +1867,16 @@ export class EnemyController {
       }
     }
 
-    this.position.x = nextX;
+    const knock = this.knockback.update(deltaTime);
+    this.position.x = nextX + (allowsRailDisplacement ? knock.x : 0);
     this.position.y = this.railAnchor!.y;
-    this.position.z = this.railAnchor!.z;
+    if (allowsRailDisplacement) {
+      const zAfterKnock = this.position.z + knock.z;
+      const snapBackRate = Math.max(0, Math.min(1, deltaTime * 2.4));
+      this.position.z = zAfterKnock + ((this.railAnchor!.z - zAfterKnock) * snapBackRate);
+    } else {
+      this.position.z = this.railAnchor!.z;
+    }
 
     if (this.mesh && !this.mesh.isDisposed()) {
       this.mesh.position.x = this.position.x;
@@ -1880,6 +1888,7 @@ export class EnemyController {
   }
 
   private railDirectionX: number = 1;
+  private tutorialBashKnockbackEnabled: boolean = false;
 
   private updatePong(
     deltaTime: number,
@@ -2893,8 +2902,9 @@ export class EnemyController {
   }
 
   setPosition(position: Vector3): void {
-    // scripted_rail position is computed exclusively by updateScriptedRail() — ignore all external writes
-    if (this.behavior === 'scripted_rail') return;
+    // scripted_rail position is computed by updateScriptedRail(), except while stunned
+    // (tutorial tank shield bash needs to displace and pin the target briefly).
+    if (this.behavior === 'scripted_rail' && this.stunRemaining <= 0 && this.typeId !== 'tutorial_dummy_mobile_bash') return;
     this.position = position.clone();
     this.position.y = 1.0 + EnemyController.globalHeightOffset;
     if (!this.falling && this.mesh) {
@@ -2914,8 +2924,24 @@ export class EnemyController {
   }
 
   applyExternalKnockback(force: Vector3): void {
+    if (this.typeId === 'tutorial_dummy_mobile') {
+      if (!this.tutorialBashKnockbackEnabled) return;
+      // Tutorial tank fallback: once shield-bash mode is enabled, allow knockback
+      // even though the base behavior is scripted_rail.
+      this.knockback.apply(force);
+      return;
+    }
     if (this.isRooted()) return;
     this.knockback.apply(force);
+  }
+
+  enableTutorialBashKnockbackMode(): void {
+    if (this.typeId !== 'tutorial_dummy_mobile') return;
+    this.tutorialBashKnockbackEnabled = true;
+  }
+
+  canBeDisplacedByTutorialBash(): boolean {
+    return this.typeId === 'tutorial_dummy_mobile' && this.tutorialBashKnockbackEnabled;
   }
 
   applyStun(duration: number): void {
@@ -2965,6 +2991,9 @@ export class EnemyController {
   }
 
   public isRooted(): boolean {
+    if (this.typeId === 'tutorial_dummy_mobile_bash') {
+      return false;
+    }
     const rooted = ['turret', 'bullet_hell', 'mage_missile', 'scripted_rail', 'dummy'];
     return rooted.includes(this.behavior);
   }

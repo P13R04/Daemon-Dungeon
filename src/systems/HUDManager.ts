@@ -3,7 +3,7 @@
  */
 
 import { Scene, Engine, Vector3, Vector2, TransformNode, AbstractMesh, Sound, PointerEventTypes } from '@babylonjs/core';
-import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image, StackPanel, Checkbox } from '@babylonjs/gui';
+import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image, StackPanel, Checkbox, Ellipse } from '@babylonjs/gui';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { SettingsMenuBuilder } from '../ui/SettingsMenuBuilder';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
@@ -91,6 +91,13 @@ export class HUDManager {
   private scheduledLogTimer: number = 0;
   private randomGlitchTimer: number = 25;
   private achievementToastContainer: Rectangle | null = null;
+  private achievementToastGlowOuter: Rectangle | null = null;
+  private achievementToastGlowInner: Rectangle | null = null;
+  private achievementToastGlowShimmerA: Rectangle | null = null;
+  private achievementToastAccentTop: Rectangle | null = null;
+  private achievementToastAccentSide: Rectangle | null = null;
+  private achievementToastInnerCircleA: Ellipse | null = null;
+  private achievementToastInnerCircleB: Ellipse | null = null;
   private achievementToastTitle: TextBlock | null = null;
   private achievementToastDescription: TextBlock | null = null;
   private achievementIconPlaceholder: Rectangle | null = null;
@@ -98,6 +105,9 @@ export class HUDManager {
   private achievementToastArtwork: Image | null = null;
   private achievementToastTimer: number = 0;
   private readonly achievementToastDuration: number = 4.0;
+  private achievementToastPulseTime: number = 0;
+  private achievementToastBaseLeft: number = 16;
+  private achievementToastBaseTop: number = 88;
   public static achievementToastQueue: Array<{ id: string; name: string; description: string }> = [];
   public static achievementToastActive: boolean = false;
   public static currentAchievement: { id: string; name: string; description: string } | null = null;
@@ -177,6 +187,10 @@ export class HUDManager {
   private codexScreen: Rectangle | null = null;
   private settingsScreen: Rectangle | null = null;
   private pauseScreen: Rectangle | null = null;
+  private pauseExitButton: Button | null = null;
+  private pauseSkipButton: Button | null = null;
+  private pauseTutorialMode: boolean = false;
+  private pauseTutorialClassId: 'mage' | 'firewall' | 'rogue' | 'cat' | null = null;
   private settingsMenuBuilder: SettingsMenuBuilder | null = null;
   private gameOverScreen: Rectangle | null = null;
   private roomClearScreen: Rectangle | null = null;
@@ -1048,28 +1062,130 @@ export class HUDManager {
     this.statusPanel.addControl(this.autoAimLabel);
 
     this.achievementToastContainer = new Rectangle('achievement_toast');
-    this.achievementToastContainer.width = '460px';
-    this.achievementToastContainer.height = '112px';
-    this.achievementToastContainer.thickness = 2;
+    this.achievementToastContainer.width = '560px';
+    this.achievementToastContainer.height = '148px';
+    this.achievementToastContainer.thickness = 3;
     this.achievementToastContainer.color = '#7CFFEA';
-    this.achievementToastContainer.background = 'rgba(4, 24, 28, 0.92)';
-    this.achievementToastContainer.left = 16;
-    this.achievementToastContainer.top = 88;
+    this.achievementToastContainer.background = 'rgba(6, 18, 24, 0.94)';
+    this.achievementToastContainer.left = this.achievementToastBaseLeft;
+    this.achievementToastContainer.top = this.achievementToastBaseTop;
     this.achievementToastContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.achievementToastContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.achievementToastContainer.isVisible = false;
     this.achievementToastContainer.isPointerBlocker = false;
-    this.achievementToastContainer.zIndex = 1000;
+    this.achievementToastContainer.zIndex = 9000;
     this.guiClean.addControl(this.achievementToastContainer);
 
+    this.achievementToastGlowOuter = new Rectangle('achievement_toast_glow_outer');
+    this.achievementToastGlowOuter.width = '580px';
+    this.achievementToastGlowOuter.height = '168px';
+    this.achievementToastGlowOuter.thickness = 6;
+    this.achievementToastGlowOuter.color = '#42D8FF';
+    this.achievementToastGlowOuter.background = 'rgba(0, 0, 0, 0)';
+    this.achievementToastGlowOuter.left = this.achievementToastBaseLeft;
+    this.achievementToastGlowOuter.top = this.achievementToastBaseTop;
+    this.achievementToastGlowOuter.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastGlowOuter.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastGlowOuter.isVisible = false;
+    this.achievementToastGlowOuter.isPointerBlocker = false;
+    this.achievementToastGlowOuter.alpha = 0.45;
+    this.achievementToastGlowOuter.zIndex = 8988;
+    this.guiClean.addControl(this.achievementToastGlowOuter);
+
+    this.achievementToastGlowInner = new Rectangle('achievement_toast_glow_inner');
+    this.achievementToastGlowInner.width = '564px';
+    this.achievementToastGlowInner.height = '152px';
+    this.achievementToastGlowInner.thickness = 2;
+    this.achievementToastGlowInner.color = '#80FFF2';
+    this.achievementToastGlowInner.background = 'rgba(0,0,0,0)';
+    this.achievementToastGlowInner.left = this.achievementToastBaseLeft;
+    this.achievementToastGlowInner.top = this.achievementToastBaseTop;
+    this.achievementToastGlowInner.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastGlowInner.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastGlowInner.isVisible = false;
+    this.achievementToastGlowInner.isPointerBlocker = false;
+    this.achievementToastGlowInner.alpha = 0.55;
+    this.achievementToastGlowInner.zIndex = 8990;
+    this.guiClean.addControl(this.achievementToastGlowInner);
+
+    this.achievementToastGlowShimmerA = new Rectangle('achievement_toast_glow_shimmer_a');
+    this.achievementToastGlowShimmerA.width = '604px';
+    this.achievementToastGlowShimmerA.height = '188px';
+    this.achievementToastGlowShimmerA.thickness = 10;
+    this.achievementToastGlowShimmerA.color = '#FBA3FF';
+    this.achievementToastGlowShimmerA.background = 'rgba(0,0,0,0)';
+    this.achievementToastGlowShimmerA.left = this.achievementToastBaseLeft - 22;
+    this.achievementToastGlowShimmerA.top = this.achievementToastBaseTop - 22;
+    this.achievementToastGlowShimmerA.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastGlowShimmerA.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastGlowShimmerA.isVisible = false;
+    this.achievementToastGlowShimmerA.isPointerBlocker = false;
+    this.achievementToastGlowShimmerA.alpha = 0.14;
+    this.achievementToastGlowShimmerA.zIndex = 8986;
+    this.guiClean.addControl(this.achievementToastGlowShimmerA);
+
+    this.achievementToastAccentTop = new Rectangle('achievement_toast_accent_top');
+    this.achievementToastAccentTop.width = '560px';
+    this.achievementToastAccentTop.height = '6px';
+    this.achievementToastAccentTop.thickness = 0;
+    this.achievementToastAccentTop.background = '#FFD36A';
+    this.achievementToastAccentTop.left = this.achievementToastBaseLeft;
+    this.achievementToastAccentTop.top = this.achievementToastBaseTop - 3;
+    this.achievementToastAccentTop.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastAccentTop.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastAccentTop.isVisible = false;
+    this.achievementToastAccentTop.isPointerBlocker = false;
+    this.achievementToastAccentTop.alpha = 0.82;
+    this.achievementToastAccentTop.zIndex = 8996;
+    this.guiClean.addControl(this.achievementToastAccentTop);
+
+    this.achievementToastAccentSide = new Rectangle('achievement_toast_accent_side');
+    this.achievementToastAccentSide.width = '7px';
+    this.achievementToastAccentSide.height = '148px';
+    this.achievementToastAccentSide.thickness = 0;
+    this.achievementToastAccentSide.background = '#73F9FF';
+    this.achievementToastAccentSide.left = this.achievementToastBaseLeft - 4;
+    this.achievementToastAccentSide.top = this.achievementToastBaseTop;
+    this.achievementToastAccentSide.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.achievementToastAccentSide.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.achievementToastAccentSide.isVisible = false;
+    this.achievementToastAccentSide.isPointerBlocker = false;
+    this.achievementToastAccentSide.alpha = 0.74;
+    this.achievementToastAccentSide.zIndex = 8996;
+    this.guiClean.addControl(this.achievementToastAccentSide);
+
+    this.achievementToastInnerCircleA = new Ellipse('achievement_toast_inner_circle_a');
+    this.achievementToastInnerCircleA.width = '280px';
+    this.achievementToastInnerCircleA.height = '280px';
+    this.achievementToastInnerCircleA.left = '240px';
+    this.achievementToastInnerCircleA.top = '-78px';
+    this.achievementToastInnerCircleA.thickness = 2;
+    this.achievementToastInnerCircleA.color = '#FF9ECD';
+    this.achievementToastInnerCircleA.background = 'rgba(255,215,245,0.09)';
+    this.achievementToastInnerCircleA.alpha = 0.24;
+    this.achievementToastInnerCircleA.isPointerBlocker = false;
+    this.achievementToastContainer.addControl(this.achievementToastInnerCircleA);
+
+    this.achievementToastInnerCircleB = new Ellipse('achievement_toast_inner_circle_b');
+    this.achievementToastInnerCircleB.width = '196px';
+    this.achievementToastInnerCircleB.height = '196px';
+    this.achievementToastInnerCircleB.left = '318px';
+    this.achievementToastInnerCircleB.top = '-36px';
+    this.achievementToastInnerCircleB.thickness = 1;
+    this.achievementToastInnerCircleB.color = '#82D5FF';
+    this.achievementToastInnerCircleB.background = 'rgba(196,229,255,0.07)';
+    this.achievementToastInnerCircleB.alpha = 0.22;
+    this.achievementToastInnerCircleB.isPointerBlocker = false;
+    this.achievementToastContainer.addControl(this.achievementToastInnerCircleB);
+
     this.achievementIconPlaceholder = new Rectangle('achievement_toast_icon');
-    this.achievementIconPlaceholder.width = '80px';
-    this.achievementIconPlaceholder.height = '80px';
-    this.achievementIconPlaceholder.thickness = 1;
+    this.achievementIconPlaceholder.width = '106px';
+    this.achievementIconPlaceholder.height = '106px';
+    this.achievementIconPlaceholder.thickness = 2;
     this.achievementIconPlaceholder.color = '#5FFFE0';
     this.achievementIconPlaceholder.background = 'rgba(18, 44, 51, 0.9)';
-    this.achievementIconPlaceholder.left = 14;
-    this.achievementIconPlaceholder.top = 16;
+    this.achievementIconPlaceholder.left = 18;
+    this.achievementIconPlaceholder.top = 20;
     this.achievementIconPlaceholder.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.achievementIconPlaceholder.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.achievementToastContainer.addControl(this.achievementIconPlaceholder);
@@ -1077,7 +1193,7 @@ export class HUDManager {
     this.achievementIconText = new TextBlock('achievement_toast_icon_text');
     this.achievementIconText.text = '?';
     this.achievementIconText.fontFamily = fontFamily;
-    this.achievementIconText.fontSize = 30;
+    this.achievementIconText.fontSize = 36;
     this.achievementIconText.color = '#B8FFE6';
     this.achievementIconPlaceholder.addControl(this.achievementIconText);
 
@@ -1085,13 +1201,14 @@ export class HUDManager {
 
     this.achievementToastTitle = new TextBlock('achievement_toast_title');
     this.achievementToastTitle.text = 'ACHIEVEMENT UNLOCKED';
-    this.achievementToastTitle.fontSize = 18;
+    this.achievementToastTitle.fontSize = 27;
     this.achievementToastTitle.fontFamily = fontFamily;
     this.achievementToastTitle.color = '#7CFFEA';
-    this.achievementToastTitle.left = 106;
-    this.achievementToastTitle.top = 14;
-    this.achievementToastTitle.width = '340px';
-    this.achievementToastTitle.height = '28px';
+    this.achievementToastTitle.left = 140;
+    this.achievementToastTitle.top = 16;
+    this.achievementToastTitle.width = '402px';
+    this.achievementToastTitle.height = '44px';
+    this.achievementToastTitle.textWrapping = true;
     this.achievementToastTitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.achievementToastTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.achievementToastTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1099,18 +1216,20 @@ export class HUDManager {
 
     this.achievementToastDescription = new TextBlock('achievement_toast_desc');
     this.achievementToastDescription.text = '';
-    this.achievementToastDescription.fontSize = 14;
+    this.achievementToastDescription.fontSize = 20;
     this.achievementToastDescription.fontFamily = fontFamily;
     this.achievementToastDescription.color = '#CFFCF3';
-    this.achievementToastDescription.left = 106;
-    this.achievementToastDescription.top = 46;
-    this.achievementToastDescription.width = '340px';
-    this.achievementToastDescription.height = '54px';
+    this.achievementToastDescription.left = 140;
+    this.achievementToastDescription.top = 66;
+    this.achievementToastDescription.width = '402px';
+    this.achievementToastDescription.height = '70px';
     this.achievementToastDescription.textWrapping = true;
+    this.achievementToastDescription.lineSpacing = '5px';
     this.achievementToastDescription.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.achievementToastDescription.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.achievementToastDescription.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.achievementToastContainer.addControl(this.achievementToastDescription);
+    this.applyAchievementToastLayout();
 
     // Daemon popup
     this.daemonContainer = new Rectangle('daemon_container');
@@ -1314,7 +1433,12 @@ export class HUDManager {
       this.showSettingsMenu();
     });
 
-    createButton('MAIN MENU', '#9FEFE1', () => {
+    this.pauseSkipButton = createButton('SKIP TUTORIAL', '#9FEFE1', () => {
+      this.eventBus.emit(GameEvents.TUTORIAL_SKIP_REQUESTED);
+    });
+    this.pauseSkipButton.isVisible = false;
+
+    this.pauseExitButton = createButton('MAIN MENU', '#9FEFE1', () => {
       this.eventBus.emit(GameEvents.MAIN_MENU_REQUESTED);
     });
 
@@ -1339,6 +1463,20 @@ export class HUDManager {
   public hidePauseMenu(): void {
     if (this.pauseScreen) this.pauseScreen.isVisible = false;
     if (this.enemyGui) this.enemyGui.rootContainer.isVisible = true;
+  }
+
+  public setPauseTutorialMode(active: boolean, tutorialClassId?: 'mage' | 'firewall' | 'rogue' | 'cat'): void {
+    this.pauseTutorialMode = active;
+    this.pauseTutorialClassId = active ? (tutorialClassId ?? this.pauseTutorialClassId ?? null) : null;
+    const classKey = this.pauseTutorialClassId === 'cat' ? 'rogue' : this.pauseTutorialClassId;
+    const dualTutorialButtons = active && (classKey === 'firewall' || classKey === 'rogue');
+
+    if (this.pauseSkipButton) {
+      this.pauseSkipButton.isVisible = dualTutorialButtons;
+    }
+    if (this.pauseExitButton?.textBlock) {
+      this.pauseExitButton.textBlock.text = active && !dualTutorialButtons ? 'SKIP TUTORIAL' : 'MAIN MENU';
+    }
   }
 
   /** Show or hide the auto-aim badge in the HUD status panel. */
@@ -2327,16 +2465,45 @@ export class HUDManager {
       } else {
         this.achievementToastArtwork.source = buildHudAssetUrl(`achievements/${HUDManager.currentAchievement.id}.png`);
       }
-      this.achievementToastArtwork.width = '80px';
-      this.achievementToastArtwork.height = '80px';
+      this.achievementToastArtwork.width = this.achievementIconPlaceholder.width;
+      this.achievementToastArtwork.height = this.achievementIconPlaceholder.height;
       this.achievementToastArtwork.stretch = Image.STRETCH_UNIFORM;
       this.achievementIconPlaceholder.addControl(this.achievementToastArtwork);
     }
+
+    const accentColor = this.getEpicToastColor(0);
+    if (this.achievementToastContainer) this.achievementToastContainer.color = accentColor;
+    if (this.achievementToastGlowOuter) this.achievementToastGlowOuter.color = accentColor;
+    if (this.achievementToastGlowInner) this.achievementToastGlowInner.color = accentColor;
+    if (this.achievementToastAccentTop) this.achievementToastAccentTop.background = accentColor;
+    if (this.achievementToastAccentSide) this.achievementToastAccentSide.background = accentColor;
+    this.achievementToastPulseTime = 0;
+    this.applyAchievementToastLayout();
 
     HUDManager.achievementToastActive = true;
     this.achievementToastTimer = this.achievementToastDuration;
     this.achievementToastContainer.alpha = 1;
     this.achievementToastContainer.isVisible = true;
+    if (this.achievementToastGlowOuter) {
+      this.achievementToastGlowOuter.alpha = 0.45;
+      this.achievementToastGlowOuter.isVisible = true;
+    }
+    if (this.achievementToastGlowInner) {
+      this.achievementToastGlowInner.alpha = 0.55;
+      this.achievementToastGlowInner.isVisible = true;
+    }
+    if (this.achievementToastGlowShimmerA) {
+      this.achievementToastGlowShimmerA.alpha = 0.15;
+      this.achievementToastGlowShimmerA.isVisible = true;
+    }
+    if (this.achievementToastAccentTop) {
+      this.achievementToastAccentTop.alpha = 0.82;
+      this.achievementToastAccentTop.isVisible = true;
+    }
+    if (this.achievementToastAccentSide) {
+      this.achievementToastAccentSide.alpha = 0.74;
+      this.achievementToastAccentSide.isVisible = true;
+    }
   }
  
   private updateAchievementToast(deltaTime: number): void {
@@ -2359,15 +2526,54 @@ export class HUDManager {
     }
  
     this.achievementToastTimer -= deltaTime;
+    this.achievementToastPulseTime += Math.max(0, deltaTime);
+    const pulse = 0.5 + (Math.sin(this.achievementToastPulseTime * 8.6) * 0.5);
+    const shouldShake = this.achievementToastPulseTime < 1.0;
+    const jitterX = shouldShake ? Math.sin(this.achievementToastPulseTime * 10.5) * 0.25 : 0;
+    const jitterY = shouldShake ? Math.cos(this.achievementToastPulseTime * 8.8) * 0.2 : 0;
+    const epicColor = this.getEpicToastColor(this.achievementToastPulseTime * 0.9);
+    this.applyAchievementToastLayout(jitterX, jitterY);
+    this.achievementToastContainer.color = epicColor;
+    if (this.achievementToastGlowOuter) this.achievementToastGlowOuter.color = epicColor;
+    if (this.achievementToastGlowInner) this.achievementToastGlowInner.color = epicColor;
+    if (this.achievementToastAccentTop) this.achievementToastAccentTop.background = epicColor;
+    if (this.achievementToastAccentSide) this.achievementToastAccentSide.background = epicColor;
+    if (this.achievementToastGlowOuter) this.achievementToastGlowOuter.alpha = 0.38 + pulse * 0.34;
+    if (this.achievementToastGlowInner) this.achievementToastGlowInner.alpha = 0.47 + pulse * 0.28;
+    if (this.achievementToastGlowShimmerA) this.achievementToastGlowShimmerA.alpha = 0.12 + pulse * 0.12;
+    if (this.achievementToastAccentTop) this.achievementToastAccentTop.alpha = 0.55 + pulse * 0.26;
+    if (this.achievementToastAccentSide) this.achievementToastAccentSide.alpha = 0.50 + pulse * 0.24;
+    if (this.achievementToastInnerCircleA) {
+      this.achievementToastInnerCircleA.alpha = 0.20 + pulse * 0.10;
+      this.achievementToastInnerCircleA.color = this.getEpicToastColor(this.achievementToastPulseTime * 0.55 + 0.4);
+    }
+    if (this.achievementToastInnerCircleB) {
+      this.achievementToastInnerCircleB.alpha = 0.17 + pulse * 0.08;
+      this.achievementToastInnerCircleB.color = this.getEpicToastColor(this.achievementToastPulseTime * 0.55 + 1.2);
+    }
     
     // Fade out during last 0.4 seconds
     if (this.achievementToastTimer < 0.4) {
-      this.achievementToastContainer.alpha = Math.max(0, this.achievementToastTimer / 0.4);
+      const fade = Math.max(0, this.achievementToastTimer / 0.4);
+      this.achievementToastContainer.alpha = fade;
+      if (this.achievementToastGlowOuter) this.achievementToastGlowOuter.alpha *= fade;
+      if (this.achievementToastGlowInner) this.achievementToastGlowInner.alpha *= fade;
+      if (this.achievementToastGlowShimmerA) this.achievementToastGlowShimmerA.alpha *= fade;
+      if (this.achievementToastAccentTop) this.achievementToastAccentTop.alpha *= fade;
+      if (this.achievementToastAccentSide) this.achievementToastAccentSide.alpha *= fade;
+      if (this.achievementToastInnerCircleA) this.achievementToastInnerCircleA.alpha *= fade;
+      if (this.achievementToastInnerCircleB) this.achievementToastInnerCircleB.alpha *= fade;
     }
 
     if (this.achievementToastTimer <= 0) {
       this.achievementToastContainer.isVisible = false;
       this.achievementToastContainer.alpha = 1.0; // Reset for next time
+      this.applyAchievementToastLayout();
+      if (this.achievementToastGlowOuter) this.achievementToastGlowOuter.isVisible = false;
+      if (this.achievementToastGlowInner) this.achievementToastGlowInner.isVisible = false;
+      if (this.achievementToastGlowShimmerA) this.achievementToastGlowShimmerA.isVisible = false;
+      if (this.achievementToastAccentTop) this.achievementToastAccentTop.isVisible = false;
+      if (this.achievementToastAccentSide) this.achievementToastAccentSide.isVisible = false;
       HUDManager.achievementToastActive = false;
       HUDManager.currentAchievement = null;
       
@@ -2375,6 +2581,146 @@ export class HUDManager {
         this.showNextAchievementToast();
       }
     }
+  }
+
+  private applyAchievementToastLayout(jitterX: number = 0, jitterY: number = 0): void {
+    if (!this.achievementToastContainer) return;
+
+    const renderW = this.scene?.getEngine?.().getRenderWidth?.(true) ?? 1920;
+    const isCompact = renderW <= 900;
+    const width = isCompact ? Math.round(Math.min(500, Math.max(310, renderW * 0.9))) : 500;
+    const height = isCompact ? Math.round(Math.max(126, width * 0.32)) : 132;
+    const iconSize = isCompact ? 82 : 92;
+    const margin = isCompact ? 12 : 18;
+    const textLeft = margin + iconSize + (isCompact ? 12 : 16);
+    const textWidth = Math.max(170, width - textLeft - margin);
+    const top = isCompact ? 78 : 88;
+    const left = isCompact ? 10 : 16;
+    const titleSize = this.computeAchievementToastTitleSize(
+      HUDManager.currentAchievement?.name ?? '',
+      isCompact
+    );
+    const descSize = this.computeAchievementToastDescriptionSize(
+      this.achievementToastDescription?.text ?? '',
+      isCompact
+    );
+
+    this.achievementToastBaseLeft = left;
+    this.achievementToastBaseTop = top;
+    this.achievementToastContainer.width = `${width}px`;
+    this.achievementToastContainer.height = `${height}px`;
+    this.achievementToastContainer.left = left + jitterX;
+    this.achievementToastContainer.top = top + jitterY;
+
+    if (this.achievementIconPlaceholder) {
+      this.achievementIconPlaceholder.width = `${iconSize}px`;
+      this.achievementIconPlaceholder.height = `${iconSize}px`;
+      this.achievementIconPlaceholder.left = margin;
+      this.achievementIconPlaceholder.top = Math.round((height - iconSize) * 0.5);
+    }
+    if (this.achievementToastTitle) {
+      this.achievementToastTitle.left = textLeft;
+      this.achievementToastTitle.top = isCompact ? 10 : 14;
+      this.achievementToastTitle.width = `${textWidth}px`;
+      this.achievementToastTitle.height = isCompact ? '40px' : '38px';
+      this.achievementToastTitle.fontSize = titleSize;
+    }
+    if (this.achievementToastDescription) {
+      this.achievementToastDescription.left = textLeft;
+      this.achievementToastDescription.top = isCompact ? 48 : 55;
+      this.achievementToastDescription.width = `${textWidth}px`;
+      this.achievementToastDescription.height = `${Math.max(52, height - (isCompact ? 56 : 64))}px`;
+      this.achievementToastDescription.fontSize = descSize;
+    }
+    if (this.achievementToastArtwork && this.achievementIconPlaceholder) {
+      this.achievementToastArtwork.width = this.achievementIconPlaceholder.width;
+      this.achievementToastArtwork.height = this.achievementIconPlaceholder.height;
+    }
+
+    if (this.achievementToastGlowOuter) {
+      this.achievementToastGlowOuter.width = `${width + 20}px`;
+      this.achievementToastGlowOuter.height = `${height + 20}px`;
+      this.achievementToastGlowOuter.left = left - 10 + jitterX;
+      this.achievementToastGlowOuter.top = top - 10 + jitterY;
+    }
+    if (this.achievementToastGlowInner) {
+      this.achievementToastGlowInner.width = `${width + 4}px`;
+      this.achievementToastGlowInner.height = `${height + 4}px`;
+      this.achievementToastGlowInner.left = left - 2 + jitterX;
+      this.achievementToastGlowInner.top = top - 2 + jitterY;
+    }
+    if (this.achievementToastGlowShimmerA) {
+      this.achievementToastGlowShimmerA.width = `${width + 34}px`;
+      this.achievementToastGlowShimmerA.height = `${height + 34}px`;
+      this.achievementToastGlowShimmerA.left = left - 17 + jitterX;
+      this.achievementToastGlowShimmerA.top = top - 17 + jitterY;
+      this.achievementToastGlowShimmerA.color = this.getEpicToastColor(this.achievementToastPulseTime * 0.95 + 0.7);
+    }
+    if (this.achievementToastAccentTop) {
+      this.achievementToastAccentTop.width = `${width}px`;
+      this.achievementToastAccentTop.left = left + jitterX;
+      this.achievementToastAccentTop.top = top - 3 + jitterY;
+    }
+    if (this.achievementToastAccentSide) {
+      this.achievementToastAccentSide.height = `${height}px`;
+      this.achievementToastAccentSide.left = left - 4 + jitterX;
+      this.achievementToastAccentSide.top = top + jitterY;
+    }
+    if (this.achievementToastInnerCircleA) {
+      const leftSweep = (this.achievementToastPulseTime * 24) % 96;
+      const driftX = Math.sin(this.achievementToastPulseTime * 0.9) * 7;
+      const driftY = Math.cos(this.achievementToastPulseTime * 0.7) * 5;
+      const circleSize = Math.round(height * 1.95);
+      this.achievementToastInnerCircleA.width = `${circleSize}px`;
+      this.achievementToastInnerCircleA.height = `${circleSize}px`;
+      this.achievementToastInnerCircleA.left = `${Math.round(width * 0.44 - leftSweep + driftX)}px`;
+      this.achievementToastInnerCircleA.top = `${Math.round(-height * 0.52 + driftY)}px`;
+    }
+    if (this.achievementToastInnerCircleB) {
+      const leftSweep = (this.achievementToastPulseTime * 28) % 112;
+      const driftX = Math.cos(this.achievementToastPulseTime * 0.76) * 6;
+      const driftY = Math.sin(this.achievementToastPulseTime * 0.88) * 4;
+      const circleSize = Math.round(height * 1.38);
+      this.achievementToastInnerCircleB.width = `${circleSize}px`;
+      this.achievementToastInnerCircleB.height = `${circleSize}px`;
+      this.achievementToastInnerCircleB.left = `${Math.round(width * 0.6 - leftSweep + driftX)}px`;
+      this.achievementToastInnerCircleB.top = `${Math.round(-height * 0.22 + driftY)}px`;
+    }
+  }
+
+  private computeAchievementToastTitleSize(title: string, isCompact: boolean): number {
+    const len = (title || '').trim().length;
+    const base = isCompact ? 20 : 23;
+    if (len > 46) return base - 4;
+    if (len > 34) return base - 2;
+    return base;
+  }
+
+  private computeAchievementToastDescriptionSize(description: string, isCompact: boolean): number {
+    const len = (description || '').trim().length;
+    const base = isCompact ? 16 : 18;
+    if (len > 125) return base - 3;
+    if (len > 92) return base - 2;
+    if (len > 66) return base - 1;
+    return base;
+  }
+
+  private getEpicToastColor(phase: number): string {
+    const colors = ['#FF7BCF', '#FF9AB0', '#B98BFF', '#72C9FF', '#FF7BCF'];
+    const wrapped = ((phase % (colors.length - 1)) + (colors.length - 1)) % (colors.length - 1);
+    const idx = Math.floor(wrapped);
+    const t = wrapped - idx;
+    return this.lerpHexColor(colors[idx], colors[idx + 1], t);
+  }
+
+  private lerpHexColor(a: string, b: string, t: number): string {
+    const parse = (hex: string, offset: number) => parseInt(hex.slice(offset, offset + 2), 16);
+    const ar = parse(a, 1), ag = parse(a, 3), ab = parse(a, 5);
+    const br = parse(b, 1), bg = parse(b, 3), bb = parse(b, 5);
+    const rr = Math.round(ar + (br - ar) * t).toString(16).padStart(2, '0');
+    const rg = Math.round(ag + (bg - ag) * t).toString(16).padStart(2, '0');
+    const rb = Math.round(ab + (bb - ab) * t).toString(16).padStart(2, '0');
+    return `#${rr}${rg}${rb}`;
   }
 
   private getRarityVisual(rarity: 'common' | 'uncommon' | 'rare' | 'epic'): {

@@ -36,6 +36,7 @@ export interface GameEventBindingsCallbacks {
   onTutorialStartRequested(data: GameStartRequestedPayload): void;
   onTutorialPhaseCompleted(data?: { phaseId?: string }): void;
   onTutorialEndRequested(): void;
+  onTutorialSkipRequested(): void;
   onPlayerUltimateRefillRequested(): void;
   onMainMenuRequested(): void;
   onClassSelectRequested(): void;
@@ -145,6 +146,9 @@ export class GameEventBindings {
 
     onEvent(GameEvents.TUTORIAL_END_REQUESTED, () => {
       if (this.callbacks.onTutorialEndRequested) this.callbacks.onTutorialEndRequested();
+    });
+    onEvent(GameEvents.TUTORIAL_SKIP_REQUESTED, () => {
+      if (this.callbacks.onTutorialSkipRequested) this.callbacks.onTutorialSkipRequested();
     });
 
     onEvent(GameEvents.PLAYER_ULTIMATE_REFILL_REQUESTED, () => {

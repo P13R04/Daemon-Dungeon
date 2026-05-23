@@ -13,6 +13,7 @@ import { getHudAssetBaseUrl } from './hud/HudAssetPaths';
 interface EnemySpawnRequestPayload {
   typeId?: string;
   position?: Vector3;
+  hpMultiplier?: number;
 }
 
 type EnemyPrewarmOptions = {
@@ -77,7 +78,7 @@ export class EnemySpawner {
       const typeId = data?.typeId;
       const position = data?.position;
       if (!typeId || !position) return;
-      this.spawnEnemyAt(typeId, position);
+      this.spawnEnemyAt(typeId, position, data?.hpMultiplier);
     });
   }
 
@@ -477,15 +478,26 @@ export class EnemySpawner {
     }
   }
 
-  private spawnEnemyAt(typeId: string, position: Vector3): void {
-    this.spawnEnemyNow(typeId, position);
+  private spawnEnemyAt(typeId: string, position: Vector3, hpMultiplier?: number): void {
+    this.spawnEnemyNow(typeId, position, { hpMultiplier });
   }
 
-  private spawnEnemyNow(typeId: string, position: Vector3, options?: SpawnEnemyNowOptions): void {
+  private spawnEnemyNow(typeId: string, position: Vector3, options?: SpawnEnemyNowOptions & { hpMultiplier?: number }): void {
     const scaledConfig = this.getScaledEnemyConfig(typeId, options?.difficultyLevelOverride);
     if (!scaledConfig) return;
+    let enemyConfig = scaledConfig;
+    if (typeof options?.hpMultiplier === 'number' && Number.isFinite(options.hpMultiplier) && options.hpMultiplier > 0) {
+      const nextHp = Math.max(1, Math.round((scaledConfig.baseStats?.hp ?? 40) * options.hpMultiplier));
+      enemyConfig = {
+        ...scaledConfig,
+        baseStats: {
+          ...(scaledConfig.baseStats ?? {}),
+          hp: nextHp,
+        },
+      };
+    }
 
-    const enemy = new EnemyController(this.scene, typeId, position, scaledConfig, {
+    const enemy = new EnemyController(this.scene, typeId, position, enemyConfig, {
       suppressSpawnEvent: options?.suppressSpawnEvent,
       suppressAI: options?.suppressAI,
       suppressRender: options?.suppressRender,
