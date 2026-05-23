@@ -3,9 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="preload" href="/font/8bit_wonder/8bit_wonder.ttf" as="font" type="font/ttf" crossorigin>
     <title>Daemon Dungeon</title>
     <style>
+        @font-face {
+            font-family: 'Wonder8Bit';
+            src: url('/font/8bit_wonder/8bit_wonder.ttf') format('truetype');
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -114,6 +120,10 @@
             <p id="loadingProgress">0%</p>
         </div>
     </div>
+    
+    <!-- Force font load -->
+    <div style="font-family: 'Wonder8Bit'; position: absolute; opacity: 0; pointer-events: none;">.</div>
+
     <script type="module" src="./src/main.ts"></script>
 </body>
 </html>

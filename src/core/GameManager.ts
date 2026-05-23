@@ -2908,6 +2908,7 @@ export class GameManager {
       this.playerController.setRenderVisibility(0);
       this.playerController.setExternalVerticalOffset(0.85);
       this.playerController.setInputSuppressed(true);
+      this.playerController.resetFacingDirection();
 
       await this.animatePlayerRelocationFx({
         fromVisibility: 0,

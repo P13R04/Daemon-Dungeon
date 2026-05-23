@@ -79,8 +79,8 @@ export class PlayerController {
   private tankAmbientParticleTexture: DynamicTexture | null = null;
   
   // Direction tracking for model rotation
-  private lastMovementDirection: Vector3 = new Vector3(1, 0, 0);
-  private lastAttackDirection: Vector3 = new Vector3(1, 0, 0);
+  private lastMovementDirection: Vector3 = new Vector3(0, 0, 1);
+  private lastAttackDirection: Vector3 = new Vector3(0, 0, 1);
   private wasJustAttacking: boolean = false; // Track if we just attacked to show attack direction briefly
   private justAttackingTimeLeft: number = 0; // Time remaining to show attack direction (0.3 seconds)
   
@@ -712,8 +712,17 @@ export class PlayerController {
     this.syncVisualPosition();
   }
 
-  getExternalVerticalOffset(): number {
-    return this.externalVerticalOffset;
+  public isDead(): boolean {
+    return this.isDeadState;
+  }
+
+  public resetFacingDirection(): void {
+    const dir = new Vector3(0, 0, 1);
+    this.lastMovementDirection = dir.clone();
+    this.lastAttackDirection = dir.clone();
+    if (this.animationController) {
+      this.animationController.faceDirectionImmediate(dir);
+    }
   }
 
   setRenderVisibility(visibility: number): void {

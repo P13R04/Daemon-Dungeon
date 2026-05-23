@@ -256,7 +256,7 @@ export class MainMenuScene {
     const title = new TextBlock('menuAchievementToastTitle');
     title.text = 'ACHIEVEMENT UNLOCKED';
     title.color = '#7CFFEA';
-    title.fontFamily = 'Consolas';
+    title.fontFamily = UITheme.fonts.primary;
     title.fontSize = 16;
     title.left = 88;
     title.top = 10;
@@ -271,7 +271,7 @@ export class MainMenuScene {
     const description = new TextBlock('menuAchievementToastDescription');
     description.text = '';
     description.color = '#CFFCF3';
-    description.fontFamily = 'Consolas';
+    description.fontFamily = UITheme.fonts.primary;
     description.fontSize = 13;
     description.left = 88;
     description.top = 34;
@@ -298,7 +298,7 @@ export class MainMenuScene {
 
     const achievementIconText = new TextBlock('menuAchievementToastIconText');
     achievementIconText.text = '?';
-    achievementIconText.fontFamily = 'Consolas';
+    achievementIconText.fontFamily = UITheme.fonts.primary;
     achievementIconText.fontSize = 24;
     achievementIconText.color = '#B8FFE6';
     this.achievementIconPlaceholder.addControl(achievementIconText);
@@ -373,35 +373,75 @@ export class MainMenuScene {
     }
 
     if (this.achievementToastTimer < 0.35) {
-      this.achievementToast.alpha = Math.max(0, this.achievementToastTimer / 0.35);
+        this.achievementToast.alpha = Math.max(0, this.achievementToastTimer / 0.35);
     }
   }
 
   private createMainButtons(): void {
-    const title = UIFactory.createText('menuTitle', 'DAEMON DUNGEON', 72, UITheme.colors.textHighlight);
-    title.fontFamily = UITheme.fonts.primary;
-    title.top = `-${Math.round(this.layoutHeight * 0.44)}px`;
-    title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.mainLayoutContainer.addControl(title);
+    const titleContainer = new Rectangle('titleContainer');
+    titleContainer.thickness = 0;
+    titleContainer.width = '1200px';
+    titleContainer.height = '120px';
+    titleContainer.top = `-${Math.round(this.layoutHeight * 0.44)}px`;
+    titleContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.mainLayoutContainer.addControl(titleContainer);
+
+    const titlePart1 = UIFactory.createText('menuTitle1', 'DAEMON', 72, UITheme.colors.textHighlight);
+    titlePart1.fontFamily = 'Wonder8Bit';
+    titlePart1.textWrapping = false;
+    titlePart1.width = '500px';
+    titlePart1.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    titlePart1.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    titleContainer.addControl(titlePart1);
+
+    const daemonFrames: Image[] = [];
+    for (let i = 1; i <= 4; i++) {
+      const frame = new Image(`daemonAvatar${i}`, `/avatar_frames_cutout2/rire_0${i}.png`);
+      frame.width = '100px';
+      frame.height = '100px';
+      frame.stretch = Image.STRETCH_UNIFORM;
+      frame.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+      frame.isVisible = (i === 1);
+      titleContainer.addControl(frame);
+      daemonFrames.push(frame);
+    }
+
+    const titlePart2 = UIFactory.createText('menuTitle2', 'DUNGEON', 72, UITheme.colors.textHighlight);
+    titlePart2.fontFamily = 'Wonder8Bit';
+    titlePart2.textWrapping = false;
+    titlePart2.width = '500px';
+    titlePart2.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    titlePart2.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    titleContainer.addControl(titlePart2);
 
     // Title flicker animation — slow oscillation between highlight colors
     this.scene.onBeforeRenderObservable.add(() => {
       this.titleFlickerTime += this.scene.getEngine().getDeltaTime();
       const t = this.titleFlickerTime;
-      // Slow pulse: green → cyan → white, very subtle, period ~6s
+
+      // Daemon laugh animation (~10 fps)
+      const currentFrame = Math.floor(t / 100) % 4;
+      for (let i = 0; i < 4; i++) {
+        daemonFrames[i].isVisible = (i === currentFrame);
+      }
+
+      // Slow pulse: green -> cyan -> white, very subtle, period ~6s
       const phase = (t * 0.001) % (Math.PI * 2);
       const pulse = Math.sin(phase);
+      let newColor = '';
       if (pulse > 0.7) {
-        title.color = '#FFFFFF';
+        newColor = '#FFFFFF';
       } else if (pulse > 0.2) {
-        title.color = UITheme.colors.borderBright; // cyan
+        newColor = UITheme.colors.borderBright; // cyan
       } else {
-        title.color = UITheme.colors.textHighlight; // green
+        newColor = UITheme.colors.textHighlight; // green
       }
       // Occasional fast flicker — 1-2 frames, ~every 8s
       if (Math.random() < 0.0004) {
-        title.color = '#CC00FF'; // daemon magenta flash
+        newColor = '#CC00FF'; // daemon magenta flash
       }
+      titlePart1.color = newColor;
+      titlePart2.color = newColor;
     });
 
     const subtitle = UIFactory.createText('menuSubtitle', 'SYSTEM READY // MAIN CONSOLE', 20, UITheme.colors.borderBright);
@@ -481,7 +521,7 @@ export class MainMenuScene {
     title.text = 'SETTINGS CONSOLE';
     title.color = '#7CFFEA';
     title.fontSize = 34;
-    title.fontFamily = 'Consolas';
+    title.fontFamily = UITheme.fonts.primary;
     title.top = `-${Math.round(windowHeight * 0.45)}px`;
     windowPanel.addControl(title);
 
@@ -682,7 +722,7 @@ export class MainMenuScene {
     label.text = 'Color Vision Filter';
     label.color = '#B9F9E8';
     label.fontSize = 18;
-    label.fontFamily = 'Consolas';
+    label.fontFamily = UITheme.fonts.primary;
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.paddingLeft = '14px';
@@ -765,7 +805,7 @@ export class MainMenuScene {
     title.text = text;
     title.color = '#7CFFEA';
     title.fontSize = 24;
-    title.fontFamily = 'Consolas';
+    title.fontFamily = UITheme.fonts.primary;
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     title.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     title.paddingLeft = '10px';
@@ -779,7 +819,7 @@ export class MainMenuScene {
     info.text = text;
     info.color = '#8EC8BD';
     info.fontSize = 14;
-    info.fontFamily = 'Consolas';
+    info.fontFamily = UITheme.fonts.primary;
     info.height = '28px';
     info.width = '1020px';
     info.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -800,7 +840,7 @@ export class MainMenuScene {
     label.text = labelText;
     label.color = '#B9F9E8';
     label.fontSize = 18;
-    label.fontFamily = 'Consolas';
+    label.fontFamily = UITheme.fonts.primary;
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.paddingLeft = '14px';
@@ -843,7 +883,7 @@ export class MainMenuScene {
     titleText.text = title;
     titleText.color = '#B9F9E8';
     titleText.fontSize = 18;
-    titleText.fontFamily = 'Consolas';
+    titleText.fontFamily = UITheme.fonts.primary;
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
@@ -854,7 +894,7 @@ export class MainMenuScene {
     detailText.text = details;
     detailText.color = '#86B9AE';
     detailText.fontSize = 13;
-    detailText.fontFamily = 'Consolas';
+    detailText.fontFamily = UITheme.fonts.primary;
     detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     detailText.paddingLeft = '14px';
@@ -892,7 +932,7 @@ export class MainMenuScene {
     titleText.text = title;
     titleText.color = '#B9F9E8';
     titleText.fontSize = 18;
-    titleText.fontFamily = 'Consolas';
+    titleText.fontFamily = UITheme.fonts.primary;
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
@@ -903,7 +943,7 @@ export class MainMenuScene {
     detailText.text = details;
     detailText.color = '#86B9AE';
     detailText.fontSize = 13;
-    detailText.fontFamily = 'Consolas';
+    detailText.fontFamily = UITheme.fonts.primary;
     detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     detailText.paddingLeft = '14px';
@@ -939,7 +979,7 @@ export class MainMenuScene {
     label.text = labelText;
     label.color = '#B9F9E8';
     label.fontSize = 18;
-    label.fontFamily = 'Consolas';
+    label.fontFamily = UITheme.fonts.primary;
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.paddingLeft = '14px';
@@ -962,7 +1002,7 @@ export class MainMenuScene {
     valueText.text = '100%';
     valueText.color = '#DFFEF6';
     valueText.fontSize = 16;
-    valueText.fontFamily = 'Consolas';
+    valueText.fontFamily = UITheme.fonts.primary;
     valueText.width = '80px';
     valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -995,7 +1035,7 @@ export class MainMenuScene {
     titleText.text = title;
     titleText.color = '#B9F9E8';
     titleText.fontSize = 18;
-    titleText.fontFamily = 'Consolas';
+    titleText.fontFamily = UITheme.fonts.primary;
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
@@ -1006,7 +1046,7 @@ export class MainMenuScene {
     detailText.text = details;
     detailText.color = '#86B9AE';
     detailText.fontSize = 13;
-    detailText.fontFamily = 'Consolas';
+    detailText.fontFamily = UITheme.fonts.primary;
     detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     detailText.paddingLeft = '14px';
@@ -1024,7 +1064,7 @@ export class MainMenuScene {
     valueText.text = `${min}`;
     valueText.color = '#DFFEF6';
     valueText.fontSize = 14;
-    valueText.fontFamily = 'Consolas';
+    valueText.fontFamily = UITheme.fonts.primary;
     valueText.width = '120px';
     valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
