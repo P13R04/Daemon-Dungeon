@@ -21,7 +21,7 @@ import { BONUS_CODEX_ENTRIES } from '../data/codex/bonuses';
 import { getMergedAchievementDefinitions } from '../data/achievements/loadAchievementDefinitions';
 import type { BonusSelectionUiState } from './BonusSystemManager';
 import { applyResponsiveGuiScaling } from '../ui/GuiScaling';
-import { loadImageWithRetry } from '../utils/AssetLoadReliability';
+import { getAdaptivePreloadConcurrency, loadImageWithRetry, mapWithConcurrency } from '../utils/AssetLoadReliability';
 import type {
   AudioEngineLike,
   DamageNumber,
@@ -303,10 +303,8 @@ export class HUDManager {
 
     this.preloadPromise = (async () => {
       try {
-        await Promise.all([
-          this.preloadAllAvatarFrames(),
-          this.preloadBonusAndAchievementArtworks(bonusIds, achievementIds)
-        ]);
+        await this.preloadAllAvatarFrames();
+        await this.preloadBonusAndAchievementArtworks(bonusIds, achievementIds);
       } catch (err) {
         console.warn('Interface 2D preloading encountered warnings:', err);
       }
@@ -3828,16 +3826,12 @@ export class HUDManager {
    * @param frames Array of filenames to preload
    */
   private preloadAvatarFrames(frames: string[]): Promise<void> {
-    const promises = frames.map(fileName => {
-      // Skip if already cached
-      if (this.avatarImageCache.has(fileName)) {
-        return Promise.resolve();
-      }
-
-      return this.loadAvatarFrame(fileName);
+    const tasks = frames.map((fileName) => async () => {
+      if (this.avatarImageCache.has(fileName)) return;
+      await this.loadAvatarFrame(fileName);
     });
-
-    return Promise.all(promises).then(() => {});
+    const concurrency = getAdaptivePreloadConcurrency(4);
+    return mapWithConcurrency(tasks, concurrency).then(() => {});
   }
 
   /**
@@ -3902,10 +3896,11 @@ export class HUDManager {
   }
 
   public async preloadBonusAndAchievementArtworks(bonusIds: string[], achievementIds: string[]): Promise<void> {
-    const promises: Promise<void | HTMLImageElement | null>[] = [];
-    bonusIds.forEach(id => promises.push(preloadHudAsset(`bonuses/${id}.png`)));
-    achievementIds.forEach(id => promises.push(preloadHudAsset(`achievements/${id}.png`)));
-    await Promise.all(promises);
+    const tasks: Array<() => Promise<void | HTMLImageElement | null>> = [];
+    bonusIds.forEach((id) => tasks.push(() => preloadHudAsset(`bonuses/${id}.png`)));
+    achievementIds.forEach((id) => tasks.push(() => preloadHudAsset(`achievements/${id}.png`)));
+    const concurrency = getAdaptivePreloadConcurrency(5);
+    await mapWithConcurrency(tasks, concurrency);
     console.log(`✓ Bonus and achievement artworks preloaded.`);
   }
 

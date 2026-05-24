@@ -12,14 +12,25 @@ export default defineConfig({
     outDir: './dist',
     emptyOutDir: true,
     assetsDir: '.',
+    sourcemap: false,
+    target: 'es2020',
     rollupOptions: {
       output: {
         entryFileNames: `daemon-v3.js`,
         chunkFileNames: `[name].js`,
         assetFileNames: `[name].[ext]`,
         manualChunks(id) {
+          if (id.includes('node_modules/@babylonjs/core')) return 'vendor-babylon-core';
+          if (id.includes('node_modules/@babylonjs/gui')) return 'vendor-babylon-gui';
+          if (id.includes('node_modules/@babylonjs/loaders')) return 'vendor-babylon-loaders';
+          if (id.includes('node_modules/@babylonjs/havok')) return 'vendor-babylon-havok';
+          if (id.includes('node_modules/mespeak')) return 'vendor-mespeak';
           if (id.includes('node_modules/@babylonjs')) return 'vendor-babylon';
           if (id.includes('node_modules')) return 'vendor';
+          if (id.includes('/src/scene/CreditsScene') || id.includes('/src/scene/CodexScene') || id.includes('/src/scene/AchievementsScene') || id.includes('/src/scene/HighscoresScene')) {
+            return 'scene-secondary';
+          }
+          if (id.includes('/src/tools/')) return 'tools';
           return undefined;
         },
       },

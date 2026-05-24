@@ -9,6 +9,7 @@ import { RoomManager } from './RoomManager';
 import { EventBus, GameEvents } from '../core/EventBus';
 import type { EnemyRuntimeConfig } from '../gameplay/enemy/EnemyControllerTypes';
 import { getHudAssetBaseUrl } from './hud/HudAssetPaths';
+import { getAdaptivePreloadConcurrency, mapWithConcurrency } from '../utils/AssetLoadReliability';
 
 interface EnemySpawnRequestPayload {
   typeId?: string;
@@ -167,15 +168,15 @@ export class EnemySpawner {
       { rootUrl: `${normalizedBase}models/mage_missile/`, fileName: 'tde_socle_red_n_white.glb' },
     ];
 
-    await Promise.allSettled(
-      candidates.map(async (entry) => {
-        try {
-          await EnemyController.getOrLoadModelContainer(this.scene, entry.rootUrl, entry.fileName);
-        } catch (error) {
-          console.warn('[EnemySpawner] model prewarm failed', entry.fileName, error);
-        }
-      })
-    );
+    const tasks = candidates.map((entry) => async () => {
+      try {
+        await EnemyController.getOrLoadModelContainer(this.scene, entry.rootUrl, entry.fileName);
+      } catch (error) {
+        console.warn('[EnemySpawner] model prewarm failed', entry.fileName, error);
+      }
+    });
+    const concurrency = getAdaptivePreloadConcurrency(3);
+    await mapWithConcurrency(tasks, concurrency);
   }
 
   beginTransitionRoomPreparation(roomId: string, roomKey: string, difficultyLevel: number): void {

@@ -6,6 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "analyze:assets": "node scripts/analyze-assets.mjs",
+    "optimize:models": "node scripts/optimize-models.mjs",
+    "optimize:models:write": "node scripts/optimize-models.mjs --write",
+    "optimize:models:aggressive": "node scripts/optimize-models.mjs --aggressive",
+    "optimize:models:aggressive:write": "node scripts/optimize-models.mjs --aggressive --write",
+    "restore:models": "node scripts/restore-model-backups.mjs",
     "build:voice-lab": "esbuild src/tools/daemonVoiceLab/main.ts --bundle --platform=browser --format=esm --outfile=daemon-voice-lab.bundle.js",
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
@@ -21,6 +27,7 @@
     "mespeak": "^2.0.2"
   },
   "devDependencies": {
+    "@gltf-transform/cli": "^4.1.0",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",

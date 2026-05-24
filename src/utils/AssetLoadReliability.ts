@@ -73,3 +73,38 @@ export async function loadImageWithRetry(
   }
   return null;
 }
+
+export function getAdaptivePreloadConcurrency(defaultValue: number = 4): number {
+  const fallback = Math.max(1, Math.floor(defaultValue));
+  const nav = (typeof navigator !== 'undefined' ? navigator : null) as (Navigator & { connection?: any }) | null;
+  const connection = nav?.connection;
+  if (!connection) return fallback;
+  const saveData = !!connection.saveData;
+  const effectiveType = String(connection.effectiveType || '').toLowerCase();
+  if (saveData || effectiveType === 'slow-2g' || effectiveType === '2g') return 1;
+  if (effectiveType === '3g') return Math.min(fallback, 2);
+  return fallback;
+}
+
+export async function mapWithConcurrency<T>(
+  tasks: Array<() => Promise<T>>,
+  concurrency: number = 4,
+): Promise<Array<PromiseSettledResult<T>>> {
+  const settled: Array<PromiseSettledResult<T>> = new Array(tasks.length);
+  const maxWorkers = Math.max(1, Math.floor(concurrency));
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (true) {
+      const index = cursor++;
+      if (index >= tasks.length) return;
+      try {
+        const value = await tasks[index]();
+        settled[index] = { status: 'fulfilled', value };
+      } catch (reason) {
+        settled[index] = { status: 'rejected', reason };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(maxWorkers, tasks.length) }, () => worker()));
+  return settled;
+}

@@ -45,10 +45,6 @@ import { UltimateSystemManager } from '../systems/UltimateSystemManager';
 import type { RoomConfig as LoadedRoomConfig } from '../types/config';
 import { ClassSelectScene } from '../scene/ClassSelectScene';
 import { MainMenuScene } from '../scene/MainMenuScene';
-import { CodexScene } from '../scene/CodexScene';
-import { AchievementsScene } from '../scene/AchievementsScene';
-import { HighscoresScene } from '../scene/HighscoresScene';
-import { CreditsScene } from '../scene/CreditsScene';
 import { BootSequenceScene } from '../scene/BootSequenceScene';
 import { AchievementDefinition, CodexService } from '../services/CodexService';
 import { getMergedAchievementDefinitions } from '../data/achievements/loadAchievementDefinitions';
@@ -73,6 +69,7 @@ import { DaemonVoicelineManager } from './DaemonVoicelineManager';
 type TextureRenderMode = 'classic' | 'proceduralRelief';
 type RuntimeGameState = 'menu' | 'playing' | 'roomclear' | 'bonus' | 'transition' | 'gameover';
 type SceneWithMainCamera = Scene & { mainCamera?: ArcRotateCamera };
+type FrontendSceneHandle = { getScene(): Scene; dispose(): void };
 type AchievementSourceEntry = {
   name?: string;
   description?: string;
@@ -104,10 +101,10 @@ export class GameManager {
   private bootScene?: BootSequenceScene;
   private mainMenuScene?: MainMenuScene;
   private classSelectScene?: ClassSelectScene;
-  private codexScene?: CodexScene;
-  private achievementsScene?: AchievementsScene;
-  private highscoresScene?: HighscoresScene;
-  private creditsScene?: CreditsScene;
+  private codexScene?: FrontendSceneHandle;
+  private achievementsScene?: FrontendSceneHandle;
+  private highscoresScene?: FrontendSceneHandle;
+  private creditsScene?: FrontendSceneHandle;
   private codexService: CodexService;
   private audioUnlockHandler: (() => void) | null = null;
   private unsubscribeSettings: (() => void) | null = null;
@@ -212,7 +209,6 @@ export class GameManager {
   private musicManager: MusicManager | null = null;
   private fastCleanRoomAccumulator: number = 0;
   private fastCleanRoomLastIndex: number = -1;
-  private classSelectAssetPrewarmPromise: Promise<void> | null = null;
 
 
   private constructor() {
@@ -579,6 +575,7 @@ export class GameManager {
     this.codexService.recordCodexOpened();
 
     try {
+      const { CodexScene } = await import('../scene/CodexScene');
       this.codexScene = new CodexScene(
         this.engine,
         this.codexService,
@@ -598,6 +595,7 @@ export class GameManager {
   private async openAchievementsScene(): Promise<void> {
     this.disposeFrontendScenes();
     try {
+      const { AchievementsScene } = await import('../scene/AchievementsScene');
       this.achievementsScene = new AchievementsScene(
         this.engine,
         this.codexService,
@@ -616,6 +614,7 @@ export class GameManager {
   private async openHighscoresScene(): Promise<void> {
     this.disposeFrontendScenes();
     try {
+      const { HighscoresScene } = await import('../scene/HighscoresScene');
       this.highscoresScene = new HighscoresScene(
         this.engine,
         this.codexService,
@@ -634,6 +633,7 @@ export class GameManager {
   private async openCreditsScene(): Promise<void> {
     this.disposeFrontendScenes();
     try {
+      const { CreditsScene } = await import('../scene/CreditsScene');
       this.creditsScene = new CreditsScene(
         this.engine,
         () => {
@@ -653,13 +653,6 @@ export class GameManager {
       this.disposeGameplay();
     }
     this.disposeFrontendScenes();
-    if (!this.classSelectAssetPrewarmPromise) {
-      this.classSelectAssetPrewarmPromise = ClassSelectScene.prewarmCoreClassAssets(this.engine).catch((error) => {
-        console.warn('[GameManager] Class model prewarm failed, continuing:', error);
-      });
-    }
-    // Keep navigation responsive even under network pressure (itch iframe/cold cache).
-    await this.awaitPromiseWithTimeout(this.classSelectAssetPrewarmPromise, 1800);
 
     const classSelectPostFx = this.configLoader.getGameplayConfig()?.postProcessing;
     this.classSelectScene = new ClassSelectScene(this.engine, (classId) => {

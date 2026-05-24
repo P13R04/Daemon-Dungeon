@@ -122,6 +122,8 @@ export class ClassSelectScene {
   private isNavigatingBack: boolean = false;
   private unsubscribeSettings: (() => void) | null = null;
   private resizeObserver: any = null;
+  private isDisposed: boolean = false;
+  private deferredModelLoadTimeoutId: number | null = null;
 
   constructor(
     private engine: Engine,
@@ -227,6 +229,11 @@ export class ClassSelectScene {
   }
 
   dispose(): void {
+    this.isDisposed = true;
+    if (this.deferredModelLoadTimeoutId !== null) {
+      window.clearTimeout(this.deferredModelLoadTimeoutId);
+      this.deferredModelLoadTimeoutId = null;
+    }
     if (this.unsubscribeSettings) {
       this.unsubscribeSettings();
       this.unsubscribeSettings = null;
@@ -474,26 +481,58 @@ export class ClassSelectScene {
 
     const firewallRoot = new TransformNode('classFirewallRoot', this.scene);
     this.items.push({ id: 'firewall', label: 'FIREWALL', playable: true, root: firewallRoot });
-    this.loadTankModelInto(firewallRoot).catch((error) => {
-      console.warn('Tank model load failed in class select, using placeholder:', error);
-      this.createCylinderPlaceholder(firewallRoot, new Color3(1.0, 0.45, 0.25), 2.8, 1.2, 'FIREWALL');
-    });
 
     const rogueRoot = new TransformNode('classRogueRoot', this.scene);
-    this.loadRoguePlayableModelInto(rogueRoot).catch((error) => {
-      console.warn('Rogue model load failed in class select, using placeholder:', error);
-      this.createCylinderPlaceholder(rogueRoot, new Color3(0.6, 0.9, 0.35), 2.4, 0.9, 'ROGUE');
-    });
     this.items.push({ id: 'rogue', label: 'GLITCH', playable: true, root: rogueRoot });
 
     const catEasterEggEnabled = GameSettingsStore.get().accessibility.catGodModeEnabled;
     if (catEasterEggEnabled) {
       const catRoot = new TransformNode('classCatRoot', this.scene);
-      this.loadRogueModelInto(catRoot).catch((error) => {
-        console.warn('Cat model load failed in class select, using placeholder:', error);
-        this.createCylinderPlaceholder(catRoot, new Color3(0.9, 0.86, 0.35), 2.2, 0.85, 'CAT');
-      });
       this.items.push({ id: 'cat', label: 'CAT', playable: true, root: catRoot });
+    }
+
+    // Load non-selected class previews in a staggered sequence to reduce
+    // burst network pressure on itch CDN/iframe startup.
+    this.deferredModelLoadTimeoutId = window.setTimeout(() => {
+      void this.loadDeferredClassPreviewModels(firewallRoot, rogueRoot, catEasterEggEnabled);
+    }, 220);
+  }
+
+  private async loadDeferredClassPreviewModels(
+    firewallRoot: TransformNode,
+    rogueRoot: TransformNode,
+    catEasterEggEnabled: boolean,
+  ): Promise<void> {
+    if (this.isDisposed) return;
+    try {
+      await this.loadTankModelInto(firewallRoot);
+    } catch (error) {
+      if (!this.isDisposed) {
+        console.warn('Tank model load failed in class select, using placeholder:', error);
+        this.createCylinderPlaceholder(firewallRoot, new Color3(1.0, 0.45, 0.25), 2.8, 1.2, 'FIREWALL');
+      }
+    }
+    if (this.isDisposed) return;
+
+    try {
+      await this.loadRoguePlayableModelInto(rogueRoot);
+    } catch (error) {
+      if (!this.isDisposed) {
+        console.warn('Rogue model load failed in class select, using placeholder:', error);
+        this.createCylinderPlaceholder(rogueRoot, new Color3(0.6, 0.9, 0.35), 2.4, 0.9, 'ROGUE');
+      }
+    }
+    if (this.isDisposed || !catEasterEggEnabled) return;
+
+    const catItem = this.items.find((item) => item.id === 'cat');
+    if (!catItem) return;
+    try {
+      await this.loadRogueModelInto(catItem.root);
+    } catch (error) {
+      if (!this.isDisposed) {
+        console.warn('Cat model load failed in class select, using placeholder:', error);
+        this.createCylinderPlaceholder(catItem.root, new Color3(0.9, 0.86, 0.35), 2.2, 0.85, 'CAT');
+      }
     }
   }
 
