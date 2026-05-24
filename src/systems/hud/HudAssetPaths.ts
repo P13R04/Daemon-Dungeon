@@ -10,8 +10,7 @@ export function getHudAssetBaseUrl(): string {
 
 export function buildHudAssetUrl(relativePath: string): string {
   const base = getHudAssetBaseUrl();
-  // Append ?v=3 to force bypass browser/Vite cache for freshly generated assets
-  return `${base}${relativePath}?v=99`;
+  return `${base}${relativePath}`;
 }
 
 const globalArtworkCache = new Map<string, HTMLImageElement>();
@@ -24,16 +23,13 @@ export function preloadHudAsset(relativePath: string): Promise<HTMLImageElement 
   if (globalArtworkCache.has(relativePath)) {
     return Promise.resolve(globalArtworkCache.get(relativePath)!);
   }
-  return new Promise((resolve) => {
-    const img = document.createElement('img');
-    img.onload = () => {
-      globalArtworkCache.set(relativePath, img);
-      resolve(img);
-    };
-    img.onerror = () => {
+  return loadImageWithRetry([buildHudAssetUrl(relativePath)], 3).then((loaded) => {
+    if (!loaded) {
       console.warn(`Failed to preload asset: ${relativePath}`);
-      resolve(null); // always resolve to not block
-    };
-    img.src = buildHudAssetUrl(relativePath);
+      return null;
+    }
+    globalArtworkCache.set(relativePath, loaded.image);
+    return loaded.image;
   });
 }
+import { loadImageWithRetry } from '../../utils/AssetLoadReliability';

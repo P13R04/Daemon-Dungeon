@@ -376,6 +376,8 @@ export class GameManager {
     // (e.g. 9× the pixels on an iPhone at DPR=3), causing severe lag.
     // GUI sharpness is handled separately via renderAtIdealSize=false.
     this.engine = new Engine(canvas, true);
+    // Avoid Babylon offline manifest/indexedDB network side-effects inside itch iframe/CDN context.
+    this.engine.enableOfflineSupport = false;
 
     // Setup resize handling with fallback for browsers lacking ResizeObserver.
     if (typeof ResizeObserver !== 'undefined') {
@@ -554,13 +556,6 @@ export class GameManager {
     }
 
     this.disposeFrontendScenes();
-    if (!this.classSelectAssetPrewarmPromise) {
-      this.classSelectAssetPrewarmPromise = ClassSelectScene.prewarmCoreClassAssets(this.engine).catch((error) => {
-        console.warn('[GameManager] Class model prewarm failed, continuing:', error);
-      });
-    }
-    // Do not block menu display on prewarm: it runs in background.
-
     this.mainMenuScene = new MainMenuScene(this.engine, () => {
       void this.openClassSelectScene(false);
     }, () => {

@@ -3,9 +3,10 @@
  * Handles loading character models (mage, tank) and managing animation states with proper prioritization
  */
 
-import { Scene, Mesh, AbstractMesh, AnimationGroup, SceneLoader, Vector3, TransformNode, ParticleSystem, DynamicTexture, Color4, Observer, Nullable } from '@babylonjs/core';
+import { Scene, Mesh, AbstractMesh, AnimationGroup, Vector3, TransformNode, ParticleSystem, DynamicTexture, Color4, Observer, Nullable } from '@babylonjs/core';
 import { SCENE_LAYER } from '../ui/uiLayers';
 import { ConfigLoader } from '../utils/ConfigLoader';
+import { importMeshWithRetry } from '../utils/AssetLoadReliability';
 
 type Canvas2DRenderingContext = CanvasRenderingContext2D;
 
@@ -117,7 +118,7 @@ export class PlayerAnimationController {
             : this.playerClass === 'cat'
               ? 'cat.glb'
             : 'mage.glb';
-      const result = await SceneLoader.ImportMeshAsync('', modelPath, modelFile, this.scene);
+      const result = await importMeshWithRetry(modelPath, modelFile, this.scene, 3);
       if (result.skeletons) {
         this.instantiatedSkeletons.push(...result.skeletons);
       }

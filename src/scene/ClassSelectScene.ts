@@ -10,7 +10,6 @@ import {
   MeshBuilder,
   StandardMaterial,
   TransformNode,
-  SceneLoader,
   Scalar,
   AbstractMesh,
   AnimationGroup,
@@ -24,6 +23,7 @@ import {
 import { AdvancedDynamicTexture, Button, Control, Rectangle, TextBlock } from '@babylonjs/gui';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { getHudAssetBaseUrl } from '../systems/hud/HudAssetPaths';
+import { importMeshWithRetry, loadAssetContainerWithRetry } from '../utils/AssetLoadReliability';
 import { PostProcessManager, PostProcessingConfig } from './PostProcess';
 import { ClassSelectDevConsole } from './ClassSelectDevConsole';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
@@ -198,12 +198,15 @@ export class ClassSelectScene {
       try {
         const base = `${getHudAssetBaseUrl()}models/player/`;
         const files = ['mage.glb', 'tank.glb', 'rogue.glb'];
-        await Promise.allSettled(
-          files.map(async (fileName) => {
-            const container = await SceneLoader.LoadAssetContainerAsync(base, fileName, prewarmScene);
+        // Keep prewarm gentle to avoid short burst failures on itch CDN/iframe networking.
+        for (const fileName of files) {
+          try {
+            const container = await loadAssetContainerWithRetry(base, fileName, prewarmScene, 3);
             container.dispose();
-          })
-        );
+          } catch (error) {
+            console.warn(`[ClassSelectScene] Failed to prewarm ${fileName}, continuing:`, error);
+          }
+        }
       } finally {
         prewarmScene.dispose();
       }
@@ -711,7 +714,7 @@ export class ClassSelectScene {
   }
 
   private async loadMageModelInto(root: TransformNode): Promise<void> {
-    const result = await SceneLoader.ImportMeshAsync('', getHudAssetBaseUrl() + 'models/player/', 'mage.glb', this.scene);
+    const result = await importMeshWithRetry(getHudAssetBaseUrl() + 'models/player/', 'mage.glb', this.scene, 3);
 
     const candidateRoot = result.meshes[0];
     if (candidateRoot) {
@@ -746,7 +749,7 @@ export class ClassSelectScene {
   }
 
   private async loadTankModelInto(root: TransformNode): Promise<void> {
-    const result = await SceneLoader.ImportMeshAsync('', getHudAssetBaseUrl() + 'models/player/', 'tank.glb', this.scene);
+    const result = await importMeshWithRetry(getHudAssetBaseUrl() + 'models/player/', 'tank.glb', this.scene, 3);
 
     const candidateRoot = result.meshes[0];
     if (candidateRoot) {
@@ -779,7 +782,7 @@ export class ClassSelectScene {
   }
 
   private async loadRoguePlayableModelInto(root: TransformNode): Promise<void> {
-    const result = await SceneLoader.ImportMeshAsync('', getHudAssetBaseUrl() + 'models/player/', 'rogue.glb', this.scene);
+    const result = await importMeshWithRetry(getHudAssetBaseUrl() + 'models/player/', 'rogue.glb', this.scene, 3);
 
     const candidateRoot = result.meshes[0];
     if (candidateRoot) {
@@ -812,7 +815,7 @@ export class ClassSelectScene {
   }
 
   private async loadRogueModelInto(root: TransformNode): Promise<void> {
-    const result = await SceneLoader.ImportMeshAsync('', getHudAssetBaseUrl() + 'models/player/', 'cat.glb', this.scene);
+    const result = await importMeshWithRetry(getHudAssetBaseUrl() + 'models/player/', 'cat.glb', this.scene, 3);
 
     const modelContainer = new TransformNode('classRogueModelContainer', this.scene);
     modelContainer.parent = root;

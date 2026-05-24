@@ -59,7 +59,6 @@ export class PostProcessManager {
     vignetteWeight: 4.0,
     vignetteColor: [0, 0, 0, 1],
   };
-  private runtimePostProcessProfile: 'default' | 'constrained' = 'default';
 
   constructor(scene: Scene, engine: Engine) {
     this.scene = scene;
@@ -86,7 +85,6 @@ export class PostProcessManager {
 
   applyConfig(config: PostProcessingConfig): void {
     this.config = { ...this.config, ...config };
-    this.applyRuntimeConstraints();
     if (!this.pipeline) return;
 
     const enabled = !!this.config.enabled;
@@ -141,32 +139,6 @@ export class PostProcessManager {
       this.disposeCrtLines();
     }
     this.applyDamageFxToPipeline();
-  }
-
-  private applyRuntimeConstraints(): void {
-    const browserWindow = typeof window !== 'undefined' ? window : undefined;
-    const browserNavigator = typeof navigator !== 'undefined' ? navigator : undefined;
-    const ua = browserNavigator?.userAgent ?? '';
-    const isMobileUa = /Android|iPhone|iPad|iPod|Opera Mini|IEMobile|Mobile/i.test(ua);
-    const lowCpu = (browserNavigator?.hardwareConcurrency ?? 8) <= 4;
-    const lowMem = ((browserNavigator as any)?.deviceMemory ?? 8) <= 4;
-    const cssW = browserWindow?.innerWidth ?? 1280;
-    const cssH = browserWindow?.innerHeight ?? 720;
-    const lowResDevice = Math.min(cssW, cssH) <= 720;
-    const constrained = isMobileUa || lowCpu || lowMem || lowResDevice;
-    this.runtimePostProcessProfile = constrained ? 'constrained' : 'default';
-
-    if (!constrained) return;
-
-    this.config.pixelScale = Math.min(this.config.pixelScale, 1.0);
-    this.config.glowIntensity = Math.min(this.config.glowIntensity, 0.5);
-    this.config.chromaticAmount = Math.min(this.config.chromaticAmount, 12);
-    this.config.chromaticRadial = Math.min(this.config.chromaticRadial, 0.45);
-    this.config.grainEnabled = false;
-    this.config.grainIntensity = 0;
-    this.config.crtLinesEnabled = false;
-    this.config.crtLineIntensity = 0;
-    this.config.vignetteWeight = Math.min(this.config.vignetteWeight, 2.6);
   }
 
   private bindEvents(): void {

@@ -21,6 +21,7 @@ import { BONUS_CODEX_ENTRIES } from '../data/codex/bonuses';
 import { getMergedAchievementDefinitions } from '../data/achievements/loadAchievementDefinitions';
 import type { BonusSelectionUiState } from './BonusSystemManager';
 import { applyResponsiveGuiScaling } from '../ui/GuiScaling';
+import { loadImageWithRetry } from '../utils/AssetLoadReliability';
 import type {
   AudioEngineLike,
   DamageNumber,
@@ -3819,7 +3820,7 @@ export class HUDManager {
     const normalizedBase = getHudAssetBaseUrl();
     const normalizedFileName = fileName.normalize(normalization);
     const encodedFileName = encodeURIComponent(normalizedFileName);
-    return `${normalizedBase}avatar_frames_cutout2/${encodedFileName}?v=3`;
+    return `${normalizedBase}avatar_frames_cutout2/${encodedFileName}`;
   }
 
   /**
@@ -3850,41 +3851,21 @@ export class HUDManager {
     }
 
     const loadPromise = new Promise<void>((resolve) => {
-      const img = document.createElement('img') as HTMLImageElement;
-
-      // Try NFD first (macOS filesystem format)
       const srcNFD = this.getAvatarFrameSrc(fileName, 'NFD');
-
-      img.onload = () => {
-        this.avatarImageCache.set(fileName, img);
-        this.avatarResolvedSrcCache.set(fileName, srcNFD);
-        this.getOrCreateDaemonAvatarFrameControl(fileName);
-        resolve();
-      };
-
-      img.onerror = () => {
-        // NFD failed, try NFC (standard Unicode composition)
-        const imgNFC = document.createElement('img') as HTMLImageElement;
-        const srcNFC = this.getAvatarFrameSrc(fileName, 'NFC');
-
-        imgNFC.onload = () => {
-          this.avatarImageCache.set(fileName, imgNFC);
-          this.avatarResolvedSrcCache.set(fileName, srcNFC);
-          this.getOrCreateDaemonAvatarFrameControl(fileName);
-          resolve();
-        };
-
-        imgNFC.onerror = () => {
+      const srcNFC = this.getAvatarFrameSrc(fileName, 'NFC');
+      void loadImageWithRetry([srcNFD, srcNFC], 2).then((loaded) => {
+        if (!loaded) {
           console.warn(`Failed to preload avatar frame: ${fileName}`);
           console.warn(`  Tried NFD: ${srcNFD}`);
           console.warn(`  Tried NFC: ${srcNFC}`);
           resolve();
-        };
-
-        imgNFC.src = srcNFC;
-      };
-
-      img.src = srcNFD;
+          return;
+        }
+        this.avatarImageCache.set(fileName, loaded.image);
+        this.avatarResolvedSrcCache.set(fileName, loaded.resolvedUrl);
+        this.getOrCreateDaemonAvatarFrameControl(fileName);
+        resolve();
+      });
     });
     this.avatarFrameLoadPromises.set(fileName, loadPromise);
     loadPromise.finally(() => {
