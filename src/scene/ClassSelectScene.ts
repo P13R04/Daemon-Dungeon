@@ -755,24 +755,7 @@ export class ClassSelectScene {
   private async loadMageModelInto(root: TransformNode): Promise<void> {
     const result = await importMeshWithRetry(getHudAssetBaseUrl() + 'models/player/', 'mage.glb', this.scene, 3);
 
-    const candidateRoot = result.meshes[0];
-    if (candidateRoot) {
-      candidateRoot.parent = root;
-      const bounds = candidateRoot.getHierarchyBoundingVectors(true);
-      const currentHeight = Math.max(0.001, bounds.max.y - bounds.min.y);
-      const targetHeight = 3.75;
-      const modelScale = targetHeight / currentHeight;
-      candidateRoot.scaling.scaleInPlace(modelScale);
-      candidateRoot.position = Vector3.Zero();
-      candidateRoot.rotation.y = 0;
-    }
-
-    for (const mesh of result.meshes) {
-      if (mesh !== candidateRoot && mesh.parent === null) {
-        mesh.parent = root;
-      }
-      mesh.layerMask = SCENE_LAYER;
-    }
+    this.attachImportedMeshesToRoot(root, result.meshes, 3.75);
 
     this.mageIdleGroup = result.animationGroups.find((group) => group.name === 'Idle.001') ?? null;
     this.mageUltimateGroup = result.animationGroups.find((group) => group.name === 'Ultime') ?? null;
@@ -790,20 +773,7 @@ export class ClassSelectScene {
   private async loadTankModelInto(root: TransformNode): Promise<void> {
     const result = await importMeshWithRetry(getHudAssetBaseUrl() + 'models/player/', 'tank.glb', this.scene, 3);
 
-    const candidateRoot = result.meshes[0];
-    if (candidateRoot) {
-      candidateRoot.parent = root;
-      candidateRoot.scaling.scaleInPlace(0.075);
-      candidateRoot.position = Vector3.Zero();
-      candidateRoot.rotation.y = 0;
-    }
-
-    for (const mesh of result.meshes) {
-      if (mesh !== candidateRoot && mesh.parent === null) {
-        mesh.parent = root;
-      }
-      mesh.layerMask = SCENE_LAYER;
-    }
+    this.attachImportedMeshesToRoot(root, result.meshes, null, 0.075);
 
     this.tankIdleGroup = result.animationGroups.find((group) => group.name === 'Skyrim') ?? null;
 
@@ -823,24 +793,7 @@ export class ClassSelectScene {
   private async loadRoguePlayableModelInto(root: TransformNode): Promise<void> {
     const result = await importMeshWithRetry(getHudAssetBaseUrl() + 'models/player/', 'rogue.glb', this.scene, 3);
 
-    const candidateRoot = result.meshes[0];
-    if (candidateRoot) {
-      candidateRoot.parent = root;
-      const bounds = candidateRoot.getHierarchyBoundingVectors(true);
-      const currentHeight = Math.max(0.001, bounds.max.y - bounds.min.y);
-      const targetHeight = 1.9;
-      const modelScale = targetHeight / currentHeight;
-      candidateRoot.scaling.scaleInPlace(modelScale);
-      candidateRoot.position = Vector3.Zero();
-      candidateRoot.rotation.y = 0;
-    }
-
-    for (const mesh of result.meshes) {
-      if (mesh !== candidateRoot && mesh.parent === null) {
-        mesh.parent = root;
-      }
-      mesh.layerMask = SCENE_LAYER;
-    }
+    this.attachImportedMeshesToRoot(root, result.meshes, 1.9);
 
     const findGroup = (name: string): AnimationGroup | null =>
       result.animationGroups.find((group) => group.name.toLowerCase() === name.toLowerCase()) ?? null;
@@ -902,6 +855,46 @@ export class ClassSelectScene {
 
     this.freezeRogueAtFrame1();
     root.position.y = 1.0;
+  }
+
+  private attachImportedMeshesToRoot(
+    parentRoot: TransformNode,
+    meshes: AbstractMesh[],
+    targetHeight: number | null,
+    uniformScale?: number,
+  ): void {
+    if (!meshes.length) return;
+    const importedRoot = new TransformNode(`class_import_root_${Date.now()}_${Math.floor(Math.random() * 1000)}`, this.scene);
+    importedRoot.parent = parentRoot;
+    importedRoot.position = Vector3.Zero();
+    importedRoot.rotation = Vector3.Zero();
+
+    for (const mesh of meshes) {
+      if (mesh.parent === null) {
+        mesh.parent = importedRoot;
+      }
+      mesh.layerMask = SCENE_LAYER;
+    }
+
+    if (typeof uniformScale === 'number') {
+      importedRoot.scaling.setAll(uniformScale);
+      return;
+    }
+    if (targetHeight == null) return;
+
+    const childMeshes = importedRoot.getChildMeshes();
+    if (!childMeshes.length) return;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const child of childMeshes) {
+      child.computeWorldMatrix(true);
+      const box = child.getBoundingInfo().boundingBox;
+      minY = Math.min(minY, box.minimumWorld.y);
+      maxY = Math.max(maxY, box.maximumWorld.y);
+    }
+    const currentHeight = Math.max(0.001, maxY - minY);
+    const modelScale = targetHeight / currentHeight;
+    importedRoot.scaling.setAll(modelScale);
   }
 
   private applyRogueModelTuning(): void {

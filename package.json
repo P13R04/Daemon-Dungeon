@@ -11,6 +11,8 @@
     "optimize:models:write": "node scripts/optimize-models.mjs --write",
     "optimize:models:aggressive": "node scripts/optimize-models.mjs --aggressive",
     "optimize:models:aggressive:write": "node scripts/optimize-models.mjs --aggressive --write",
+    "optimize:models:meshopt": "node scripts/optimize-models.mjs --meshopt",
+    "optimize:models:meshopt:write": "node scripts/optimize-models.mjs --meshopt --write",
     "restore:models": "node scripts/restore-model-backups.mjs",
     "build:voice-lab": "esbuild src/tools/daemonVoiceLab/main.ts --bundle --platform=browser --format=esm --outfile=daemon-voice-lab.bundle.js",
     "preview": "vite preview",

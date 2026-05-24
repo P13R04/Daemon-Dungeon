@@ -10,6 +10,7 @@ const EXTENSIONS = new Set(['.glb', '.gltf']);
 const args = process.argv.slice(2);
 const WRITE = args.includes('--write');
 const AGGRESSIVE = args.includes('--aggressive');
+const USE_MESHOPT = args.includes('--meshopt');
 const PATTERN = args.find((arg) => arg.startsWith('--match='))?.slice('--match='.length) ?? '';
 
 async function walk(dir, out = []) {
@@ -63,8 +64,6 @@ async function optimizeOne(file) {
     'optimize',
     `"${file}"`,
     `"${tmp}"`,
-    '--compress',
-    'meshopt',
     '--texture-compress',
     AGGRESSIVE ? 'webp' : 'auto',
     '--texture-size',
@@ -76,6 +75,9 @@ async function optimizeOne(file) {
     '--palette',
     AGGRESSIVE ? 'true' : 'false',
   ];
+  if (USE_MESHOPT) {
+    opts.push('--compress', 'meshopt');
+  }
 
   await run('npx', opts);
 
@@ -105,7 +107,9 @@ async function main() {
     return;
   }
 
-  console.log(`[optimize-models] Mode=${WRITE ? 'WRITE' : 'DRY-RUN'} profile=${AGGRESSIVE ? 'aggressive' : 'safe'} files=${filtered.length}`);
+  console.log(
+    `[optimize-models] Mode=${WRITE ? 'WRITE' : 'DRY-RUN'} profile=${AGGRESSIVE ? 'aggressive' : 'safe'} meshopt=${USE_MESHOPT ? 'on' : 'off'} files=${filtered.length}`,
+  );
   const results = [];
   for (const file of filtered) {
     try {

@@ -2,7 +2,7 @@
  * EnemyController - Controls a single enemy
  */
 
-import { Scene, Mesh, Vector3, SceneLoader, AnimationGroup, TransformNode, StandardMaterial, Color3, MeshBuilder, AbstractMesh, Node, ParticleSystem, Color4, DynamicTexture, Texture, AssetContainer } from '@babylonjs/core';
+import { Scene, Mesh, Vector3, AnimationGroup, TransformNode, StandardMaterial, Color3, MeshBuilder, AbstractMesh, Node, ParticleSystem, Color4, DynamicTexture, Texture, AssetContainer } from '@babylonjs/core';
 import { VisualPlaceholder } from '../utils/VisualPlaceholder';
 import { Health } from '../components/Health';
 import { Knockback } from '../components/Knockback';
@@ -15,6 +15,7 @@ import { EnemyLaserPatternSubsystem } from './enemy/EnemyLaserPatternSubsystem';
 import { EnemySpikeCastSubsystem } from './enemy/EnemySpikeCastSubsystem';
 import { SCENE_LAYER } from '../ui/uiLayers';
 import { getHudAssetBaseUrl } from '../systems/hud/HudAssetPaths';
+import { loadAssetContainerWithRetry } from '../utils/AssetLoadReliability';
 
 type EnemyControllerSpawnOptions = {
   suppressSpawnEvent?: boolean;
@@ -126,7 +127,7 @@ export class EnemyController {
     if (this.modelLoadingPromises.has(key)) {
       return this.modelLoadingPromises.get(key)!;
     }
-    const promise = SceneLoader.LoadAssetContainerAsync(rootUrl, fileName, scene).then(container => {
+    const promise = loadAssetContainerWithRetry(rootUrl, fileName, scene, 3).then(container => {
       this.modelCache.set(key, container);
       this.modelLoadingPromises.delete(key);
       return container;

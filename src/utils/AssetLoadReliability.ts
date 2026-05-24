@@ -8,6 +8,12 @@ function computeBackoffDelayMs(attempt: number): number {
   return base * Math.pow(2, Math.max(0, attempt - 1)) + jitter;
 }
 
+function withAttemptCacheBust(fileName: string, attempt: number): string {
+  if (attempt <= 1) return fileName;
+  const separator = fileName.includes('?') ? '&' : '?';
+  return `${fileName}${separator}retry=${attempt}&t=${Date.now()}`;
+}
+
 export async function importMeshWithRetry(
   rootUrl: string,
   fileName: string,
@@ -18,7 +24,7 @@ export async function importMeshWithRetry(
   const attempts = Math.max(1, Math.floor(maxAttempts));
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      return await SceneLoader.ImportMeshAsync('', rootUrl, fileName, scene);
+      return await SceneLoader.ImportMeshAsync('', rootUrl, withAttemptCacheBust(fileName, attempt), scene);
     } catch (error) {
       lastError = error;
       if (attempt < attempts) {
@@ -39,7 +45,7 @@ export async function loadAssetContainerWithRetry(
   const attempts = Math.max(1, Math.floor(maxAttempts));
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      return await SceneLoader.LoadAssetContainerAsync(rootUrl, fileName, scene);
+      return await SceneLoader.LoadAssetContainerAsync(rootUrl, withAttemptCacheBust(fileName, attempt), scene);
     } catch (error) {
       lastError = error;
       if (attempt < attempts) {

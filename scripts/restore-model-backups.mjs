@@ -28,6 +28,9 @@ function toTargetPath(backupFile) {
   const relative = path.relative(BACKUP_ROOT, backupFile);
   if (!relative.endsWith('.bak')) return null;
   const withoutBak = relative.slice(0, -4);
+  if (withoutBak.startsWith('public/models/')) {
+    return path.join(ROOT, withoutBak);
+  }
   return path.join(TARGET_ROOT, withoutBak);
 }
 
@@ -55,4 +58,3 @@ main().catch((error) => {
   console.error('[restore-model-backups] failed:', error);
   process.exit(1);
 });
-

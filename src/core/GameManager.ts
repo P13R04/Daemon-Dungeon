@@ -562,6 +562,9 @@ export class GameManager {
       void this.startBenchmarkFromMenu();
     });
     this.scene = this.mainMenuScene.getScene();
+    void ClassSelectScene.prewarmCoreClassAssets(this.engine).catch((error) => {
+      console.warn('[GameManager] Class asset prewarm failed in menu background:', error);
+    });
   }
 
   private shouldLaunchShortClassTutorial(classId: 'mage' | 'firewall' | 'rogue' | 'cat'): boolean {
@@ -649,22 +652,34 @@ export class GameManager {
   }
 
   private async openClassSelectScene(isTutorial: boolean = false): Promise<void> {
-    if (this.gameplayInitialized) {
-      this.disposeGameplay();
-    }
-    this.disposeFrontendScenes();
+    try {
+      this.setLoadingOverlay(true, 'PREPARING CLASS SIMULATION...', '0%');
+      await this.waitForNextPaint(1);
+      this.setLoadingOverlay(true, 'PRELOADING PLAYER MODELS...', '60%');
+      await this.waitForNextPaint(1);
+      await this.awaitPromiseWithTimeout(ClassSelectScene.prewarmCoreClassAssets(this.engine), 3500);
+      this.setLoadingOverlay(true, 'FINALIZING PREVIEW...', '100%');
+      await this.waitForNextPaint(1);
 
-    const classSelectPostFx = this.configLoader.getGameplayConfig()?.postProcessing;
-    this.classSelectScene = new ClassSelectScene(this.engine, (classId) => {
-      if (isTutorial) {
-        this.eventCoordinator.emitTutorialStartRequested(classId);
-      } else {
-        this.eventCoordinator.emitGameStartRequested(classId);
+      if (this.gameplayInitialized) {
+        this.disposeGameplay();
       }
-    }, () => {
-      void this.openMainMenuScene();
-    }, classSelectPostFx);
-    this.scene = this.classSelectScene.getScene();
+      this.disposeFrontendScenes();
+
+      const classSelectPostFx = this.configLoader.getGameplayConfig()?.postProcessing;
+      this.classSelectScene = new ClassSelectScene(this.engine, (classId) => {
+        if (isTutorial) {
+          this.eventCoordinator.emitTutorialStartRequested(classId);
+        } else {
+          this.eventCoordinator.emitGameStartRequested(classId);
+        }
+      }, () => {
+        void this.openMainMenuScene();
+      }, classSelectPostFx);
+      this.scene = this.classSelectScene.getScene();
+    } finally {
+      this.setLoadingOverlay(false);
+    }
   }
 
   private async awaitPromiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
