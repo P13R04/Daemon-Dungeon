@@ -194,9 +194,15 @@ export function createMenuMatrixBackground(scene: Scene, layerMask?: number): vo
   mat.setFloat('uTime', 0);
   baseMesh.material = mat;
 
-  // Render loop observer to update shader time
+  // Render loop observer to update shader time.
+  // Use accumulated delta time (wrapped) to avoid precision drift and long-tab artifacts.
+  let shaderTime = 0;
   scene.onBeforeRenderObservable.add(() => {
-    const time = ((typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now()) * 0.001;
-    mat.setFloat('uTime', time);
+    const dt = Math.max(0, Math.min(0.25, scene.getEngine().getDeltaTime() * 0.001));
+    shaderTime = (shaderTime + dt) % 10000;
+    if (baseMesh.isDisposed()) return;
+    if ((mat as any)._isDisposed === true) return;
+    if (baseMesh.visibility <= 0) baseMesh.visibility = 1;
+    mat.setFloat('uTime', shaderTime);
   });
 }

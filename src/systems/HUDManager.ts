@@ -108,6 +108,12 @@ export class HUDManager {
   private achievementToastPulseTime: number = 0;
   private achievementToastBaseLeft: number = 16;
   private achievementToastBaseTop: number = 88;
+  private achievementTitleBaseText: string = '';
+  private achievementTitleMarqueeEnabled: boolean = false;
+  private achievementTitleMarqueeIndex: number = 0;
+  private achievementTitleMarqueeTimer: number = 0;
+  private achievementTitleMarqueeWindowChars: number = 0;
+  private achievementTitleMarqueeHold: number = 0;
   public static achievementToastQueue: Array<{ id: string; name: string; description: string }> = [];
   public static achievementToastActive: boolean = false;
   public static currentAchievement: { id: string; name: string; description: string } | null = null;
@@ -365,6 +371,9 @@ export class HUDManager {
     this.unsubscribers.push(this.eventBus.on(GameEvents.PLAYER_DAMAGED, async (data: PlayerDamagedPayload) => {
       await this.handlePlayerDamagedEvent(data);
     }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.PLAYER_HEALTH_CHANGED, async (data: PlayerDamagedPayload) => {
+      await this.handlePlayerDamagedEvent(data);
+    }));
     this.unsubscribers.push(this.eventBus.on(GameEvents.ROOM_CLEARED, async () => {
       await this.handleRoomClearedEvent();
     }));
@@ -491,12 +500,11 @@ export class HUDManager {
   private async handlePlayerDamagedEvent(data: PlayerDamagedPayload): Promise<void> {
     const current = data?.health?.current ?? (data as any)?.currentHealth ?? 0;
     const max = data?.health?.max ?? (data as any)?.maxHealth ?? 100;
+    const damage = data?.damage ?? 0;
     this.updateHealthDisplay(current, max);
-    if ((data?.damage ?? 0) > 0) {
+    if (damage > 0) {
       this.triggerIntegrityDamagePulse();
-    }
-    
-    if (Math.random() < 0.35) {
+
       const logs = [
         'WARNING: SYSTEM BUFFER OVERFLOW DETECTED.',
         'INTEGRITY CRITICAL: HARDWARE THREAT ENCOUNTERED.',
@@ -504,8 +512,10 @@ export class HUDManager {
         'HOST EXCEPTION: MEMORY DUMP SCHEDULED.',
         'CORE TEMPERATURE SPIKE: SHIELD INTEGRITY COMPROMISED.'
       ];
-      const chosen = logs[Math.floor(Math.random() * logs.length)];
-      this.addLogMessage(chosen);
+      if (Math.random() < 0.35) {
+        const chosen = logs[Math.floor(Math.random() * logs.length)];
+        this.addLogMessage(chosen);
+      }
     }
   }
 
@@ -2447,7 +2457,8 @@ export class HUDManager {
     }
  
     if (this.achievementToastTitle) {
-      this.achievementToastTitle.text = `UNLOCKED: ${HUDManager.currentAchievement.name}`;
+      this.achievementTitleBaseText = `UNLOCKED: ${HUDManager.currentAchievement.name}`;
+      this.achievementToastTitle.text = this.achievementTitleBaseText;
     }
  
     if (this.achievementToastDescription) {
@@ -2478,6 +2489,11 @@ export class HUDManager {
     if (this.achievementToastAccentTop) this.achievementToastAccentTop.background = accentColor;
     if (this.achievementToastAccentSide) this.achievementToastAccentSide.background = accentColor;
     this.achievementToastPulseTime = 0;
+    this.achievementTitleMarqueeEnabled = false;
+    this.achievementTitleMarqueeIndex = 0;
+    this.achievementTitleMarqueeTimer = 0;
+    this.achievementTitleMarqueeWindowChars = 0;
+    this.achievementTitleMarqueeHold = 0.6;
     this.applyAchievementToastLayout();
 
     HUDManager.achievementToastActive = true;
@@ -2533,6 +2549,7 @@ export class HUDManager {
     const jitterY = shouldShake ? Math.cos(this.achievementToastPulseTime * 8.8) * 0.2 : 0;
     const epicColor = this.getEpicToastColor(this.achievementToastPulseTime * 0.9);
     this.applyAchievementToastLayout(jitterX, jitterY);
+    // Marquee disabled: title stays static with controlled 2-line wrapping.
     this.achievementToastContainer.color = epicColor;
     if (this.achievementToastGlowOuter) this.achievementToastGlowOuter.color = epicColor;
     if (this.achievementToastGlowInner) this.achievementToastGlowInner.color = epicColor;
@@ -2589,14 +2606,26 @@ export class HUDManager {
     const renderW = this.scene?.getEngine?.().getRenderWidth?.(true) ?? 1920;
     const isCompact = renderW <= 900;
     const width = isCompact ? Math.round(Math.min(500, Math.max(310, renderW * 0.9))) : 500;
-    const height = isCompact ? Math.round(Math.max(126, width * 0.32)) : 132;
+    const height = isCompact ? Math.round(Math.max(134, width * 0.34)) : 140;
     const iconSize = isCompact ? 82 : 92;
     const margin = isCompact ? 12 : 18;
     const textLeft = margin + iconSize + (isCompact ? 12 : 16);
     const textWidth = Math.max(170, width - textLeft - margin);
-    const top = isCompact ? 78 : 88;
+    const pauseBottom = (() => {
+      if (!this.pauseButton) return 0;
+      const toNumber = (value: unknown): number => {
+        if (typeof value === 'number') return value;
+        if (typeof value === 'string') {
+          const parsed = parseFloat(value);
+          return Number.isFinite(parsed) ? parsed : 0;
+        }
+        return 0;
+      };
+      return toNumber(this.pauseButton.top) + toNumber(this.pauseButton.height);
+    })();
+    const top = Math.max(isCompact ? 90 : 104, pauseBottom + (isCompact ? 10 : 14));
     const left = isCompact ? 10 : 16;
-    const titleSize = this.computeAchievementToastTitleSize(
+    let titleSize = this.computeAchievementToastTitleSize(
       HUDManager.currentAchievement?.name ?? '',
       isCompact
     );
@@ -2607,6 +2636,12 @@ export class HUDManager {
 
     this.achievementToastBaseLeft = left;
     this.achievementToastBaseTop = top;
+    const titleTop = isCompact ? 14 : 16;
+    const titleLineHeight = Math.max(16, Math.round(titleSize * 1.06));
+    const titleHeightPx = Math.max(isCompact ? 52 : 50, Math.min(2 * titleLineHeight + 10, isCompact ? 64 : 66));
+    const descTop = titleTop + titleHeightPx + (isCompact ? 2 : 4);
+    const descHeightPx = Math.max(42, height - descTop - 10);
+
     this.achievementToastContainer.width = `${width}px`;
     this.achievementToastContainer.height = `${height}px`;
     this.achievementToastContainer.left = left + jitterX;
@@ -2620,16 +2655,21 @@ export class HUDManager {
     }
     if (this.achievementToastTitle) {
       this.achievementToastTitle.left = textLeft;
-      this.achievementToastTitle.top = isCompact ? 10 : 14;
+      this.achievementToastTitle.top = titleTop;
       this.achievementToastTitle.width = `${textWidth}px`;
-      this.achievementToastTitle.height = isCompact ? '40px' : '38px';
+      this.achievementToastTitle.height = `${titleHeightPx}px`;
       this.achievementToastTitle.fontSize = titleSize;
+      this.achievementToastTitle.paddingTop = '2px';
+      this.achievementToastTitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+      this.achievementToastTitle.textWrapping = true;
+      this.achievementToastTitle.lineSpacing = '2px';
     }
+    this.configureAchievementTitleMarquee(textWidth, titleSize);
     if (this.achievementToastDescription) {
       this.achievementToastDescription.left = textLeft;
-      this.achievementToastDescription.top = isCompact ? 48 : 55;
+      this.achievementToastDescription.top = descTop;
       this.achievementToastDescription.width = `${textWidth}px`;
-      this.achievementToastDescription.height = `${Math.max(52, height - (isCompact ? 56 : 64))}px`;
+      this.achievementToastDescription.height = `${descHeightPx}px`;
       this.achievementToastDescription.fontSize = descSize;
     }
     if (this.achievementToastArtwork && this.achievementIconPlaceholder) {
@@ -2688,9 +2728,84 @@ export class HUDManager {
     }
   }
 
+  private configureAchievementTitleMarquee(textWidthPx: number, fontSize: number): void {
+    if (!this.achievementToastTitle) return;
+    const content = (this.achievementTitleBaseText || '').trim();
+    if (!content) {
+      this.achievementTitleMarqueeEnabled = false;
+      this.achievementToastTitle.text = '';
+      return;
+    }
+
+    // Disabled by design: use 2-line static wrapping instead of marquee.
+    void textWidthPx;
+    void fontSize;
+    this.achievementTitleMarqueeEnabled = false;
+    this.achievementTitleMarqueeIndex = 0;
+    this.achievementTitleMarqueeTimer = 0;
+    this.achievementTitleMarqueeWindowChars = 0;
+    this.achievementToastTitle.text = content;
+  }
+
+  private estimateAchievementTitleWidthPx(text: string, fontSize: number): number {
+    if (!text) return 0;
+    const base = fontSize * 0.6;
+    let width = 0;
+    for (const char of text) {
+      if (char === ' ') width += base * 0.4;
+      else if ('ilI|.,:;!'.includes(char)) width += base * 0.42;
+      else if ('mwMW@#%&'.includes(char)) width += base * 1.22;
+      else width += base;
+    }
+    return width;
+  }
+
+  private updateAchievementTitleMarquee(deltaTime: number): void {
+    if (!this.achievementTitleMarqueeEnabled || !this.achievementToastTitle) return;
+    const content = (this.achievementTitleBaseText || '').trim();
+    if (!content) return;
+
+    if (this.achievementTitleMarqueeHold > 0) {
+      this.achievementTitleMarqueeHold = Math.max(0, this.achievementTitleMarqueeHold - deltaTime);
+      return;
+    }
+
+    this.achievementTitleMarqueeTimer += Math.max(0, deltaTime);
+    const stepSeconds = 0.12;
+    if (this.achievementTitleMarqueeTimer < stepSeconds) return;
+    this.achievementTitleMarqueeTimer = 0;
+
+    const maxStart = Math.max(0, content.length - Math.max(1, this.achievementTitleMarqueeWindowChars));
+    if (this.achievementTitleMarqueeIndex < maxStart) {
+      this.achievementTitleMarqueeIndex += 1;
+    } else {
+      // Reached the end: freeze on final segment, no restart loop.
+      this.achievementTitleMarqueeEnabled = false;
+    }
+    this.renderAchievementTitleMarqueeWindow();
+  }
+
+  private renderAchievementTitleMarqueeWindow(): void {
+    if (!this.achievementToastTitle) return;
+    const content = (this.achievementTitleBaseText || '').trim();
+    const windowChars = Math.max(8, this.achievementTitleMarqueeWindowChars || 8);
+
+    if (!this.achievementTitleMarqueeEnabled || content.length <= windowChars) {
+      this.achievementToastTitle.text = content;
+      return;
+    }
+
+    const start = this.achievementTitleMarqueeIndex;
+    const segment = content.slice(start, start + windowChars);
+    this.achievementToastTitle.text = segment;
+  }
+
   private computeAchievementToastTitleSize(title: string, isCompact: boolean): number {
     const len = (title || '').trim().length;
     const base = isCompact ? 20 : 23;
+    if (len > 70) return base - 7;
+    if (len > 58) return base - 6;
+    if (len > 50) return base - 5;
     if (len > 46) return base - 4;
     if (len > 34) return base - 2;
     return base;

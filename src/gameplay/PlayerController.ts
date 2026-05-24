@@ -2566,7 +2566,7 @@ export class PlayerController {
   applyMaxHpMultiplier(multiplier: number): void {
     const maxHP = Math.floor(this.health.getMaxHP() * multiplier);
     this.health.setMaxHP(maxHP, true);
-    this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
+    this.eventBus.emit(GameEvents.PLAYER_HEALTH_CHANGED, {
       health: {
         current: this.health.getCurrentHP(),
         max: this.health.getMaxHP(),
@@ -2792,7 +2792,7 @@ export class PlayerController {
     if (this.health) {
       const scaledMaxHP = Math.floor(classConfig.baseStats.hp * this.roomScalingMultiplier);
       this.health.setMaxHP(scaledMaxHP, false, keepUltimateProgress);
-      this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
+      this.eventBus.emit(GameEvents.PLAYER_HEALTH_CHANGED, {
         health: {
           current: this.health.getCurrentHP(),
           max: this.health.getMaxHP(),
@@ -3244,6 +3244,9 @@ export class PlayerController {
     const persistentFirewallReduction = this.classId === 'firewall' ? this.firewallDamageReductionRatio : 0;
     const totalReduction = Math.max(0, Math.min(0.95, this.damageReductionRatio + persistentFirewallReduction));
     const reducedDamage = amount * (1 - totalReduction);
+    if (!Number.isFinite(reducedDamage) || reducedDamage <= 0) {
+      return;
+    }
     this.health.takeDamage(reducedDamage);
     this.triggerDamagePulse();
     this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
@@ -3303,7 +3306,7 @@ export class PlayerController {
   heal(amount: number): void {
     if (!this.health || amount <= 0) return;
     this.health.heal(amount);
-    this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
+    this.eventBus.emit(GameEvents.PLAYER_HEALTH_CHANGED, {
       health: {
         current: this.health.getCurrentHP(),
         max: this.health.getMaxHP(),
@@ -3317,7 +3320,7 @@ export class PlayerController {
     const missing = this.health.getMaxHP() - this.health.getCurrentHP();
     if (missing > 0) {
       this.health.heal(missing);
-      this.eventBus.emit(GameEvents.PLAYER_DAMAGED, {
+      this.eventBus.emit(GameEvents.PLAYER_HEALTH_CHANGED, {
         health: {
           current: this.health.getCurrentHP(),
           max: this.health.getMaxHP(),

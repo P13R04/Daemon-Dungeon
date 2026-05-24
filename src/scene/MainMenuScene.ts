@@ -100,6 +100,12 @@ export class MainMenuScene {
   private achievementToastDescription: TextBlock | null = null;
   private achievementToastTimer: number = 0;
   private achievementToastPulseTime: number = 0;
+  private achievementTitleBaseText: string = '';
+  private achievementTitleMarqueeEnabled: boolean = false;
+  private achievementTitleMarqueeIndex: number = 0;
+  private achievementTitleMarqueeTimer: number = 0;
+  private achievementTitleMarqueeWindowChars: number = 0;
+  private achievementTitleMarqueeHold: number = 0;
   private achievementToastObserver: any = null;
   private unsubscribeAchievementToast: (() => void) | null = null;
   private achievementIconPlaceholder: Rectangle | null = null;
@@ -390,8 +396,9 @@ export class MainMenuScene {
     title.left = textLeft;
     title.top = 14;
     title.width = `${textWidth}px`;
-    title.height = '38px';
+    title.height = compact ? '56px' : '54px';
     title.textWrapping = true;
+    title.lineSpacing = '2px';
     title.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     title.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -444,8 +451,11 @@ export class MainMenuScene {
     }
 
     if (this.achievementToastTitle) {
-      this.achievementToastTitle.text = `UNLOCKED: ${HUDManager.currentAchievement.name}`;
-      this.achievementToastTitle.fontSize = this.computeAchievementToastTitleSize(HUDManager.currentAchievement.name);
+      this.achievementTitleBaseText = `UNLOCKED: ${HUDManager.currentAchievement.name}`;
+      this.achievementToastTitle.text = this.achievementTitleBaseText;
+      const fontSize = this.computeAchievementToastTitleSize(HUDManager.currentAchievement.name);
+      this.achievementToastTitle.fontSize = fontSize;
+      this.configureAchievementTitleMarquee(fontSize);
     }
     if (this.achievementToastDescription) {
       this.achievementToastDescription.text = HUDManager.currentAchievement.description;
@@ -472,6 +482,11 @@ export class MainMenuScene {
     HUDManager.achievementToastActive = true;
     this.achievementToastTimer = 4;
     this.achievementToastPulseTime = 0;
+    this.achievementTitleMarqueeEnabled = false;
+    this.achievementTitleMarqueeIndex = 0;
+    this.achievementTitleMarqueeTimer = 0;
+    this.achievementTitleMarqueeWindowChars = 0;
+    this.achievementTitleMarqueeHold = 0.5;
     this.achievementToast.alpha = 1;
     this.achievementToast.isVisible = true;
     if (this.achievementToastGlowOuter) this.achievementToastGlowOuter.isVisible = true;
@@ -500,6 +515,7 @@ export class MainMenuScene {
 
     this.achievementToastTimer -= deltaTime;
     this.achievementToastPulseTime += Math.max(0, deltaTime);
+    // Marquee disabled: static wrapped title for better reliability.
     const pulse = 0.5 + Math.sin(this.achievementToastPulseTime * 8) * 0.5;
     const shouldShake = this.achievementToastPulseTime < 1.0;
     const jitterX = shouldShake ? Math.sin(this.achievementToastPulseTime * 10.5) * 0.22 : 0;
@@ -584,6 +600,9 @@ export class MainMenuScene {
   private computeAchievementToastTitleSize(title: string): number {
     const len = (title || '').trim().length;
     const base = this.isMobileLayout || this.layoutWidth < 980 ? 20 : 23;
+    if (len > 70) return base - 7;
+    if (len > 58) return base - 6;
+    if (len > 50) return base - 5;
     if (len > 46) return base - 4;
     if (len > 34) return base - 2;
     return base;
@@ -596,6 +615,75 @@ export class MainMenuScene {
     if (len > 92) return base - 2;
     if (len > 66) return base - 1;
     return base;
+  }
+
+  private configureAchievementTitleMarquee(fontSize: number): void {
+    if (!this.achievementToastTitle || !this.achievementToast) return;
+    const text = (this.achievementTitleBaseText || '').trim();
+    if (!text) {
+      this.achievementTitleMarqueeEnabled = false;
+      this.achievementToastTitle.text = '';
+      return;
+    }
+
+    // Disabled by design: use static wrapping instead of marquee.
+    void fontSize;
+    this.achievementTitleMarqueeEnabled = false;
+    this.achievementTitleMarqueeIndex = 0;
+    this.achievementTitleMarqueeTimer = 0;
+    this.achievementTitleMarqueeWindowChars = 0;
+    this.achievementToastTitle.text = text;
+  }
+
+  private estimateAchievementTitleWidthPx(text: string, fontSize: number): number {
+    if (!text) return 0;
+    const base = fontSize * 0.6;
+    let width = 0;
+    for (const char of text) {
+      if (char === ' ') width += base * 0.4;
+      else if ('ilI|.,:;!'.includes(char)) width += base * 0.42;
+      else if ('mwMW@#%&'.includes(char)) width += base * 1.22;
+      else width += base;
+    }
+    return width;
+  }
+
+  private updateAchievementTitleMarquee(deltaTime: number): void {
+    if (!this.achievementTitleMarqueeEnabled || !this.achievementToastTitle) return;
+    const text = (this.achievementTitleBaseText || '').trim();
+    if (!text) return;
+
+    if (this.achievementTitleMarqueeHold > 0) {
+      this.achievementTitleMarqueeHold = Math.max(0, this.achievementTitleMarqueeHold - deltaTime);
+      return;
+    }
+
+    this.achievementTitleMarqueeTimer += Math.max(0, deltaTime);
+    const stepSeconds = 0.12;
+    if (this.achievementTitleMarqueeTimer < stepSeconds) return;
+    this.achievementTitleMarqueeTimer = 0;
+
+    const maxStart = Math.max(0, text.length - Math.max(1, this.achievementTitleMarqueeWindowChars));
+    if (this.achievementTitleMarqueeIndex < maxStart) {
+      this.achievementTitleMarqueeIndex += 1;
+    } else {
+      this.achievementTitleMarqueeEnabled = false;
+    }
+    this.renderAchievementTitleMarqueeWindow();
+  }
+
+  private renderAchievementTitleMarqueeWindow(): void {
+    if (!this.achievementToastTitle) return;
+    const text = (this.achievementTitleBaseText || '').trim();
+    const windowChars = Math.max(8, this.achievementTitleMarqueeWindowChars || 8);
+    if (!this.achievementTitleMarqueeEnabled || text.length <= windowChars) {
+      this.achievementToastTitle.text = text;
+      return;
+    }
+
+    const start = this.achievementTitleMarqueeIndex;
+    const segment = text.slice(start, start + windowChars);
+    this.achievementToastTitle.text = segment;
   }
 
   private getEpicToastColor(phase: number): string {
@@ -635,7 +723,7 @@ export class MainMenuScene {
 
     const daemonFrames: Image[] = [];
     for (let i = 1; i <= 4; i++) {
-      const frame = new Image(`daemonAvatar${i}`, `/avatar_frames_cutout2/rire_0${i}.png`);
+      const frame = new Image(`daemonAvatar${i}`, buildHudAssetUrl(`avatar_frames_cutout2/rire_0${i}.png`));
       frame.width = '100px';
       frame.height = '100px';
       frame.stretch = Image.STRETCH_UNIFORM;
