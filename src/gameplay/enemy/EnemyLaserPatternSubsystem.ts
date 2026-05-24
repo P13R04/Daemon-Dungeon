@@ -1,4 +1,4 @@
-import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial, Vector3, Matrix, ParticleSystem, Texture, Color4 } from '@babylonjs/core';
+import { Color3, Mesh, MeshBuilder, Scene, StandardMaterial, Vector3, Matrix, ParticleSystem, Texture, Color4, DynamicTexture } from '@babylonjs/core';
 import type { EnemyRuntimeConfig } from './EnemyControllerTypes';
 import type { BeamSegment } from './EnemyCombatTypes';
 import { disposeMeshesAndMaterials } from './EnemyVisualUtils';
@@ -39,17 +39,34 @@ export class EnemyLaserPatternSubsystem {
   private beamSparks: ParticleSystem | null = null;
 
   private static flareTextureCache: Texture | null = null;
+  private static createLocalFlareTexture(scene: Scene): Texture {
+    const texture = new DynamicTexture('laser_flare_local', { width: 64, height: 64 }, scene, false);
+    const ctx = texture.getContext();
+    ctx.clearRect(0, 0, 64, 64);
+    const grad = ctx.createRadialGradient(32, 32, 2, 32, 32, 31);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.4, 'rgba(255,175,125,0.95)');
+    grad.addColorStop(0.75, 'rgba(255,70,45,0.42)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 64);
+    texture.update();
+    return texture;
+  }
   private getFlareTexture(): Texture {
     if (!EnemyLaserPatternSubsystem.flareTextureCache || EnemyLaserPatternSubsystem.flareTextureCache.getScene() !== this.scene) {
       if (EnemyLaserPatternSubsystem.flareTextureCache) {
         try { EnemyLaserPatternSubsystem.flareTextureCache.dispose(); } catch (e) {}
       }
-      EnemyLaserPatternSubsystem.flareTextureCache = new Texture('https://assets.babylonjs.com/textures/flare.png', this.scene);
+      EnemyLaserPatternSubsystem.flareTextureCache = EnemyLaserPatternSubsystem.createLocalFlareTexture(this.scene);
     }
     return EnemyLaserPatternSubsystem.flareTextureCache;
   }
 
   public static clearCache(): void {
+    if (this.flareTextureCache) {
+      try { this.flareTextureCache.dispose(); } catch { /* ignore */ }
+    }
     this.flareTextureCache = null;
   }
 

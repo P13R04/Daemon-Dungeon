@@ -70,6 +70,7 @@ export class HUDManager {
   private playerHealthDisplay: TextBlock | null = null;
   private playerUltDisplay: TextBlock | null = null;
   private topBar: Rectangle | null = null;
+  private statsPanel: Rectangle | null = null;
   private pauseButton: Button | null = null;
   private healthPanel: Rectangle | null = null;
   private healthBarFill: Rectangle | null = null;
@@ -282,6 +283,9 @@ export class HUDManager {
   private comboMultiplierText!: TextBlock;
   private comboTimerFill!: Rectangle;
   private comboContainer!: Rectangle;
+  private runUiBootstrapActive: boolean = false;
+  private runUiBootstrapElapsed: number = 0;
+  private runUiBootstrapStyleCache: Map<Control, { color?: string; background?: string }> = new Map();
   private unsubscribers: Array<() => void> = [];
 
   constructor(private scene: Scene) {
@@ -679,6 +683,7 @@ export class HUDManager {
     statsContainer.top = 24;
     statsContainer.cornerRadius = 4;
     this.topBar.addControl(statsContainer);
+    this.statsPanel = statsContainer;
 
     this.scoreText = new TextBlock('score_text');
     this.scoreText.text = 'SCORE: 00000000';
@@ -722,24 +727,24 @@ export class HUDManager {
     this.currencyText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     statsContainer.addControl(this.currencyText);
 
-    // Combo Container (placed directly below statsContainer)
+    // Combo Container (integrated in score panel, bottom-right)
     this.comboContainer = new Rectangle('combo_container');
-    this.comboContainer.width = '140px';
-    this.comboContainer.height = '60px';
-    this.comboContainer.left = -24;
-    this.comboContainer.top = 145;
+    this.comboContainer.width = '132px';
+    this.comboContainer.height = '52px';
+    this.comboContainer.left = 174;
+    this.comboContainer.top = 74;
     this.comboContainer.thickness = 0;
-    this.comboContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.comboContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.comboContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.comboContainer.isVisible = false;
-    this.guiClean.addControl(this.comboContainer);
+    statsContainer.addControl(this.comboContainer);
 
     this.comboText = new TextBlock('combo_text');
     this.comboText.text = 'COMBO X0';
     this.comboText.fontSize = 16;
     this.comboText.fontFamily = fontFamily;
     this.comboText.color = '#FFD782';
-    this.comboText.top = '-10px';
+    this.comboText.top = '-8px';
     this.comboText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.comboContainer.addControl(this.comboText);
 
@@ -748,7 +753,7 @@ export class HUDManager {
     this.comboMultiplierText.fontSize = 24;
     this.comboMultiplierText.fontFamily = fontFamily;
     this.comboMultiplierText.color = '#FFFFFF';
-    this.comboMultiplierText.top = '15px';
+    this.comboMultiplierText.top = '11px';
     this.comboMultiplierText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.comboContainer.addControl(this.comboMultiplierText);
 
@@ -2107,6 +2112,7 @@ export class HUDManager {
 
   update(deltaTime: number): void {
     this.updateMobileControlsState(deltaTime);
+    this.updateRunUiBootstrap(deltaTime);
     this.updateDaemonPopup(deltaTime);
     this.updateBossRoomAlert(deltaTime);
     this.updateAchievementToast(deltaTime);
@@ -2236,6 +2242,116 @@ export class HUDManager {
       dmg.anchor.position.copyFrom(worldPos);
       dmg.text.alpha = 1.0 - dmg.timeElapsed / dmg.duration;
     }
+  }
+
+  public triggerRunUiBootstrapSequence(enabled: boolean): void {
+    this.runUiBootstrapActive = enabled;
+    this.runUiBootstrapElapsed = 0;
+    if (!enabled) {
+      this.setHudBootstrapProgress(1);
+      this.restoreHudBootstrapVisuals();
+      return;
+    }
+    this.setHudBootstrapProgress(0);
+  }
+
+  private updateRunUiBootstrap(deltaTime: number): void {
+    if (!this.runUiBootstrapActive) return;
+    this.runUiBootstrapElapsed += Math.max(0, deltaTime);
+    const progress = Math.min(1, this.runUiBootstrapElapsed / 1.7);
+    this.setHudBootstrapProgress(progress);
+    if (progress >= 1) {
+      this.runUiBootstrapActive = false;
+      this.restoreHudBootstrapVisuals();
+    }
+  }
+
+  private setHudBootstrapProgress(progress: number): void {
+    const p = Math.max(0, Math.min(1, progress));
+    const glitchEnvelope = p < 0.64 ? (1 - (p / 0.64)) : 0;
+    const glitchPulseA = Math.sin(this.runUiBootstrapElapsed * 71.0);
+    const glitchPulseB = Math.sin(this.runUiBootstrapElapsed * 49.0 + 1.7);
+    const glitchPulse = Math.max(0, (glitchPulseA * 0.76 + glitchPulseB * 0.42));
+    const glitchIntensity = glitchEnvelope * glitchPulse;
+
+    const panelReveal = (
+      control: Control | null | undefined,
+      start: number,
+      end: number
+    ) => {
+      if (!control) return;
+      const span = Math.max(0.001, end - start);
+      const local = Math.max(0, Math.min(1, (p - start) / span));
+      const eased = local * local * (3 - 2 * local);
+      const flicker = 1 - (0.42 * glitchIntensity * Math.max(0, Math.sin(this.runUiBootstrapElapsed * 112 + start * 7)));
+      control.alpha = eased * flicker;
+      control.isVisible = eased > 0.001;
+      const jitterAmp = 0.08 * glitchIntensity;
+      const jitterX = Math.sin(this.runUiBootstrapElapsed * (24 + start * 11)) * jitterAmp;
+      const jitterY = Math.cos(this.runUiBootstrapElapsed * (29 + end * 9)) * jitterAmp;
+      control.scaleX = 1 + jitterX;
+      control.scaleY = 1 + jitterY;
+
+      this.applyHudBootstrapGlitchVisual(control, glitchIntensity);
+    };
+
+    panelReveal(this.healthPanel, 0.0, 0.26);
+    panelReveal(this.logPanel, 0.12, 0.46);
+    panelReveal(this.statusPanel as Control | null, 0.26, 0.62);
+    panelReveal(this.statsPanel, 0.44, 0.82);
+    panelReveal(this.runBonusContainer, 0.62, 0.98);
+    panelReveal(this.comboContainer, 0.62, 0.98);
+
+    if (this.pauseButton) {
+      this.pauseButton.alpha = 1;
+      this.pauseButton.isVisible = true;
+      this.pauseButton.isEnabled = true;
+      this.pauseButton.isHitTestVisible = true;
+      this.pauseButton.scaleX = 1 + (0.02 * glitchIntensity * Math.sin(this.runUiBootstrapElapsed * 31));
+      this.pauseButton.scaleY = 1 + (0.02 * glitchIntensity * Math.cos(this.runUiBootstrapElapsed * 28));
+      this.applyHudBootstrapGlitchVisual(this.pauseButton, glitchIntensity * 0.8);
+    }
+  }
+
+  private applyHudBootstrapGlitchVisual(control: Control, glitchIntensity: number): void {
+    const withStyle = control as Control & { color?: string; background?: string };
+    if (!this.runUiBootstrapStyleCache.has(control)) {
+      this.runUiBootstrapStyleCache.set(control, {
+        color: withStyle.color,
+        background: withStyle.background,
+      });
+    }
+    const cached = this.runUiBootstrapStyleCache.get(control);
+    if (!cached) return;
+
+    if (glitchIntensity <= 0.001) {
+      withStyle.color = cached.color;
+      withStyle.background = cached.background;
+      return;
+    }
+
+    const redFlash = Math.max(0, Math.sin(this.runUiBootstrapElapsed * 66));
+    const flashWeight = glitchIntensity * redFlash;
+    if (withStyle.color !== undefined) {
+      withStyle.color = flashWeight > 0.16 ? '#FF2F55' : (cached.color ?? withStyle.color);
+    }
+    if (withStyle.background !== undefined && cached.background) {
+      withStyle.background = flashWeight > 0.14
+        ? 'rgba(82, 6, 18, 0.88)'
+        : cached.background;
+    }
+  }
+
+  private restoreHudBootstrapVisuals(): void {
+    for (const [control, cached] of this.runUiBootstrapStyleCache.entries()) {
+      const withStyle = control as Control & { color?: string; background?: string };
+      if (withStyle.color !== undefined) withStyle.color = cached.color;
+      if (withStyle.background !== undefined) withStyle.background = cached.background;
+      control.scaleX = 1;
+      control.scaleY = 1;
+      control.alpha = Math.max(control.alpha, 1);
+    }
+    this.runUiBootstrapStyleCache.clear();
   }
 
   private triggerIntegrityDamagePulse(): void {

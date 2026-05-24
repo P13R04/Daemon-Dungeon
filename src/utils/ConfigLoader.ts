@@ -95,11 +95,28 @@ export class ConfigLoader {
   }
 
   private async loadJSON<T>(path: string): Promise<T> {
-    const response = await fetch(`${path}?t=${Date.now()}`);
-    if (!response.ok) {
-      throw new Error(`Failed to load ${path}: ${response.status}`);
+    const isDev = typeof import.meta !== 'undefined' && !!(import.meta as any).env?.DEV;
+    const url = isDev ? `${path}?t=${Date.now()}` : path;
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = await fetch(url, {
+          cache: isDev ? 'no-store' : 'default',
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to load ${path}: ${response.status}`);
+        }
+        return response.json() as Promise<T>;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2) {
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 120 * (attempt + 1)));
+        }
+      }
     }
-    return response.json() as Promise<T>;
+
+    throw lastError instanceof Error ? lastError : new Error(`Failed to load ${path}`);
   }
 
   private normalizeRoomModules(modules: Record<string, { default?: RoomConfig } | RoomConfig>): RoomsConfig {

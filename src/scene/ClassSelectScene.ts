@@ -61,6 +61,7 @@ interface ClassAmbientSystem {
 }
 
 export class ClassSelectScene {
+  private static prewarmPromise: Promise<void> | null = null;
   private scene: Scene;
   private gui: AdvancedDynamicTexture;
   private camera!: ArcRotateCamera;
@@ -187,6 +188,28 @@ export class ClassSelectScene {
         this.postProcessConfig
       );
     }
+  }
+
+  public static prewarmCoreClassAssets(engine: Engine): Promise<void> {
+    if (this.prewarmPromise) return this.prewarmPromise;
+
+    this.prewarmPromise = (async () => {
+      const prewarmScene = new Scene(engine);
+      try {
+        const base = `${getHudAssetBaseUrl()}models/player/`;
+        const files = ['mage.glb', 'tank.glb', 'rogue.glb'];
+        await Promise.allSettled(
+          files.map(async (fileName) => {
+            const container = await SceneLoader.LoadAssetContainerAsync(base, fileName, prewarmScene);
+            container.dispose();
+          })
+        );
+      } finally {
+        prewarmScene.dispose();
+      }
+    })();
+
+    return this.prewarmPromise;
   }
 
   getScene(): Scene {

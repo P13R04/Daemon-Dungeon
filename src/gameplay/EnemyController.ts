@@ -84,6 +84,20 @@ export class EnemyController {
   private emitterNodes: TransformNode[] = [];
 
   private static flareTextureCache: Texture | null = null;
+  private static createLocalFlareTexture(scene: Scene): Texture {
+    const texture = new DynamicTexture('enemy_flare_local', { width: 64, height: 64 }, scene, false);
+    const ctx = texture.getContext();
+    ctx.clearRect(0, 0, 64, 64);
+    const grad = ctx.createRadialGradient(32, 32, 2, 32, 32, 31);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.35, 'rgba(255,230,180,0.95)');
+    grad.addColorStop(0.65, 'rgba(255,120,80,0.55)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 64);
+    texture.update();
+    return texture;
+  }
   public static getFlareTexture(scene: Scene): Texture {
     const cacheDisposed = this.flareTextureCache
       && typeof (this.flareTextureCache as any).isDisposed === 'function'
@@ -91,7 +105,7 @@ export class EnemyController {
     if (!this.flareTextureCache || cacheDisposed || this.flareTextureCache.getScene() !== scene) {
       // Keep previous shared flare texture alive to avoid invalidating active particle systems
       // that may still reference it during staggered cleanup phases.
-      this.flareTextureCache = new Texture('https://assets.babylonjs.com/textures/flare.png', scene);
+      this.flareTextureCache = this.createLocalFlareTexture(scene);
     }
     return this.flareTextureCache;
   }
@@ -4813,11 +4827,8 @@ export class EnemyController {
 
     // Fire trail
     const particles = new ParticleSystem(`missile_trail_${this.id}_${Date.now()}`, 2000, this.scene);
-    if (this.missileTrailTexture) {
-      try { this.missileTrailTexture.dispose(); } catch {}
-      this.missileTrailTexture = null;
-    }
-    this.missileTrailTexture = new Texture('https://assets.babylonjs.com/textures/flare.png', this.scene);
+    // Shared local flare texture: avoids cross-origin fetches and keeps startup deterministic.
+    this.missileTrailTexture = EnemyController.getFlareTexture(this.scene);
     particles.particleTexture = this.missileTrailTexture;
     
     particles.layerMask = SCENE_LAYER;

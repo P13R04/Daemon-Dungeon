@@ -134,6 +134,7 @@ export class GameManager {
   private eventListenersBound: boolean = false;
   private eventBusUnsubscribers: Array<() => void> = [];
   private resizeObserver: ResizeObserver | null = null;
+  private resizeListener: (() => void) | null = null;
   private selectedClassId: 'mage' | 'firewall' | 'rogue' | 'cat' = 'mage';
   private tilesEnabled: boolean = true;
   public isPaused: boolean = false;
@@ -211,6 +212,7 @@ export class GameManager {
   private musicManager: MusicManager | null = null;
   private fastCleanRoomAccumulator: number = 0;
   private fastCleanRoomLastIndex: number = -1;
+  private classSelectAssetPrewarmPromise: Promise<void> | null = null;
 
 
   private constructor() {
@@ -375,11 +377,16 @@ export class GameManager {
     // GUI sharpness is handled separately via renderAtIdealSize=false.
     this.engine = new Engine(canvas, true);
 
-    // Setup ResizeObserver on canvas to automatically resize engine dynamically
-    this.resizeObserver = new ResizeObserver(() => {
-      this.engine?.resize();
-    });
-    this.resizeObserver.observe(canvas as any);
+    // Setup resize handling with fallback for browsers lacking ResizeObserver.
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.engine?.resize();
+      });
+      this.resizeObserver.observe(canvas as any);
+    } else {
+      this.resizeListener = () => this.engine?.resize();
+      window.addEventListener('resize', this.resizeListener, { passive: true });
+    }
 
     this.setupGlobalAudioUnlock();
 
@@ -401,6 +408,7 @@ export class GameManager {
       }
     }
     this.codexService.configureRunEnemyCatalog([...runEnemyTypes]);
+    this.reconcileTutorialPersistenceState();
 
     // Setup event listeners
     this.setupEventListeners();
@@ -418,6 +426,25 @@ export class GameManager {
     this.startGameLoop();
 
     this.isRunning = true;
+  }
+
+  private reconcileTutorialPersistenceState(): void {
+    // Source-of-truth policy:
+    // - Long-term progression lives in CodexService snapshot.
+    // - Settings flag is kept in sync for legacy UI/flows.
+    const codexMageDone = this.codexService.hasCompletedTutorialForClass('mage');
+    const settingsMageDone = !!GameSettingsStore.get().accessibility.tutorialCompleted;
+
+    // Legacy migration case: settings says done but codex was missing/older.
+    if (settingsMageDone && !codexMageDone) {
+      this.codexService.recordTutorialCompleted('mage');
+    }
+
+    // Keep settings aligned with codex for stable first-launch behavior.
+    const effectiveMageDone = this.codexService.hasCompletedTutorialForClass('mage');
+    if (effectiveMageDone !== settingsMageDone) {
+      GameSettingsStore.updateAccessibility({ tutorialCompleted: effectiveMageDone });
+    }
   }
 
   private setupEscapeListener(): void {
@@ -476,7 +503,8 @@ export class GameManager {
         this.bootScene.dispose();
         this.bootScene = undefined;
       }
-      if (!GameSettingsStore.get().accessibility.tutorialCompleted) {
+      const mageTutorialCompleted = this.codexService.hasCompletedTutorialForClass('mage');
+      if (!mageTutorialCompleted) {
         this.eventCoordinator.emitTutorialStartRequested('mage');
       } else {
         void this.openMainMenuScene();
@@ -526,6 +554,12 @@ export class GameManager {
     }
 
     this.disposeFrontendScenes();
+    if (!this.classSelectAssetPrewarmPromise) {
+      this.classSelectAssetPrewarmPromise = ClassSelectScene.prewarmCoreClassAssets(this.engine).catch((error) => {
+        console.warn('[GameManager] Class model prewarm failed, continuing:', error);
+      });
+    }
+    // Do not block menu display on prewarm: it runs in background.
 
     this.mainMenuScene = new MainMenuScene(this.engine, () => {
       void this.openClassSelectScene(false);
@@ -624,6 +658,13 @@ export class GameManager {
       this.disposeGameplay();
     }
     this.disposeFrontendScenes();
+    if (!this.classSelectAssetPrewarmPromise) {
+      this.classSelectAssetPrewarmPromise = ClassSelectScene.prewarmCoreClassAssets(this.engine).catch((error) => {
+        console.warn('[GameManager] Class model prewarm failed, continuing:', error);
+      });
+    }
+    // Keep navigation responsive even under network pressure (itch iframe/cold cache).
+    await this.awaitPromiseWithTimeout(this.classSelectAssetPrewarmPromise, 1800);
 
     const classSelectPostFx = this.configLoader.getGameplayConfig()?.postProcessing;
     this.classSelectScene = new ClassSelectScene(this.engine, (classId) => {
@@ -636,6 +677,20 @@ export class GameManager {
       void this.openMainMenuScene();
     }, classSelectPostFx);
     this.scene = this.classSelectScene.getScene();
+  }
+
+  private async awaitPromiseWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
+    let timeoutId: number | null = null;
+    const timeoutPromise = new Promise<null>((resolve) => {
+      timeoutId = window.setTimeout(() => resolve(null), Math.max(0, timeoutMs));
+    });
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    }
   }
 
   private disposeGameplay(): void {
@@ -1667,6 +1722,9 @@ export class GameManager {
   }
 
   private updateNonPlayingFrame(deltaTime: number): void {
+    if (this.isPaused) {
+      return;
+    }
     this.pumpInterRoomPreloadWork();
     this.runtimeOrchestrator.updateNonPlayingFrame(this.createRuntimeFrameContext(), deltaTime);
     if (!this.benchmarkRunner) {
@@ -1994,6 +2052,10 @@ export class GameManager {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
     }
+    if (this.resizeListener) {
+      window.removeEventListener('resize', this.resizeListener);
+      this.resizeListener = null;
+    }
   }
 
 
@@ -2189,7 +2251,7 @@ export class GameManager {
       if (this.hudManager && this.hudManager.preloadPromise) {
         this.setLoadingOverlay(true, 'PRELOADING 2D INTERFACE ASSETS...', '50%');
         await this.waitForNextPaint(1);
-        await this.hudManager.preloadPromise;
+        await this.awaitPromiseWithTimeout(this.hudManager.preloadPromise, 1500);
       }
 
       this.setLoadingOverlay(true, 'PRELOADING DUNGEON CELLS...', '78%');
@@ -2200,7 +2262,7 @@ export class GameManager {
       this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, true);
       this.setLoadingOverlay(true, 'PRELOADING ENEMY MODEL CONTAINERS...', '90%');
       await this.waitForNextPaint(1);
-      await this.enemySpawner.prewarmCoreEnemyModelsForRun();
+      await this.awaitPromiseWithTimeout(this.enemySpawner.prewarmCoreEnemyModelsForRun(), 2200);
       this.loadRoomByIndex(this.currentRoomIndex);
       this.setLoadingOverlay(true, 'HANDSHAKE WITH DAEMON CORE...', '100%');
       await this.waitForNextPaint(1);
@@ -3056,6 +3118,8 @@ export class GameManager {
     const sequenceId = ++this.transitionSequenceId;
     try {
       this.hudManager.pushSystemLog('ROOM STREAM READY. RE-INJECTING HOST PROCESS.');
+      const shouldRunHudBootstrap = roomIndex === 0;
+      this.hudManager.triggerRunUiBootstrapSequence(shouldRunHudBootstrap);
 
       const spawnPoint = this.roomManager.getPlayerSpawnPoint(this.roomOrder[roomIndex]) || Vector3.Zero();
       this.playerController.setPosition(spawnPoint);
@@ -4522,7 +4586,7 @@ export class GameManager {
     return this.roomManager.areWallsVisible();
   }
   public togglePause(): void {
-    if (this.gameState !== 'playing' && this.gameState !== 'bonus') return;
+    if (this.gameState !== 'playing' && this.gameState !== 'bonus' && this.gameState !== 'transition' && this.gameState !== 'roomclear') return;
     this.isPaused = !this.isPaused;
     if (this.isPaused) {
       this.hudManager.showPauseMenu();

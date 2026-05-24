@@ -167,13 +167,15 @@ export class EnemySpawner {
       { rootUrl: `${normalizedBase}models/mage_missile/`, fileName: 'tde_socle_red_n_white.glb' },
     ];
 
-    for (const entry of candidates) {
-      try {
-        await EnemyController.getOrLoadModelContainer(this.scene, entry.rootUrl, entry.fileName);
-      } catch (error) {
-        console.warn('[EnemySpawner] model prewarm failed', entry.fileName, error);
-      }
-    }
+    await Promise.allSettled(
+      candidates.map(async (entry) => {
+        try {
+          await EnemyController.getOrLoadModelContainer(this.scene, entry.rootUrl, entry.fileName);
+        } catch (error) {
+          console.warn('[EnemySpawner] model prewarm failed', entry.fileName, error);
+        }
+      })
+    );
   }
 
   beginTransitionRoomPreparation(roomId: string, roomKey: string, difficultyLevel: number): void {
