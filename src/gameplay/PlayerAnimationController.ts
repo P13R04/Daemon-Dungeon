@@ -123,6 +123,16 @@ export class PlayerAnimationController {
         this.instantiatedSkeletons.push(...result.skeletons);
       }
 
+      this.mesh = result.meshes[0] as Mesh;
+      this.mesh.name = `player_${this.playerClass}`;
+
+      // Scale model to a class-specific target height for reliable visibility.
+      const bounds = this.mesh.getHierarchyBoundingVectors(true);
+      const currentHeight = Math.max(0.001, bounds.max.y - bounds.min.y);
+      const targetHeight = 2.0;
+      const modelScale = targetHeight / currentHeight;
+      this.mesh.scaling.scaleInPlace(modelScale);
+
       // Create parent TransformNode for rotation and position management
       // This avoids animation keyframes overriding our rotation
       this.meshParent = new TransformNode(`player_${this.playerClass}_parent`, this.scene);
@@ -135,27 +145,7 @@ export class PlayerAnimationController {
         }
         mesh.layerMask = SCENE_LAYER;
       });
-      this.mesh = (result.meshes.find((mesh) => mesh instanceof Mesh) ?? result.meshes[0]) as Mesh;
-      this.mesh.name = `player_${this.playerClass}`;
       this.mesh.position = Vector3.Zero();
-
-      // Scale from full imported hierarchy bounds (stable across browser-dependent mesh ordering).
-      const childMeshes = this.meshParent.getChildMeshes();
-      if (childMeshes.length === 0) {
-        throw new Error(`No child meshes found after loading ${modelFile}`);
-      }
-      let minY = Number.POSITIVE_INFINITY;
-      let maxY = Number.NEGATIVE_INFINITY;
-      for (const child of childMeshes) {
-        child.computeWorldMatrix(true);
-        const box = child.getBoundingInfo().boundingBox;
-        minY = Math.min(minY, box.minimumWorld.y);
-        maxY = Math.max(maxY, box.maximumWorld.y);
-      }
-      const currentHeight = Math.max(0.001, maxY - minY);
-      const targetHeight = 2.0;
-      const modelScale = targetHeight / currentHeight;
-      this.meshParent.scaling.setAll(modelScale);
 
       // Debug: log all meshes loaded
       console.log(`📦 Total meshes loaded: ${result.meshes.length}`);

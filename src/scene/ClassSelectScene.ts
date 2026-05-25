@@ -124,6 +124,7 @@ export class ClassSelectScene {
   private resizeObserver: any = null;
   private isDisposed: boolean = false;
   private deferredModelLoadTimeoutId: number | null = null;
+  private initialVisualReadyPromise: Promise<void> = Promise.resolve();
 
   constructor(
     private engine: Engine,
@@ -174,6 +175,7 @@ export class ClassSelectScene {
     this.startButton = startButton;
 
     this.createCarouselItems();
+    this.initialVisualReadyPromise = this.waitForInitialVisualReady();
     this.setupClassAmbientParticles();
     this.attachKeyboard();
     this.attachPointerSelection();
@@ -219,6 +221,10 @@ export class ClassSelectScene {
 
   getScene(): Scene {
     return this.scene;
+  }
+
+  public waitUntilVisuallyReady(): Promise<void> {
+    return this.initialVisualReadyPromise;
   }
 
   update(deltaTime: number): void {
@@ -474,7 +480,7 @@ export class ClassSelectScene {
   private createCarouselItems(): void {
     const mageRoot = new TransformNode('classMageRoot', this.scene);
     this.items.push({ id: 'mage', label: 'WIZARD INSTALLER', playable: true, root: mageRoot });
-    this.loadMageModelInto(mageRoot).catch((error) => {
+    const mageLoadPromise = this.loadMageModelInto(mageRoot).catch((error) => {
       console.warn('Mage model load failed in class select, using placeholder:', error);
       this.createCylinderPlaceholder(mageRoot, new Color3(0.2, 0.45, 1.0), 2.3, 0.8, 'MAGE');
     });
@@ -493,9 +499,20 @@ export class ClassSelectScene {
 
     // Load non-selected class previews in a staggered sequence to reduce
     // burst network pressure on itch CDN/iframe startup.
-    this.deferredModelLoadTimeoutId = window.setTimeout(() => {
-      void this.loadDeferredClassPreviewModels(firewallRoot, rogueRoot, catEasterEggEnabled);
-    }, 220);
+    const deferredLoadPromise = new Promise<void>((resolve) => {
+      this.deferredModelLoadTimeoutId = window.setTimeout(() => {
+        void this.loadDeferredClassPreviewModels(firewallRoot, rogueRoot, catEasterEggEnabled)
+          .finally(() => resolve());
+      }, 220);
+    });
+
+    this.initialVisualReadyPromise = Promise.allSettled([mageLoadPromise, deferredLoadPromise]).then(() => undefined);
+  }
+
+  private async waitForInitialVisualReady(): Promise<void> {
+    await this.initialVisualReadyPromise;
+    // Allow one render beat so bounds-based normalization settles before reveal.
+    await new Promise<void>((resolve) => window.setTimeout(() => resolve(), 260));
   }
 
   private async loadDeferredClassPreviewModels(
@@ -882,19 +899,32 @@ export class ClassSelectScene {
     }
     if (targetHeight == null) return;
 
-    const childMeshes = importedRoot.getChildMeshes();
-    if (!childMeshes.length) return;
-    let minY = Number.POSITIVE_INFINITY;
-    let maxY = Number.NEGATIVE_INFINITY;
-    for (const child of childMeshes) {
-      child.computeWorldMatrix(true);
-      const box = child.getBoundingInfo().boundingBox;
-      minY = Math.min(minY, box.minimumWorld.y);
-      maxY = Math.max(maxY, box.maximumWorld.y);
-    }
-    const currentHeight = Math.max(0.001, maxY - minY);
-    const modelScale = targetHeight / currentHeight;
-    importedRoot.scaling.setAll(modelScale);
+    const normalizeScaleFromBounds = () => {
+      const childMeshes = importedRoot.getChildMeshes();
+      if (!childMeshes.length) return;
+      let minY = Number.POSITIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      for (const child of childMeshes) {
+        child.computeWorldMatrix(true);
+        child.refreshBoundingInfo(true);
+        const box = child.getBoundingInfo().boundingBox;
+        minY = Math.min(minY, box.minimumWorld.y);
+        maxY = Math.max(maxY, box.maximumWorld.y);
+      }
+      const currentHeight = Math.max(0.001, maxY - minY);
+      const modelScale = targetHeight / currentHeight;
+      importedRoot.scaling.setAll(modelScale);
+    };
+
+    // Immediate pass.
+    normalizeScaleFromBounds();
+    // Delayed stabilization passes: mitigates first-launch race conditions on some browsers.
+    window.setTimeout(() => {
+      if (!this.isDisposed) normalizeScaleFromBounds();
+    }, 0);
+    window.setTimeout(() => {
+      if (!this.isDisposed) normalizeScaleFromBounds();
+    }, 220);
   }
 
   private applyRogueModelTuning(): void {

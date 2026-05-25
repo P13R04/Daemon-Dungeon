@@ -657,7 +657,7 @@ export class GameManager {
       await this.waitForNextPaint(1);
       this.setLoadingOverlay(true, 'PRELOADING PLAYER MODELS...', '60%');
       await this.waitForNextPaint(1);
-      await this.awaitPromiseWithTimeout(ClassSelectScene.prewarmCoreClassAssets(this.engine), 3500);
+      await this.awaitPromiseWithTimeout(ClassSelectScene.prewarmCoreClassAssets(this.engine), 8000);
       this.setLoadingOverlay(true, 'FINALIZING PREVIEW...', '100%');
       await this.waitForNextPaint(1);
 
@@ -677,6 +677,7 @@ export class GameManager {
         void this.openMainMenuScene();
       }, classSelectPostFx);
       this.scene = this.classSelectScene.getScene();
+      await this.awaitPromiseWithTimeout(this.classSelectScene.waitUntilVisuallyReady(), 2200);
     } finally {
       this.setLoadingOverlay(false);
     }
