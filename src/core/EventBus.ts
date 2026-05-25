@@ -153,6 +153,7 @@ export const GameEvents = {
   UI_SOUND_DESELECT: 'ui:soundDeselect',
   UI_SOUND_START_GAME: 'ui:soundStartGame',
   UI_SOUND_NEXT_ROOM: 'ui:soundNextRoom',
+  UI_SOUND_GAME_OVER: 'ui:soundGameOver',
   CODEX_PROGRESS_RESET_REQUESTED: 'codex:progressResetRequested',
   DEBUG_FLAG_CHANGED: 'debug:flagChanged',
   DEV_ROOM_LOAD_REQUESTED: 'dev:roomLoadRequested',

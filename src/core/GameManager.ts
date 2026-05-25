@@ -1075,6 +1075,7 @@ export class GameManager {
         );
 
         this.codexService.endRunTracking();
+        this.eventBus.emit(GameEvents.UI_SOUND_GAME_OVER);
         this.transitionGameState('gameover');
         this.hudManager.showGameOverScreen({
           score: finalScore,
@@ -1361,7 +1362,13 @@ export class GameManager {
       { id: 'sfx_pong_flying_close1', path: 'sfx/monsters/pong/flying_close1.mp3' },
       { id: 'sfx_pong_wall_bounce1', path: 'sfx/monsters/pong/wall_bounce1.mp3' },
       { id: 'sfx_pong_onhit', path: 'sfx/monsters/pong/pong_onhit.mp3' },
+      { id: 'sfx_pong_damagedealt', path: 'sfx/monsters/pong/pong_damagedealt.mp3' },
+      { id: 'sfx_pong_ondeath', path: 'sfx/monsters/pong/pong_ondeath.mp3' },
       { id: 'sfx_zombie_damage_taken1', path: 'sfx/monsters/zombie/damage_taken1.mp3' },
+      { id: 'sfx_zombie_death_sound1', path: 'sfx/monsters/zombie/death_sound1.mp3' },
+      { id: 'sfx_zombie_onhit1', path: 'sfx/monsters/zombie/on_hit1.mp3' },
+      { id: 'sfx_zombie_onhit2', path: 'sfx/monsters/zombie/on_hit2.mp3' },
+      { id: 'sfx_zombie_onhit3', path: 'sfx/monsters/zombie/on_hit3.mp3' },
       { id: 'sfx_artificier_shot_split1', path: 'sfx/monsters/sentries/artificier/shot_split1.mp3' },
       { id: 'sfx_artificier_splash_zone_hum1', path: 'sfx/monsters/sentries/artificier/splash_zone_hum1.mp3' },
       { id: 'sfx_artificier_splash_zone_hum2', path: 'sfx/monsters/sentries/artificier/splash_zone_hum2.mp3' },
@@ -1406,6 +1413,7 @@ export class GameManager {
     this.eventBus.on(GameEvents.UI_SOUND_DESELECT, () => this.audioManager?.playSound('sfx_ui_deselect', 0.8));
     this.eventBus.on(GameEvents.UI_SOUND_START_GAME, () => this.audioManager?.playSound('sfx_ui_start_game', 0.8));
     this.eventBus.on(GameEvents.UI_SOUND_NEXT_ROOM, () => this.audioManager?.playSound('sfx_ui_next_room', 0.8));
+    this.eventBus.on(GameEvents.UI_SOUND_GAME_OVER, () => this.audioManager?.playSound('sfx_ui_game_over', 0.9));
   }
 
   private bindMonsterSoundEvents(): void {
@@ -1459,6 +1467,37 @@ export class GameManager {
           this.audioManager?.stopSound('sfx_artificier_splash_zone_hum1');
           this.audioManager?.stopSound('sfx_sentry_projectile_flying1');
         }
+      }
+
+      const soundMap: Record<string, string> = {
+        zombie: 'sfx_zombie_death_sound1',
+        zombie_basic: 'sfx_zombie_death_sound1',
+        zombie_fast: 'sfx_zombie_death_sound1',
+        zombie_basic_void: 'sfx_zombie_death_sound1',
+        fuyard: 'sfx_zombie_death_sound1',
+        strategist: 'sfx_zombie_death_sound1',
+        spike_strategist_boss: 'sfx_zombie_death_sound1',
+        bull: 'sfx_bull_dash1',
+        bull_boss: 'sfx_bull_dash1',
+        jumper: 'sfx_jumper_dmg_taken1',
+        jumper_boss: 'sfx_jumper_dmg_taken1',
+        pong: 'sfx_pong_ondeath',
+        pong_boss: 'sfx_pong_ondeath',
+        sentinel: 'sfx_sentry_ondeath',
+        prefire_sentinel: 'sfx_sentry_ondeath',
+        healer: 'sfx_sentry_ondeath',
+        artificer: 'sfx_sentry_ondeath',
+        artificier: 'sfx_sentry_ondeath',
+        rocket_sentry: 'sfx_sentry_ondeath',
+        swarm_coordinator: 'sfx_sentry_ondeath',
+        necromancer: 'sfx_sentry_ondeath',
+        laser_patterns: 'sfx_sentry_ondeath',
+        mage_missile: 'sfx_sentry_ondeath',
+        bullet_hell: 'sfx_sentry_ondeath',
+      };
+      const deathSound = soundMap[enemyType ?? ''];
+      if (deathSound) {
+        this.audioManager?.playSoundAt(deathSound, data?.position ?? Vector3.Zero(), 0.8);
       }
     });
 
@@ -1556,12 +1595,19 @@ export class GameManager {
 
     if (data?.type === 'melee' && data?.attacker) {
       const rawDamage = data.damage || 0;
+      const attackerType = data.attackerType as string;
       if (data.attackerType) {
         this.lastAttackerType = data.attackerType;
       }
       const finalDamage = this.resolveIncomingMeleeDamage(rawDamage, data.attacker);
       if (finalDamage > 0) {
         this.playerController.applyDamage(finalDamage);
+        if (attackerType && this.audioManager) {
+          this.playMonsterAttackSound(attackerType);
+          if (attackerType.includes('pong')) {
+            this.audioManager.playSoundAt('sfx_pong_damagedealt', this.playerController?.getPosition?.() || Vector3.Zero(), 0.75);
+          }
+        }
       }
     }
 
@@ -1616,6 +1662,27 @@ export class GameManager {
     }
 
     return finalDamage;
+  }
+
+  private playMonsterAttackSound(attackerType: string): void {
+    if (!this.audioManager) return;
+    const soundMap: Record<string, string[]> = {
+      zombie: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
+      zombie_basic: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
+      zombie_fast: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
+      zombie_basic_void: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
+      fuyard: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
+      strategist: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
+      spike_strategist_boss: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
+      jumper: ['sfx_jumper_onhit1'],
+      jumper_boss: ['sfx_jumper_onhit1'],
+      pong: ['sfx_pong_onhit'],
+      pong_boss: ['sfx_pong_onhit'],
+    };
+    const sounds = soundMap[attackerType] || (attackerType?.includes('pong') ? ['sfx_pong_onhit'] : []);
+    if (sounds.length <= 0) return;
+    const randomSound = sounds[Math.floor(Math.random() * sounds.length)];
+    this.audioManager.playSoundAt(randomSound, this.playerController?.getPosition?.() || Vector3.Zero(), 0.8);
   }
 
   private registerStates(): void {
@@ -3173,6 +3240,7 @@ export class GameManager {
       this.eventBus.emit(GameEvents.TUTORIAL_SHOP_OPENED);
     }
     this.bonusSystemManager.openBonusChoices();
+    this.eventBus.emit(GameEvents.UI_SOUND_NEXT_ROOM);
 
     // Shift heavy inter-room prep work into bonus phase (UI-open) instead of
     // doing it right before opening the menu in gameplay state.
@@ -3186,6 +3254,7 @@ export class GameManager {
     if (!this.gameplayInitialized) return;
     const sequenceId = ++this.transitionSequenceId;
     this.roomIntroSequencePendingIndex = nextIndex;
+    this.eventBus.emit(GameEvents.UI_SOUND_NEXT_ROOM);
     this.roomTransitionManager.startRoomTransition(nextIndex);
     if (!this.isSequenceCurrent(sequenceId)) return;
   }
