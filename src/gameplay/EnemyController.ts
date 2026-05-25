@@ -1067,6 +1067,10 @@ export class EnemyController {
     const count = Math.max(1, this.bulletHellCount);
     const start = -spread / 2;
     const step = count > 1 ? spread / (count - 1) : 0;
+    this.eventBus.emit(GameEvents.ENEMY_SENTRY_SHOOTER_FIRED, {
+      position: spawnPos.clone(),
+      enemyType: this.typeId,
+    });
 
     for (let i = 0; i < count; i++) {
       const angle = start + step * i;
@@ -1078,6 +1082,7 @@ export class EnemyController {
         speed: this.rangedProjectileSpeed,
         range: this.rangedProjectileRange,
         friendly: false,
+        projectileType: this.behavior,
         maxBounces: this.rangedProjectileBounces,
         bounceDamping: this.rangedProjectileBounceDamping,
       });
@@ -2651,6 +2656,7 @@ export class EnemyController {
   private attackPlayerWithDamage(damage: number): void {
     this.eventBus.emit(GameEvents.ATTACK_PERFORMED, {
       attacker: this.id,
+      attackerType: this.typeId,
       type: 'melee',
       damage,
     });

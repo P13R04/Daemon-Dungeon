@@ -822,6 +822,10 @@ export class PlayerController {
           damage: this.computeOutgoingDamage(this.tankPrimaryDamage),
           knockback: this.tankPrimaryKnockback,
         };
+        this.eventBus.emit(GameEvents.ATTACK_PERFORMED, {
+          attacker: 'player',
+          type: 'tank_sweep',
+        });
         this.tankComboSecondSwingPending = false;
       }
     }
@@ -870,6 +874,10 @@ export class PlayerController {
           forwardPush: this.tankShieldBashForwardPush,
           isFinisher: true,
         };
+        this.eventBus.emit(GameEvents.ATTACK_PERFORMED, {
+          attacker: 'player',
+          type: 'tank_shield_bash',
+        });
       }
     }
     if (this.isRogueLikeClass() && this.rogueDashRemaining > 0) {
@@ -1497,6 +1505,10 @@ export class PlayerController {
           damage: this.computeOutgoingDamage(this.tankPrimaryDamage),
           knockback: this.tankPrimaryKnockback,
         };
+        this.eventBus.emit(GameEvents.ATTACK_PERFORMED, {
+          attacker: 'player',
+          type: 'tank_sweep',
+        });
         this.tankComboDirection = smoothedStrikeDir.clone();
         this.tankComboSecondSwingPending = true;
         this.tankComboSecondSwingTimer = this.fireRate * 0.5;

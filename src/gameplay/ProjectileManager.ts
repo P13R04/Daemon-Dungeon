@@ -327,7 +327,7 @@ export class ProjectileManager {
         position: position.clone(),
       });
     }
-    if (projectileType && ['sentinel', 'prefire_sentinel', 'swarm_coordinator', 'turret', 'necromancer'].includes(projectileType)) {
+    if (projectileType && ['sentinel', 'prefire_sentinel', 'swarm_coordinator', 'turret', 'necromancer', 'bullet_hell'].includes(projectileType)) {
       this.eventBus.emit(GameEvents.ENEMY_SENTRY_SHOOTER_PROJECTILE_FLIGHT_STARTED, {
         position: position.clone(),
         projectileType,
@@ -464,7 +464,7 @@ export class ProjectileManager {
         position,
       });
     }
-    if (projectileType && ['sentinel', 'prefire_sentinel', 'swarm_coordinator', 'turret', 'necromancer'].includes(projectileType)) {
+    if (projectileType && ['sentinel', 'prefire_sentinel', 'swarm_coordinator', 'turret', 'necromancer', 'bullet_hell'].includes(projectileType)) {
       this.eventBus.emit(GameEvents.ENEMY_SENTRY_SHOOTER_PROJECTILE_FLIGHT_ENDED, {
         position,
         projectileType,
@@ -786,7 +786,7 @@ export class ProjectileManager {
                 projectileType: projectile.data.projectileType,
               });
             }
-            if (projectile.data.projectileType && ['sentinel', 'prefire_sentinel', 'swarm_coordinator', 'turret', 'necromancer'].includes(projectile.data.projectileType)) {
+            if (projectile.data.projectileType && ['sentinel', 'prefire_sentinel', 'swarm_coordinator', 'turret', 'necromancer', 'bullet_hell'].includes(projectile.data.projectileType)) {
               this.eventBus.emit(GameEvents.ENEMY_SENTRY_SHOOTER_ONHIT_PLAYER, {
                 position: hitPoint.clone(),
                 projectileType: projectile.data.projectileType,

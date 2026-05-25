@@ -1383,6 +1383,8 @@ export class GameManager {
       { id: 'sfx_sentry_onhit_sntry', path: 'sfx/monsters/sentries/onhit_sntry.mp3' },
       { id: 'sfx_sentry_damage_taken', path: 'sfx/monsters/sentries/sentry_damage_taken.mp3' },
       { id: 'sfx_sentry_ondeath', path: 'sfx/monsters/sentries/sentry_ondeath.mp3' },
+      { id: 'sfx_player_cast1', path: 'sfx/attack/floraphonic-fireball-whoosh-1-179125.mp3' },
+      { id: 'sfx_player_cast2', path: 'sfx/attack/freesound_community-8-bit-fireball-81148.mp3' },
     ];
     await Promise.all(
       monsterSounds.map((sound) =>
@@ -1587,6 +1589,19 @@ export class GameManager {
     this.eventBus.on(GameEvents.ENEMY_NECROMANCER_SUMMON, (data: any) => {
       this.audioManager?.playSoundAt('sfx_necromancer_spawn', data?.position ?? Vector3.Zero(), 0.8);
     });
+    this.eventBus.on(GameEvents.PROJECTILE_HIT, (data: any) => {
+      if (!this.audioManager) return;
+      if (data?.target !== 'player') return;
+      const projectileType = data?.projectile?.data?.projectileType as string | undefined;
+      const position = data?.projectile?.data?.position ?? this.playerController?.getPosition?.() ?? Vector3.Zero();
+      if (projectileType === 'rocket_sentry') {
+        this.audioManager.playSoundAt('sfx_rocket_sentry_explode', position, 0.9);
+        return;
+      }
+      if (projectileType && ['sentinel', 'prefire_sentinel', 'swarm_coordinator', 'turret', 'necromancer', 'bullet_hell'].includes(projectileType)) {
+        this.audioManager.playSoundAt('sfx_sentry_onhit_sntry', position, 0.8);
+      }
+    });
   }
 
   private handleAttackPerformedEvent(data: AttackPerformedPayload): void {
@@ -1599,20 +1614,43 @@ export class GameManager {
       if (data.attackerType) {
         this.lastAttackerType = data.attackerType;
       }
+      if (attackerType && this.audioManager && data.attacker !== 'player') {
+        this.playMonsterAttackSound(attackerType);
+      }
       const finalDamage = this.resolveIncomingMeleeDamage(rawDamage, data.attacker);
       if (finalDamage > 0) {
         this.playerController.applyDamage(finalDamage);
-        if (attackerType && this.audioManager) {
-          this.playMonsterAttackSound(attackerType);
-          if (attackerType.includes('pong')) {
-            this.audioManager.playSoundAt('sfx_pong_damagedealt', this.playerController?.getPosition?.() || Vector3.Zero(), 0.75);
-          }
+        if (attackerType && this.audioManager && attackerType.includes('pong')) {
+          this.audioManager.playSoundAt('sfx_pong_damagedealt', this.playerController?.getPosition?.() || Vector3.Zero(), 0.75);
         }
+      }
+    }
+
+    if (data?.attacker === 'player' && this.audioManager) {
+      const type = String(data?.type ?? '');
+      const playerPos = this.playerController?.getPosition?.() || Vector3.Zero();
+      if (type === 'projectile') {
+        const castSound = Math.random() < 0.5 ? 'sfx_player_cast1' : 'sfx_player_cast2';
+        this.audioManager.playSoundAt(castSound, playerPos, 0.72);
+      } else if (type === 'secondary_burst') {
+        this.audioManager.playSoundAt('sfx_player_cast1', playerPos, 0.8);
+      } else if (type === 'ultimate') {
+        this.audioManager.playSoundAt('sfx_player_cast2', playerPos, 0.95);
+      } else if (type === 'melee' || type === 'tank_sweep' || type === 'tank_shield_bash') {
+        this.audioManager.playSoundAt('sfx_player_cast1', playerPos, 0.65);
       }
     }
 
     if (data?.attacker === 'player') {
       // Legacy trigger removed - now handled in DaemonVoicelineManager
+    } else if (data?.type === 'melee' && data?.attackerType && this.audioManager) {
+      const attackerType = data.attackerType as string;
+      if (attackerType.includes('pong')) {
+        const estimatedDamage = Number(data?.damage ?? 0);
+        if (estimatedDamage > 0 && !this.playerController.isCatGodModeActive()) {
+          this.audioManager.playSoundAt('sfx_pong_damagedealt', this.playerController?.getPosition?.() || Vector3.Zero(), 0.75);
+        }
+      }
     }
     this.resetDaemonIdleTimer();
   }
