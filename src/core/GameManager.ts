@@ -1712,12 +1712,21 @@ export class GameManager {
       fuyard: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
       strategist: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
       spike_strategist_boss: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
+      bull: ['sfx_bull_collision1'],
+      bull_boss: ['sfx_bull_collision1'],
       jumper: ['sfx_jumper_onhit1'],
       jumper_boss: ['sfx_jumper_onhit1'],
       pong: ['sfx_pong_onhit'],
       pong_boss: ['sfx_pong_onhit'],
     };
-    const sounds = soundMap[attackerType] || (attackerType?.includes('pong') ? ['sfx_pong_onhit'] : []);
+    const sounds =
+      soundMap[attackerType]
+      || (attackerType?.includes('pong') ? ['sfx_pong_onhit'] : [])
+      || (
+        ['sentinel', 'prefire_sentinel', 'swarm_coordinator', 'turret', 'necromancer', 'bullet_hell'].includes(attackerType)
+          ? ['sfx_sentry_onhit_sntry']
+          : []
+      );
     if (sounds.length <= 0) return;
     const randomSound = sounds[Math.floor(Math.random() * sounds.length)];
     this.audioManager.playSoundAt(randomSound, this.playerController?.getPosition?.() || Vector3.Zero(), 0.8);
