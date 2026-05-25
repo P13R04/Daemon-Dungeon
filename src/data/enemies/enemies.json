@@ -1,0 +1,47 @@
+{
+  "zombie": {
+    "name": "Zombie",
+    "type": "melee",
+    "baseStats": {
+      "hp": 50,
+      "damage": 10,
+      "speed": 2.5,
+      "attackRange": 1.5
+    },
+    "behavior": "chase",
+    "lootTable": [
+      { "itemId": "health_small", "dropChance": 0.3 }
+    ],
+    "description": "A corrupted process. Slow but persistent."
+  },
+  "zombie_fast": {
+    "name": "Fast Zombie",
+    "type": "melee",
+    "baseStats": {
+      "hp": 35,
+      "damage": 8,
+      "speed": 5.0,
+      "attackRange": 1.5
+    },
+    "behavior": "chase_aggressive",
+    "lootTable": [
+      { "itemId": "health_small", "dropChance": 0.2 }
+    ],
+    "description": "A corrupted process with priority scheduling."
+  },
+  "shooter": {
+    "name": "Shooter",
+    "type": "ranged",
+    "baseStats": {
+      "hp": 40,
+      "damage": 12,
+      "speed": 3.0,
+      "attackRange": 12.0
+    },
+    "behavior": "keep_distance",
+    "lootTable": [
+      { "itemId": "health_small", "dropChance": 0.25 }
+    ],
+    "description": "Maintains distance and fires data packets."
+  }
+}

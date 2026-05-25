@@ -1,0 +1,169 @@
+/**
+ * EventBus - Global event dispatcher for decoupled communication
+ * Use this to emit and listen to game events without tight coupling
+ */
+
+type EventCallback = (...args: unknown[]) => void;
+
+export class EventBus {
+  private static instance: EventBus;
+  private listeners: Map<string, EventCallback[]> = new Map();
+
+  private constructor() {}
+
+  static getInstance(): EventBus {
+    if (!EventBus.instance) {
+      EventBus.instance = new EventBus();
+    }
+    return EventBus.instance;
+  }
+
+  /**
+   * Subscribe to an event
+   * @param event - Event name
+   * @param callback - Callback to execute when event is emitted
+   * @returns Unsubscribe function
+   */
+  on<T extends unknown[]>(event: string, callback: (...args: T) => void): () => void {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, []);
+    }
+    this.listeners.get(event)!.push(callback as EventCallback);
+
+    // Return unsubscribe function
+    return () => this.off(event, callback);
+  }
+
+  /**
+   * Unsubscribe from an event
+   */
+  off<T extends unknown[]>(event: string, callback: (...args: T) => void): void {
+    const callbacks = this.listeners.get(event);
+    if (callbacks) {
+      const index = callbacks.indexOf(callback as EventCallback);
+      if (index > -1) {
+        callbacks.splice(index, 1);
+      }
+    }
+  }
+
+  /**
+   * Emit an event
+   */
+  emit<T extends unknown[]>(event: string, ...args: T): void {
+    const callbacks = this.listeners.get(event);
+    if (callbacks) {
+      callbacks.forEach(callback => (callback as (...cbArgs: T) => void)(...args));
+    }
+  }
+
+  /**
+   * Clear all listeners for an event or all events
+   */
+  clear(event?: string): void {
+    if (event) {
+      this.listeners.delete(event);
+    } else {
+      this.listeners.clear();
+    }
+  }
+}
+
+// Common game events (extend as needed)
+export const GameEvents = {
+  // Player events
+  PLAYER_HEALTH_CHANGED: 'player:healthChanged',
+  PLAYER_DAMAGED: 'player:damaged',
+  PLAYER_HEALED: 'player:healed',
+  PLAYER_DIED: 'player:died',
+  PLAYER_ULTIMATE_READY: 'player:ultReady',
+  PLAYER_ULTIMATE_USED: 'player:ultUsed',
+  
+  // Enemy events
+  ENEMY_SPAWNED: 'enemy:spawned',
+  ENEMY_DAMAGED: 'enemy:damaged',
+  ENEMY_DIED: 'enemy:died',
+  ENEMY_ALL_CLEARED: 'enemy:allCleared',
+  ENEMY_SPAWN_REQUESTED: 'enemy:spawnRequested',
+  ENEMY_BULL_AUDIO_CUE: 'enemy:bullAudioCue',
+  ENEMY_JUMPER_AUDIO_CUE: 'enemy:jumperAudioCue',
+  ENEMY_PONG_AUDIO_CUE: 'enemy:pongAudioCue',
+  ENEMY_ARTIFICIER_SPLIT_IMPACT: 'enemy:artificierSplitImpact',
+  ENEMY_ARTIFICIER_DOT_ZONE_STARTED: 'enemy:artificierDotZoneStarted',
+  ENEMY_ARTIFICIER_DOT_ZONE_ENDED: 'enemy:artificierDotZoneEnded',
+  ENEMY_ARTIFICIER_SHOT_FIRED: 'enemy:artificierShotFired',
+  ENEMY_ARTIFICIER_PROJECTILE_FLIGHT_STARTED: 'enemy:artificierProjectileFlightStarted',
+  ENEMY_ARTIFICIER_PROJECTILE_FLIGHT_ENDED: 'enemy:artificierProjectileFlightEnded',
+  ENEMY_ARTIFICIER_ZONE_DAMAGE_TICK: 'enemy:artificierZoneDamageTick',
+  ENEMY_HEALER_HEAL_CAST: 'enemy:healerHealCast',
+  ENEMY_ROCKET_SENTRY_FIRED: 'enemy:rocketSentryFired',
+  ENEMY_ROCKET_SENTRY_IMPACT: 'enemy:rocketSentryImpact',
+  ENEMY_SENTRY_SHOOTER_FIRED: 'enemy:sentryShooterFired',
+  ENEMY_SENTRY_SHOOTER_PROJECTILE_FLIGHT_STARTED: 'enemy:sentryShooterProjectileFlightStarted',
+  ENEMY_SENTRY_SHOOTER_PROJECTILE_FLIGHT_ENDED: 'enemy:sentryShooterProjectileFlightEnded',
+  ENEMY_SENTRY_SHOOTER_ONHIT_PLAYER: 'enemy:sentryShooterOnhitPlayer',
+  ENEMY_NECROMANCER_SUMMON: 'enemy:necromancerSummon',
+  
+  // Room events
+  ROOM_ENTERED: 'room:entered',
+  ROOM_CLEARED: 'room:cleared',
+  ROOM_TRANSITION_START: 'room:transitionStart',
+  ROOM_TRANSITION_END: 'room:transitionEnd',
+  
+  // Bonus events
+  BONUS_OFFERED: 'bonus:offered',
+  BONUS_SELECTED: 'bonus:selected',
+  BONUS_PAID_PICK_REQUESTED: 'bonus:paidPickRequested',
+  BONUS_REROLL_REQUESTED: 'bonus:rerollRequested',
+  SHOP_PURCHASE_REQUESTED: 'shop:purchaseRequested',
+  PLAYER_ULTIMATE_REFILL_REQUESTED: 'player:ultRefillRequested',
+  
+  // Combat events
+  ATTACK_PERFORMED: 'combat:attackPerformed',
+  PROJECTILE_SPAWNED: 'combat:projectileSpawned',
+  PROJECTILE_HIT: 'combat:projectileHit',
+  
+  // Narrative events
+  DAEMON_TAUNT: 'daemon:taunt',
+
+  // Game flow events
+  GAME_START_REQUESTED: 'game:startRequested',
+  GAME_RESTART_REQUESTED: 'game:restartRequested',
+  MAIN_MENU_REQUESTED: 'game:mainMenuRequested',
+  CLASS_SELECT_REQUESTED: 'game:classSelectRequested',
+  CODEX_OPEN_REQUESTED: 'game:codexOpenRequested',
+  ACHIEVEMENTS_OPEN_REQUESTED: 'game:achievementsOpenRequested',
+  HIGHSCORES_OPEN_REQUESTED: 'game:highscoresOpenRequested',
+  ROOM_NEXT_REQUESTED: 'room:nextRequested',
+  TUTORIAL_START_REQUESTED: 'game:tutorialStartRequested',
+  TUTORIAL_PHASE_COMPLETED: 'game:tutorialPhaseCompleted',
+  TUTORIAL_END_REQUESTED: 'game:tutorialEndRequested',
+  TUTORIAL_SHOP_OPENED: 'game:tutorialShopOpened',
+  TUTORIAL_SHOP_INTERACTED: 'game:tutorialShopInteracted',
+
+  
+  // UI events
+  UI_PAUSE_TOGGLE: 'ui:pauseToggle',
+  UI_DEV_CONSOLE_TOGGLE: 'ui:devConsoleToggle',
+  UI_OPTION_CHANGED: 'ui:optionChanged',
+  UI_SETTINGS_OPENED: 'ui:settingsOpened',
+  UI_SOUND_SELECT: 'ui:soundSelect',
+  UI_SOUND_DESELECT: 'ui:soundDeselect',
+  UI_SOUND_START_GAME: 'ui:soundStartGame',
+  UI_SOUND_NEXT_ROOM: 'ui:soundNextRoom',
+  CODEX_PROGRESS_RESET_REQUESTED: 'codex:progressResetRequested',
+  DEBUG_FLAG_CHANGED: 'debug:flagChanged',
+  DEV_ROOM_LOAD_REQUESTED: 'dev:roomLoadRequested',
+  DEV_TILE_TOGGLE_REQUESTED: 'dev:tileToggleRequested',
+  DEV_TILE_LOAD_REQUESTED: 'dev:tileLoadRequested',
+  
+  // Codex/Achievement events
+  CODEX_ENTRY_UNLOCKED: 'codex:entryUnlocked',
+  ACHIEVEMENT_UNLOCKED: 'achievement:unlocked',
+  ACHIEVEMENT_PROGRESS: 'achievement:progress',
+  
+  // Score events
+  SCORE_CHANGED: 'score:changed',
+  SCORE_COMBO_CHANGED: 'score:comboChanged',
+  HIGH_SCORE_BEATEN: 'score:highScoreBeaten',
+};

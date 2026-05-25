@@ -1,0 +1,772 @@
+{
+  "zombie_basic": {
+    "name": "Zombie",
+    "description": "Un processus corrompu. Lent mais persistant.",
+    "baseStats": {
+      "hp": 40,
+      "damage": 8,
+      "speed": 2.5,
+      "attackRange": 0.7,
+      "attackCooldown": 1.0
+    },
+    "behavior": "chase",
+    "behaviorPreset": "aggressive-melee",
+    "behaviorConfig": {
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "avoidObstacles": true,
+      "avoidDistance": 0.9
+    },
+    "lootTable": [
+      { "itemId": "health_potion_small", "dropChance": 0.3, "amount": 1 }
+    ],
+    "appearance": {
+      "size": 0.8,
+      "color": { "r": 0.5, "g": 1.0, "b": 0.5 }
+    }
+  },
+  "zombie_basic_void": {
+    "name": "Zombie (Voidwalker)",
+    "description": "Zombie de test qui peut tomber dans le vide.",
+    "baseStats": {
+      "hp": 42,
+      "damage": 8,
+      "speed": 2.45,
+      "attackRange": 0.7,
+      "attackCooldown": 1.0
+    },
+    "behavior": "chase",
+    "behaviorConfig": {
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "avoidObstacles": true,
+      "avoidDistance": 0.9,
+      "avoidVoid": false,
+      "canFallIntoVoid": true
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.8,
+      "color": { "r": 0.5, "g": 1.0, "b": 0.5 }
+    }
+  },
+  "dummy_tank": {
+    "name": "Dummy",
+    "description": "Cible d'entraînement immobile.",
+    "baseStats": {
+      "hp": 300,
+      "damage": 0,
+      "speed": 0,
+      "attackRange": 0.0,
+      "attackCooldown": 999
+    },
+    "behavior": "dummy",
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 0.8, "g": 0.8, "b": 0.8 }
+    }
+  },
+  "bull": {
+    "name": "Bull",
+    "description": "Verrouille sa cible puis charge brutalement.",
+    "baseStats": {
+      "hp": 90,
+      "damage": 14,
+      "speed": 2.2,
+      "attackRange": 1.0,
+      "attackCooldown": 1.0
+    },
+    "behavior": "bull",
+    "knockbackStrength": 8.0,
+    "behaviorConfig": {
+      "triggerRange": 6.5,
+      "aimDuration": 0.55,
+      "chargeDuration": 0.85,
+      "chargeSpeedMultiplier": 2.8,
+      "hitRange": 1.0,
+      "chargeCooldown": 1.2,
+      "knockbackStrength": 4.0
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 1.0,
+      "color": { "r": 1.0, "g": 0.5, "b": 0.3 }
+    }
+  },
+  "pong": {
+    "name": "Pong",
+    "description": "Se déplace en ligne droite et rebondit sur les murs.",
+    "baseStats": {
+      "hp": 55,
+      "damage": 10,
+      "speed": 3.2,
+      "attackRange": 0.8,
+      "attackCooldown": 0.6
+    },
+    "behavior": "pong",
+    "behaviorConfig": {
+      "initialAngleDeg": 45,
+      "contactDamageRatio": 0.4,
+      "contactKnockback": 0.7
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 0.3, "g": 0.9, "b": 1.0 }
+    }
+  },
+  "jumper": {
+    "name": "Jumper",
+    "description": "Verrouille sa cible et effectue un saut rapide.",
+    "baseStats": {
+      "hp": 70,
+      "damage": 12,
+      "speed": 2.4,
+      "attackRange": 1.0,
+      "attackCooldown": 0.9
+    },
+    "behavior": "jumper",
+    "behaviorConfig": {
+      "triggerRange": 6.0,
+      "aimDuration": 0.45,
+      "jumpDuration": 0.65,
+      "jumpSpeedMultiplier": 2.6,
+      "hitRange": 1.0,
+      "jumpCooldown": 1.1,
+      "jumpHeight": 2.2
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.95,
+      "color": { "r": 0.9, "g": 0.6, "b": 0.9 }
+    }
+  },
+  "fuyard": {
+    "name": "Fuyard",
+    "description": "Harcèle à distance: s'approche de loin mais fuit quand le joueur est trop proche.",
+    "baseStats": {
+      "hp": 35,
+      "damage": 6,
+      "speed": 2.8,
+      "attackRange": 0.7,
+      "attackCooldown": 1.0
+    },
+    "behavior": "fuyard",
+    "behaviorPreset": "panic-kiter",
+    "behaviorConfig": {
+      "kiteMinRange": 2.2,
+      "kiteMaxRange": 5.2,
+      "panicTriggerRange": 1.85,
+      "panicDuration": 1.3,
+      "panicChaosJitter": 0.95,
+      "strafeStrength": 0.5,
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "crowdMinDistance": 0.65,
+      "avoidObstacles": true,
+      "avoidDistance": 1.1,
+      "navRepathInterval": 0.22
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.75,
+      "color": { "r": 0.7, "g": 1.0, "b": 0.7 }
+    }
+  },
+  "strategist": {
+    "name": "Strategist",
+    "description": "Anticipe la trajectoire du joueur.",
+    "baseStats": {
+      "hp": 45,
+      "damage": 8,
+      "speed": 2.6,
+      "attackRange": 0.7,
+      "attackCooldown": 0.9
+    },
+    "behavior": "strategist",
+    "behaviorConfig": {
+      "leadTime": 0.5,
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "avoidObstacles": true,
+      "avoidDistance": 0.9,
+      "avoidVoid": true,
+      "canFallIntoVoid": false
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.85,
+      "color": { "r": 0.5, "g": 0.9, "b": 0.9 }
+    }
+  },
+  "swarm_coordinator": {
+    "name": "Swarm Coordinator",
+    "description": "Orchestre les déplacements de groupe et force l'encerclement.",
+    "baseStats": {
+      "hp": 72,
+      "damage": 8,
+      "speed": 2.35,
+      "attackRange": 0.8,
+      "attackCooldown": 1.0
+    },
+    "behavior": "swarm_coordinator",
+    "behaviorPreset": "swarm-coordinator",
+    "behaviorConfig": {
+      "rangedMinRange": 3.2,
+      "rangedMaxRange": 6.6,
+      "rangedCooldown": 1.35,
+      "projectileSpeed": 6.2,
+      "projectileRange": 12.5,
+      "leadTime": 0.28,
+      "swarmCommandInterval": 1.35,
+      "swarmCommandRange": 9.4,
+      "swarmCommandDuration": 1.45,
+      "swarmCommandWeight": 0.66,
+      "swarmFormationRadius": 3.0,
+      "useCrowd": true,
+      "separationRadius": 1.2,
+      "separationStrength": 1.15,
+      "avoidObstacles": true,
+      "avoidDistance": 1.0
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.95,
+      "color": { "r": 0.95, "g": 0.45, "b": 0.15 }
+    }
+  },
+  "prefire_sentinel": {
+    "name": "Prefire Sentinel",
+    "description": "Verrouille une trajectoire anticipée puis tire avec délai de préfire.",
+    "baseStats": {
+      "hp": 66,
+      "damage": 12,
+      "speed": 2.15,
+      "attackRange": 0.7,
+      "attackCooldown": 1.0
+    },
+    "behavior": "prefire_sentinel",
+    "behaviorPreset": "predictive-prefire",
+    "behaviorConfig": {
+      "rangedMinRange": 3.7,
+      "rangedMaxRange": 7.3,
+      "rangedCooldown": 1.55,
+      "projectileSpeed": 7.2,
+      "projectileRange": 13.8,
+      "projectileBounces": 1,
+      "projectileBounceDamping": 0.9,
+      "prefireWindup": 0.5,
+      "prefireLeadBonus": 0.32,
+      "leadTime": 0.3,
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "avoidObstacles": true,
+      "avoidDistance": 0.95,
+      "avoidVoid": true,
+      "canFallIntoVoid": false
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 0.95, "g": 0.75, "b": 0.2 }
+    }
+  },
+  "sentinel": {
+    "name": "Sentinel",
+    "description": "Tire à distance moyenne.",
+    "baseStats": {
+      "hp": 60,
+      "damage": 10,
+      "speed": 2.1,
+      "attackRange": 0.7,
+      "attackCooldown": 0.9
+    },
+    "behavior": "sentinel",
+    "behaviorConfig": {
+      "rangedMinRange": 3.0,
+      "rangedMaxRange": 6.0,
+      "rangedCooldown": 1.2,
+      "projectileSpeed": 6.5,
+      "projectileRange": 12.0,
+      "projectileBounces": 1,
+      "projectileBounceDamping": 0.92,
+      "leadTime": 0.2,
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "avoidObstacles": true,
+      "avoidDistance": 0.9
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 0.8, "g": 0.6, "b": 0.2 }
+    }
+  },
+  "turret": {
+    "name": "Turret",
+    "description": "Tourelle fixe à projectiles.",
+    "baseStats": {
+      "hp": 80,
+      "damage": 12,
+      "speed": 0.0,
+      "attackRange": 0.7,
+      "attackCooldown": 1.0
+    },
+    "behavior": "turret",
+    "behaviorConfig": {
+      "rangedMinRange": 0.0,
+      "rangedMaxRange": 8.0,
+      "rangedCooldown": 1.1,
+      "projectileSpeed": 7.0,
+      "projectileRange": 14.0,
+      "leadTime": 0.1
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 1.0,
+      "color": { "r": 0.9, "g": 0.2, "b": 0.2 }
+    }
+  },
+  "healer": {
+    "name": "Healer",
+    "description": "Soigne les alliés proches.",
+    "baseStats": {
+      "hp": 60,
+      "damage": 0,
+      "speed": 2.0,
+      "attackRange": 0.0,
+      "attackCooldown": 1.0
+    },
+    "behavior": "healer",
+    "behaviorConfig": {
+      "healRange": 4.0,
+      "healAmount": 8.0,
+      "healCooldown": 1.5,
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "avoidObstacles": true,
+      "avoidDistance": 0.9
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.85,
+      "color": { "r": 0.3, "g": 0.9, "b": 0.3 }
+    }
+  },
+  "artificer": {
+    "name": "Artificer",
+    "description": "Tire un projectile qui se divise et explose en zone.",
+    "baseStats": {
+      "hp": 70,
+      "damage": 8,
+      "speed": 2.4,
+      "attackRange": 0.7,
+      "attackCooldown": 1.2
+    },
+    "behavior": "artificer",
+    "selfKnockbackStrength": 20.0,
+    "behaviorConfig": {
+      "artificerMinRange": 3.0,
+      "artificerMaxRange": 6.0,
+      "artificerCooldown": 2.2,
+      "artificerWindup": 0.6,
+      "splitCount": 4,
+      "splitRadius": 1.6,
+      "splitDelay": 2.0,
+      "explosionRadius": 1.6,
+      "explosionDamage": 10,
+      "impactRadius": 1.8,
+      "impactDamage": 12,
+      "dotRadius": 1.4,
+      "dotDps": 4,
+      "dotDuration": 4.0,
+      "splitTravelSpeed": 6.5,
+      "impactDuration": 0.7,
+      "finalDuration": 0.2,
+      "projectileSpeed": 6.0,
+      "projectileRange": 12.0,
+      "leadTime": 0.2,
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "avoidObstacles": true,
+      "avoidDistance": 0.9
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 1.0, "g": 0.7, "b": 0.2 }
+    }
+  },
+  "bullet_hell": {
+    "name": "Bullet Hell",
+    "description": "Tourelle statique qui tire en cône.",
+    "baseStats": {
+      "hp": 75,
+      "damage": 10,
+      "speed": 0.0,
+      "attackRange": 0.7,
+      "attackCooldown": 1.0
+    },
+    "behavior": "bullet_hell",
+    "behaviorConfig": {
+      "bulletCount": 5,
+      "spreadDeg": 40,
+      "bulletCooldown": 1.6,
+      "projectileSpeed": 6.0,
+      "projectileRange": 12.0,
+      "leadTime": 0.15
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.95,
+      "color": { "r": 0.9, "g": 0.4, "b": 0.1 }
+    }
+  },
+  "mage_missile": {
+    "name": "Missile Mage",
+    "description": "Invoque des missiles kamikazes.",
+    "baseStats": {
+      "hp": 65,
+      "damage": 6,
+      "speed": 0.0,
+      "attackRange": 0.0,
+      "attackCooldown": 1.0
+    },
+    "behavior": "mage_missile",
+    "behaviorConfig": {
+      "missileCooldown": 2.4
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 0.6, "g": 0.4, "b": 1.0 }
+    }
+  },
+  "missile": {
+    "name": "Missile",
+    "description": "Projectile kamikaze guidé.",
+    "baseStats": {
+      "hp": 10,
+      "damage": 12,
+      "speed": 0.0,
+      "attackRange": 0.7,
+      "attackCooldown": 0.4
+    },
+    "behavior": "missile",
+    "behaviorConfig": {
+      "missileTurnRate": 3.0,
+      "missileMinSpeed": 2.0,
+      "missileMaxSpeed": 6.5,
+      "missileAccel": 3.5
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.6,
+      "color": { "r": 1.0, "g": 0.3, "b": 1.0 }
+    }
+  },
+  "bull_boss": {
+    "name": "Bull Prime",
+    "description": "Version boss du Bull: plus massif, plus brutal.",
+    "baseStats": {
+      "hp": 340,
+      "damage": 28,
+      "speed": 2.4,
+      "attackRange": 1.1,
+      "attackCooldown": 0.9
+    },
+    "behavior": "bull",
+    "knockbackStrength": 14.0,
+    "behaviorConfig": {
+      "triggerRange": 7.2,
+      "aimDuration": 0.45,
+      "chargeDuration": 1.0,
+      "chargeSpeedMultiplier": 3.0,
+      "hitRange": 1.25,
+      "chargeCooldown": 1.0,
+      "knockbackStrength": 6.0,
+      "modelScale": 0.16
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 1.35,
+      "color": { "r": 1.0, "g": 0.35, "b": 0.2 }
+    }
+  },
+  "jumper_boss": {
+    "name": "Skybreaker Jumper",
+    "description": "Jumper boss: saute plus haut et déclenche une onde de choc.",
+    "baseStats": {
+      "hp": 280,
+      "damage": 24,
+      "speed": 2.5,
+      "attackRange": 1.2,
+      "attackCooldown": 0.9
+    },
+    "behavior": "jumper",
+    "behaviorConfig": {
+      "triggerRange": 7.0,
+      "aimDuration": 0.35,
+      "jumpDuration": 0.85,
+      "jumpSpeedMultiplier": 3.0,
+      "hitRange": 1.2,
+      "jumpCooldown": 2.5,
+      "jumpHeight": 3.6,
+      "shockwaveEnabled": true,
+      "shockwaveRadius": 3.6,
+      "shockwaveDuration": 0.55,
+      "shockwaveDamage": 20
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 1.2,
+      "color": { "r": 0.95, "g": 0.45, "b": 0.95 }
+    }
+  },
+  "necromancer_boss": {
+    "name": "Necromancer Sentinel",
+    "description": "Sentinel boss qui invoque des zombies en continu.",
+    "baseStats": {
+      "hp": 320,
+      "damage": 18,
+      "speed": 2.2,
+      "attackRange": 0.8,
+      "attackCooldown": 0.8
+    },
+    "behavior": "necromancer",
+    "behaviorConfig": {
+      "rangedMinRange": 3.2,
+      "rangedMaxRange": 7.2,
+      "rangedCooldown": 0.95,
+      "projectileSpeed": 7.2,
+      "projectileRange": 14.0,
+      "leadTime": 0.3,
+      "useCrowd": true,
+      "separationRadius": 1.2,
+      "separationStrength": 1.1,
+      "avoidObstacles": true,
+      "avoidDistance": 1.0,
+      "summonCooldown": 2.0,
+      "summonType": "zombie_basic",
+      "summonRadius": 2.0
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 1.15,
+      "color": { "r": 0.7, "g": 0.5, "b": 1.0 }
+    }
+  },
+  "spike_strategist_boss": {
+    "name": "Tri-Spike Strategist",
+    "description": "Approche le joueur et lance des zones de pics sur un tiers de la salle.",
+    "baseStats": {
+      "hp": 360,
+      "damage": 16,
+      "speed": 2.5,
+      "attackRange": 0.9,
+      "attackCooldown": 0.8
+    },
+    "behavior": "spike_strategist",
+    "behaviorConfig": {
+      "leadTime": 0.45,
+      "useCrowd": true,
+      "separationRadius": 1.2,
+      "separationStrength": 1.1,
+      "avoidObstacles": true,
+      "avoidDistance": 1.0,
+      "spikeCastCooldown": 4.0,
+      "spikeWarningDuration": 0.85,
+      "spikeActiveDuration": 1.25,
+      "spikeDamage": 22,
+      "spikeTickInterval": 0.45
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 1.2,
+      "color": { "r": 1.0, "g": 0.2, "b": 0.3 }
+    }
+  },
+  "laser_pattern_boss": {
+    "name": "Pattern Core",
+    "description": "Boss immobile qui lance des rayons rotatifs et des quadrillages inclinés.",
+    "baseStats": {
+      "hp": 420,
+      "damage": 0,
+      "speed": 0.0,
+      "attackRange": 0.0,
+      "attackCooldown": 0.5
+    },
+    "behavior": "laser_patterns",
+    "behaviorConfig": {
+      "laserCooldown": 2.2,
+      "laserWindup": 0.55,
+      "laserRotateDuration": 4.2,
+      "laserGridDuration": 3.1,
+      "laserDamage": 22,
+      "laserTickInterval": 0.25,
+      "laserWidth": 0.38,
+      "laserGridSpacing": 2.0
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 1.3,
+      "color": { "r": 1.0, "g": 0.3, "b": 0.25 }
+    }
+  },
+  "tutorial_dummy_basic": {
+    "name": "Dummy",
+    "description": "Cible d'entraînement immobile.",
+    "baseStats": {
+      "hp": 25,
+      "damage": 0,
+      "speed": 0,
+      "attackRange": 0.0,
+      "attackCooldown": 999
+    },
+    "behavior": "dummy",
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 0.8, "g": 0.8, "b": 0.8 }
+    }
+  },
+  "tutorial_dummy_mobile": {
+    "name": "Mobile Dummy",
+    "description": "Cible d'entraînement mobile, sans dégâts de contact.",
+    "baseStats": {
+      "hp": 36,
+      "damage": 0,
+      "speed": 3.0,
+      "attackRange": 0.0,
+      "attackCooldown": 999
+    },
+    "behavior": "scripted_rail",
+    "behaviorConfig": {},
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 0.3, "g": 0.9, "b": 1.0 }
+    }
+  },
+  "tutorial_turret": {
+    "name": "Turret",
+    "description": "Tourelle d'entraînement à projectiles lents.",
+    "baseStats": {
+      "hp": 150,
+      "damage": 5,
+      "speed": 0.0,
+      "attackRange": 0.7,
+      "attackCooldown": 1.5
+    },
+    "behavior": "turret",
+    "behaviorConfig": {
+      "rangedMinRange": 0.0,
+      "rangedMaxRange": 15.0,
+      "rangedCooldown": 2.0,
+      "projectileSpeed": 4.5,
+      "projectileRange": 14.0,
+      "leadTime": 0.0
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 1.0,
+      "color": { "r": 0.9, "g": 0.2, "b": 0.2 }
+    }
+  },
+  "tutorial_sentinel": {
+    "name": "Sentinel",
+    "description": "Ennemi basique d'entraînement pour le rogue.",
+    "baseStats": {
+      "hp": 80,
+      "damage": 5,
+      "speed": 2.1,
+      "attackRange": 0.7,
+      "attackCooldown": 1.0
+    },
+    "behavior": "sentinel",
+    "behaviorConfig": {
+      "rangedMinRange": 3.0,
+      "rangedMaxRange": 6.0,
+      "rangedCooldown": 1.5,
+      "projectileSpeed": 5.0,
+      "projectileRange": 12.0,
+      "projectileBounces": 0,
+      "leadTime": 0.0,
+      "useCrowd": false,
+      "avoidObstacles": false
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 0.8, "g": 0.6, "b": 0.2 }
+    }
+  },
+  "zombie_fast": {
+    "name": "Fast Zombie",
+    "description": "Processus corrompu avec planification prioritaire, plus rapide.",
+    "baseStats": {
+      "hp": 35,
+      "damage": 8,
+      "speed": 5.0,
+      "attackRange": 0.7,
+      "attackCooldown": 1.0
+    },
+    "behavior": "chase",
+    "behaviorPreset": "aggressive-melee",
+    "behaviorConfig": {
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "avoidObstacles": true,
+      "avoidDistance": 0.9
+    },
+    "lootTable": [
+      { "itemId": "health_potion_small", "dropChance": 0.2, "amount": 1 }
+    ],
+    "appearance": {
+      "size": 0.8,
+      "color": { "r": 0.7, "g": 1.0, "b": 0.7 }
+    }
+  },
+  "shooter": {
+    "name": "Shooter",
+    "description": "Tire à distance moyenne.",
+    "baseStats": {
+      "hp": 55,
+      "damage": 9,
+      "speed": 2.3,
+      "attackRange": 0.7,
+      "attackCooldown": 0.9
+    },
+    "behavior": "sentinel",
+    "behaviorConfig": {
+      "rangedMinRange": 3.0,
+      "rangedMaxRange": 6.5,
+      "rangedCooldown": 1.3,
+      "projectileSpeed": 6.5,
+      "projectileRange": 12.0,
+      "projectileBounces": 1,
+      "projectileBounceDamping": 0.92,
+      "leadTime": 0.2,
+      "useCrowd": true,
+      "separationRadius": 1.1,
+      "separationStrength": 1.0,
+      "avoidObstacles": true,
+      "avoidDistance": 0.9
+    },
+    "lootTable": [],
+    "appearance": {
+      "size": 0.9,
+      "color": { "r": 1.0, "g": 0.6, "b": 0.2 }
+    }
+  }
+}

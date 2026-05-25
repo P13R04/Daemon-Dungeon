@@ -1,0 +1,37 @@
+{
+  "id": "room_test_void_swarm_deathpit",
+  "name": "Void Swarm Deathpit Test",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.....VVVVV...#",
+    "#.....VVVVV...#",
+    "#.....VVVVV...#",
+    "#.....VVVVV...#",
+    "#.....VVVVV...#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    { "x": 4, "y": 6, "enemyType": "zombie_basic_void" },
+    { "x": 5, "y": 8, "enemyType": "zombie_basic_void" },
+    { "x": 7, "y": 9, "enemyType": "zombie_basic_void" },
+    { "x": 9, "y": 8, "enemyType": "zombie_basic_void" },
+    { "x": 10, "y": 6, "enemyType": "zombie_basic_void" },
+    { "x": 9, "y": 4, "enemyType": "zombie_basic_void" },
+    { "x": 7, "y": 3, "enemyType": "zombie_basic_void" },
+
+    { "x": 2, "y": 2, "enemyType": "strategist" },
+    { "x": 12, "y": 2, "enemyType": "strategist" },
+    { "x": 2, "y": 10, "enemyType": "strategist" },
+    { "x": 12, "y": 10, "enemyType": "strategist" },
+
+    { "x": 7, "y": 10, "enemyType": "swarm_coordinator" },
+    { "x": 7, "y": 2, "enemyType": "prefire_sentinel" }
+  ],
+  "obstacles": []
+}

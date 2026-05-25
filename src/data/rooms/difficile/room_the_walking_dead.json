@@ -1,0 +1,85 @@
+{
+  "id": "room_the_walking_dead",
+  "name": "the_walking_dead",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#..^^..^^..^^.#",
+    "#..##..##..##.#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 2.9,
+      "y": 2.9000000000000004,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 5.9,
+      "y": 2.8000000000000007,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 9.1,
+      "y": 2.9000000000000004,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 11.9,
+      "y": 2.8000000000000007,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 12.1,
+      "y": 9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 8.9,
+      "y": 9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 5.9,
+      "y": 4.9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 3,
+      "y": 9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 2.9,
+      "y": 6.9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 6,
+      "y": 7,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 8.9,
+      "y": 7,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 12,
+      "y": 7,
+      "enemyType": "zombie_basic"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

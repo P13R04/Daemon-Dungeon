@@ -1,0 +1,1558 @@
+/**
+ * DevConsole - Development tools for live parameter modification
+ */
+
+import { Scene } from '@babylonjs/core';
+import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Slider, Checkbox, StackPanel, ScrollViewer } from '@babylonjs/gui';
+import { ConfigLoader } from '../utils/ConfigLoader';
+import { EventBus, GameEvents } from '../core/EventBus';
+import { PlayerController } from '../gameplay/PlayerController';
+import { UI_LAYER } from '../ui/uiLayers';
+import { listAllVoicelineIds, getVoiceline } from '../data/voicelines/VoicelineDefinitions';
+import type { VoicelineConfig, VoicelineTrigger } from '../data/voicelines/VoicelineDefinitions';
+import { listTriggerCategories } from '../data/voicelines/VoicelineDatabase';
+import { UIFactory } from '../ui/UIFactory';
+import { UITheme } from '../ui/UITheme';
+import type { DaemonVoicelineManager } from '../core/DaemonVoicelineManager';
+
+interface UiOptionChangedPayload {
+  option?: string;
+  value?: boolean;
+}
+
+interface DevConsoleGameManager {
+  isUsingTiles(): boolean;
+  setTilesEnabled(enabled: boolean): void;
+  loadRoomFromTileMappingJson(payload: string): void;
+  getTextureRenderMode(): 'classic' | 'proceduralRelief';
+  setTextureRenderMode(mode: 'classic' | 'proceduralRelief'): void;
+  getProceduralQuality(): string;
+  setProceduralQuality(quality: string): void;
+  getTileStatistics(): { rooms?: number; tiles?: number; obstacles?: number; spawnPoints?: number; [key: string]: unknown };
+  getHUDManager(): { playVoiceline(voiceline: VoicelineConfig): Promise<void> };
+  getDaemonVoicelineManager(): DaemonVoicelineManager;
+  getCameraAlpha(): number;
+  setCameraAlpha(value: number): void;
+  getCameraBeta(): number;
+  setCameraBeta(value: number): void;
+  getCameraRadius(): number;
+  setCameraRadius(value: number): void;
+  getPlayerHeightOffset(): number;
+  setPlayerHeightOffset(value: number): void;
+  getEnemyHeightOffset(): number;
+  setEnemyHeightOffset(value: number): void;
+  areWallsVisible(): boolean;
+  setWallsVisible(value: boolean): void;
+}
+
+export class DevConsole {
+  private gui: AdvancedDynamicTexture;
+  private isVisible: boolean = true;
+  private eventBus: EventBus;
+  private configLoader: ConfigLoader;
+  private unsubscribers: Array<() => void> = [];
+  private player: PlayerController | null = null;
+  private showLiveStats: boolean = false;
+  private statsPanel: StackPanel | null = null;
+  private dpsInstantText: TextBlock | null = null;
+  private dpsTenSecText: TextBlock | null = null;
+  private moveSpeedText: TextBlock | null = null;
+  private velocityText: TextBlock | null = null;
+  private fireRateText: TextBlock | null = null;
+  private focusBonusText: TextBlock | null = null;
+  private damageEvents: Array<{ t: number; dmg: number }> = [];
+  private voicelineIds: string[] = [];
+  private voicelineSelectIndex: number = 0;
+  private voicelineSelectLabel: TextBlock | null = null;
+  private triggerCategories: VoicelineTrigger[] = [];
+  private triggerSelectIndex: number = 0;
+  private triggerSelectLabel: TextBlock | null = null;
+  private gameManager: DevConsoleGameManager;
+  private devScrollViewer?: ScrollViewer;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private devScrollWheelObserver: any = null;
+  private devPanelBackground: Rectangle | null = null;
+  private devPanelContent: StackPanel | null = null;
+  private mobileModeCheckbox: Checkbox | null = null;
+
+  constructor(private scene: Scene, gameManager: DevConsoleGameManager) {
+    this.gameManager = gameManager;
+    this.eventBus = EventBus.getInstance();
+    this.configLoader = ConfigLoader.getInstance();
+    
+    // Initialize voiceline list
+    this.voicelineIds = listAllVoicelineIds();
+    this.triggerCategories = listTriggerCategories();
+    
+    if (this.voicelineIds.length === 0) {
+      this.voicelineIds = ['error_404_skill_not_found'];
+    }
+    
+    // Create GUI on main camera (standard fullscreen UI)
+    this.gui = AdvancedDynamicTexture.CreateFullscreenUI('DevConsole', true, scene);
+    if (this.gui.layer) {
+      this.gui.layer.layerMask = UI_LAYER;
+    }
+    this.gui.useInvalidateRectOptimization = false;
+    
+    this.createConsoleUI();
+    this.setupLiveStats();
+    this.applyGuiScaling();
+
+    this.unsubscribers.push(this.eventBus.on(GameEvents.UI_OPTION_CHANGED, (data: UiOptionChangedPayload) => {
+      if (data?.option === 'postProcessingEnabled' || data?.option === 'postProcessingPixelScale') {
+        this.applyGuiScaling();
+      }
+    }));
+
+    const engine = this.scene.getEngine();
+    engine.onResizeObservable.add(() => {
+      this.applyGuiScaling();
+    });
+  }
+
+  private applyGuiScaling(): void {
+    const engine = this.scene.getEngine();
+    const scaling = engine.getHardwareScalingLevel();
+    const scaledWidth = engine.getRenderWidth(true) * scaling;
+    this.gui.renderAtIdealSize = false;
+    this.gui.idealWidth = scaledWidth;
+    this.gui.idealHeight = engine.getRenderHeight(true) * scaling;
+    this.gui.renderScale = 1;
+
+    if (this.devPanelBackground && this.devPanelContent) {
+      const maxPanelWidth = 520;
+      const minPanelWidth = 240;
+      const panelWidth = Math.min(maxPanelWidth, Math.max(minPanelWidth, Math.floor(scaledWidth - 20)));
+      const contentWidth = Math.max(300, panelWidth - 40);
+      this.devPanelBackground.width = `${panelWidth}px`;
+      this.devPanelContent.width = `${contentWidth}px`;
+      this.devPanelBackground.left = '10px';
+    }
+  }
+
+  setPlayer(player: PlayerController): void {
+    this.player = player;
+    if (this.mobileModeCheckbox) {
+      this.mobileModeCheckbox.isChecked = player.inputManager.isMobileMode();
+    }
+  }
+
+  private createConsoleUI(): void {
+    // Background panel
+    const bgPanel = UIFactory.createPanel('devConsoleBackground', 520, '85%');
+    bgPanel.top = '120px';
+    bgPanel.left = '10px';
+    bgPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    bgPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    bgPanel.zIndex = 1000;
+    this.gui.addControl(bgPanel);
+    this.devPanelBackground = bgPanel;
+
+    const scroll = UIFactory.createScrollViewer('devConsoleScroll');
+    this.devScrollViewer = scroll;
+    scroll.width = '100%';
+    scroll.height = '100%';
+    scroll.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    scroll.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+
+    bgPanel.addControl(scroll);
+
+    // Use StackPanel for proper vertical layout
+    const panel = new StackPanel('devConsolePanel');
+    panel.width = '480px';
+    panel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    panel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    panel.top = '30px';
+    scroll.addControl(panel);
+    this.devPanelContent = panel;
+
+    // Title
+    const title = UIFactory.createText('devTitle', '>>> DEV CONSOLE <<<', 20, UITheme.colors.textHighlight);
+    title.fontWeight = 'bold';
+    title.height = '35px';
+    panel.addControl(title);
+
+    // Player Stats Section
+    this.createPlayerStatsSection(panel);
+
+    // Gameplay Options Section
+    this.createGameplayOptionsSection(panel);
+
+    // Post Processing Section
+    this.createPostProcessingSection(panel);
+
+    // Debug Flags Section
+    this.createDebugFlagsSection(panel);
+
+    // Room Testing Section
+    this.createRoomTestingSection(panel);
+
+    // Voiceline Testing Section
+    this.createVoicelineTestingSection(panel);
+
+    // Camera Section
+    this.createCameraSection(panel);
+
+    // Live Stats Section
+    this.createLiveStatsSection(panel);
+
+    // Toggle button
+    const toggleBtn = UIFactory.createTerminalButton('devToggleBtn', 'DEV', '60px', '30px');
+    toggleBtn.left = '10px';
+    toggleBtn.top = '85px';
+    toggleBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    toggleBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+
+    toggleBtn.onPointerUpObservable.add(() => {
+      this.toggleConsole();
+    });
+
+    this.gui.addControl(toggleBtn);
+  }
+
+  private createPlayerStatsSection(parent: StackPanel): void {
+    const playerConfig = this.configLoader.getPlayerConfig();
+    const healthConfig = playerConfig?.health;
+    const attackConfig = playerConfig?.attack;
+    if (!playerConfig || !healthConfig || !attackConfig) return;
+
+    const sectionTitle = new TextBlock('playerStatsTitle');
+    sectionTitle.text = '═══ PLAYER STATS ═══';
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#00FF00';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    // HP Slider
+    const hpLabel = new TextBlock('hpLabel');
+    hpLabel.text = `HP: ${healthConfig.max}`;
+    hpLabel.fontSize = 13;
+    hpLabel.fontWeight = 'bold';
+    hpLabel.color = '#FFFFFF';
+    hpLabel.height = '25px';
+    parent.addControl(hpLabel);
+
+    const hpSlider = UIFactory.createSlider('hpSlider', 10, 500, healthConfig.max);
+    hpSlider.height = '25px';
+    hpSlider.width = '440px';
+    
+    hpSlider.onValueChangedObservable.add((value: number) => {
+      hpLabel.text = `HP: ${Math.floor(value)}`;
+      healthConfig.max = Math.floor(value);
+      this.configLoader.updatePlayerConfig(playerConfig);
+    });
+    parent.addControl(hpSlider);
+
+    // Damage Slider
+    const dmgLabel = new TextBlock('dmgLabel');
+    dmgLabel.text = `Damage: ${attackConfig.damage}`;
+    dmgLabel.fontSize = 13;
+    dmgLabel.fontWeight = 'bold';
+    dmgLabel.color = '#FFFFFF';
+    dmgLabel.height = '25px';
+    parent.addControl(dmgLabel);
+
+    const dmgSlider = UIFactory.createSlider('dmgSlider', 1, 100, attackConfig.damage);
+    dmgSlider.height = '25px';
+    dmgSlider.width = '440px';
+
+    dmgSlider.onValueChangedObservable.add((value: number) => {
+      dmgLabel.text = `Damage: ${Math.floor(value)}`;
+      attackConfig.damage = Math.floor(value);
+      this.configLoader.updatePlayerConfig(playerConfig);
+    });
+    parent.addControl(dmgSlider);
+
+    // Fire Rate Slider
+    const frLabel = new TextBlock('frLabel');
+    frLabel.text = `Fire Rate: ${attackConfig.fireRate.toFixed(2)}`;
+    frLabel.fontSize = 13;
+    frLabel.fontWeight = 'bold';
+    frLabel.color = '#FFFFFF';
+    frLabel.height = '25px';
+    parent.addControl(frLabel);
+
+    const frSlider = UIFactory.createSlider('frSlider', 0.05, 1.0, attackConfig.fireRate);
+    frSlider.height = '25px';
+    frSlider.width = '440px';
+
+    frSlider.onValueChangedObservable.add((value: number) => {
+      frLabel.text = `Fire Rate: ${value.toFixed(2)}`;
+      attackConfig.fireRate = value;
+      this.configLoader.updatePlayerConfig(playerConfig);
+    });
+    parent.addControl(frSlider);
+  }
+
+  private createGameplayOptionsSection(parent: StackPanel): void {
+    const gameplayConfig = this.configLoader.getGameplayConfig();
+    if (!gameplayConfig || !gameplayConfig.uiConfig) return;
+    const uiConfig = gameplayConfig.uiConfig;
+
+    const sectionTitle = new TextBlock('gameplayTitle');
+    sectionTitle.text = '═══ GAMEPLAY OPTIONS ═══';
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#00FF00';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    // Show Enemy Health Bars
+    const healthBarsContainer = new StackPanel('healthBarsContainer');
+    healthBarsContainer.isVertical = false;
+    healthBarsContainer.height = '30px';
+    healthBarsContainer.width = '440px';
+    healthBarsContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    
+    const healthBarsCheckbox = new Checkbox('showHealthBarsCheckbox');
+    healthBarsCheckbox.isChecked = uiConfig.showEnemyHealthBars;
+    healthBarsCheckbox.width = '25px';
+    healthBarsCheckbox.height = '25px';
+
+    const healthBarsLabel = new TextBlock('showHealthBarsLabel');
+    healthBarsLabel.text = '  Show Health Bars';
+    healthBarsLabel.fontSize = 13;
+    healthBarsLabel.color = '#FFFFFF';
+    healthBarsLabel.width = '400px';
+    healthBarsLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    healthBarsCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      console.log('Health bars checkbox changed to:', isChecked);
+      uiConfig.showEnemyHealthBars = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'showEnemyHealthBars', value: isChecked });
+    });
+
+    healthBarsContainer.addControl(healthBarsCheckbox);
+    healthBarsContainer.addControl(healthBarsLabel);
+    parent.addControl(healthBarsContainer);
+
+    // Show Enemy Names
+    const enemyNamesContainer = new StackPanel('enemyNamesContainer');
+    enemyNamesContainer.isVertical = false;
+    enemyNamesContainer.height = '30px';
+    enemyNamesContainer.width = '440px';
+    enemyNamesContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const enemyNamesCheckbox = new Checkbox('showEnemyNamesCheckbox');
+    enemyNamesCheckbox.isChecked = uiConfig.showEnemyNames ?? true;
+    enemyNamesCheckbox.width = '25px';
+    enemyNamesCheckbox.height = '25px';
+
+    const enemyNamesLabel = new TextBlock('showEnemyNamesLabel');
+    enemyNamesLabel.text = '  Show Enemy Names';
+    enemyNamesLabel.fontSize = 13;
+    enemyNamesLabel.color = '#FFFFFF';
+    enemyNamesLabel.width = '400px';
+    enemyNamesLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    enemyNamesCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      uiConfig.showEnemyNames = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'showEnemyNames', value: isChecked });
+    });
+
+    enemyNamesContainer.addControl(enemyNamesCheckbox);
+    enemyNamesContainer.addControl(enemyNamesLabel);
+    parent.addControl(enemyNamesContainer);
+
+    // Show Damage Numbers
+    const damageNumbersContainer = new StackPanel('damageNumbersContainer');
+    damageNumbersContainer.isVertical = false;
+    damageNumbersContainer.height = '30px';
+    damageNumbersContainer.width = '440px';
+    damageNumbersContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    
+    const damageNumbersCheckbox = new Checkbox('showDamageNumbersCheckbox');
+    damageNumbersCheckbox.isChecked = uiConfig.showDamageNumbers;
+    damageNumbersCheckbox.width = '25px';
+    damageNumbersCheckbox.height = '25px';
+
+    const damageNumbersLabel = new TextBlock('showDamageNumbersLabel');
+    damageNumbersLabel.text = '  Show Damage Numbers';
+    damageNumbersLabel.fontSize = 13;
+    damageNumbersLabel.color = '#FFFFFF';
+    damageNumbersLabel.width = '400px';
+    damageNumbersLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    damageNumbersCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      uiConfig.showDamageNumbers = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'showDamageNumbers', value: isChecked });
+    });
+
+    damageNumbersContainer.addControl(damageNumbersCheckbox);
+    damageNumbersContainer.addControl(damageNumbersLabel);
+    parent.addControl(damageNumbersContainer);
+
+    // Force Mobile Controls
+    const mobileModeContainer = new StackPanel('mobileModeContainer');
+    mobileModeContainer.isVertical = false;
+    mobileModeContainer.height = '30px';
+    mobileModeContainer.width = '440px';
+    mobileModeContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const mobileModeCheckbox = new Checkbox('mobileModeCheckbox');
+    mobileModeCheckbox.isChecked = this.player?.inputManager.isMobileMode() ?? false;
+    mobileModeCheckbox.width = '25px';
+    mobileModeCheckbox.height = '25px';
+    this.mobileModeCheckbox = mobileModeCheckbox;
+
+    const mobileModeLabel = new TextBlock('mobileModeLabel');
+    mobileModeLabel.text = '  Force Mobile Controls';
+    mobileModeLabel.fontSize = 13;
+    mobileModeLabel.color = '#FFFFFF';
+    mobileModeLabel.width = '400px';
+    mobileModeLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    mobileModeCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      if (this.player && this.player.inputManager) {
+        this.player.inputManager.setMobileMode(isChecked);
+        const hud = this.gameManager.getHUDManager() as any;
+        if (hud && hud.setMobileControlsVisible) {
+          hud.setMobileControlsVisible(isChecked);
+        }
+      }
+    });
+
+    mobileModeContainer.addControl(mobileModeCheckbox);
+    mobileModeContainer.addControl(mobileModeLabel);
+    parent.addControl(mobileModeContainer);
+  }
+
+  private createPostProcessingSection(parent: StackPanel): void {
+    const gameplayConfig = this.configLoader.getGameplayConfig();
+    if (!gameplayConfig) return;
+
+    if (!gameplayConfig.postProcessing) {
+      gameplayConfig.postProcessing = {
+        enabled: true,
+        pixelScale: 1.6,
+        glowIntensity: 0.8,
+        chromaticAmount: 30,
+        chromaticRadial: 0.8,
+        grainEnabled: false,
+        grainIntensity: 0,
+        grainAnimated: false,
+        crtLinesEnabled: true,
+        crtLineIntensity: 0.35,
+        vignetteEnabled: true,
+        vignetteWeight: 4.0,
+        vignetteColor: [0, 0, 0, 1],
+      };
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+    }
+
+    const pp = gameplayConfig.postProcessing;
+    if (pp.grainEnabled === undefined) pp.grainEnabled = false;
+    if (pp.grainIntensity === undefined) pp.grainIntensity = 0;
+    if (pp.grainAnimated === undefined) pp.grainAnimated = false;
+    if (pp.crtLinesEnabled === undefined) pp.crtLinesEnabled = true;
+    if (pp.crtLineIntensity === undefined) pp.crtLineIntensity = 0.35;
+
+    const sectionTitle = new TextBlock('postProcessTitle');
+    sectionTitle.text = '═══ POST PROCESSING ═══';
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#66FFCC';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    const ppEnableRow = new StackPanel('ppEnableRow');
+    ppEnableRow.isVertical = false;
+    ppEnableRow.height = '30px';
+    ppEnableRow.width = '440px';
+    ppEnableRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const ppEnableCheckbox = new Checkbox('ppEnableCheckbox');
+    ppEnableCheckbox.isChecked = !!pp.enabled;
+    ppEnableCheckbox.width = '25px';
+    ppEnableCheckbox.height = '25px';
+
+    const ppEnableLabel = new TextBlock('ppEnableLabel');
+    ppEnableLabel.text = '  Enable Post FX';
+    ppEnableLabel.fontSize = 13;
+    ppEnableLabel.color = '#FFFFFF';
+    ppEnableLabel.width = '400px';
+    ppEnableLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    ppEnableCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      pp.enabled = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingEnabled', value: isChecked });
+    });
+
+    ppEnableRow.addControl(ppEnableCheckbox);
+    ppEnableRow.addControl(ppEnableLabel);
+    parent.addControl(ppEnableRow);
+
+    this.createPostProcessSlider(parent, 'Pixel Scale', pp.pixelScale, 1, 3, 0.1, (value) => {
+      pp.pixelScale = value;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingPixelScale', value });
+    });
+
+    this.createPostProcessSlider(parent, 'Glow Intensity', pp.glowIntensity, 0, 2, 0.05, (value) => {
+      pp.glowIntensity = value;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingGlow', value });
+    });
+
+    this.createPostProcessSlider(parent, 'Chromatic Amount', pp.chromaticAmount, 0, 60, 1, (value) => {
+      pp.chromaticAmount = value;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingChromatic', value });
+    });
+
+    this.createPostProcessSlider(parent, 'Chromatic Radial', pp.chromaticRadial, 0, 1, 0.05, (value) => {
+      pp.chromaticRadial = value;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingChromaticRadial', value });
+    });
+
+    const grainEnabledRow = new StackPanel('grainEnabledRow');
+    grainEnabledRow.isVertical = false;
+    grainEnabledRow.height = '30px';
+    grainEnabledRow.width = '440px';
+    grainEnabledRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const grainEnabledCheckbox = new Checkbox('grainEnabledCheckbox');
+    grainEnabledCheckbox.isChecked = pp.grainEnabled !== false;
+    grainEnabledCheckbox.width = '25px';
+    grainEnabledCheckbox.height = '25px';
+
+    const grainEnabledLabel = new TextBlock('grainEnabledLabel');
+    grainEnabledLabel.text = '  Enable Grain';
+    grainEnabledLabel.fontSize = 13;
+    grainEnabledLabel.color = '#FFFFFF';
+    grainEnabledLabel.width = '400px';
+    grainEnabledLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    grainEnabledCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      pp.grainEnabled = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingGrainEnabled', value: isChecked });
+    });
+
+    grainEnabledRow.addControl(grainEnabledCheckbox);
+    grainEnabledRow.addControl(grainEnabledLabel);
+    parent.addControl(grainEnabledRow);
+
+    this.createPostProcessSlider(parent, 'Grain Intensity', pp.grainIntensity, 0, 30, 1, (value) => {
+      pp.grainIntensity = value;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingGrain', value });
+    });
+
+    const grainAnimatedRow = new StackPanel('grainAnimatedRow');
+    grainAnimatedRow.isVertical = false;
+    grainAnimatedRow.height = '30px';
+    grainAnimatedRow.width = '440px';
+    grainAnimatedRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const grainAnimatedCheckbox = new Checkbox('grainAnimatedCheckbox');
+    grainAnimatedCheckbox.isChecked = !!pp.grainAnimated;
+    grainAnimatedCheckbox.width = '25px';
+    grainAnimatedCheckbox.height = '25px';
+
+    const grainAnimatedLabel = new TextBlock('grainAnimatedLabel');
+    grainAnimatedLabel.text = '  Animated Grain';
+    grainAnimatedLabel.fontSize = 13;
+    grainAnimatedLabel.color = '#FFFFFF';
+    grainAnimatedLabel.width = '400px';
+    grainAnimatedLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    grainAnimatedCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      pp.grainAnimated = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingGrainAnimated', value: isChecked });
+    });
+
+    grainAnimatedRow.addControl(grainAnimatedCheckbox);
+    grainAnimatedRow.addControl(grainAnimatedLabel);
+    parent.addControl(grainAnimatedRow);
+
+    const crtLinesRow = new StackPanel('crtLinesRow');
+    crtLinesRow.isVertical = false;
+    crtLinesRow.height = '30px';
+    crtLinesRow.width = '440px';
+    crtLinesRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const crtLinesCheckbox = new Checkbox('crtLinesCheckbox');
+    crtLinesCheckbox.isChecked = pp.crtLinesEnabled !== false;
+    crtLinesCheckbox.width = '25px';
+    crtLinesCheckbox.height = '25px';
+
+    const crtLinesLabel = new TextBlock('crtLinesLabel');
+    crtLinesLabel.text = '  CRT Lines';
+    crtLinesLabel.fontSize = 13;
+    crtLinesLabel.color = '#FFFFFF';
+    crtLinesLabel.width = '400px';
+    crtLinesLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    crtLinesCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      pp.crtLinesEnabled = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingCrtLinesEnabled', value: isChecked });
+    });
+
+    crtLinesRow.addControl(crtLinesCheckbox);
+    crtLinesRow.addControl(crtLinesLabel);
+    parent.addControl(crtLinesRow);
+
+    const vignetteRow = new StackPanel('vignetteRow');
+    vignetteRow.isVertical = false;
+    vignetteRow.height = '30px';
+    vignetteRow.width = '440px';
+    vignetteRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const vignetteCheckbox = new Checkbox('vignetteCheckbox');
+    vignetteCheckbox.isChecked = !!pp.vignetteEnabled;
+    vignetteCheckbox.width = '25px';
+    vignetteCheckbox.height = '25px';
+
+    const vignetteLabel = new TextBlock('vignetteLabel');
+    vignetteLabel.text = '  Vignette';
+    vignetteLabel.fontSize = 13;
+    vignetteLabel.color = '#FFFFFF';
+    vignetteLabel.width = '400px';
+    vignetteLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    vignetteCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      pp.vignetteEnabled = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingVignette', value: isChecked });
+    });
+
+    vignetteRow.addControl(vignetteCheckbox);
+    vignetteRow.addControl(vignetteLabel);
+    parent.addControl(vignetteRow);
+
+    this.createPostProcessSlider(parent, 'Vignette Weight', pp.vignetteWeight, 0, 10, 0.5, (value) => {
+      pp.vignetteWeight = value;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.UI_OPTION_CHANGED, { option: 'postProcessingVignetteWeight', value });
+    });
+  }
+
+  private createPostProcessSlider(
+    parent: StackPanel,
+    label: string,
+    initialValue: number,
+    min: number,
+    max: number,
+    step: number,
+    onChange: (value: number) => void
+  ): void {
+    const labelBlock = new TextBlock(`pp_${label}_label`);
+    labelBlock.text = `${label}: ${initialValue.toFixed(2)}`;
+    labelBlock.fontSize = 13;
+    labelBlock.fontWeight = 'bold';
+    labelBlock.color = '#FFFFFF';
+    labelBlock.height = '25px';
+    parent.addControl(labelBlock);
+
+    const slider = UIFactory.createSlider(`pp_${label}_slider`, min, max, initialValue);
+    slider.height = '25px';
+    slider.width = '440px';
+    slider.onValueChangedObservable.add((value: number) => {
+      const stepped = Math.round(value / step) * step;
+      labelBlock.text = `${label}: ${stepped.toFixed(2)}`;
+      onChange(stepped);
+    });
+    parent.addControl(slider);
+  }
+
+  private createLiveStatsSection(parent: StackPanel): void {
+    const sectionTitle = new TextBlock('liveStatsTitle');
+    sectionTitle.text = '═══ LIVE STATS ═══';
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#00BFFF';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    const toggleContainer = new StackPanel('liveStatsToggleContainer');
+    toggleContainer.isVertical = false;
+    toggleContainer.height = '30px';
+    toggleContainer.width = '440px';
+    toggleContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const toggleCheckbox = new Checkbox('liveStatsCheckbox');
+    toggleCheckbox.isChecked = this.showLiveStats;
+    toggleCheckbox.width = '25px';
+    toggleCheckbox.height = '25px';
+
+    const toggleLabel = new TextBlock('liveStatsLabel');
+    toggleLabel.text = '  Show Live Stats';
+    toggleLabel.fontSize = 13;
+    toggleLabel.color = '#FFFFFF';
+    toggleLabel.width = '400px';
+    toggleLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    toggleCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      this.showLiveStats = isChecked;
+      if (this.statsPanel) {
+        this.statsPanel.isVisible = isChecked;
+      }
+    });
+
+    toggleContainer.addControl(toggleCheckbox);
+    toggleContainer.addControl(toggleLabel);
+    parent.addControl(toggleContainer);
+
+    this.statsPanel = new StackPanel('liveStatsPanel');
+    this.statsPanel.isVertical = true;
+    this.statsPanel.width = '440px';
+    this.statsPanel.isVisible = this.showLiveStats;
+    parent.addControl(this.statsPanel);
+
+    this.dpsInstantText = this.createStatLine('DPS (1s): 0');
+    this.dpsTenSecText = this.createStatLine('DPS (10s): 0');
+    this.moveSpeedText = this.createStatLine('Move Speed: 0');
+    this.velocityText = this.createStatLine('Velocity: 0');
+    this.fireRateText = this.createStatLine('Fire Rate: 0');
+    this.focusBonusText = this.createStatLine('Focus Bonus: 1.00x');
+
+    this.statsPanel.addControl(this.dpsInstantText);
+    this.statsPanel.addControl(this.dpsTenSecText);
+    this.statsPanel.addControl(this.moveSpeedText);
+    this.statsPanel.addControl(this.velocityText);
+    this.statsPanel.addControl(this.fireRateText);
+    this.statsPanel.addControl(this.focusBonusText);
+  }
+
+  private createRoomTestingSection(parent: StackPanel): void {
+    const facileRooms = this.configLoader.getFacileRoomsConfig() ?? [];
+    const intermediaireRooms = this.configLoader.getIntermediaireRoomsConfig() ?? [];
+    const difficileRooms = this.configLoader.getDifficileRoomsConfig() ?? [];
+    const extremeRooms = this.configLoader.getExtremeRoomsConfig() ?? [];
+    const bossRooms = this.configLoader.getBossRoomsConfig() ?? [];
+
+    this.createRoomTestingSubsection(parent, '═══ FACILE ═══', facileRooms, 'LOAD FACILE ROOM', 'room_test_dummies', 'facileRooms');
+    this.createRoomTestingSubsection(parent, '═══ INTERMEDIAIRE ═══', intermediaireRooms, 'LOAD INTERMEDIAIRE ROOM', 'room_boss_jumper', 'intermediaireRooms');
+    this.createRoomTestingSubsection(parent, '═══ DIFFICILE ═══', difficileRooms, 'LOAD DIFFICILE ROOM', 'room_bull_void', 'difficileRooms');
+    this.createRoomTestingSubsection(parent, '═══ EXTREME ═══', extremeRooms, 'LOAD EXTREME ROOM', 'room_missile_poison', 'extremeRooms');
+    const getBossRoomId = this.createRoomTestingSubsection(parent, '═══ BOSS ═══', bossRooms, 'LOAD BOSS ROOM', 'room_boss_jumper', 'bossRooms');
+
+    // Add tile controls
+    const tileSectionTitle = new TextBlock('tileSectionTitle');
+    tileSectionTitle.text = '═══ TILE SYSTEM ═══';
+    tileSectionTitle.fontSize = 15;
+    tileSectionTitle.fontWeight = 'bold';
+    tileSectionTitle.color = '#FFD700';
+    tileSectionTitle.height = '34px';
+    tileSectionTitle.paddingTop = 6;
+    tileSectionTitle.paddingBottom = 6;
+    parent.addControl(tileSectionTitle);
+
+    const tileButtonRow = new StackPanel('tileButtonRow');
+    tileButtonRow.isVertical = false;
+    tileButtonRow.height = '34px';
+    tileButtonRow.width = '440px';
+    tileButtonRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const toggleTilesBtn = Button.CreateSimpleButton('toggleTilesBtn', 'TOGGLE TILES');
+    toggleTilesBtn.width = '200px';
+    toggleTilesBtn.height = '30px';
+    toggleTilesBtn.color = '#FFFFFF';
+    toggleTilesBtn.background = '#444400';
+    toggleTilesBtn.thickness = 1;
+    toggleTilesBtn.onPointerUpObservable.add(() => {
+      this.eventBus.emit(GameEvents.DEV_TILE_TOGGLE_REQUESTED);
+      toggleTilesBtn.background = this.gameManager.isUsingTiles() ? '#004400' : '#444400';
+    });
+    tileButtonRow.addControl(toggleTilesBtn);
+
+    const loadTilesBtn = Button.CreateSimpleButton('loadTilesBtn', 'LOAD TILES');
+    loadTilesBtn.width = '200px';
+    loadTilesBtn.height = '30px';
+    loadTilesBtn.color = '#FFFFFF';
+    loadTilesBtn.background = '#004400';
+    loadTilesBtn.thickness = 1;
+    loadTilesBtn.onPointerUpObservable.add(() => {
+      const roomId = getBossRoomId();
+      this.eventBus.emit(GameEvents.DEV_TILE_LOAD_REQUESTED, { roomId });
+      this.gameManager.setTilesEnabled(true);
+    });
+    tileButtonRow.addControl(loadTilesBtn);
+
+    parent.addControl(tileButtonRow);
+
+    const tileButtonRow2 = new StackPanel('tileButtonRow2');
+    tileButtonRow2.isVertical = false;
+    tileButtonRow2.height = '34px';
+    tileButtonRow2.width = '440px';
+    tileButtonRow2.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const loadTileJsonBtn = Button.CreateSimpleButton('loadTileJsonBtn', 'LOAD TILE JSON');
+    loadTileJsonBtn.width = '200px';
+    loadTileJsonBtn.height = '30px';
+    loadTileJsonBtn.color = '#FFFFFF';
+    loadTileJsonBtn.background = '#222244';
+    loadTileJsonBtn.thickness = 1;
+    loadTileJsonBtn.onPointerUpObservable.add(() => {
+      const payload = window.prompt('Paste tile mapping JSON (tiles_mapping export)');
+      if (!payload) return;
+      this.gameManager.loadRoomFromTileMappingJson(payload);
+      this.gameManager.setTilesEnabled(true);
+    });
+    tileButtonRow2.addControl(loadTileJsonBtn);
+
+    parent.addControl(tileButtonRow2);
+
+    const tileStatsLabel = new TextBlock('tileStatsLabel');
+    tileStatsLabel.text = 'Tiles: Disabled';
+    tileStatsLabel.fontSize = 12;
+    tileStatsLabel.color = '#FFD700';
+    tileStatsLabel.height = '20px';
+    tileStatsLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    parent.addControl(tileStatsLabel);
+
+    const renderModeBtn = Button.CreateSimpleButton('renderModeBtn', 'TEXTURE MODE: PROCEDURAL RELIEF');
+    renderModeBtn.width = '410px';
+    renderModeBtn.height = '30px';
+    renderModeBtn.color = '#FFFFFF';
+    renderModeBtn.background = '#1B3D1B';
+    renderModeBtn.thickness = 1;
+    renderModeBtn.top = '4px';
+    renderModeBtn.onPointerUpObservable.add(() => {
+      const currentMode = this.gameManager.getTextureRenderMode?.() ?? 'proceduralRelief';
+      const nextMode = currentMode === 'proceduralRelief' ? 'classic' : 'proceduralRelief';
+      this.gameManager.setTextureRenderMode?.(nextMode);
+      const activeMode = this.gameManager.getTextureRenderMode?.() ?? nextMode;
+      const isProcedural = activeMode === 'proceduralRelief';
+      renderModeBtn.textBlock!.text = `TEXTURE MODE: ${isProcedural ? 'PROCEDURAL RELIEF' : 'CLASSIC'}`;
+      renderModeBtn.background = isProcedural ? '#1B3D1B' : '#3D2A1B';
+    });
+    parent.addControl(renderModeBtn);
+
+    const qualityBtn = Button.CreateSimpleButton('reliefQualityBtn', 'RELIEF QUALITY: LOW');
+    qualityBtn.width = '410px';
+    qualityBtn.height = '30px';
+    qualityBtn.color = '#FFFFFF';
+    qualityBtn.background = '#1B2C3D';
+    qualityBtn.thickness = 1;
+    qualityBtn.top = '4px';
+    qualityBtn.onPointerUpObservable.add(() => {
+      const current = this.gameManager.getProceduralQuality?.() ?? 'low';
+      const next = current === 'low' ? 'medium' : current === 'medium' ? 'high' : 'low';
+      this.gameManager.setProceduralQuality?.(next);
+      const active = this.gameManager.getProceduralQuality?.() ?? next;
+      qualityBtn.textBlock!.text = `RELIEF QUALITY: ${String(active).toUpperCase()}`;
+    });
+    parent.addControl(qualityBtn);
+
+    // Update tile stats regularly
+    this.scene.onBeforeRenderObservable.add(() => {
+      const activeMode = this.gameManager.getTextureRenderMode?.() ?? 'proceduralRelief';
+      const isProcedural = activeMode === 'proceduralRelief';
+      const activeQuality = this.gameManager.getProceduralQuality?.() ?? 'low';
+      renderModeBtn.textBlock!.text = `TEXTURE MODE: ${isProcedural ? 'PROCEDURAL RELIEF' : 'CLASSIC'}`;
+      renderModeBtn.background = isProcedural ? '#1B3D1B' : '#3D2A1B';
+      qualityBtn.textBlock!.text = `RELIEF QUALITY: ${String(activeQuality).toUpperCase()}`;
+      qualityBtn.isEnabled = isProcedural;
+      qualityBtn.alpha = isProcedural ? 1 : 0.55;
+
+      if (this.gameManager.isUsingTiles()) {
+        const stats = this.gameManager.getTileStatistics();
+        tileStatsLabel.text = `Tiles: Enabled (${stats.totalTiles} tiles) | Mode: ${isProcedural ? 'Procedural Relief' : 'Classic'}`;
+      } else {
+        tileStatsLabel.text = `Tiles: Disabled | Mode: ${isProcedural ? 'Procedural Relief' : 'Classic'}`;
+      }
+    });
+  }
+
+  private createRoomTestingSubsection(
+    parent: StackPanel,
+    titleText: string,
+    rooms: Array<{ id?: string }>,
+    loadButtonText: string,
+    fallbackRoomId: string,
+    sectionKey: string,
+  ): () => string {
+    const roomIds = rooms
+      .map((room) => room.id)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
+    const activeRoomIds = roomIds.length > 0 ? roomIds : [fallbackRoomId];
+    const state = {
+      roomSelectIndex: 0,
+      roomSelectLabel: null as TextBlock | null,
+    };
+
+    const sectionTitle = new TextBlock(`${sectionKey}-title`);
+    sectionTitle.text = titleText;
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#00FFAA';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    const selectorRow = new StackPanel(`${sectionKey}-roomSelectorRow`);
+    selectorRow.isVertical = false;
+    selectorRow.height = '34px';
+    selectorRow.width = '440px';
+    selectorRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const prevBtn = Button.CreateSimpleButton(`${sectionKey}-roomPrevBtn`, '<');
+    prevBtn.width = '30px';
+    prevBtn.height = '26px';
+    prevBtn.color = '#00FFAA';
+    prevBtn.background = '#1A1A2A';
+    prevBtn.thickness = 1;
+    prevBtn.onPointerUpObservable.add(() => {
+      state.roomSelectIndex = (state.roomSelectIndex - 1 + activeRoomIds.length) % activeRoomIds.length;
+      if (state.roomSelectLabel) {
+        state.roomSelectLabel.text = activeRoomIds[state.roomSelectIndex] ?? 'unknown';
+      }
+    });
+
+    state.roomSelectLabel = new TextBlock(`${sectionKey}-roomSelectLabel`);
+    state.roomSelectLabel.text = activeRoomIds[state.roomSelectIndex] ?? 'unknown';
+    state.roomSelectLabel.fontSize = 13;
+    state.roomSelectLabel.color = '#FFFFFF';
+    state.roomSelectLabel.width = '320px';
+    state.roomSelectLabel.height = '26px';
+    state.roomSelectLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const nextBtn = Button.CreateSimpleButton(`${sectionKey}-roomNextBtn`, '>');
+    nextBtn.width = '30px';
+    nextBtn.height = '26px';
+    nextBtn.color = '#00FFAA';
+    nextBtn.background = '#1A1A2A';
+    nextBtn.thickness = 1;
+    nextBtn.onPointerUpObservable.add(() => {
+      state.roomSelectIndex = (state.roomSelectIndex + 1) % activeRoomIds.length;
+      if (state.roomSelectLabel) {
+        state.roomSelectLabel.text = activeRoomIds[state.roomSelectIndex] ?? 'unknown';
+      }
+    });
+
+    selectorRow.addControl(prevBtn);
+    selectorRow.addControl(state.roomSelectLabel);
+    selectorRow.addControl(nextBtn);
+    parent.addControl(selectorRow);
+
+    const loadBtn = Button.CreateSimpleButton(`${sectionKey}-loadBtn`, loadButtonText);
+    loadBtn.width = '200px';
+    loadBtn.height = '30px';
+    loadBtn.color = '#FFFFFF';
+    loadBtn.background = '#004400';
+    loadBtn.thickness = 1;
+    loadBtn.top = '4px';
+    loadBtn.onPointerUpObservable.add(() => {
+      const roomId = activeRoomIds[state.roomSelectIndex];
+      this.eventBus.emit(GameEvents.DEV_ROOM_LOAD_REQUESTED, { roomId });
+    });
+    parent.addControl(loadBtn);
+
+    return () => activeRoomIds[state.roomSelectIndex] ?? fallbackRoomId;
+  }
+
+  private createVoicelineTestingSection(parent: StackPanel): void {
+    const sectionTitle = new TextBlock('voicelineTestTitle');
+    sectionTitle.text = '═══ VOICELINE TESTING ═══';
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#FF00FF';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    // --- TRIGGER CATEGORY SELECTOR ---
+    const triggerLabel = new TextBlock('triggerLabel');
+    triggerLabel.text = 'CATEGORY:';
+    triggerLabel.fontSize = 11;
+    triggerLabel.color = '#AAAAAA';
+    triggerLabel.height = '18px';
+    triggerLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    parent.addControl(triggerLabel);
+
+    const triggerRow = new StackPanel('triggerRow');
+    triggerRow.isVertical = false;
+    triggerRow.height = '30px';
+    triggerRow.width = '440px';
+    triggerRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const tPrevBtn = Button.CreateSimpleButton('triggerPrevBtn', '<');
+    tPrevBtn.width = '30px';
+    tPrevBtn.height = '24px';
+    tPrevBtn.color = '#FF00FF';
+    tPrevBtn.background = '#1A1A2A';
+    tPrevBtn.onPointerUpObservable.add(() => {
+      this.triggerSelectIndex = (this.triggerSelectIndex - 1 + this.triggerCategories.length) % this.triggerCategories.length;
+      this.updateTriggerLabel();
+    });
+
+    this.triggerSelectLabel = new TextBlock('triggerSelectLabel');
+    this.triggerSelectLabel.text = this.triggerCategories[this.triggerSelectIndex] || 'none';
+    this.triggerSelectLabel.fontSize = 13;
+    this.triggerSelectLabel.color = '#FFFFFF';
+    this.triggerSelectLabel.width = '240px';
+    this.triggerSelectLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const tNextBtn = Button.CreateSimpleButton('triggerNextBtn', '>');
+    tNextBtn.width = '30px';
+    tNextBtn.height = '24px';
+    tNextBtn.color = '#FF00FF';
+    tNextBtn.background = '#1A1A2A';
+    tNextBtn.onPointerUpObservable.add(() => {
+      this.triggerSelectIndex = (this.triggerSelectIndex + 1) % this.triggerCategories.length;
+      this.updateTriggerLabel();
+    });
+
+    const triggerPlayBtn = Button.CreateSimpleButton('triggerPlayBtn', 'PLAY CATEGORY');
+    triggerPlayBtn.width = '120px';
+    triggerPlayBtn.height = '24px';
+    triggerPlayBtn.fontSize = 11;
+    triggerPlayBtn.color = '#FFFFFF';
+    triggerPlayBtn.background = '#440044';
+    triggerPlayBtn.onPointerUpObservable.add(() => {
+      const trigger = this.triggerCategories[this.triggerSelectIndex];
+      if (trigger) {
+        this.gameManager.getDaemonVoicelineManager().forceTrigger(trigger);
+      }
+    });
+
+    triggerRow.addControl(tPrevBtn);
+    triggerRow.addControl(this.triggerSelectLabel);
+    triggerRow.addControl(tNextBtn);
+    triggerRow.addControl(triggerPlayBtn);
+    parent.addControl(triggerRow);
+
+    // --- ID-BASED SELECTOR ---
+    const idLabel = new TextBlock('idLabel');
+    idLabel.text = 'INDIVIDUAL ID:';
+    idLabel.fontSize = 11;
+    idLabel.color = '#AAAAAA';
+    idLabel.height = '18px';
+    idLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    idLabel.paddingTop = 4;
+    parent.addControl(idLabel);
+
+    const selectorRow = new StackPanel('voicelineSelectorRow');
+    selectorRow.isVertical = false;
+    selectorRow.height = '34px';
+    selectorRow.width = '440px';
+    selectorRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const prevBtn = Button.CreateSimpleButton('voicelinePrevBtn', '<');
+    prevBtn.width = '30px';
+    prevBtn.height = '26px';
+    prevBtn.color = '#FF00FF';
+    prevBtn.background = '#1A1A2A';
+    prevBtn.thickness = 1;
+    prevBtn.onPointerUpObservable.add(() => {
+      this.voicelineSelectIndex = (this.voicelineSelectIndex - 1 + this.voicelineIds.length) % this.voicelineIds.length;
+      this.updateVoicelineLabel();
+    });
+
+    this.voicelineSelectLabel = new TextBlock('voicelineSelectLabel');
+    this.voicelineSelectLabel.text = this.voicelineIds[this.voicelineSelectIndex];
+    this.voicelineSelectLabel.fontSize = 13;
+    this.voicelineSelectLabel.color = '#FFFFFF';
+    this.voicelineSelectLabel.width = '240px';
+    this.voicelineSelectLabel.height = '26px';
+    this.voicelineSelectLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const nextBtn = Button.CreateSimpleButton('voicelineNextBtn', '>');
+    nextBtn.width = '30px';
+    nextBtn.height = '26px';
+    nextBtn.color = '#FF00FF';
+    nextBtn.background = '#1A1A2A';
+    nextBtn.thickness = 1;
+    nextBtn.onPointerUpObservable.add(() => {
+      this.voicelineSelectIndex = (this.voicelineSelectIndex + 1) % this.voicelineIds.length;
+      this.updateVoicelineLabel();
+    });
+
+    const playBtn = Button.CreateSimpleButton('voicelinePlayBtn', 'PLAY ID');
+    playBtn.width = '120px';
+    playBtn.height = '26px';
+    playBtn.fontSize = 11;
+    playBtn.color = '#FFFFFF';
+    playBtn.background = '#440044';
+    playBtn.thickness = 1;
+    playBtn.onPointerUpObservable.add(() => {
+      const voicelineId = this.voicelineIds[this.voicelineSelectIndex];
+      this.gameManager.getDaemonVoicelineManager().forceVoicelineById(voicelineId);
+    });
+
+    selectorRow.addControl(prevBtn);
+    selectorRow.addControl(this.voicelineSelectLabel);
+    selectorRow.addControl(nextBtn);
+    selectorRow.addControl(playBtn);
+    parent.addControl(selectorRow);
+
+    // --- SPECIAL SCENARIOS ---
+    const scenariosTitle = new TextBlock('scenariosTitle');
+    scenariosTitle.text = 'SCENARIOS';
+    scenariosTitle.fontSize = 11;
+    scenariosTitle.color = '#AAAAAA';
+    scenariosTitle.height = '24px';
+    scenariosTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    scenariosTitle.paddingTop = 6;
+    parent.addControl(scenariosTitle);
+
+    const scenarioGrid = new StackPanel('scenarioGrid');
+    scenarioGrid.isVertical = false;
+    scenarioGrid.height = '34px';
+    scenarioGrid.width = '440px';
+    scenarioGrid.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const btnWidth = '105px';
+    const btnMargin = '4px';
+
+    const glitchBtn = Button.CreateSimpleButton('glitchBtn', 'GLITCH');
+    glitchBtn.width = btnWidth;
+    glitchBtn.height = '28px';
+    glitchBtn.fontSize = 10;
+    glitchBtn.color = '#FFFFFF';
+    glitchBtn.background = '#660066';
+    glitchBtn.paddingRight = btnMargin;
+    glitchBtn.onPointerUpObservable.add(() => this.gameManager.getDaemonVoicelineManager().forceVoicelineById('dev_test_glitch'));
+    scenarioGrid.addControl(glitchBtn);
+
+    const crashBtn = Button.CreateSimpleButton('crashBtn', 'CRASH+INIT');
+    crashBtn.width = btnWidth;
+    crashBtn.height = '28px';
+    crashBtn.fontSize = 10;
+    crashBtn.color = '#FFFFFF';
+    crashBtn.background = '#660000';
+    crashBtn.paddingRight = btnMargin;
+    crashBtn.onPointerUpObservable.add(() => this.gameManager.getDaemonVoicelineManager().forceVoicelineById('dev_test_crash'));
+    scenarioGrid.addControl(crashBtn);
+
+    const streakBtn = Button.CreateSimpleButton('streakBtn', 'STREAK');
+    streakBtn.width = btnWidth;
+    streakBtn.height = '28px';
+    streakBtn.fontSize = 10;
+    streakBtn.color = '#FFFFFF';
+    streakBtn.background = '#330066';
+    streakBtn.paddingRight = btnMargin;
+    streakBtn.onPointerUpObservable.add(() => this.gameManager.getDaemonVoicelineManager().forceTrigger('multi_damage_streak'));
+    scenarioGrid.addControl(streakBtn);
+
+    const hpBtn = Button.CreateSimpleButton('hpBtn', 'LOW HP');
+    hpBtn.width = btnWidth;
+    hpBtn.height = '28px';
+    hpBtn.fontSize = 10;
+    hpBtn.color = '#FFFFFF';
+    hpBtn.background = '#993300';
+    hpBtn.onPointerUpObservable.add(() => this.gameManager.getDaemonVoicelineManager().forceTrigger('player_low_hp'));
+    scenarioGrid.addControl(hpBtn);
+
+    parent.addControl(scenarioGrid);
+
+    const scenarioGrid2 = new StackPanel('scenarioGrid2');
+    scenarioGrid2.isVertical = false;
+    scenarioGrid2.height = '34px';
+    scenarioGrid2.width = '440px';
+    scenarioGrid2.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    scenarioGrid2.paddingTop = '4px';
+
+    const ambientBtn = Button.CreateSimpleButton('ambientBtn', 'AMBIENT LORE');
+    ambientBtn.width = '214px';
+    ambientBtn.height = '28px';
+    ambientBtn.fontSize = 10;
+    ambientBtn.color = '#FFFFFF';
+    ambientBtn.background = '#004466';
+    ambientBtn.paddingRight = btnMargin;
+    ambientBtn.onPointerUpObservable.add(() => this.gameManager.getDaemonVoicelineManager().forceTrigger('ambient'));
+    scenarioGrid2.addControl(ambientBtn);
+
+    const idleBtn = Button.CreateSimpleButton('idleBtn', 'IDLE TAUNT');
+    idleBtn.width = '214px';
+    idleBtn.height = '28px';
+    idleBtn.fontSize = 10;
+    idleBtn.color = '#FFFFFF';
+    idleBtn.background = '#444444';
+    idleBtn.onPointerUpObservable.add(() => this.gameManager.getDaemonVoicelineManager().forceTrigger('player_idle'));
+    scenarioGrid2.addControl(idleBtn);
+
+    parent.addControl(scenarioGrid2);
+  }
+
+  private updateTriggerLabel(): void {
+    if (this.triggerSelectLabel) {
+      this.triggerSelectLabel.text = this.triggerCategories[this.triggerSelectIndex] || 'none';
+    }
+  }
+
+  private updateVoicelineLabel(): void {
+    if (this.voicelineSelectLabel) {
+      this.voicelineSelectLabel.text = this.voicelineIds[this.voicelineSelectIndex] ?? 'unknown';
+    }
+  }
+
+  private createCameraSection(parent: StackPanel): void {
+    // Camera section title
+    const sectionTitle = new TextBlock('cameraSectionTitle');
+    sectionTitle.text = '═══ CAMERA ═══';
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#00AAFF';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    // Alpha (horizontal angle) slider
+    const alphaLabel = new TextBlock('alphaLabel');
+    alphaLabel.text = `Alpha: ${(this.gameManager.getCameraAlpha() * 180 / Math.PI).toFixed(1)}°`;
+    alphaLabel.fontSize = 13;
+    alphaLabel.fontWeight = 'bold';
+    alphaLabel.color = '#FFFFFF';
+    alphaLabel.height = '25px';
+    parent.addControl(alphaLabel);
+
+    const alphaSlider = new Slider('alphaSlider');
+    alphaSlider.minimum = -Math.PI;
+    alphaSlider.maximum = Math.PI;
+    alphaSlider.value = this.gameManager.getCameraAlpha();
+    alphaSlider.height = '25px';
+    alphaSlider.width = '440px';
+    alphaSlider.color = '#00AAFF';
+    alphaSlider.background = '#444444';
+
+    alphaSlider.onValueChangedObservable.add((value: number) => {
+      alphaLabel.text = `Alpha: ${(value * 180 / Math.PI).toFixed(1)}°`;
+      this.gameManager.setCameraAlpha(value);
+    });
+    parent.addControl(alphaSlider);
+
+    // Beta (vertical angle) slider
+    const betaLabel = new TextBlock('betaLabel');
+    betaLabel.text = `Beta: ${(this.gameManager.getCameraBeta() * 180 / Math.PI).toFixed(1)}°`;
+    betaLabel.fontSize = 13;
+    betaLabel.fontWeight = 'bold';
+    betaLabel.color = '#FFFFFF';
+    betaLabel.height = '25px';
+    parent.addControl(betaLabel);
+
+    const betaSlider = new Slider('betaSlider');
+    betaSlider.minimum = 0.1;  // Avoid looking straight down/up
+    betaSlider.maximum = Math.PI - 0.1;
+    betaSlider.value = this.gameManager.getCameraBeta();
+    betaSlider.height = '25px';
+    betaSlider.width = '440px';
+    betaSlider.color = '#00AAFF';
+    betaSlider.background = '#444444';
+
+    betaSlider.onValueChangedObservable.add((value: number) => {
+      betaLabel.text = `Beta: ${(value * 180 / Math.PI).toFixed(1)}°`;
+      this.gameManager.setCameraBeta(value);
+    });
+    parent.addControl(betaSlider);
+
+    // Radius (zoom) slider
+    const radiusLabel = new TextBlock('radiusLabel');
+    radiusLabel.text = `Radius: ${this.gameManager.getCameraRadius().toFixed(1)}`;
+    radiusLabel.fontSize = 13;
+    radiusLabel.fontWeight = 'bold';
+    radiusLabel.color = '#FFFFFF';
+    radiusLabel.height = '25px';
+    parent.addControl(radiusLabel);
+
+    const radiusSlider = new Slider('radiusSlider');
+    radiusSlider.minimum = 10;
+    radiusSlider.maximum = 50;
+    radiusSlider.value = this.gameManager.getCameraRadius();
+    radiusSlider.height = '25px';
+    radiusSlider.width = '440px';
+    radiusSlider.color = '#00AAFF';
+    radiusSlider.background = '#444444';
+
+    radiusSlider.onValueChangedObservable.add((value: number) => {
+      radiusLabel.text = `Radius: ${value.toFixed(1)}`;
+      this.gameManager.setCameraRadius(value);
+    });
+    parent.addControl(radiusSlider);
+
+    // Player Height Offset slider
+    const playerHeightLabel = new TextBlock('playerHeightLabel');
+    playerHeightLabel.text = `Player Height: ${this.gameManager.getPlayerHeightOffset().toFixed(2)}`;
+    playerHeightLabel.fontSize = 13;
+    playerHeightLabel.fontWeight = 'bold';
+    playerHeightLabel.color = '#FFFFFF';
+    playerHeightLabel.height = '25px';
+    parent.addControl(playerHeightLabel);
+
+    const playerHeightSlider = new Slider('playerHeightSlider');
+    playerHeightSlider.minimum = -2;
+    playerHeightSlider.maximum = 2;
+    playerHeightSlider.value = this.gameManager.getPlayerHeightOffset();
+    playerHeightSlider.height = '25px';
+    playerHeightSlider.width = '440px';
+    playerHeightSlider.color = '#00AAFF';
+    playerHeightSlider.background = '#444444';
+
+    playerHeightSlider.onValueChangedObservable.add((value: number) => {
+      playerHeightLabel.text = `Player Height: ${value.toFixed(2)}`;
+      this.gameManager.setPlayerHeightOffset(value);
+    });
+    parent.addControl(playerHeightSlider);
+
+    // Enemy Height Offset slider
+    const enemyHeightLabel = new TextBlock('enemyHeightLabel');
+    enemyHeightLabel.text = `Enemy Height: ${this.gameManager.getEnemyHeightOffset().toFixed(2)}`;
+    enemyHeightLabel.fontSize = 13;
+    enemyHeightLabel.fontWeight = 'bold';
+    enemyHeightLabel.color = '#FFFFFF';
+    enemyHeightLabel.height = '25px';
+    parent.addControl(enemyHeightLabel);
+
+    const enemyHeightSlider = new Slider('enemyHeightSlider');
+    enemyHeightSlider.minimum = -2;
+    enemyHeightSlider.maximum = 2;
+    enemyHeightSlider.value = this.gameManager.getEnemyHeightOffset();
+    enemyHeightSlider.height = '25px';
+    enemyHeightSlider.width = '440px';
+    enemyHeightSlider.color = '#FF8800';
+    enemyHeightSlider.background = '#444444';
+
+    enemyHeightSlider.onValueChangedObservable.add((value: number) => {
+      enemyHeightLabel.text = `Enemy Height: ${value.toFixed(2)}`;
+      this.gameManager.setEnemyHeightOffset(value);
+    });
+    parent.addControl(enemyHeightSlider);
+
+    // Walls visibility toggle
+    const wallsLabel = new TextBlock('wallsLabel');
+    wallsLabel.text = 'Show Walls/Pillars';
+    wallsLabel.fontSize = 13;
+    wallsLabel.fontWeight = 'bold';
+    wallsLabel.color = '#FFFFFF';
+    wallsLabel.height = '25px';
+    parent.addControl(wallsLabel);
+
+    const wallsCheckbox = new Checkbox('wallsCheckbox');
+    wallsCheckbox.width = '20px';
+    wallsCheckbox.height = '20px';
+    wallsCheckbox.isChecked = this.gameManager.areWallsVisible();
+    wallsCheckbox.color = '#00AAFF';
+    wallsCheckbox.background = '#444444';
+
+    wallsCheckbox.onIsCheckedChangedObservable.add((value: boolean) => {
+      this.gameManager.setWallsVisible(value);
+    });
+    parent.addControl(wallsCheckbox);
+  }
+
+  private createStatLine(text: string): TextBlock {
+    const line = new TextBlock(`stat_${text}`);
+    line.text = text;
+    line.fontSize = 12;
+    line.color = '#CCCCCC';
+    line.height = '20px';
+    line.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    return line;
+  }
+
+  private setupLiveStats(): void {
+    this.unsubscribers.push(this.eventBus.on(GameEvents.ENEMY_DAMAGED, (data: { damage?: number }) => {
+      if (typeof data.damage !== 'number') return;
+      const now = performance.now() / 1000;
+      this.damageEvents.push({ t: now, dmg: data.damage });
+    }));
+
+    this.scene.onBeforeRenderObservable.add(() => {
+      if (!this.showLiveStats || !this.player) return;
+
+      const now = performance.now() / 1000;
+      this.damageEvents = this.damageEvents.filter((e) => now - e.t <= 10);
+
+      const dmg10 = this.damageEvents.reduce((sum, e) => sum + e.dmg, 0);
+      const dmg1 = this.damageEvents.filter((e) => now - e.t <= 1).reduce((sum, e) => sum + e.dmg, 0);
+
+      const dpsInstant = dmg1;
+      const dps10 = dmg10 / 10;
+
+      const moveSpeed = this.player.getMoveSpeed();
+      const velocity = this.player.getVelocity().length();
+      const fireRate = this.player.getCurrentFireRate();
+      const focusBonus = this.player.getFocusFireBonusValue();
+
+      if (this.dpsInstantText) this.dpsInstantText.text = `DPS (1s): ${dpsInstant.toFixed(1)}`;
+      if (this.dpsTenSecText) this.dpsTenSecText.text = `DPS (10s): ${dps10.toFixed(1)}`;
+      if (this.moveSpeedText) this.moveSpeedText.text = `Move Speed: ${moveSpeed.toFixed(2)}`;
+      if (this.velocityText) this.velocityText.text = `Velocity: ${velocity.toFixed(2)}`;
+      if (this.fireRateText) this.fireRateText.text = `Fire Rate: ${fireRate.toFixed(2)}`;
+      if (this.focusBonusText) this.focusBonusText.text = `Focus Bonus: ${focusBonus.toFixed(2)}x`;
+    });
+  }
+
+  private createDebugFlagsSection(parent: StackPanel): void {
+    const gameplayConfig = this.configLoader.getGameplayConfig();
+    if (!gameplayConfig || !gameplayConfig.debugConfig) return;
+    const debugConfig = gameplayConfig.debugConfig;
+
+    const sectionTitle = new TextBlock('debugTitle');
+    sectionTitle.text = '═══ DEBUG FLAGS ═══';
+    sectionTitle.fontSize = 15;
+    sectionTitle.fontWeight = 'bold';
+    sectionTitle.color = '#FF9900';
+    sectionTitle.height = '34px';
+    sectionTitle.paddingTop = 6;
+    sectionTitle.paddingBottom = 6;
+    parent.addControl(sectionTitle);
+
+    // God Mode
+    const godModeContainer = new StackPanel('godModeContainer');
+    godModeContainer.isVertical = false;
+    godModeContainer.height = '30px';
+    godModeContainer.width = '440px';
+    godModeContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    
+    const godModeCheckbox = new Checkbox('godModeCheckbox');
+    godModeCheckbox.isChecked = debugConfig.godMode;
+    godModeCheckbox.width = '25px';
+    godModeCheckbox.height = '25px';
+
+    const godModeLabel = new TextBlock('godModeLabel');
+    godModeLabel.text = '  God Mode';
+    godModeLabel.fontSize = 13;
+    godModeLabel.color = '#FFFFFF';
+    godModeLabel.width = '400px';
+    godModeLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    godModeCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      debugConfig.godMode = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.DEBUG_FLAG_CHANGED, { flag: 'godMode', value: isChecked });
+    });
+
+    godModeContainer.addControl(godModeCheckbox);
+    godModeContainer.addControl(godModeLabel);
+    parent.addControl(godModeContainer);
+
+    // Infinite Ultimate
+    const infUltContainer = new StackPanel('infUltContainer');
+    infUltContainer.isVertical = false;
+    infUltContainer.height = '30px';
+    infUltContainer.width = '440px';
+    infUltContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    
+    const infUltCheckbox = new Checkbox('infiniteUltCheckbox');
+    infUltCheckbox.isChecked = debugConfig.infiniteUltimate;
+    infUltCheckbox.width = '25px';
+    infUltCheckbox.height = '25px';
+
+    const infUltLabel = new TextBlock('infiniteUltLabel');
+    infUltLabel.text = '  Infinite Ultimate';
+    infUltLabel.fontSize = 13;
+    infUltLabel.color = '#FFFFFF';
+    infUltLabel.width = '400px';
+    infUltLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    infUltCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      debugConfig.infiniteUltimate = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.DEBUG_FLAG_CHANGED, { flag: 'infiniteUltimate', value: isChecked });
+    });
+
+    infUltContainer.addControl(infUltCheckbox);
+    infUltContainer.addControl(infUltLabel);
+    parent.addControl(infUltContainer);
+
+    // Freeze Enemies
+    const freezeContainer = new StackPanel('freezeContainer');
+    freezeContainer.isVertical = false;
+    freezeContainer.height = '30px';
+    freezeContainer.width = '440px';
+    freezeContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    
+    const freezeCheckbox = new Checkbox('freezeEnemiesCheckbox');
+    freezeCheckbox.isChecked = debugConfig.freezeEnemies;
+    freezeCheckbox.width = '25px';
+    freezeCheckbox.height = '25px';
+
+    const freezeLabel = new TextBlock('freezeEnemiesLabel');
+    freezeLabel.text = '  Freeze Enemies';
+    freezeLabel.fontSize = 13;
+    freezeLabel.color = '#FFFFFF';
+    freezeLabel.width = '400px';
+    freezeLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    freezeCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      console.log('Freeze enemies checkbox changed to:', isChecked);
+      debugConfig.freezeEnemies = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.DEBUG_FLAG_CHANGED, { flag: 'freezeEnemies', value: isChecked });
+    });
+
+    freezeContainer.addControl(freezeCheckbox);
+    freezeContainer.addControl(freezeLabel);
+    parent.addControl(freezeContainer);
+
+    // Daemon voiceline test
+    const daemonTestContainer = new StackPanel('daemonVoicelineContainer');
+    daemonTestContainer.isVertical = false;
+    daemonTestContainer.height = '30px';
+    daemonTestContainer.width = '440px';
+    daemonTestContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    const daemonTestCheckbox = new Checkbox('daemonVoicelineCheckbox');
+    daemonTestCheckbox.isChecked = debugConfig.daemonVoicelineTest ?? false;
+    daemonTestCheckbox.width = '25px';
+    daemonTestCheckbox.height = '25px';
+
+    const daemonTestLabel = new TextBlock('daemonVoicelineLabel');
+    daemonTestLabel.text = '  Daemon Voiceline Test';
+    daemonTestLabel.fontSize = 13;
+    daemonTestLabel.color = '#FFFFFF';
+    daemonTestLabel.width = '400px';
+    daemonTestLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+
+    daemonTestCheckbox.onIsCheckedChangedObservable.add((isChecked) => {
+      debugConfig.daemonVoicelineTest = isChecked;
+      this.configLoader.updateGameplayConfig(gameplayConfig);
+      this.eventBus.emit(GameEvents.DEBUG_FLAG_CHANGED, { flag: 'daemonVoicelineTest', value: isChecked });
+    });
+
+    daemonTestContainer.addControl(daemonTestCheckbox);
+    daemonTestContainer.addControl(daemonTestLabel);
+    parent.addControl(daemonTestContainer);
+  }
+
+  private toggleConsole(): void {
+    this.isVisible = !this.isVisible;
+    // Find background panel and toggle visibility
+    const panel = this.gui.getControlByName('devConsoleBackground');
+    if (panel) {
+      panel.isVisible = this.isVisible;
+    }
+  }
+
+  private clamp01(value: number): number {
+    return Math.max(0, Math.min(1, value));
+  }
+
+  dispose(): void {
+    for (const unsubscribe of this.unsubscribers) {
+      unsubscribe();
+    }
+    this.unsubscribers = [];
+
+    if (this.devScrollViewer && this.devScrollWheelObserver) {
+      this.devScrollViewer.onWheelObservable.remove(this.devScrollWheelObserver);
+      this.devScrollWheelObserver = null;
+    }
+    this.devScrollViewer = undefined;
+
+    this.gui.dispose();
+  }
+}

@@ -1,0 +1,991 @@
+/**
+ * TileSystem - Advanced tile rendering with automatic adjacency-based rotation
+ * 
+ * Features:
+ * - Automatic texture selection based on tile type and neighbors
+ * - Rotation calculation based on adjacency patterns
+ * - Priority system: Walls > Poison > Void > Floor
+ * - Supports: floor_base, floor_var1, floor_var2, poison, void, walls (3D only)
+ */
+
+import { Scene, StandardMaterial, Texture, Mesh, MeshBuilder, Vector3, Color3, ShaderMaterial } from '@babylonjs/core';
+import { ProceduralDungeonTheme } from './ProceduralDungeonTheme';
+import { ProceduralReliefTheme } from './ProceduralReliefTheme';
+
+export type TileType =
+  | 'floor'
+  | 'wall'
+  | 'pillar'
+  | 'poison'
+  | 'void'
+  | 'spikes';
+
+export interface TileData {
+  type: TileType;
+  x: number;
+  z: number;
+  adjacentTo?: {
+    north?: boolean;
+    south?: boolean;
+    east?: boolean;
+    west?: boolean;
+  };
+}
+
+export type TileRenderProfile = 'classic' | 'neoDungeonTest' | 'proceduralRelief';
+
+interface TileRenderData {
+  texturePath: string | null;
+  rotationDegrees: number;
+}
+
+interface TextureCache {
+  [key: string]: Texture;
+}
+
+interface PoisonParticleData {
+  mesh: Mesh;
+  baseY: number;
+  phase: number;
+  speed: number;
+}
+
+export class TileSystem {
+  private scene: Scene;
+  private tileSize: number = 1;
+  private textureCache: TextureCache = {};
+  private tileMeshes: Map<string, Mesh> = new Map();
+  private tileGrid: Map<string, TileData> = new Map();
+  private origin: Vector3 = Vector3.Zero();
+  private readonly textureBasePath: string = 'tiles_test';
+  private readonly rotationOffsetDegrees: number = 0;
+  private spikeMeshes: Map<string, Mesh[]> = new Map();
+  private poisonParticles: Map<string, PoisonParticleData[]> = new Map();
+  private poisonParticleMaterial: StandardMaterial | null = null;
+  private spikesActive: boolean = true;
+  private spikesCycleTimer: number = 1.0;
+  private readonly spikesActiveDuration: number = 1.0;
+  private readonly spikesInactiveDuration: number = 1.0;
+  private spikesAnimationT: number = 1.0; // 0 = retracted, 1 = extended
+  private readonly spikesAnimationSpeed: number = 5.0;
+  private renderProfile: TileRenderProfile = 'classic';
+  private poisonShaderMaterials: Set<ShaderMaterial> = new Set();
+  private poisonShaderTime: number = 0;
+
+  constructor(scene: Scene, tileSize: number = 1) {
+    this.scene = scene;
+    this.tileSize = tileSize;
+  }
+
+  private getTileKey(x: number, z: number): string {
+    return `${x},${z}`;
+  }
+
+  registerTile(tileData: TileData): void {
+    const key = this.getTileKey(tileData.x, tileData.z);
+    this.tileGrid.set(key, tileData);
+  }
+
+  setOrigin(origin: Vector3): void {
+    this.origin = origin.clone();
+  }
+
+  setRenderProfile(profile: TileRenderProfile): void {
+    this.renderProfile = profile;
+  }
+
+  prewarmProceduralMaterials(tiles: TileData[]): void {
+    if (!this.isProceduralReliefProfile()) return;
+
+    const grid = new Map<string, TileData>();
+    for (const tile of tiles) {
+      grid.set(this.getTileKey(tile.x, tile.z), tile);
+    }
+
+    const lightweightMode = ProceduralReliefTheme.isLightweightMode();
+    let prewarmBudget = lightweightMode ? 36 : Number.POSITIVE_INFINITY;
+
+    for (const tile of tiles) {
+      if (tile.type !== 'floor' && tile.type !== 'spikes') continue;
+      const adjacencies = this.getAdjacencies(tile.x, tile.z, grid);
+      
+      if (tile.type === 'floor') {
+        ProceduralReliefTheme.createFloorMaterial(this.scene, tile.x, tile.z, {
+          wallMask: this.maskFromTypes(adjacencies, ['wall']),
+          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
+          pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
+          pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
+          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+          voidMask: this.maskFromTypes(adjacencies, ['void']),
+          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+        });
+      } else {
+        ProceduralReliefTheme.createSpikeMaterial(this.scene, tile.x, tile.z, {
+          wallMask: this.maskFromTypes(adjacencies, ['wall']),
+          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
+          pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
+          pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
+          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+          voidMask: this.maskFromTypes(adjacencies, ['void']),
+          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+        });
+      }
+
+      prewarmBudget -= 1;
+      if (prewarmBudget <= 0) {
+        break;
+      }
+    }
+  }
+
+  private isProceduralReliefProfile(): boolean {
+    return this.renderProfile === 'proceduralRelief';
+  }
+
+  private getAdjacencies(x: number, z: number, grid: Map<string, TileData>) {
+    return {
+      n: grid.get(this.getTileKey(x, z + 1)) || null, // Swap north/south to match editor orientation
+      s: grid.get(this.getTileKey(x, z - 1)) || null,
+      e: grid.get(this.getTileKey(x + 1, z)) || null,
+      w: grid.get(this.getTileKey(x - 1, z)) || null,
+      ne: grid.get(this.getTileKey(x + 1, z + 1)) || null,
+      nw: grid.get(this.getTileKey(x - 1, z + 1)) || null,
+      se: grid.get(this.getTileKey(x + 1, z - 1)) || null,
+      sw: grid.get(this.getTileKey(x - 1, z - 1)) || null,
+    };
+  }
+
+  private isBlockingType(type: TileType | null): boolean {
+    return type === 'wall' || type === 'pillar';
+  }
+
+  private isMatch(type: TileType | null, matchType: TileType): boolean {
+    if (!type) return false;
+    if (matchType === 'wall') {
+      return type === 'wall' || type === 'pillar';
+    }
+    return type === matchType;
+  }
+
+  private maskFrom(neighbors: ReturnType<typeof this.getAdjacencies>, matchType: TileType): number {
+    let mask = 0;
+    if (this.isMatch(neighbors.n?.type ?? null, matchType)) mask |= 1;
+    if (this.isMatch(neighbors.e?.type ?? null, matchType)) mask |= 2;
+    if (this.isMatch(neighbors.s?.type ?? null, matchType)) mask |= 4;
+    if (this.isMatch(neighbors.w?.type ?? null, matchType)) mask |= 8;
+    return mask;
+  }
+
+  private maskFromTypes(neighbors: ReturnType<typeof this.getAdjacencies>, types: TileType[]): number {
+    let mask = 0;
+    const north = neighbors.n?.type ?? null;
+    const east = neighbors.e?.type ?? null;
+    const south = neighbors.s?.type ?? null;
+    const west = neighbors.w?.type ?? null;
+
+    if (north && types.includes(north)) mask |= 1;
+    if (east && types.includes(east)) mask |= 2;
+    if (south && types.includes(south)) mask |= 4;
+    if (west && types.includes(west)) mask |= 8;
+    return mask;
+  }
+
+  private diagMaskFromTypes(neighbors: ReturnType<typeof this.getAdjacencies>, types: TileType[]): number {
+    let mask = 0;
+    const nw = neighbors.nw?.type ?? null;
+    const ne = neighbors.ne?.type ?? null;
+    const se = neighbors.se?.type ?? null;
+    const sw = neighbors.sw?.type ?? null;
+
+    if (nw && types.includes(nw)) mask |= 1;
+    if (ne && types.includes(ne)) mask |= 2;
+    if (se && types.includes(se)) mask |= 4;
+    if (sw && types.includes(sw)) mask |= 8;
+    return mask;
+  }
+
+  private diagMaskFrom(neighbors: ReturnType<typeof this.getAdjacencies>, matchType: TileType): number {
+    let mask = 0;
+    if (this.isMatch(neighbors.nw?.type ?? null, matchType)) mask |= 1;
+    if (this.isMatch(neighbors.ne?.type ?? null, matchType)) mask |= 2;
+    if (this.isMatch(neighbors.se?.type ?? null, matchType)) mask |= 4;
+    if (this.isMatch(neighbors.sw?.type ?? null, matchType)) mask |= 8;
+    return mask;
+  }
+
+  private countBits(mask: number): number {
+    return mask.toString(2).split('0').join('').length;
+  }
+
+  private rotationFromMask(mask: number): number {
+    switch (mask) {
+      case 1: return 90;
+      case 2: return 180;
+      case 4: return 270;
+      case 8: return 0;
+      default: return 0;
+    }
+  }
+
+  private rotationFromCornerMask(mask: number): number {
+    switch (mask) {
+      case 1 | 8: return 0;
+      case 1 | 2: return 90;
+      case 2 | 4: return 180;
+      case 4 | 8: return 270;
+      default: return 0;
+    }
+  }
+
+  private rotationFromMissing(mask: number): number {
+    switch (mask) {
+      case 1 | 2 | 8: return 0;
+      case 1 | 2 | 4: return 90;
+      case 2 | 4 | 8: return 180;
+      case 1 | 4 | 8: return 270;
+      default: return 0;
+    }
+  }
+
+  private rotationFromDiagMask(mask: number): number {
+    switch (mask) {
+      case 1: return 0;
+      case 2: return 90;
+      case 4: return 180;
+      case 8: return 270;
+      default: return 0;
+    }
+  }
+
+  private rotationFromDiagCornerMask(mask: number): number {
+    switch (mask) {
+      case 1 | 2: return 0;
+      case 2 | 4: return 90;
+      case 4 | 8: return 180;
+      case 8 | 1: return 270;
+      default: return 0;
+    }
+  }
+
+  private rotationFromDiagMissing(mask: number): number {
+    switch (mask) {
+      case 1 | 2 | 4: return 0;
+      case 2 | 4 | 8: return 90;
+      case 1 | 4 | 8: return 180;
+      case 1 | 2 | 8: return 270;
+      default: return 0;
+    }
+  }
+
+  private rotateDiagMask(mask: number, degreesCW: number): number {
+    const steps = ((degreesCW % 360) + 360) % 360;
+    if (steps === 0) return mask;
+    if (steps === 90) {
+      return ((mask & 1) ? 2 : 0) | ((mask & 2) ? 4 : 0) | ((mask & 4) ? 8 : 0) | ((mask & 8) ? 1 : 0);
+    }
+    if (steps === 180) {
+      return ((mask & 1) ? 4 : 0) | ((mask & 2) ? 8 : 0) | ((mask & 4) ? 1 : 0) | ((mask & 8) ? 2 : 0);
+    }
+    if (steps === 270) {
+      return ((mask & 1) ? 8 : 0) | ((mask & 2) ? 1 : 0) | ((mask & 4) ? 2 : 0) | ((mask & 8) ? 4 : 0);
+    }
+    return mask;
+  }
+
+  private oppositeRotation(mask: number): number {
+    if (mask === (2 | 8)) return 0;
+    if (mask === (1 | 4)) return 90;
+    return 0;
+  }
+
+  private solveCircuitBorderForFloor(neighbors: ReturnType<typeof this.getAdjacencies>): TileRenderData | null {
+    const mask = this.maskFrom(neighbors, 'wall');
+    const diagMask = this.diagMaskFrom(neighbors, 'wall');
+    const count = this.countBits(mask);
+    const diagCount = this.countBits(diagMask);
+
+    if (count === 4) {
+      return { texturePath: 'circuit_border_side4.png', rotationDegrees: 0 };
+    }
+
+    if (count === 3) {
+      return { texturePath: 'circuit_border_side3.png', rotationDegrees: this.rotationFromMissing(mask) };
+    }
+
+    if (count === 2) {
+      const isOpposite = mask === (1 | 4) || mask === (2 | 8);
+      if (isOpposite) {
+        return { texturePath: 'circuit_border_side_opposite.png', rotationDegrees: this.oppositeRotation(mask) };
+      }
+
+      const rotation = this.rotationFromCornerMask(mask);
+      const oppositeDiag =
+        (mask === (1 | 8) && (diagMask & 4)) ||
+        (mask === (1 | 2) && (diagMask & 8)) ||
+        (mask === (2 | 4) && (diagMask & 1)) ||
+        (mask === (4 | 8) && (diagMask & 2));
+
+      if (oppositeDiag) {
+        return { texturePath: 'circuit_border_corner_opposite_reversed.png', rotationDegrees: rotation };
+      }
+
+      return { texturePath: 'circuit_border_corner.png', rotationDegrees: rotation };
+    }
+
+    if (count === 1) {
+      const rotation = this.rotationFromMask(mask);
+      const rotatedDiagMask = this.rotateDiagMask(diagMask, (360 - rotation) % 360);
+      const relevantDiagMask = rotatedDiagMask & (2 | 4);
+      const diagCountLocal = this.countBits(relevantDiagMask);
+
+      if (diagCountLocal === 2) {
+        return { texturePath: 'circuit_border_side_and_reversed2.png', rotationDegrees: rotation };
+      }
+      if (diagCountLocal === 1) {
+        const texture = (relevantDiagMask & 2)
+          ? 'circuit_border_side_and_reversed.png'
+          : 'circuit_border_side_and_reversed_alt.png';
+        return { texturePath: texture, rotationDegrees: rotation };
+      }
+
+      return { texturePath: 'circuit_border_side.png', rotationDegrees: rotation };
+    }
+
+    if (count === 0) {
+      if (diagCount === 0) {
+        return null;
+      }
+      if (diagCount === 1) {
+        const rotation = this.rotationFromCornerMask(
+          diagMask === 1 ? (1 | 8) :
+          diagMask === 2 ? (1 | 2) :
+          diagMask === 4 ? (2 | 4) :
+          (4 | 8)
+        );
+        return { texturePath: 'circuit_border_corner_reversed.png', rotationDegrees: rotation };
+      }
+      if (diagCount === 2) {
+        const isOpposite = diagMask === (1 | 4) || diagMask === (2 | 8);
+        if (isOpposite) {
+          return { texturePath: 'circuit_border_corner_reversed_opposite.png', rotationDegrees: diagMask === (1 | 4) ? 0 : 90 };
+        }
+        return { texturePath: 'circuit_border_corner_reversed2.png', rotationDegrees: this.rotationFromDiagCornerMask(diagMask) };
+      }
+      if (diagCount === 3) {
+        return { texturePath: 'circuit_border_corner_reversed3.png', rotationDegrees: this.rotationFromDiagMissing(diagMask) };
+      }
+      if (diagCount === 4) {
+        return { texturePath: 'circuit_border_corner_reversed4.png', rotationDegrees: 0 };
+      }
+    }
+
+    return null;
+  }
+
+  private solveTransitionFromMask(prefix: string, mask: number): TileRenderData | null {
+    const count = this.countBits(mask);
+
+    if (count === 4) {
+      return { texturePath: `${prefix}_side4.png`, rotationDegrees: 0 };
+    }
+
+    if (count === 3) {
+      return { texturePath: `${prefix}_side3.png`, rotationDegrees: this.rotationFromMissing(mask) };
+    }
+
+    if (count === 2) {
+      const isOpposite = mask === (1 | 4) || mask === (2 | 8);
+      if (isOpposite) {
+        return { texturePath: `${prefix}_side_opposite.png`, rotationDegrees: this.oppositeRotation(mask) };
+      }
+      return { texturePath: `${prefix}_corner.png`, rotationDegrees: this.rotationFromCornerMask(mask) };
+    }
+
+    if (count === 1) {
+      return { texturePath: `${prefix}_side.png`, rotationDegrees: this.rotationFromMask(mask) };
+    }
+
+    return null;
+  }
+
+  private solveHazard(type: 'poison' | 'void', neighbors: ReturnType<typeof this.getAdjacencies>): TileRenderData {
+    const base = type === 'poison' ? 'poison' : 'vide';
+    const otherType = type === 'poison' ? 'void' : 'poison';
+    const otherMask = this.maskFrom(neighbors, otherType);
+    const otherDiagMask = this.diagMaskFrom(neighbors, otherType);
+    const floorMask = this.maskFrom(neighbors, 'floor') | otherMask;
+    const floorDiagMask = this.diagMaskFrom(neighbors, 'floor') | otherDiagMask;
+    const floorCount = this.countBits(floorMask);
+    const sameMask = this.maskFrom(neighbors, type);
+    const sameCount = this.countBits(sameMask);
+    const floorDiagCount = this.countBits(floorDiagMask);
+
+    if (sameCount === 4) {
+      if (floorDiagCount === 1) {
+        return {
+          texturePath: `${base}_transition_corner_reversed.png`,
+          rotationDegrees: this.rotationFromDiagMask(floorDiagMask),
+        };
+      }
+      if (floorDiagCount === 2) {
+        const isOpposite = floorDiagMask === (1 | 4) || floorDiagMask === (2 | 8);
+        if (isOpposite) {
+          return {
+            texturePath: `${base}_transition_corner_reversed_opposite.png`,
+            rotationDegrees: floorDiagMask === (1 | 4) ? 0 : 90,
+          };
+        }
+        return {
+          texturePath: `${base}_transition_corner_reversed2.png`,
+          rotationDegrees: this.rotationFromDiagCornerMask(floorDiagMask),
+        };
+      }
+      if (floorDiagCount === 3) {
+        return {
+          texturePath: `${base}_transition_corner_reversed3.png`,
+          rotationDegrees: this.rotationFromDiagMissing(floorDiagMask),
+        };
+      }
+      if (floorDiagCount === 4) {
+        return { texturePath: `${base}_transition_corner_reversed4.png`, rotationDegrees: 0 };
+      }
+      return { texturePath: `${base}_base.png`, rotationDegrees: 0 };
+    }
+
+    if (sameCount === 0) {
+      return { texturePath: `${base}_alone.png`, rotationDegrees: 0 };
+    }
+
+    if (floorCount === 1 && sameCount === 3) {
+      const rotation = this.rotationFromMask(floorMask);
+      const rotatedDiagMask = this.rotateDiagMask(floorDiagMask, (360 - rotation) % 360);
+      const relevantDiagMask = rotatedDiagMask & (2 | 4);
+      const diagCount = this.countBits(relevantDiagMask);
+      if (diagCount === 2) {
+        return { texturePath: `${base}_transition_side_and_reversed2.png`, rotationDegrees: rotation };
+      }
+      if (diagCount === 1) {
+        const texture = (relevantDiagMask & 2)
+          ? `${base}_transition_side_and_reversed.png`
+          : `${base}_transition_side_and_reversed_alt.png`;
+        return { texturePath: texture, rotationDegrees: rotation };
+      }
+    }
+
+    if (floorCount === 2 && floorMask !== (1 | 4) && floorMask !== (2 | 8)) {
+      const oppositeDiagIsFloor =
+        (floorMask === (1 | 8) && (floorDiagMask & 4)) ||
+        (floorMask === (1 | 2) && (floorDiagMask & 8)) ||
+        (floorMask === (2 | 4) && (floorDiagMask & 1)) ||
+        (floorMask === (4 | 8) && (floorDiagMask & 2));
+
+      if (oppositeDiagIsFloor) {
+        return {
+          texturePath: `${base}_transition_corner_opposite_reversed.png`,
+          rotationDegrees: this.rotationFromCornerMask(floorMask),
+        };
+      }
+    }
+
+    const transitionResult = this.solveTransitionFromMask(`${base}_transition`, floorMask);
+    if (transitionResult) return transitionResult;
+
+    return { texturePath: `${base}_base.png`, rotationDegrees: 0 };
+  }
+
+  private solveFloor(neighbors: ReturnType<typeof this.getAdjacencies>): TileRenderData {
+    const hasWall =
+      this.isBlockingType(neighbors.n?.type ?? null) ||
+      this.isBlockingType(neighbors.s?.type ?? null) ||
+      this.isBlockingType(neighbors.e?.type ?? null) ||
+      this.isBlockingType(neighbors.w?.type ?? null) ||
+      this.isBlockingType(neighbors.ne?.type ?? null) ||
+      this.isBlockingType(neighbors.nw?.type ?? null) ||
+      this.isBlockingType(neighbors.se?.type ?? null) ||
+      this.isBlockingType(neighbors.sw?.type ?? null);
+
+    if (hasWall) {
+      const circuit = this.solveCircuitBorderForFloor(neighbors);
+      if (circuit) return circuit;
+    }
+
+    const rand = Math.random();
+    if (rand < 0.05) {
+      return { texturePath: 'floor_var1.png', rotationDegrees: 0 };
+    }
+    if (rand < 0.10) {
+      return { texturePath: 'floor_var2.png', rotationDegrees: 0 };
+    }
+    return { texturePath: 'floor_base.png', rotationDegrees: 0 };
+  }
+
+  private solveTile(type: TileType, neighbors: ReturnType<typeof this.getAdjacencies>): TileRenderData {
+    if (type === 'spikes') {
+      return { texturePath: 'spikes.png', rotationDegrees: 0 };
+    }
+
+    if (type === 'wall' || type === 'pillar') {
+      return { texturePath: null, rotationDegrees: 0 };
+    }
+
+    if (type === 'poison' || type === 'void') {
+      return this.solveHazard(type, neighbors);
+    }
+
+    if (type === 'floor') {
+      return this.solveFloor(neighbors);
+    }
+
+    return { texturePath: 'floor_base.png', rotationDegrees: 0 };
+  }
+
+  private getTileRenderData(tile: TileData, adjacencies: ReturnType<typeof this.getAdjacencies>): TileRenderData {
+    return this.solveTile(tile.type, adjacencies);
+  }
+
+  private resolveTexturePath(textureName: string | null): string | null {
+    if (!textureName) return null;
+    return `${this.textureBasePath}/${textureName}`;
+  }
+
+  private getTexture(path: string): Texture {
+    if (!this.textureCache[path]) {
+      const texture = new Texture(path, this.scene, undefined, true);
+      texture.updateSamplingMode(Texture.NEAREST_SAMPLINGMODE);
+      texture.uScale = 1;
+      texture.vScale = 1;
+      this.textureCache[path] = texture;
+    }
+    return this.textureCache[path];
+  }
+
+  createTileMesh(tile: TileData): Mesh | null {
+    const key = this.getTileKey(tile.x, tile.z);
+    
+    if (this.tileMeshes.has(key)) {
+      return this.tileMeshes.get(key)!;
+    }
+
+    if (tile.type === 'wall' || tile.type === 'pillar' || tile.type === 'void') {
+      return null;
+    }
+
+    const useRelief = this.isProceduralReliefProfile();
+    const lightweightRelief = useRelief && ProceduralReliefTheme.isLightweightMode();
+    const isFloorLike = tile.type === 'floor' || tile.type === 'spikes';
+    const shouldDisplaceFloor = useRelief && isFloorLike && !lightweightRelief;
+    const tileMesh = MeshBuilder.CreateGround('tile_' + key, {
+      width: this.tileSize,
+      height: this.tileSize,
+      subdivisions: useRelief && isFloorLike ? (lightweightRelief ? 3 : 14) : 1,
+      updatable: shouldDisplaceFloor,
+    }, this.scene);
+
+    // Center the ground tile on its grid position (CreateGround has centered pivot)
+    tileMesh.position = new Vector3(
+      this.origin.x + tile.x * this.tileSize + this.tileSize / 2,
+      this.origin.y,
+      this.origin.z + tile.z * this.tileSize + this.tileSize / 2
+    );
+
+    const renderData = this.getTileRenderData(tile, this.getAdjacencies(tile.x, tile.z, this.tileGrid));
+
+    const adjacencies = this.getAdjacencies(tile.x, tile.z, this.tileGrid);
+    if (this.isProceduralReliefProfile() && isFloorLike) {
+      if (shouldDisplaceFloor) {
+        ProceduralReliefTheme.applyFloorDisplacement(tileMesh, tile.x, tile.z, this.tileSize);
+      }
+      
+      const neighborMasks = {
+        wallMask: this.maskFromTypes(adjacencies, ['wall']),
+        wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
+        pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
+        pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
+        poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+        poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+        voidMask: this.maskFromTypes(adjacencies, ['void']),
+        voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+      };
+
+      if (tile.type === 'spikes') {
+        tileMesh.material = ProceduralReliefTheme.createSpikeMaterial(this.scene, tile.x, tile.z, neighborMasks);
+      } else {
+        tileMesh.material = ProceduralReliefTheme.createFloorMaterial(this.scene, tile.x, tile.z, neighborMasks);
+      }
+    } else if (this.renderProfile === 'neoDungeonTest' && tile.type === 'floor') {
+      tileMesh.material = ProceduralDungeonTheme.createFloorMaterial(
+        this.scene,
+        key,
+        tile.x,
+        tile.z,
+        {
+          wallMask: this.maskFromTypes(adjacencies, ['wall', 'pillar']),
+          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall', 'pillar']),
+          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+          voidMask: this.maskFromTypes(adjacencies, ['void']),
+          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+        }
+      );
+    } else if (this.isProceduralReliefProfile() && tile.type === 'poison') {
+      const poisonMat = ProceduralReliefTheme.createPoisonMaterial(this.scene, key);
+      tileMesh.material = poisonMat;
+      this.poisonShaderMaterials.add(poisonMat);
+    } else if (this.renderProfile === 'neoDungeonTest' && tile.type === 'poison') {
+      const poisonMat = ProceduralDungeonTheme.createPoisonShaderMaterial(this.scene, key);
+      tileMesh.material = poisonMat;
+      this.poisonShaderMaterials.add(poisonMat);
+    } else {
+      const resolvedPath = this.resolveTexturePath(renderData.texturePath);
+      if (resolvedPath) {
+        const material = new StandardMaterial('tile_mat_' + key, this.scene);
+        material.diffuseTexture = this.getTexture(resolvedPath);
+        material.emissiveColor.set(0, 0, 0);
+        tileMesh.material = material;
+      }
+    }
+
+    if (tile.type === 'spikes') {
+      this.setupSpikeTileVisuals(key, tile, tileMesh);
+    }
+
+    if (tile.type === 'poison') {
+      this.setupPoisonTileParticles(key, tile);
+    }
+
+    const rotationDegrees = this.isProceduralReliefProfile() ? 0 : renderData.rotationDegrees;
+    const rotationRadians = ((rotationDegrees + this.rotationOffsetDegrees) * Math.PI) / 180;
+    tileMesh.rotation = new Vector3(0, rotationRadians, 0);
+
+    this.tileMeshes.set(key, tileMesh);
+    return tileMesh;
+  }
+
+  updateTile(x: number, z: number): void {
+    const key = this.getTileKey(x, z);
+    const tile = this.tileGrid.get(key);
+    const mesh = this.tileMeshes.get(key);
+
+    if (!tile || !mesh || !mesh.material) return;
+
+    const adjacencies = this.getAdjacencies(x, z, this.tileGrid);
+    const renderData = this.getTileRenderData(tile, adjacencies);
+
+    if (this.isProceduralReliefProfile() && tile.type === 'floor') {
+      mesh.material = ProceduralReliefTheme.createFloorMaterial(
+        this.scene,
+        tile.x,
+        tile.z,
+        {
+          wallMask: this.maskFromTypes(adjacencies, ['wall']),
+          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
+          pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
+          pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
+          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+          voidMask: this.maskFromTypes(adjacencies, ['void']),
+          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+        }
+      );
+    } else if (this.isProceduralReliefProfile() && tile.type === 'spikes') {
+      mesh.material = ProceduralReliefTheme.createSpikeMaterial(
+        this.scene,
+        tile.x,
+        tile.z,
+        {
+          wallMask: this.maskFromTypes(adjacencies, ['wall']),
+          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall']),
+          pillarMask: this.maskFromTypes(adjacencies, ['pillar']),
+          pillarDiagMask: this.diagMaskFromTypes(adjacencies, ['pillar']),
+          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+          voidMask: this.maskFromTypes(adjacencies, ['void']),
+          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+        }
+      );
+    } else if (this.renderProfile === 'neoDungeonTest' && tile.type === 'floor') {
+      this.disposeMeshMaterialSafely(mesh);
+      mesh.material = ProceduralDungeonTheme.createFloorMaterial(
+        this.scene,
+        key,
+        tile.x,
+        tile.z,
+        {
+          wallMask: this.maskFromTypes(adjacencies, ['wall', 'pillar']),
+          wallDiagMask: this.diagMaskFromTypes(adjacencies, ['wall', 'pillar']),
+          poisonMask: this.maskFromTypes(adjacencies, ['poison']),
+          poisonDiagMask: this.diagMaskFromTypes(adjacencies, ['poison']),
+          voidMask: this.maskFromTypes(adjacencies, ['void']),
+          voidDiagMask: this.diagMaskFromTypes(adjacencies, ['void']),
+        }
+      );
+    } else if (this.isProceduralReliefProfile() && tile.type === 'poison') {
+      if (!(mesh.material instanceof ShaderMaterial)) {
+        this.disposeMeshMaterialSafely(mesh);
+        const poisonMat = ProceduralReliefTheme.createPoisonMaterial(this.scene, key);
+        mesh.material = poisonMat;
+        this.poisonShaderMaterials.add(poisonMat);
+      }
+    } else if (this.renderProfile === 'neoDungeonTest' && tile.type === 'poison') {
+      if (!(mesh.material instanceof ShaderMaterial)) {
+        this.disposeMeshMaterialSafely(mesh);
+        const poisonMat = ProceduralDungeonTheme.createPoisonShaderMaterial(this.scene, key);
+        mesh.material = poisonMat;
+        this.poisonShaderMaterials.add(poisonMat);
+      }
+    } else {
+      const resolvedPath = this.resolveTexturePath(renderData.texturePath);
+      if (!resolvedPath) return;
+      (mesh.material as StandardMaterial).diffuseTexture = this.getTexture(resolvedPath);
+    }
+    
+    const rotationDegrees = this.isProceduralReliefProfile() ? 0 : renderData.rotationDegrees;
+    const rotationRadians = ((rotationDegrees + this.rotationOffsetDegrees) * Math.PI) / 180;
+    mesh.rotation = new Vector3(0, rotationRadians, 0);
+  }
+
+  rebuildRegion(centerX: number, centerZ: number, radius: number = 2): void {
+    for (let x = centerX - radius; x <= centerX + radius; x++) {
+      for (let z = centerZ - radius; z <= centerZ + radius; z++) {
+        this.updateTile(x, z);
+      }
+    }
+  }
+
+  private disposeMeshMaterialSafely(mesh: Mesh): void {
+    const mat = mesh.material;
+    if (mat && typeof (mat as any).dispose === 'function') {
+      const name = mat.name || "";
+      if (
+        !name.startsWith('f_mat_') &&
+        !name.startsWith('s_mat_') &&
+        !name.startsWith('w_mat_') &&
+        !name.startsWith('poison_') &&
+        !name.startsWith('relief_wall_core_')
+      ) {
+        (mat as any).dispose(false, true);
+      }
+    }
+    mesh.material = null;
+  }
+
+  clearTiles(): void {
+    this.clearSpikeMeshes();
+    this.clearPoisonParticles();
+    for (const material of this.poisonShaderMaterials) {
+      const name = material.name || "";
+      if (
+        !name.startsWith('f_mat_') &&
+        !name.startsWith('s_mat_') &&
+        !name.startsWith('w_mat_') &&
+        !name.startsWith('poison_') &&
+        !name.startsWith('relief_wall_core_')
+      ) {
+        material.dispose(false, true);
+      }
+    }
+    this.poisonShaderMaterials.clear();
+    this.tileMeshes.forEach(mesh => {
+      if (mesh) {
+        this.disposeMeshMaterialSafely(mesh);
+        mesh.dispose();
+      }
+    });
+    this.tileMeshes.clear();
+    this.tileGrid.clear();
+  }
+
+  dispose(): void {
+    this.clearTiles();
+    Object.values(this.textureCache).forEach(texture => texture.dispose());
+    this.textureCache = {};
+    if (this.poisonParticleMaterial) {
+      this.poisonParticleMaterial.dispose();
+      this.poisonParticleMaterial = null;
+    }
+  }
+
+  update(deltaTime: number): void {
+    this.updatePoisonParticles(deltaTime);
+
+    if (this.poisonShaderMaterials.size > 0) {
+      this.poisonShaderTime += deltaTime;
+      for (const material of this.poisonShaderMaterials) {
+        material.setFloat('time', this.poisonShaderTime);
+      }
+    }
+
+    this.spikesCycleTimer -= deltaTime;
+    if (this.spikesCycleTimer <= 0) {
+      this.spikesActive = !this.spikesActive;
+      this.spikesCycleTimer = this.spikesActive ? this.spikesActiveDuration : this.spikesInactiveDuration;
+    }
+
+    // Update animation progress
+    const targetT = this.spikesActive ? 1.0 : 0.0;
+    if (this.spikesAnimationT !== targetT) {
+      const diff = targetT - this.spikesAnimationT;
+      const step = Math.sign(diff) * this.spikesAnimationSpeed * deltaTime;
+      if (Math.abs(step) >= Math.abs(diff)) {
+        this.spikesAnimationT = targetT;
+      } else {
+        this.spikesAnimationT += step;
+      }
+      this.applySpikeVisualState();
+    }
+  }
+
+  areSpikesActive(): boolean {
+    // Only count as active for damage if they are at least halfway up
+    return this.spikesAnimationT > 0.5;
+  }
+
+  private setupSpikeTileVisuals(key: string, tile: TileData, tileMesh: Mesh): void {
+    const spikeMaterial = new StandardMaterial(`spike_mat_${key}`, this.scene);
+    spikeMaterial.diffuseColor = new Color3(0.62, 0.08, 0.08);
+    spikeMaterial.emissiveColor = new Color3(0.24, 0.03, 0.03);
+    spikeMaterial.alpha = 0.95;
+
+    const meshes: Mesh[] = [];
+
+    // 14x14 motif with 2 pixels empty / 2 pixels spikes along length
+    // Use three centers aligned to the "spike" bands: 2.5, 6.5, 10.5
+    const patternCenters = [2.5, 6.5, 10.5];
+    const toLocal = (pixelCenter: number) => ((pixelCenter / 14) - 0.5) * this.tileSize;
+    const spikeHeight = this.tileSize * 0.38;
+    const spikeBase = this.tileSize * 0.19;
+
+    const centerX = this.origin.x + tile.x * this.tileSize + this.tileSize / 2;
+    const centerZ = this.origin.z + tile.z * this.tileSize + this.tileSize / 2;
+
+    for (const px of patternCenters) {
+      for (const pz of patternCenters) {
+        const spike = MeshBuilder.CreateCylinder(`spike_${key}_${px}_${pz}`, {
+          height: spikeHeight,
+          diameterTop: 0,
+          diameterBottom: spikeBase,
+          tessellation: 4,
+        }, this.scene);
+        spike.position.x = centerX + toLocal(px);
+        spike.position.z = centerZ + toLocal(pz);
+        spike.position.y = this.origin.y + spikeHeight / 2;
+        spike.rotation.y = Math.PI / 4;
+        spike.material = spikeMaterial;
+        spike.isPickable = false;
+        meshes.push(spike);
+      }
+    }
+
+    this.spikeMeshes.set(key, meshes);
+    this.applySpikeTileState(key, tileMesh);
+  }
+
+  private applySpikeVisualState(): void {
+    for (const [key] of this.spikeMeshes) {
+      const tileMesh = this.tileMeshes.get(key);
+      if (!tileMesh) continue;
+      this.applySpikeTileState(key, tileMesh);
+    }
+  }
+  private applySpikeTileState(key: string, tileMesh: Mesh): void {
+    const meshes = this.spikeMeshes.get(key) ?? [];
+    const spikeHeight = this.tileSize * 0.38;
+    const baseLine = this.origin.y;
+    
+    // Easing for smoother "snap" feel
+    const easedT = this.spikesAnimationT < 0.5 
+      ? 2 * this.spikesAnimationT * this.spikesAnimationT 
+      : 1 - Math.pow(-2 * this.spikesAnimationT + 2, 2) / 2;
+
+    for (const spike of meshes) {
+      // Scale spikes instead of moving them to avoid showing them below the floor
+      spike.scaling.y = easedT;
+      // Adjust position so the base of the cylinder stays at the floor level
+      spike.position.y = baseLine + (spikeHeight * easedT) / 2;
+      spike.isVisible = this.spikesAnimationT > 0.001;
+    }
+  }
+
+  private clearSpikeMeshes(): void {
+    for (const meshes of this.spikeMeshes.values()) {
+      for (const mesh of meshes) {
+        this.disposeMeshMaterialSafely(mesh);
+        mesh.dispose();
+      }
+    }
+    this.spikeMeshes.clear();
+  }
+
+  private setupPoisonTileParticles(key: string, tile: TileData): void {
+    const count = 12;
+    const particles: PoisonParticleData[] = [];
+
+    const centerX = this.origin.x + tile.x * this.tileSize + this.tileSize / 2;
+    const centerZ = this.origin.z + tile.z * this.tileSize + this.tileSize / 2;
+
+    for (let i = 0; i < count; i++) {
+      const particle = MeshBuilder.CreateSphere(`poison_fx_${key}_${i}`, {
+        diameter: this.tileSize * 0.06,
+        segments: 1,
+      }, this.scene);
+
+      const localX = (Math.random() - 0.5) * this.tileSize * 0.8;
+      const localZ = (Math.random() - 0.5) * this.tileSize * 0.8;
+      const baseY = this.origin.y + 0.08 + Math.random() * this.tileSize * 0.18;
+
+      particle.position.set(centerX + localX, baseY, centerZ + localZ);
+      particle.isPickable = false;
+
+      if (!this.poisonParticleMaterial) {
+        this.poisonParticleMaterial = new StandardMaterial('poison_particles_mat', this.scene);
+        this.poisonParticleMaterial.diffuseColor = new Color3(0.2, 1.0, 0.45);
+        this.poisonParticleMaterial.emissiveColor = new Color3(0.08, 0.55, 0.2);
+        this.poisonParticleMaterial.alpha = 0.9;
+      }
+      particle.material = this.poisonParticleMaterial;
+
+      particles.push({
+        mesh: particle,
+        baseY,
+        phase: Math.random() * Math.PI * 2,
+        speed: 1.2 + Math.random() * 1.6,
+      });
+    }
+
+    this.poisonParticles.set(key, particles);
+  }
+
+  private updatePoisonParticles(deltaTime: number): void {
+    if (this.poisonParticles.size === 0) return;
+
+    for (const particles of this.poisonParticles.values()) {
+      for (const particle of particles) {
+        particle.phase += deltaTime * particle.speed;
+        const bob = Math.sin(particle.phase) * this.tileSize * 0.045;
+        const wobble = Math.cos(particle.phase * 0.7) * this.tileSize * 0.02;
+        particle.mesh.position.y = particle.baseY + bob;
+        particle.mesh.position.x += wobble * deltaTime;
+        particle.mesh.position.z += Math.sin(particle.phase * 1.3) * this.tileSize * 0.004 * deltaTime;
+      }
+    }
+  }
+
+  private clearPoisonParticles(): void {
+    for (const particles of this.poisonParticles.values()) {
+      for (const particle of particles) {
+        particle.mesh.dispose();
+      }
+    }
+    this.poisonParticles.clear();
+  }
+
+  getStats(): { tileCount: number; textureCount: number; meshCount: number } {
+    return {
+      tileCount: this.tileGrid.size,
+      textureCount: Object.keys(this.textureCache).length,
+      meshCount: this.tileMeshes.size,
+    };
+  }
+}

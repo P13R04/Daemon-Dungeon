@@ -1,0 +1,50 @@
+{
+  "id": "room_necromancer_graveyard",
+  "name": "Necromancer_graveyard",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#.##.##.##.##.#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.##.##.##.##.#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 7,
+      "y": 5,
+      "enemyType": "necromancer_boss"
+    },
+    {
+      "x": 2,
+      "y": 5,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 11.8,
+      "y": 5,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 5.1,
+      "y": 5.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 9,
+      "y": 5.1,
+      "enemyType": "zombie_basic"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

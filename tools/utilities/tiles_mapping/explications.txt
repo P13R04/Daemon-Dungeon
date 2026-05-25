@@ -1,0 +1,46 @@
+à chaque fois qu'un nombre est dans le titre de la tuile ça signifie :
+pas de nombre = à gauche pour "side", en haut à gauche pour "corner" / "corner reversed"
+2 = en haut à gauche et en haut à droite
+3 = tout sauf en bas à gauche pour les coins, tout sauf en bas pour les côtés
+4 = les quatres coins / les quatre côtés.
+
+circuit_border = tuile adjacente à un mur ou un pilier.
+Circuit_border_side = un mur/pilier sur le côté
+circuit_border_corner = un mur/pilier sur deux côtés consécutif (forment un coin)
+circuit_border_opposite = un mur/pilier sur deux côtés opposés (couloir étroit d'une case de sol)
+circuit_border_side3 = cul de sac, murs sur 3 côtés
+circuit_border_corner_reversed = coin inversé permet d'entourer correctement un pilier par exemple et de faire la liaison entre 4 "circuit_border_side" (se place en diagonale d'un pilier)
+circuit_border_corner_reversed_opposite = deux piliers dans des diagonales opposées (défaut en haut à gauche et en bas à droite)
+
+
+circuit_border_side_and_reversed est un cas particulier avec circuit_border_side à gauche et un corner_reversed en haut à droite au cas ou il y a un mur d'un côté et un pilier en diagonale (cas spécifique)
+circuit_border_side_and_reversed_alt est la même choose mais avec le reversed_corner en bas à droite pour gérer les différentes géométries
+circuit_border_side_and_reversed2 combine les deux : mur d'un côté et piliers sur 2 diagonales
+circuit_border_corner_opposite_reversed est dans un coin (murs/piliers sur deux côtés ET un pilier dans la diagonale opposée)
+
+On a le même fonctionnement pour le poison et le vide sur les cases de "transition" ou la notation corner, side se fait par rapport au sol adjacent.
+
+Dans tous les cas les textures pourront être tournées pour correspondre à la géométrie (mettre le coin ou side du bon côté)
+
+
+
+spikes = case de pics
+vide_base = case de vide "pleine" (entourée par 4 autres cases de vide)
+vide_alone = case de vide "seule" (entouré par 4 cases de sol normal)
+poison_alone et poison_base = pareil
+
+
+
+
+
+sol     poison      sol
+sol     poison      poison
+sol     poison      sol
+
+sol     poison      sol
+sol     poison      poison
+sol     poison      poison
+
+sol     poison      poison
+sol     poison      poison
+sol     poison      sol

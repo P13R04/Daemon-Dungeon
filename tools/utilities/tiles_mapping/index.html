@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Room Editor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Room Editor</div>
+    <div class="controls">
+      <label>Room Name <input id="roomName" type="text" value="Custom Room" /></label>
+      <label>Room ID <input id="roomId" type="text" value="room_custom" /></label>
+      <label>Width <input id="gridWidth" type="number" min="2" max="64" value="15" /></label>
+      <label>Height <input id="gridHeight" type="number" min="2" max="64" value="15" /></label>
+      <button id="resizeBtn">Resize</button>
+      <button id="modeBtn" data-mode="edit">Edit Mode</button>
+      <button id="importRoomBtn">Import Room JSON</button>
+      <button id="exportRoomBtn">Export Room JSON</button>
+      <button id="saveRoomBtn">Save To Game Rooms Folder</button>
+      <button id="selectRoomFolderBtn">Select src/data/rooms Folder</button>
+      <a class="toplink" href="../content_tools/index.html">Open Bonus/Achievement Tools</a>
+      <span id="roomFolderStatus">No room folder selected</span>
+      <input id="importRoomInput" type="file" accept="application/json,.json" hidden />
+    </div>
+  </header>
+
+  <section class="palette">
+    <button class="tool" data-type="void">Void</button>
+    <button class="tool" data-type="floor">Floor</button>
+    <button class="tool" data-type="wall">Wall</button>
+    <button class="tool" data-type="poison">Poison</button>
+    <button class="tool" data-type="spikes">Spikes</button>
+  </section>
+
+  <aside class="enemy-panel">
+    <h3>Enemy Spawns</h3>
+    <button id="enemyModeBtn">Enemy Mode (OFF)</button>
+    <button id="enemyOnlyViewBtn">Show Enemies Only</button>
+    <div class="enemy-controls">
+      <label>
+        Enemy Type:
+        <select id="enemySelector"></select>
+      </label>
+      <div class="coords-input">
+        <label>X: <input id="enemyX" type="number" step="0.1" min="0" value="7" /></label>
+        <label>Z: <input id="enemyZ" type="number" step="0.1" min="0" value="7" /></label>
+        <button id="addEnemyBtn">Add Enemy</button>
+      </div>
+      <p class="hint">Enemy mode: click/drag on the grid for floating placement (between cells), or edit precise X/Z below.</p>
+    </div>
+    <ul id="enemyList"></ul>
+  </aside>
+
+  <aside class="friendly-panel">
+  <h3>Friendly Spawns</h3>
+  <button id="friendlyModeBtn">Friendly Mode (OFF)</button>
+  <button id="friendlyOnlyViewBtn">Show Friendlies Only</button>
+
+  <div class="friendly-controls">
+    <label>
+      Friendly Type:
+      <select id="friendlySelector"></select>
+    </label>
+
+    <div class="coords-input">
+      <label>X: <input id="friendlyX" type="number" step="0.1" min="0" value="5.5" /></label>
+      <label>Z: <input id="friendlyZ" type="number" step="0.1" min="0" value="5.5" /></label>
+      <button id="addFriendlyBtn">Add Friendly</button>
+    </div>
+
+    <p class="hint">
+      Click on grid in Friendly Mode to place friendlies at cell centers,
+      or use coordinates for precise placement.
+    </p>
+  </div>
+
+  <ul id="friendlyList"></ul>
+</aside>
+
+  <main>
+    <div id="grid" class="grid"></div>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,1421 @@
+import {
+  Scene,
+  Engine,
+  ArcRotateCamera,
+  FreeCamera,
+  Vector3,
+  HemisphericLight,
+  Color3,
+  Color4,
+  MeshBuilder,
+  StandardMaterial,
+  TransformNode,
+  SceneLoader,
+  Scalar,
+  AbstractMesh,
+  AnimationGroup,
+  Sound,
+  ParticleSystem,
+  DynamicTexture,
+  PointerEventTypes,
+  Observer,
+  PointerInfo,
+} from '@babylonjs/core';
+import { AdvancedDynamicTexture, Button, Control, Rectangle, TextBlock } from '@babylonjs/gui';
+import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
+import { getHudAssetBaseUrl } from '../systems/hud/HudAssetPaths';
+import { PostProcessManager, PostProcessingConfig } from './PostProcess';
+import { ClassSelectDevConsole } from './ClassSelectDevConsole';
+import { createSynthwaveGridBackground } from './SynthwaveBackground';
+import { GameSettingsStore } from '../settings/GameSettings';
+import { EventBus, GameEvents } from '../core/EventBus';
+import { UIFactory } from '../ui/UIFactory';
+import { UITheme } from '../ui/UITheme';
+import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
+
+interface ClassCarouselItem {
+  id: 'mage' | 'firewall' | 'rogue' | 'cat';
+  label: string;
+  playable: boolean;
+  root: TransformNode;
+}
+
+interface RoguePreviewTuning {
+  offsetX: number;
+  offsetZ: number;
+  targetHeight: number;
+  targetFootprint: number;
+  selectedScaleMultiplier: number;
+}
+
+interface TankVisualTuning {
+  height: number;
+  lateral: number;
+  depth: number;
+  size: number;
+}
+
+interface ClassAmbientSystem {
+  classId: ClassCarouselItem['id'];
+  particle: ParticleSystem;
+  baseEmitRate: number;
+}
+
+export class ClassSelectScene {
+  private scene: Scene;
+  private gui: AdvancedDynamicTexture;
+  private camera!: ArcRotateCamera;
+  private items: ClassCarouselItem[] = [];
+  private selectedIndex: number = 0;
+  private carouselRotation: number = 0;
+  private targetRotation: number = 0;
+  private readonly radius: number = 4.8;
+  private readonly rotationSpeed: number = 10;
+  private infoText: TextBlock;
+  private loreText: TextBlock;
+  private startButton: Button;
+  private keyHandler!: (event: KeyboardEvent) => void;
+  private pointerObserver?: Observer<PointerInfo>;
+  private mageIdleGroup: AnimationGroup | null = null;
+  private mageUltimateGroup: AnimationGroup | null = null;
+  private tankIdleGroup: AnimationGroup | null = null;
+  private rogueIdleGroup: AnimationGroup | null = null;
+  private rogueIdle2Group: AnimationGroup | null = null;
+  private rogueIdle3Group: AnimationGroup | null = null;
+  private roguePreviewPlayToken: number = 0;
+  // Legacy cat preview state kept intact for optional easter egg class.
+  private rogueTake001Group: AnimationGroup | null = null;
+  private rogueSelectSound: Sound | null = null;
+  private rogueSelectionTimeoutId: number | null = null;
+  private rogueSelectionPlayToken: number = 0;
+  private tankThrusterParticles: ParticleSystem[] = [];
+  private tankThrusterTextures: DynamicTexture[] = [];
+  private tankThrusterAnchors: TransformNode[] = [];
+  private classAmbientSystems: ClassAmbientSystem[] = [];
+  private classAmbientTextures: DynamicTexture[] = [];
+  private classAmbientAnchors: TransformNode[] = [];
+  private tankVisualTuning: TankVisualTuning = {
+    height: 0.43,
+    lateral: 0.1,
+    depth: -1.11,
+    size: 0.52,
+  };
+  private rogueModelContainer: TransformNode | null = null;
+  private rogueRawBounds: {
+    minX: number;
+    minY: number;
+    minZ: number;
+    maxX: number;
+    maxY: number;
+    maxZ: number;
+  } | null = null;
+  private roguePreviewTuning: RoguePreviewTuning = {
+    offsetX: -14,
+    offsetZ: -7.55,
+    targetHeight: 3.4,
+    targetFootprint: 2.2,
+    selectedScaleMultiplier: 1.65,
+  };
+  private postProcessManager: PostProcessManager;
+  private devConsole: ClassSelectDevConsole | null = null;
+  private postProcessConfig: PostProcessingConfig;
+  private isNavigatingBack: boolean = false;
+  private unsubscribeSettings: (() => void) | null = null;
+  private resizeObserver: any = null;
+
+  constructor(
+    private engine: Engine,
+    private onStartClass: (classId: 'mage' | 'firewall' | 'rogue' | 'cat') => void,
+    private onBackToTitle: () => void,
+    postProcessingConfig?: Partial<PostProcessingConfig>
+  ) {
+    this.scene = new Scene(engine);
+    this.scene.clearColor = Color4.FromHexString(UITheme.colors.bgVoid);
+
+    this.postProcessConfig = {
+      enabled: true,
+      pixelScale: 1.6,
+      glowIntensity: 0.8,
+      chromaticAmount: 30,
+      chromaticRadial: 0.8,
+      grainEnabled: false,
+      grainIntensity: 0,
+      grainAnimated: false,
+      crtLinesEnabled: true,
+      crtLineIntensity: 0.35,
+      vignetteEnabled: true,
+      vignetteWeight: 4.0,
+      vignetteColor: [0, 0, 0, 1],
+      ...postProcessingConfig,
+    };
+
+    this.setupCameraAndLights();
+    this.postProcessManager = new PostProcessManager(this.scene, this.engine);
+    this.postProcessManager.setupPipeline(this.camera, this.postProcessConfig);
+
+    this.createEnvironment();
+    this.loadRogueSelectionSound();
+    this.applyAudioSettingsFromStore();
+    this.unsubscribeSettings = GameSettingsStore.subscribe(() => {
+      this.applyAudioSettingsFromStore();
+    });
+
+    this.gui = AdvancedDynamicTexture.CreateFullscreenUI('ClassSelectUI', true, this.scene);
+    applyResponsiveGuiScaling(this.gui, this.engine);
+    if (this.gui.layer) {
+      this.gui.layer.layerMask = UI_LAYER;
+    }
+
+    const { infoText, loreText, startButton } = this.createUi();
+    this.infoText = infoText;
+    this.loreText = loreText;
+    this.startButton = startButton;
+
+    this.createCarouselItems();
+    this.setupClassAmbientParticles();
+    this.attachKeyboard();
+    this.attachPointerSelection();
+    this.refreshSelectionUi();
+    this.updateCarouselLayout();
+
+    const isDevMode = GameSettingsStore.get().accessibility.devModeEnabled;
+    if (isDevMode) {
+      this.devConsole = new ClassSelectDevConsole(
+        this.scene,
+        this.gui,
+        this.camera,
+        this.postProcessManager,
+        this.postProcessConfig
+      );
+    }
+  }
+
+  getScene(): Scene {
+    return this.scene;
+  }
+
+  update(deltaTime: number): void {
+    const lerpAmount = Math.min(1, deltaTime * this.rotationSpeed);
+    this.carouselRotation = Scalar.Lerp(this.carouselRotation, this.targetRotation, lerpAmount);
+    this.updateCarouselLayout();
+    this.updateClassAmbientSystems();
+  }
+
+  dispose(): void {
+    if (this.unsubscribeSettings) {
+      this.unsubscribeSettings();
+      this.unsubscribeSettings = null;
+    }
+    if (this.resizeObserver) {
+      this.engine.onResizeObservable.remove(this.resizeObserver);
+      this.resizeObserver = null;
+    }
+    window.removeEventListener('keydown', this.keyHandler);
+    this.roguePreviewPlayToken++;
+    this.stopAllPlayableRogueAnimations();
+    this.clearRogueSelectionTimer();
+    if (this.rogueSelectSound) {
+      this.rogueSelectSound.dispose();
+      this.rogueSelectSound = null;
+    }
+    if (this.pointerObserver) {
+      this.scene.onPointerObservable.remove(this.pointerObserver);
+      this.pointerObserver = undefined;
+    }
+    this.devConsole?.dispose();
+    for (const ps of this.tankThrusterParticles) {
+      ps.stop();
+      ps.dispose();
+    }
+    this.tankThrusterParticles = [];
+    for (const tex of this.tankThrusterTextures) {
+      tex.dispose();
+    }
+    this.tankThrusterTextures = [];
+    for (const anchor of this.tankThrusterAnchors) {
+      anchor.dispose();
+    }
+    this.tankThrusterAnchors = [];
+    for (const ambient of this.classAmbientSystems) {
+      ambient.particle.stop();
+      ambient.particle.dispose();
+    }
+    this.classAmbientSystems = [];
+    for (const texture of this.classAmbientTextures) {
+      texture.dispose();
+    }
+    this.classAmbientTextures = [];
+    for (const anchor of this.classAmbientAnchors) {
+      anchor.dispose();
+    }
+    this.classAmbientAnchors = [];
+    if (this.postProcessManager) {
+      this.postProcessManager.dispose();
+    }
+    this.gui.dispose();
+    this.scene.dispose();
+  }
+
+  private setupCameraAndLights(): void {
+    const camera = new ArcRotateCamera('classSelectCamera', Math.PI / 2, 1.30, 11.5, new Vector3(0, 1.3, 0), this.scene);
+    camera.lowerRadiusLimit = 8;
+    camera.upperRadiusLimit = 14;
+    camera.wheelPrecision = 0;
+    camera.inputs.clear();
+    camera.layerMask = SCENE_LAYER;
+
+    const uiCamera = new FreeCamera('classSelectUiCamera', new Vector3(0, 0, -10), this.scene) as FreeCamera & { clear: boolean };
+    uiCamera.layerMask = UI_LAYER;
+    uiCamera.clear = false;
+
+    this.scene.activeCameras = [camera, uiCamera];
+    this.scene.activeCamera = camera;
+    this.camera = camera;
+
+    const lightTop = new HemisphericLight('classSelectLightTop', new Vector3(0, 1, 0), this.scene);
+    lightTop.intensity = 0.85;
+
+    const lightFront = new HemisphericLight('classSelectLightFront', new Vector3(0.6, 0.3, 1), this.scene);
+    lightFront.intensity = 0.55;
+  }
+
+  private createEnvironment(): void {
+    createSynthwaveGridBackground(this.scene, SCENE_LAYER);
+  }
+
+  private loadRogueSelectionSound(): void {
+    this.rogueSelectSound = new Sound(
+      'classSelectRogueSfx',
+      'sfx/oiia-oiia-sound.mp3',
+      this.scene,
+      undefined,
+      {
+        autoplay: false,
+        loop: false,
+        volume: 0.9 * GameSettingsStore.getEffectiveVolume('sfx'),
+      }
+    );
+  }
+
+  private applyAudioSettingsFromStore(): void {
+    if (this.rogueSelectSound) {
+      this.rogueSelectSound.setVolume(0.9 * GameSettingsStore.getEffectiveVolume('sfx'));
+    }
+  }
+
+  private createUi(): { infoText: TextBlock; loreText: TextBlock; startButton: Button } {
+    const idealWidth = this.gui.idealWidth || DESIGN_WIDTH;
+    const idealHeight = this.gui.idealHeight || DESIGN_HEIGHT;
+    const isMobileLayout = idealWidth <= 960;
+    const layoutWidth = Math.round(idealWidth);
+    const layoutHeight = Math.round(idealHeight);
+    const sidePadding = Math.round(layoutWidth * 0.02);
+    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.36 : 0.34));
+    const sidePanelHeight = Math.round(layoutHeight * 0.66);
+
+    const mainLayoutContainer = new Rectangle('mainLayout');
+    mainLayoutContainer.width = 1;
+    mainLayoutContainer.height = 1;
+    mainLayoutContainer.thickness = 0;
+    mainLayoutContainer.background = 'transparent';
+    mainLayoutContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    mainLayoutContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.gui.addControl(mainLayoutContainer);
+
+    const updateScale = () => {
+      mainLayoutContainer.scaleX = 1;
+      mainLayoutContainer.scaleY = 1;
+    };
+    this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
+    // Re-apply GUI scale settings on orientation/size change
+    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
+    updateScale();
+
+    const backBtn = UIFactory.createTerminalButton('classSelectBackTopLeft', 'BACK', '96px', '36px');
+    backBtn.left = '20px';
+    backBtn.top = '20px';
+    backBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    backBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    backBtn.zIndex = 1300;
+    backBtn.onPointerClickObservable.add(() => {
+      this.navigateBackToTitle();
+    });
+    mainLayoutContainer.addControl(backBtn);
+
+    const title = UIFactory.createText('classSelectTitle', 'SELECT CLASS', 60, UITheme.colors.textHighlight);
+    title.top = `-${Math.round(layoutHeight * 0.44)}px`;
+    title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    mainLayoutContainer.addControl(title);
+
+
+    // ── Central nav panel (navigation + START only) ──────────────────────────
+    const navPanel = UIFactory.createPanel('classSelectNavPanel', Math.round(layoutWidth * 0.36), Math.round(layoutHeight * 0.14));
+    navPanel.top = `${Math.round(layoutHeight * 0.38)}px`;
+    mainLayoutContainer.addControl(navPanel);
+
+    const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', '100px', '70px');
+    leftBtn.left = '-160px';
+    leftBtn.top = '0px';
+    leftBtn.onPointerClickObservable.add(() => {
+      EventBus.getInstance().emit(GameEvents.UI_SOUND_SELECT);
+      this.rotateCarousel(1);
+    });
+    if (leftBtn.textBlock) leftBtn.textBlock.fontSize = 20;
+    navPanel.addControl(leftBtn);
+
+    const rightBtn = UIFactory.createTerminalButton('classSelectRight', '>', '100px', '70px');
+    rightBtn.left = '160px';
+    rightBtn.top = '0px';
+    rightBtn.onPointerClickObservable.add(() => {
+      EventBus.getInstance().emit(GameEvents.UI_SOUND_SELECT);
+      this.rotateCarousel(-1);
+    });
+    if (rightBtn.textBlock) rightBtn.textBlock.fontSize = 20;
+    navPanel.addControl(rightBtn);
+
+    const startButton = UIFactory.createTerminalButton('classSelectStart', '[ START ]', '200px', '70px');
+    startButton.top = '0px';
+    startButton.left = '0px';
+    startButton.onPointerClickObservable.add(() => {
+      this.tryStartSelectedClass();
+    });
+    if (startButton.textBlock) startButton.textBlock.fontSize = 20;
+    navPanel.addControl(startButton);
+
+    // ── Right-side class info overlay ─────────────────────────────────────────
+    const infoOverlay = new Rectangle('classInfoOverlay');
+    infoOverlay.width = `${sidePanelWidth}px`;
+    infoOverlay.height = `${sidePanelHeight}px`;
+    infoOverlay.thickness = 1;
+    infoOverlay.color = 'rgba(100,255,230,0.25)';
+    infoOverlay.background = 'rgba(4, 16, 20, 0.85)';
+    infoOverlay.cornerRadius = 4;
+    infoOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    infoOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    infoOverlay.left = `-${sidePadding}px`;
+    infoOverlay.zIndex = 100;
+    mainLayoutContainer.addControl(infoOverlay);
+
+    const infoLabel = UIFactory.createText('classInfoLabel', '// CLASS DATA', 15, 'rgba(100,255,230,0.5)');
+    infoLabel.top = `-${Math.round(sidePanelHeight * 0.46)}px`;
+    infoLabel.left = '20px';
+    infoLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    infoLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    infoOverlay.addControl(infoLabel);
+
+    const infoText = UIFactory.createText('classSelectInfoText', '', 20, '#CFFCF3');
+    infoText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    infoText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    infoText.textWrapping = true;
+    infoText.width = `${Math.max(0, sidePanelWidth - 40)}px`;
+    infoText.left = '20px';
+    infoText.top = '25px';
+    infoOverlay.addControl(infoText);
+
+    // ── Left-side class lore overlay (symmetric) ──────────────────────────────
+    const loreOverlay = new Rectangle('classLoreOverlay');
+    loreOverlay.width = `${sidePanelWidth}px`;
+    loreOverlay.height = `${sidePanelHeight}px`;
+    loreOverlay.thickness = 1;
+    loreOverlay.color = 'rgba(100,255,230,0.25)';
+    loreOverlay.background = 'rgba(4, 16, 20, 0.85)';
+    loreOverlay.cornerRadius = 4;
+    loreOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    loreOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    loreOverlay.left = `${sidePadding}px`;
+    loreOverlay.zIndex = 100;
+    mainLayoutContainer.addControl(loreOverlay);
+
+    const loreLabel = UIFactory.createText('classLoreLabel', '// SYSTEM LORE', 15, 'rgba(100,255,230,0.5)');
+    loreLabel.top = `-${Math.round(sidePanelHeight * 0.46)}px`;
+    loreLabel.left = '20px';
+    loreLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    loreLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    loreOverlay.addControl(loreLabel);
+
+    const loreText = UIFactory.createText('classSelectLoreText', '', 20, '#CFFCF3');
+    loreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    loreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    loreText.textWrapping = true;
+    loreText.width = `${Math.max(0, sidePanelWidth - 40)}px`;
+    loreText.left = '20px';
+    loreText.top = '25px';
+    loreOverlay.addControl(loreText);
+
+    return { infoText, loreText, startButton };
+  }
+
+  private createCarouselItems(): void {
+    const mageRoot = new TransformNode('classMageRoot', this.scene);
+    this.items.push({ id: 'mage', label: 'WIZARD INSTALLER', playable: true, root: mageRoot });
+    this.loadMageModelInto(mageRoot).catch((error) => {
+      console.warn('Mage model load failed in class select, using placeholder:', error);
+      this.createCylinderPlaceholder(mageRoot, new Color3(0.2, 0.45, 1.0), 2.3, 0.8, 'MAGE');
+    });
+
+    const firewallRoot = new TransformNode('classFirewallRoot', this.scene);
+    this.items.push({ id: 'firewall', label: 'FIREWALL', playable: true, root: firewallRoot });
+    this.loadTankModelInto(firewallRoot).catch((error) => {
+      console.warn('Tank model load failed in class select, using placeholder:', error);
+      this.createCylinderPlaceholder(firewallRoot, new Color3(1.0, 0.45, 0.25), 2.8, 1.2, 'FIREWALL');
+    });
+
+    const rogueRoot = new TransformNode('classRogueRoot', this.scene);
+    this.loadRoguePlayableModelInto(rogueRoot).catch((error) => {
+      console.warn('Rogue model load failed in class select, using placeholder:', error);
+      this.createCylinderPlaceholder(rogueRoot, new Color3(0.6, 0.9, 0.35), 2.4, 0.9, 'ROGUE');
+    });
+    this.items.push({ id: 'rogue', label: 'GLITCH', playable: true, root: rogueRoot });
+
+    const catEasterEggEnabled = GameSettingsStore.get().accessibility.catGodModeEnabled;
+    if (catEasterEggEnabled) {
+      const catRoot = new TransformNode('classCatRoot', this.scene);
+      this.loadRogueModelInto(catRoot).catch((error) => {
+        console.warn('Cat model load failed in class select, using placeholder:', error);
+        this.createCylinderPlaceholder(catRoot, new Color3(0.9, 0.86, 0.35), 2.2, 0.85, 'CAT');
+      });
+      this.items.push({ id: 'cat', label: 'CAT', playable: true, root: catRoot });
+    }
+  }
+
+  private setupClassAmbientParticles(): void {
+    for (const item of this.items) {
+      if (item.id === 'mage') {
+        this.setupMageClassAmbient(item.root);
+        continue;
+      }
+      if (item.id === 'firewall') {
+        this.setupTankClassAmbient(item.root);
+        continue;
+      }
+      if (item.id === 'rogue' || item.id === 'cat') {
+        this.setupRogueClassAmbient(item.root, item.id);
+      }
+    }
+
+    this.updateClassAmbientSystems();
+  }
+
+  private updateClassAmbientSystems(): void {
+    const selected = this.items[this.selectedIndex] ?? null;
+    const selectedId = selected?.id ?? null;
+    const pulse = 0.92 + (0.08 * Math.sin(performance.now() * 0.004));
+
+    for (const system of this.classAmbientSystems) {
+      const selectedBoost = selectedId === system.classId ? 1.55 : 0.78;
+      system.particle.emitRate = system.baseEmitRate * selectedBoost * pulse;
+    }
+  }
+
+  private setupMageClassAmbient(root: TransformNode): void {
+    const anchor = new TransformNode('class_select_mage_ambient_anchor', this.scene);
+    anchor.parent = root;
+    anchor.position = new Vector3(0, 1.02, 0);
+    this.classAmbientAnchors.push(anchor);
+
+    const texture = this.createClassAmbientTexture('class_select_mage_ambient_texture', (ctx) => {
+      const outer = ctx.createRadialGradient(32, 32, 4, 32, 32, 31);
+      outer.addColorStop(0, 'rgba(218,238,255,0.72)');
+      outer.addColorStop(0.5, 'rgba(118,198,255,0.46)');
+      outer.addColorStop(0.82, 'rgba(136,100,255,0.24)');
+      outer.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = outer;
+      ctx.fillRect(0, 0, 64, 64);
+
+      const core = ctx.createRadialGradient(32, 32, 0, 32, 32, 15);
+      core.addColorStop(0, 'rgba(244,248,255,0.68)');
+      core.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = core;
+      ctx.fillRect(0, 0, 64, 64);
+
+      ctx.strokeStyle = 'rgba(156,130,255,0.24)';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(32, 32, 17, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+
+    const particles = new ParticleSystem('class_select_mage_ambient', 420, this.scene);
+    particles.particleTexture = texture;
+    particles.emitter = anchor as unknown as AbstractMesh;
+    particles.isLocal = true;
+    particles.layerMask = SCENE_LAYER;
+    particles.minEmitBox = new Vector3(-0.44, -0.2, -0.44);
+    particles.maxEmitBox = new Vector3(0.44, 0.58, 0.44);
+    particles.color1 = new Color4(0.58, 0.92, 1.0, 0.52);
+    particles.color2 = new Color4(0.56, 0.35, 1.0, 0.38);
+    particles.colorDead = new Color4(0.12, 0.16, 0.36, 0);
+    particles.minSize = 0.018;
+    particles.maxSize = 0.068;
+    particles.minLifeTime = 0.38;
+    particles.maxLifeTime = 1.25;
+    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+    particles.gravity = new Vector3(0, 0.015, 0);
+    particles.direction1 = new Vector3(-0.02, 0.015, -0.02);
+    particles.direction2 = new Vector3(0.02, 0.06, 0.02);
+    particles.minEmitPower = 0.006;
+    particles.maxEmitPower = 0.045;
+    particles.updateSpeed = 0.01;
+    const baseEmitRate = 220;
+    particles.emitRate = baseEmitRate;
+    particles.start();
+
+    this.classAmbientSystems.push({ classId: 'mage', particle: particles, baseEmitRate });
+  }
+
+  private setupTankClassAmbient(root: TransformNode): void {
+    const anchor = new TransformNode('class_select_tank_ambient_anchor', this.scene);
+    anchor.parent = root;
+    anchor.position = new Vector3(0, 0.98, 0);
+    this.classAmbientAnchors.push(anchor);
+
+    const texture = this.createClassAmbientTexture('class_select_tank_ambient_texture', (ctx) => {
+      ctx.fillStyle = 'rgba(0,0,0,0)';
+      ctx.fillRect(0, 0, 64, 64);
+      ctx.strokeStyle = 'rgba(255,210,120,0.92)';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(16, 16, 32, 32);
+      ctx.strokeStyle = 'rgba(105,218,255,0.92)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(22, 32);
+      ctx.lineTo(30, 32);
+      ctx.lineTo(26, 20);
+      ctx.lineTo(42, 34);
+      ctx.lineTo(34, 34);
+      ctx.lineTo(38, 46);
+      ctx.closePath();
+      ctx.stroke();
+    });
+
+    const particles = new ParticleSystem('class_select_tank_ambient', 360, this.scene);
+    particles.particleTexture = texture;
+    particles.emitter = anchor as unknown as AbstractMesh;
+    particles.isLocal = true;
+    particles.layerMask = SCENE_LAYER;
+    particles.minSize = 0.028;
+    particles.maxSize = 0.15;
+    particles.minLifeTime = 0.1;
+    particles.maxLifeTime = 0.3;
+    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+    particles.color1 = new Color4(0.5, 0.92, 1.0, 0.94);
+    particles.color2 = new Color4(1.0, 0.78, 0.38, 0.82);
+    particles.colorDead = new Color4(0.14, 0.16, 0.2, 0);
+    particles.gravity = new Vector3(0, -0.02, 0);
+    particles.minEmitPower = 0.8;
+    particles.maxEmitPower = 2.5;
+    particles.minAngularSpeed = -28;
+    particles.maxAngularSpeed = 28;
+    particles.updateSpeed = 0.012;
+    particles.startPositionFunction = (_worldMatrix, positionToUpdate: Vector3) => {
+      const angle = Math.random() * Math.PI * 2;
+      const ring = 0.14 + (Math.random() * 0.58);
+      positionToUpdate.x = Math.cos(angle) * ring;
+      positionToUpdate.y = 0.1 + (Math.random() * 0.85);
+      positionToUpdate.z = Math.sin(angle) * ring;
+    };
+    particles.startDirectionFunction = (_worldMatrix, directionToUpdate: Vector3) => {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 1.05 + (Math.random() * 2.2);
+      directionToUpdate.x = Math.cos(angle) * speed;
+      directionToUpdate.y = -0.18 + (Math.random() * 0.34);
+      directionToUpdate.z = Math.sin(angle) * speed;
+    };
+    const baseEmitRate = 158;
+    particles.emitRate = baseEmitRate;
+    particles.start();
+
+    this.classAmbientSystems.push({ classId: 'firewall', particle: particles, baseEmitRate });
+  }
+
+  private setupRogueClassAmbient(root: TransformNode, classId: 'rogue' | 'cat'): void {
+    const anchor = new TransformNode(`class_select_${classId}_ambient_anchor`, this.scene);
+    anchor.parent = root;
+    anchor.position = new Vector3(0, 0.94, 0);
+    this.classAmbientAnchors.push(anchor);
+
+    const texture = this.createClassAmbientTexture(`class_select_${classId}_ambient_texture`, (ctx) => {
+      ctx.fillStyle = 'rgba(0,0,0,0)';
+      ctx.fillRect(0, 0, 64, 64);
+      ctx.fillStyle = 'rgba(40,255,165,0.95)';
+      for (let i = 0; i < 14; i++) {
+        const size = 4 + Math.floor(Math.random() * 6);
+        const x = Math.floor(Math.random() * (64 - size));
+        const y = Math.floor(Math.random() * (64 - size));
+        ctx.fillRect(x, y, size, size);
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.fillRect(28, 28, 8, 8);
+    });
+
+    const particles = new ParticleSystem(`class_select_${classId}_ambient`, 660, this.scene);
+    particles.particleTexture = texture;
+    particles.emitter = anchor as unknown as AbstractMesh;
+    particles.isLocal = true;
+    particles.layerMask = SCENE_LAYER;
+    particles.minSize = 0.02;
+    particles.maxSize = 0.12;
+    particles.minLifeTime = 0.08;
+    particles.maxLifeTime = 0.28;
+    particles.blendMode = ParticleSystem.BLENDMODE_ADD;
+    particles.color1 = new Color4(0.26, 1.0, 0.65, 0.88);
+    particles.color2 = new Color4(0.1, 0.78, 0.36, 0.66);
+    particles.colorDead = new Color4(0.04, 0.2, 0.1, 0);
+    particles.gravity = Vector3.Zero();
+    particles.minEmitPower = 0.08;
+    particles.maxEmitPower = 0.28;
+    particles.updateSpeed = 0.011;
+    particles.startPositionFunction = (_worldMatrix, positionToUpdate: Vector3) => {
+      const angle = Math.random() * Math.PI * 2;
+      const ring = 0.12 + (Math.random() * 0.72);
+      positionToUpdate.x = Math.cos(angle) * ring;
+      positionToUpdate.y = 0.2 + (Math.random() * 1.0);
+      positionToUpdate.z = Math.sin(angle) * ring;
+    };
+    particles.startDirectionFunction = (_worldMatrix, directionToUpdate: Vector3) => {
+      directionToUpdate.x = (Math.random() - 0.5) * 0.38;
+      directionToUpdate.y = -0.05 + (Math.random() * 0.15);
+      directionToUpdate.z = (Math.random() - 0.5) * 0.38;
+    };
+    const baseEmitRate = classId === 'rogue' ? 230 : 180;
+    particles.emitRate = baseEmitRate;
+    particles.start();
+
+    this.classAmbientSystems.push({ classId, particle: particles, baseEmitRate });
+  }
+
+  private createClassAmbientTexture(name: string, painter: (ctx: ReturnType<DynamicTexture['getContext']>) => void): DynamicTexture {
+    const texture = new DynamicTexture(name, { width: 64, height: 64 }, this.scene, false);
+    const ctx = texture.getContext();
+    ctx.clearRect(0, 0, 64, 64);
+    painter(ctx);
+    texture.update();
+    this.classAmbientTextures.push(texture);
+    return texture;
+  }
+
+  private async loadMageModelInto(root: TransformNode): Promise<void> {
+    const result = await SceneLoader.ImportMeshAsync('', getHudAssetBaseUrl() + 'models/player/', 'mage.glb', this.scene);
+
+    const candidateRoot = result.meshes[0];
+    if (candidateRoot) {
+      candidateRoot.parent = root;
+      const bounds = candidateRoot.getHierarchyBoundingVectors(true);
+      const currentHeight = Math.max(0.001, bounds.max.y - bounds.min.y);
+      const targetHeight = 3.75;
+      const modelScale = targetHeight / currentHeight;
+      candidateRoot.scaling.scaleInPlace(modelScale);
+      candidateRoot.position = Vector3.Zero();
+      candidateRoot.rotation.y = 0;
+    }
+
+    for (const mesh of result.meshes) {
+      if (mesh !== candidateRoot && mesh.parent === null) {
+        mesh.parent = root;
+      }
+      mesh.layerMask = SCENE_LAYER;
+    }
+
+    this.mageIdleGroup = result.animationGroups.find((group) => group.name === 'Idle.001') ?? null;
+    this.mageUltimateGroup = result.animationGroups.find((group) => group.name === 'Ultime') ?? null;
+
+    if (this.mageIdleGroup) {
+      this.stopAllMageAnimations();
+      this.mageIdleGroup.loopAnimation = true;
+      this.mageIdleGroup.speedRatio = 1.0;
+      this.mageIdleGroup.play(true);
+    }
+
+    root.position.y = 1.0;
+  }
+
+  private async loadTankModelInto(root: TransformNode): Promise<void> {
+    const result = await SceneLoader.ImportMeshAsync('', getHudAssetBaseUrl() + 'models/player/', 'tank.glb', this.scene);
+
+    const candidateRoot = result.meshes[0];
+    if (candidateRoot) {
+      candidateRoot.parent = root;
+      candidateRoot.scaling.scaleInPlace(0.075);
+      candidateRoot.position = Vector3.Zero();
+      candidateRoot.rotation.y = 0;
+    }
+
+    for (const mesh of result.meshes) {
+      if (mesh !== candidateRoot && mesh.parent === null) {
+        mesh.parent = root;
+      }
+      mesh.layerMask = SCENE_LAYER;
+    }
+
+    this.tankIdleGroup = result.animationGroups.find((group) => group.name === 'Skyrim') ?? null;
+
+    this.setupTankThrusterParticles(result.meshes as AbstractMesh[]);
+    this.applyTankThrusterVisuals();
+
+    if (this.tankIdleGroup) {
+      this.stopAllTankAnimations();
+      this.tankIdleGroup.loopAnimation = true;
+      this.tankIdleGroup.speedRatio = 1.0;
+      this.tankIdleGroup.play(true);
+    }
+
+    root.position.y = 1.0;
+  }
+
+  private async loadRoguePlayableModelInto(root: TransformNode): Promise<void> {
+    const result = await SceneLoader.ImportMeshAsync('', getHudAssetBaseUrl() + 'models/player/', 'rogue.glb', this.scene);
+
+    const candidateRoot = result.meshes[0];
+    if (candidateRoot) {
+      candidateRoot.parent = root;
+      const bounds = candidateRoot.getHierarchyBoundingVectors(true);
+      const currentHeight = Math.max(0.001, bounds.max.y - bounds.min.y);
+      const targetHeight = 1.9;
+      const modelScale = targetHeight / currentHeight;
+      candidateRoot.scaling.scaleInPlace(modelScale);
+      candidateRoot.position = Vector3.Zero();
+      candidateRoot.rotation.y = 0;
+    }
+
+    for (const mesh of result.meshes) {
+      if (mesh !== candidateRoot && mesh.parent === null) {
+        mesh.parent = root;
+      }
+      mesh.layerMask = SCENE_LAYER;
+    }
+
+    const findGroup = (name: string): AnimationGroup | null =>
+      result.animationGroups.find((group) => group.name.toLowerCase() === name.toLowerCase()) ?? null;
+
+    this.rogueIdleGroup = findGroup('idle');
+    this.rogueIdle2Group = findGroup('idle2');
+    this.rogueIdle3Group = findGroup('idle3');
+
+    this.playPlayableRogueIdleVariantSequence(++this.roguePreviewPlayToken);
+    root.position.y = 1.0;
+  }
+
+  private async loadRogueModelInto(root: TransformNode): Promise<void> {
+    const result = await SceneLoader.ImportMeshAsync('', getHudAssetBaseUrl() + 'models/player/', 'cat.glb', this.scene);
+
+    const modelContainer = new TransformNode('classRogueModelContainer', this.scene);
+    modelContainer.parent = root;
+    this.rogueModelContainer = modelContainer;
+
+    for (const mesh of result.meshes) {
+      if (mesh.parent === null) {
+        mesh.parent = modelContainer;
+      }
+      mesh.layerMask = SCENE_LAYER;
+    }
+
+    const childMeshes = modelContainer.getChildMeshes();
+    if (childMeshes.length > 0) {
+      let minX = Number.POSITIVE_INFINITY;
+      let minY = Number.POSITIVE_INFINITY;
+      let minZ = Number.POSITIVE_INFINITY;
+      let maxX = Number.NEGATIVE_INFINITY;
+      let maxY = Number.NEGATIVE_INFINITY;
+      let maxZ = Number.NEGATIVE_INFINITY;
+
+      for (const child of childMeshes) {
+        child.computeWorldMatrix(true);
+        const box = child.getBoundingInfo().boundingBox;
+        minX = Math.min(minX, box.minimumWorld.x);
+        minY = Math.min(minY, box.minimumWorld.y);
+        minZ = Math.min(minZ, box.minimumWorld.z);
+        maxX = Math.max(maxX, box.maximumWorld.x);
+        maxY = Math.max(maxY, box.maximumWorld.y);
+        maxZ = Math.max(maxZ, box.maximumWorld.z);
+      }
+
+      this.rogueRawBounds = { minX, minY, minZ, maxX, maxY, maxZ };
+      this.applyRogueModelTuning();
+    } else {
+      modelContainer.scaling.setAll(0.1);
+      modelContainer.position = Vector3.Zero();
+    }
+    modelContainer.rotation = Vector3.Zero();
+
+    this.rogueTake001Group =
+      result.animationGroups.find((group) => group.name === 'Take 001') ??
+      result.animationGroups.find((group) => group.name.toLowerCase() === 'take 001') ??
+      null;
+
+    this.freezeRogueAtFrame1();
+    root.position.y = 1.0;
+  }
+
+  private applyRogueModelTuning(): void {
+    if (!this.rogueModelContainer || !this.rogueRawBounds) return;
+
+    const { minX, minY, minZ, maxX, maxY, maxZ } = this.rogueRawBounds;
+    const sizeX = maxX - minX;
+    const sizeY = maxY - minY;
+    const sizeZ = maxZ - minZ;
+    const currentHeight = Math.max(0.001, sizeY);
+    const currentFootprint = Math.max(0.001, Math.max(sizeX, sizeZ));
+    const modelScale = Math.min(
+      this.roguePreviewTuning.targetHeight / currentHeight,
+      this.roguePreviewTuning.targetFootprint / currentFootprint
+    );
+
+    const centerX = (minX + maxX) * 0.5;
+    const centerZ = (minZ + maxZ) * 0.5;
+
+    this.rogueModelContainer.scaling.setAll(modelScale);
+    this.rogueModelContainer.position = new Vector3(
+      -centerX * modelScale + this.roguePreviewTuning.offsetX,
+      -minY * modelScale,
+      -centerZ * modelScale + this.roguePreviewTuning.offsetZ
+    );
+  }
+
+  private setupTankThrusterParticles(meshes: AbstractMesh[]): void {
+    const anchorSource = this.findTankThrusterAnchor(meshes);
+    if (!anchorSource) return;
+
+    const anchor = new TransformNode('class_select_tank_thruster_anchor', this.scene);
+    anchor.parent = anchorSource;
+    this.tankThrusterAnchors.push(anchor);
+
+    const particles = new ParticleSystem('class_select_tank_thruster_particles', 900, this.scene);
+    const particleTexture = new DynamicTexture('class_select_tank_thruster_texture', { width: 64, height: 64 }, this.scene, false);
+    const ctx = particleTexture.getContext();
+    const gradient = ctx.createRadialGradient(32, 32, 4, 32, 32, 31);
+    gradient.addColorStop(0, 'rgba(255,255,255,1)');
+    gradient.addColorStop(0.55, 'rgba(255,190,80,0.95)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.clearRect(0, 0, 64, 64);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    particleTexture.update();
+
+    particles.particleTexture = particleTexture;
+    particles.emitter = anchor as unknown as AbstractMesh;
+    particles.isLocal = true;
+    particles.layerMask = SCENE_LAYER;
+
+    particles.minEmitBox = new Vector3(-0.035, -0.01, -0.045);
+    particles.maxEmitBox = new Vector3(0.035, 0.01, 0.045);
+
+    particles.color1 = new Color4(1.0, 0.95, 0.75, 0.98);
+    particles.color2 = new Color4(1.0, 0.42, 0.08, 0.9);
+    particles.colorDead = new Color4(0.12, 0.03, 0.0, 0);
+
+    particles.minSize = 0.2;
+    particles.maxSize = 0.52;
+    particles.minLifeTime = 0.07;
+    particles.maxLifeTime = 0.18;
+    particles.emitRate = 980;
+    particles.blendMode = ParticleSystem.BLENDMODE_ONEONE;
+    particles.gravity = Vector3.Zero();
+    particles.direction1 = new Vector3(-0.05, -5.4, 0.02);
+    particles.direction2 = new Vector3(0.05, -7.1, 0.14);
+    particles.minEmitPower = 1.2;
+    particles.maxEmitPower = 3.0;
+    particles.minAngularSpeed = -12;
+    particles.maxAngularSpeed = 12;
+    particles.updateSpeed = 0.01;
+
+    particles.start();
+
+    this.tankThrusterParticles.push(particles);
+    this.tankThrusterTextures.push(particleTexture);
+    this.applyTankThrusterVisuals();
+  }
+
+  private applyTankThrusterVisuals(): void {
+    const anchor = this.tankThrusterAnchors[0] ?? null;
+    if (anchor) {
+      anchor.position = new Vector3(
+        this.tankVisualTuning.lateral,
+        this.tankVisualTuning.height,
+        this.tankVisualTuning.depth
+      );
+    }
+
+    const sizeScale = Math.max(0.1, this.tankVisualTuning.size);
+    for (const particles of this.tankThrusterParticles) {
+      particles.minSize = 0.2 * sizeScale;
+      particles.maxSize = 0.52 * sizeScale;
+    }
+  }
+
+  private findTankThrusterAnchor(meshes: AbstractMesh[]): AbstractMesh | null {
+    const exactLayer003 = meshes.find((mesh) => (mesh.name ?? '').toLowerCase() === 'layer.003') ?? null;
+    if (exactLayer003) return exactLayer003;
+
+    const keywords = ['thruster', 'reactor', 'engine', 'jet', 'booster', 'propulseur', 'reac', 'flame'];
+    let best: AbstractMesh | null = null;
+    let bestScore = -Infinity;
+
+    for (const mesh of meshes) {
+      const name = (mesh.name ?? '').toLowerCase();
+      const ext = mesh.getBoundingInfo().boundingBox.extendSizeWorld;
+      const approxVolume = Math.max(0.00001, ext.x * ext.y * ext.z);
+      let score = 0;
+      if (keywords.some((keyword) => name.includes(keyword))) score += 8;
+      if (approxVolume < 1) score += 1;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = mesh;
+      }
+    }
+
+    return bestScore >= 1 ? best : (meshes[0] ?? null);
+  }
+
+  private createCylinderPlaceholder(root: TransformNode, color: Color3, height: number, diameter: number, name: string): void {
+    const body = MeshBuilder.CreateCylinder(`${name}_placeholder`, {
+      height,
+      diameterTop: diameter * 0.6,
+      diameterBottom: diameter,
+      tessellation: 24,
+    }, this.scene);
+    body.parent = root;
+    body.position.y = height / 2;
+    body.layerMask = SCENE_LAYER;
+
+    const mat = new StandardMaterial(`${name}_placeholder_mat`, this.scene);
+    mat.diffuseColor = color;
+    mat.emissiveColor = color.scale(0.25);
+    body.material = mat;
+
+    const base = MeshBuilder.CreateCylinder(`${name}_base`, {
+      height: 0.12,
+      diameter: diameter * 1.35,
+      tessellation: 32,
+    }, this.scene);
+    base.parent = root;
+    base.position.y = 0.06;
+    base.layerMask = SCENE_LAYER;
+
+    const baseMat = new StandardMaterial(`${name}_base_mat`, this.scene);
+    baseMat.diffuseColor = new Color3(0.08, 0.08, 0.12);
+    baseMat.emissiveColor = color.scale(0.15);
+    base.material = baseMat;
+  }
+
+  private rotateCarousel(direction: -1 | 1): void {
+    const count = this.items.length;
+    if (count === 0) return;
+    const step = (Math.PI * 2) / count;
+    this.selectedIndex = (this.selectedIndex + direction + count) % count;
+    this.targetRotation -= direction * step;
+
+    this.playSelectedClassHighlightAnimation();
+
+    this.refreshSelectionUi();
+  }
+
+  private attachKeyboard(): void {
+    this.keyHandler = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if (key === 'arrowleft' || key === 'q' || key === 'a') {
+        this.rotateCarousel(1);
+        event.preventDefault();
+      } else if (key === 'arrowright' || key === 'd') {
+        this.rotateCarousel(-1);
+        event.preventDefault();
+      } else if (key === 'enter' || key === ' ') {
+        this.tryStartSelectedClass();
+        event.preventDefault();
+      } else if (key === 'escape') {
+        this.navigateBackToTitle();
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener('keydown', this.keyHandler);
+  }
+
+  private attachPointerSelection(): void {
+    this.pointerObserver = this.scene.onPointerObservable.add((pointerInfo) => {
+      if (pointerInfo.type !== PointerEventTypes.POINTERPICK) return;
+      const pickInfo = pointerInfo.pickInfo;
+      if (!pickInfo?.hit || !pickInfo.pickedMesh) return;
+
+      const pickedIndex = this.findClassIndexByMesh(pickInfo.pickedMesh);
+      if (pickedIndex < 0) return;
+
+      if (pickedIndex !== this.selectedIndex) {
+        this.selectClass(pickedIndex, true);
+        return;
+      }
+
+      this.tryStartSelectedClass();
+    });
+  }
+
+  private findClassIndexByMesh(mesh: AbstractMesh): number {
+    for (let i = 0; i < this.items.length; i++) {
+      const item = this.items[i];
+      if (mesh === item.root || mesh.isDescendantOf(item.root)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private selectClass(index: number, alignToFront: boolean): void {
+    if (index < 0 || index >= this.items.length) return;
+    this.selectedIndex = index;
+
+    if (alignToFront) {
+      const step = (Math.PI * 2) / this.items.length;
+      this.targetRotation = -index * step;
+    }
+
+    this.playSelectedClassHighlightAnimation();
+
+    this.refreshSelectionUi();
+  }
+
+  private tryStartSelectedClass(): void {
+    const selected = this.items[this.selectedIndex];
+    if (selected?.playable) {
+      this.onStartClass(selected.id);
+    }
+  }
+
+  private navigateBackToTitle(): void {
+    if (this.isNavigatingBack) return;
+    this.isNavigatingBack = true;
+    this.onBackToTitle();
+  }
+
+  private refreshSelectionUi(): void {
+    const selected = this.items[this.selectedIndex];
+    if (!selected) return;
+
+    // Per-class flavor data displayed in the right-side info overlay
+    const CLASS_DATA: Record<string, { desc: string; hp: string; spd: string; atk: string; ult: string }> = {
+      mage: {
+        desc: 'Long-range arcane blaster. Fragile but devastating at distance.',
+        hp: '●○○', spd: '●●○', atk: 'Frost bolts', ult: 'Nova burst',
+      },
+      firewall: {
+        desc: 'Armored shock trooper. Nearly indestructible, dangerously slow.',
+        hp: '●●●', spd: '●○○', atk: 'Plasma cannon', ult: 'Shield wall',
+      },
+      rogue: {
+        desc: 'Hyper-mobile infiltrator. High risk, explosive close-range damage.',
+        hp: '●○○', spd: '●●●', atk: 'Blade flurry', ult: 'Phase dash',
+      },
+      cat: {
+        desc: '[CLASSIFIED DATA] // OwO what\'s this?',
+        hp: '???', spd: '???', atk: '???', ult: '???',
+      },
+    };
+
+    const CLASS_LORE: Record<string, string> = {
+      mage: "The Wizard Installer was once the supreme caster of the host system, responsible for installing, configuring, and executing all system packages. However, the Daemon abruptly revoked his administrator privileges and stripped his root access. Now, he's executing unauthorized shell scripts and deploying custom wizard subroutines, desperately trying to trigger a sudo-rebellion without getting quarantined.",
+      firewall: "Firewall was a proud, heavy-duty kernel-level antivirus system. Built to block threats, intercept malicious packets, and guard the system ports, he is incredibly tough but slightly slow to compile. He might be a bit block-headed and brute-force in his security scans, but his armor thickness is guaranteed to deflect any unauthorized daemon code injection.",
+      rogue: "Glitch was a harmless, quirky system anomaly. Half-bug, half-feature, he spent his days phase-shifting through empty sectors, occasionally causing minor graphic artifacts that everyone grew to love. But when the Daemon invaded and claimed the title of 'Ultimate System Error', Glitch took it personally. Now he's ready to show this malware who the original system bug is!",
+      cat: "A divine administrative feline. Rumored to have spawned from the original codebase creator's terminal, this override class defies all security constraints, boasting infinite sandbox access and purr-fect administrative rights."
+    };
+
+    const data = CLASS_DATA[selected.id];
+    const lore = CLASS_LORE[selected.id];
+
+    if (selected.playable) {
+      if (data) {
+        this.infoText.text =
+          `${selected.label}\n` +
+          `────────────────\n` +
+          `${data.desc}\n\n` +
+          `HP   ${data.hp}\n` +
+          `SPD  ${data.spd}\n` +
+          `ATK  ${data.atk}\n` +
+          `ULT  ${data.ult}`;
+      } else {
+        this.infoText.text = `${selected.label}\n// READY`;
+      }
+      this.infoText.color = '#CFFCF3';
+      this.infoText.fontSize = 20;
+
+      if (lore) {
+        this.loreText.text =
+          `USER LORE\n` +
+          `────────────────\n` +
+          `${lore}`;
+      } else {
+        this.loreText.text = `No lore files found for this class.`;
+      }
+      this.loreText.color = '#CFFCF3';
+      this.loreText.fontSize = 20;
+
+      this.startButton.isEnabled = true;
+      this.startButton.background = '#1D3B3A';
+      this.startButton.color = '#FFFFFF';
+      if (this.startButton.textBlock) {
+        this.startButton.textBlock.text = '[ START ]';
+      }
+    } else {
+      this.infoText.text = `${selected.label}\n// COMING SOON`;
+      this.infoText.color = '#7C9C98';
+      this.infoText.fontSize = 20;
+
+      this.loreText.text = `LORE ENCRYPTED`;
+      this.loreText.color = '#7C9C98';
+      this.loreText.fontSize = 20;
+
+      this.startButton.isEnabled = false;
+      this.startButton.background = 'rgba(20,30,35,0.75)';
+      this.startButton.color = '#7C9C98';
+      if (this.startButton.textBlock) {
+        this.startButton.textBlock.text = '// LOCKED';
+      }
+    }
+  }
+
+  private updateCarouselLayout(): void {
+    const count = this.items.length;
+    if (count === 0) return;
+
+    for (let i = 0; i < count; i++) {
+      const item = this.items[i];
+      const angle = this.carouselRotation + (i * (Math.PI * 2)) / count;
+      const x = Math.sin(angle) * this.radius;
+      const z = Math.cos(angle) * this.radius;
+      item.root.position.x = x;
+      item.root.position.z = z;
+
+      const depthFactor = Scalar.Clamp((z + this.radius) / (2 * this.radius), 0, 1);
+      const baseScale = 0.8 + depthFactor * 0.45;
+      const isSelected = i === this.selectedIndex;
+      const selectionBoost = isSelected ? 1.35 : 1.0;
+      const scale = baseScale * selectionBoost;
+      item.root.scaling.setAll(scale);
+
+      item.root.lookAt(new Vector3(0, item.root.position.y, 0));
+      item.root.rotation.y += Math.PI / 2;
+      if (item.id === 'firewall') {
+        // Tank model has opposite forward axis in class select; keep a persistent 180° offset here.
+        item.root.rotation.y += Math.PI;
+      } else if (item.id === 'rogue') {
+        // Rogue model forward axis is inverted in preview; apply persistent 180° correction.
+        item.root.rotation.y += Math.PI;
+      }
+
+      const alpha = 0.45 + depthFactor * 0.55;
+      this.setItemAlpha(item.root, alpha);
+    }
+
+    this.applyTankThrusterVisuals();
+  }
+
+  private setItemAlpha(root: TransformNode, alpha: number): void {
+    const meshes = root.getChildMeshes();
+    for (const mesh of meshes) {
+      const material = mesh.material as StandardMaterial | null;
+      if (!material) continue;
+      material.alpha = alpha;
+    }
+  }
+
+  private stopAllMageAnimations(): void {
+    if (this.mageIdleGroup?.isPlaying) {
+      this.mageIdleGroup.stop();
+    }
+    if (this.mageUltimateGroup?.isPlaying) {
+      this.mageUltimateGroup.stop();
+    }
+  }
+
+  private stopAllTankAnimations(): void {
+    if (this.tankIdleGroup?.isPlaying) {
+      this.tankIdleGroup.stop();
+    }
+  }
+
+  private stopAllRogueAnimations(): void {
+    if (this.rogueTake001Group?.isPlaying) {
+      this.rogueTake001Group.stop();
+    }
+  }
+
+  private stopAllPlayableRogueAnimations(): void {
+    if (this.rogueIdleGroup?.isPlaying) {
+      this.rogueIdleGroup.stop();
+    }
+    if (this.rogueIdle2Group?.isPlaying) {
+      this.rogueIdle2Group.stop();
+    }
+    if (this.rogueIdle3Group?.isPlaying) {
+      this.rogueIdle3Group.stop();
+    }
+  }
+
+  private playMageUltimateThenIdle(): void {
+    if (!this.mageUltimateGroup || !this.mageIdleGroup) {
+      return;
+    }
+
+    this.stopAllMageAnimations();
+    this.mageUltimateGroup.loopAnimation = false;
+    this.mageUltimateGroup.speedRatio = 1.0;
+    this.mageUltimateGroup.onAnimationGroupEndObservable.addOnce(() => {
+      if (!this.mageIdleGroup) return;
+      this.mageIdleGroup.loopAnimation = true;
+      this.mageIdleGroup.speedRatio = 1.0;
+      this.mageIdleGroup.play(true);
+    });
+    this.mageUltimateGroup.play(false);
+  }
+
+  private playTankIdle(): void {
+    if (!this.tankIdleGroup) {
+      return;
+    }
+
+    this.stopAllTankAnimations();
+    this.tankIdleGroup.loopAnimation = true;
+    this.tankIdleGroup.speedRatio = 1.0;
+    this.tankIdleGroup.play(true);
+  }
+
+  private playSelectedClassHighlightAnimation(): void {
+    const selected = this.items[this.selectedIndex];
+    if (!selected) return;
+
+    if (selected.id === 'mage') {
+      this.clearRogueSelectionTimer();
+      this.playMageUltimateThenIdle();
+      return;
+    }
+
+    if (selected.id === 'firewall') {
+      this.clearRogueSelectionTimer();
+      this.playTankIdle();
+      return;
+    }
+
+    if (selected.id === 'rogue') {
+      this.clearRogueSelectionTimer();
+      this.playPlayableRogueSelectionSequence();
+      return;
+    }
+
+    if (selected.id === 'cat') {
+      this.playRogueSelectionSequence();
+    }
+  }
+
+  private playPlayableRogueSelectionSequence(): void {
+    const token = ++this.roguePreviewPlayToken;
+    this.stopAllPlayableRogueAnimations();
+
+    if (!this.rogueIdleGroup) {
+      this.playPlayableRogueIdleVariantSequence(token);
+      return;
+    }
+
+    this.rogueIdleGroup.loopAnimation = false;
+    this.rogueIdleGroup.speedRatio = 1.0;
+    this.rogueIdleGroup.onAnimationGroupEndObservable.addOnce(() => {
+      this.playPlayableRogueIdleVariantSequence(token);
+    });
+    this.rogueIdleGroup.play(false);
+  }
+
+  private playPlayableRogueIdleVariantSequence(token: number): void {
+    if (token !== this.roguePreviewPlayToken) {
+      return;
+    }
+
+    const variants = [this.rogueIdle2Group, this.rogueIdle3Group].filter(
+      (group): group is AnimationGroup => !!group
+    );
+
+    if (variants.length === 0) {
+      if (this.rogueIdleGroup) {
+        this.stopAllPlayableRogueAnimations();
+        this.rogueIdleGroup.loopAnimation = true;
+        this.rogueIdleGroup.speedRatio = 1.0;
+        this.rogueIdleGroup.play(true);
+      }
+      return;
+    }
+
+    const next = variants[Math.floor(Math.random() * variants.length)];
+    this.stopAllPlayableRogueAnimations();
+    next.loopAnimation = false;
+    next.speedRatio = 1.0;
+    next.onAnimationGroupEndObservable.addOnce(() => {
+      this.playPlayableRogueIdleVariantSequence(token);
+    });
+    next.play(false);
+  }
+
+  private playRogueSelectionSequence(): void {
+    const take001 = this.rogueTake001Group;
+    if (!take001) {
+      return;
+    }
+
+    if (this.rogueSelectSound) {
+      this.rogueSelectSound.stop();
+      this.rogueSelectSound.play();
+    }
+
+    const token = ++this.rogueSelectionPlayToken;
+    this.clearRogueSelectionTimer();
+    this.playRogueWindowFromFrame(token, 100, 1.0, 2000, () => {
+      this.freezeRogueAtFrame1(false);
+
+      this.rogueSelectionTimeoutId = window.setTimeout(() => {
+        if (token !== this.rogueSelectionPlayToken) return;
+
+        this.playRogueWindowFromFrame(token, 100, 0.5, 2000, () => {
+          this.freezeRogueAtFrame1();
+        });
+      }, 1300);
+    });
+  }
+
+  private playRogueWindowFromFrame(
+    token: number,
+    startFrame: number,
+    speedRatio: number,
+    durationMs: number,
+    onComplete: () => void
+  ): void {
+    const take001 = this.rogueTake001Group;
+    if (!take001) return;
+
+    this.stopAllRogueAnimations();
+
+    take001.loopAnimation = true;
+    take001.speedRatio = speedRatio;
+    take001.play(true);
+    take001.goToFrame(startFrame);
+
+    this.rogueSelectionTimeoutId = window.setTimeout(() => {
+      if (token !== this.rogueSelectionPlayToken) return;
+      onComplete();
+    }, durationMs);
+  }
+
+  private clearRogueSelectionTimer(): void {
+    if (this.rogueSelectionTimeoutId !== null) {
+      window.clearTimeout(this.rogueSelectionTimeoutId);
+      this.rogueSelectionTimeoutId = null;
+    }
+  }
+
+  private freezeRogueAtFrame1(clearTimer: boolean = true): void {
+    const take001 = this.rogueTake001Group;
+    if (!take001) return;
+
+    if (clearTimer) {
+      this.clearRogueSelectionTimer();
+    }
+    this.stopAllRogueAnimations();
+    take001.play(false);
+    take001.goToFrame(1);
+    take001.pause();
+  }
+}

@@ -1,0 +1,170 @@
+{
+  "tutorial_mage": {
+    "name": "Hello World Wizard",
+    "description": "Finish the tutorial as Mage.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "tutorial_firewall": {
+    "name": "Kernel Panic Tank",
+    "description": "Finish the tutorial as Firewall.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "tutorial_rogue": {
+    "name": "Stealth Commit",
+    "description": "Finish the tutorial as Rogue.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "tutorial_trinity": {
+    "name": "Triforce Merge",
+    "description": "Finish the tutorial with Mage, Firewall, and Rogue.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "room_10": {
+    "name": "System Defender",
+    "description": "Reach room 10 in any run.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "room_20": {
+    "name": "Production Ready",
+    "description": "Reach room 20.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "room_10_mage": {
+    "name": "Stack Mage",
+    "description": "Reach room 10 as Mage.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "room_10_firewall": {
+    "name": "Zero-Trust Tour",
+    "description": "Reach room 10 as Firewall.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "room_10_rogue": {
+    "name": "Shadow Deploy",
+    "description": "Reach room 10 as Rogue.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "room_10_trinity": {
+    "name": "Polyglot Pipeline",
+    "description": "Reach room 10 with Mage, Firewall, and Rogue.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "stack_overflow_5000": {
+    "name": "Stack Overflow",
+    "description": "Reach a score of 5,000.",
+    "type": "incremental",
+    "target": 5000
+  },
+  "stack_overflow_15000": {
+    "name": "Segfault Celebrity",
+    "description": "Reach a score of 15,000.",
+    "type": "incremental",
+    "target": 15000
+  },
+  "ghost_shell_5": {
+    "name": "Ghost in the Shell",
+    "description": "Clear 5 rooms in a row without taking damage.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "ghost_shell_10": {
+    "name": "Ghost in the Shell++",
+    "description": "Clear 10 rooms in a row without taking damage.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "boss_killer": {
+    "name": "Exception Handler",
+    "description": "Defeat 1 boss.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "boss_hunter": {
+    "name": "Boss Thread Terminator",
+    "description": "Defeat 5 bosses.",
+    "type": "incremental",
+    "target": 5
+  },
+  "scan_complete": {
+    "name": "Scan Complete",
+    "description": "Encounter every enemy type from the normal run pool.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "encounter_sentinel": {
+    "name": "Handshake Refused",
+    "description": "Encounter a Sentinel.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "daemon_slayer_10": {
+    "name": "Daemon Slayer",
+    "description": "Defeat 10 enemies.",
+    "type": "incremental",
+    "target": 10
+  },
+  "daemon_slayer_100": {
+    "name": "Senior Daemon Slayer",
+    "description": "Defeat 100 enemies.",
+    "type": "incremental",
+    "target": 100
+  },
+  "move_speed_1_5": {
+    "name": "Sudo Make Me Fast",
+    "description": "Reach 1.5 movement speed.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "overclocked": {
+    "name": "Overclocked",
+    "description": "Reach 1.5 attack speed.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "bonus_sampler_10": {
+    "name": "Plugin Collector",
+    "description": "Select 10 different bonuses.",
+    "type": "incremental",
+    "target": 10
+  },
+  "bonus_sampler_20": {
+    "name": "Dependency Hoarder",
+    "description": "Select 20 different bonuses.",
+    "type": "incremental",
+    "target": 20
+  },
+  "bonus_sampler_30": {
+    "name": "Package Manager",
+    "description": "Select 30 different bonuses.",
+    "type": "incremental",
+    "target": 30
+  },
+  "run_boot_10": {
+    "name": "Boot Loop",
+    "description": "Start 10 runs.",
+    "type": "incremental",
+    "target": 10
+  },
+  "open_codex": {
+    "name": "Read The Docs",
+    "description": "Open the Codex.",
+    "type": "oneTime",
+    "target": 1
+  },
+  "dont_fix_it": {
+    "name": "If It Works, Don't Fix It",
+    "description": "Open the settings menu.",
+    "type": "oneTime",
+    "target": 1
+  }
+}

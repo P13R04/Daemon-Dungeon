@@ -1,0 +1,24 @@
+{
+  "id": "room_test_poison_pattern",
+  "name": "Poison Pattern Test",
+  "layout": [
+    "##########",
+    "#........#",
+    "#.#..PPP.#",
+    "#....PPP.#",
+    "#.#..PPP.#",
+    "#.#..P...#",
+    "#........#",
+    "#........#",
+    "#........#",
+    "##########"
+  ],
+  "spawnPoints": [
+    {
+      "x": 5,
+      "y": 4,
+      "enemyType": "dummy_tank"
+    }
+  ],
+  "obstacles": []
+}

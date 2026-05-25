@@ -1,0 +1,19 @@
+{
+  "default": {
+    "hp": {
+      "baseValue": 1.0,
+      "perRoomMultiplier": 1.15,
+      "perRoomAdditive": 5
+    },
+    "damage": {
+      "baseValue": 1.0,
+      "perRoomMultiplier": 1.10,
+      "perRoomAdditive": 2
+    },
+    "speed": {
+      "baseValue": 1.0,
+      "perRoomMultiplier": 1.05,
+      "perRoomAdditive": 0
+    }
+  }
+}

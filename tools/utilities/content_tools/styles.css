@@ -1,0 +1,248 @@
+:root {
+  --bg0: #081421;
+  --bg1: #10273b;
+  --panel: #112033cc;
+  --panel-solid: #13243a;
+  --line: #2f4a67;
+  --text: #d8ecff;
+  --muted: #8db2d1;
+  --accent: #ffbe46;
+  --accent-2: #5be8c5;
+  --danger: #ff7d7d;
+  --ok: #8af5aa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "Space Grotesk", "Trebuchet MS", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 20% 0%, #1f4f73 0%, transparent 36%),
+    radial-gradient(circle at 90% 10%, #5b2b51 0%, transparent 32%),
+    linear-gradient(135deg, var(--bg0), var(--bg1));
+}
+
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.title h1 {
+  margin: 0;
+  font-size: 1.7rem;
+  letter-spacing: 0.04em;
+}
+
+.title p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.nav-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.nav-links a,
+.btn {
+  text-decoration: none;
+  border: 1px solid var(--line);
+  color: var(--text);
+  background: var(--panel-solid);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+.nav-links a:hover,
+.btn:hover {
+  border-color: var(--accent);
+}
+
+.btn.primary {
+  background: linear-gradient(120deg, #224d73, #1f7a79);
+  border-color: #3b8bb8;
+}
+
+.btn.warn {
+  border-color: #8f5f5f;
+  background: #3a2020;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  backdrop-filter: blur(2px);
+}
+
+.panel h2 {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+  color: var(--accent-2);
+  letter-spacing: 0.03em;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.field label {
+  color: var(--muted);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+  background: #0d1a2bcc;
+  border: 1px solid #2f4a67;
+  border-radius: 9px;
+  padding: 9px;
+  color: var(--text);
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+}
+
+.field textarea {
+  min-height: 76px;
+  resize: vertical;
+}
+
+.inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline input[type="checkbox"] {
+  width: auto;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 250px;
+  overflow: auto;
+}
+
+.item-row {
+  border: 1px solid #355173;
+  background: #0f1d2e;
+  border-radius: 9px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 8px;
+}
+
+.status {
+  border: 1px solid #526a86;
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  background: #0c1a2a;
+}
+
+.status[data-state="ok"] {
+  color: var(--ok);
+  border-color: #3e7d4a;
+  background: #142619;
+}
+
+.status[data-state="error"] {
+  color: var(--danger);
+  border-color: #7a4040;
+  background: #2a1313;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.output {
+  width: 100%;
+  min-height: 220px;
+  background: #0a1320;
+  border: 1px solid #2f4a67;
+  color: #c8e9ff;
+  border-radius: 10px;
+  padding: 10px;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.card {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.card h3 {
+  margin: 0 0 8px;
+  color: var(--accent-2);
+}
+
+.card p {
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
+@media (max-width: 860px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .row {
+    grid-template-columns: 1fr;
+  }
+
+  .item-row {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "id": "room_all_star",
+  "name": "All_star",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#..#..#.#..#..#",
+    "#.............#",
+    "#.#.........#.#",
+    "#.##.##.##.##.#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 2,
+      "y": 2,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 4,
+      "y": 2.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 6,
+      "y": 2,
+      "enemyType": "zombie_basic_void"
+    },
+    {
+      "x": 8,
+      "y": 2,
+      "enemyType": "dummy_tank"
+    },
+    {
+      "x": 10,
+      "y": 2,
+      "enemyType": "bull"
+    },
+    {
+      "x": 11.9,
+      "y": 2,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 2,
+      "y": 4.1,
+      "enemyType": "shooter"
+    },
+    {
+      "x": 4,
+      "y": 4,
+      "enemyType": "sentinel"
+    },
+    {
+      "x": 6,
+      "y": 4,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 8,
+      "y": 4,
+      "enemyType": "turret"
+    },
+    {
+      "x": 10,
+      "y": 4,
+      "enemyType": "healer"
+    },
+    {
+      "x": 12,
+      "y": 4.1,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 1.9,
+      "y": 6.1,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 4,
+      "y": 6.1,
+      "enemyType": "swarm_coordinator"
+    },
+    {
+      "x": 6,
+      "y": 6,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 8,
+      "y": 6,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 10,
+      "y": 6,
+      "enemyType": "pong"
+    },
+    {
+      "x": 12,
+      "y": 6,
+      "enemyType": "fuyard"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

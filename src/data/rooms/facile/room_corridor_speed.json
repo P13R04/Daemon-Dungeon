@@ -1,0 +1,35 @@
+{
+  "id": "room_corridor_speed",
+  "name": "Corridor_speed",
+  "layout": [
+    "###############",
+    "#VVV#.....#VVV#",
+    "#VVV#.....#VVV#",
+    "#VVV#.....#VVV#",
+    "#VVV#.....#VVV#",
+    "#VVV#.....#VVV#",
+    "#VVV#.....#VVV#",
+    "#VVV#.....#VVV#",
+    "#VVV#.....#VVV#",
+    "#VVV#.....#VVV#",
+    "#VVV#.....#VVV#",
+    "#VVV#.....#VVV#",
+    "#VVV#.....#VVV#",
+    "#VVV#.....#VVV#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 9,
+      "y": 2.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 5,
+      "y": 2.1,
+      "enemyType": "zombie_fast"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}
