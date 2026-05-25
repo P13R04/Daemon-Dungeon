@@ -59,6 +59,39 @@ export class AudioManager {
     }
   }
 
+  fadeOutAndStopSound(name: string, durationMs: number = 300): void {
+    const sound = this.sounds.get(name);
+    if (!sound) return;
+
+    const startVolume = this.isMuted ? 0 : this.sfxVolume * this.masterVolume;
+    if (durationMs <= 0 || startVolume <= 0) {
+      sound.stop();
+      return;
+    }
+
+    const startTime = Date.now();
+    const stepMs = 16;
+    const timer = window.setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const t = Math.min(1, elapsed / durationMs);
+      sound.setVolume(startVolume * (1 - t));
+      if (t >= 1) {
+        window.clearInterval(timer);
+        sound.stop();
+        sound.setVolume(startVolume);
+      }
+    }, stepMs);
+  }
+
+  stopAllSounds(except: string[] = []): void {
+    const whitelist = new Set(except);
+    this.sounds.forEach((sound, name) => {
+      if (!whitelist.has(name)) {
+        sound.stop();
+      }
+    });
+  }
+
   setMasterVolume(volume: number): void {
     this.masterVolume = Math.max(0, Math.min(1, volume));
     this.updateAllVolumes();

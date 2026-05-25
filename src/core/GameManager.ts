@@ -62,6 +62,7 @@ import { ScoreManager } from '../systems/ScoreManager';
 import { BONUS_TUNING } from '../data/bonuses/bonusTuning';
 import { WallOcclusionManager } from '../systems/WallOcclusionManager';
 import { MusicManager } from '../audio/MusicManager';
+import { AudioManager } from '../audio/AudioManager';
 import { DaemonVoiceSynth } from '../audio/DaemonVoiceSynth';
 import { DaemonVoicelineManager } from './DaemonVoicelineManager';
 
@@ -207,6 +208,12 @@ export class GameManager {
   private lastAttackerType: string | null = null;
   private wallOcclusionManager: WallOcclusionManager | null = null;
   private musicManager: MusicManager | null = null;
+  private audioManager: AudioManager | null = null;
+  private activeArtificierZoneIds: Set<number> = new Set();
+  private activeArtificierProjectilesInFlight: number = 0;
+  private activeSentryShooterProjectilesInFlight: number = 0;
+  private lastArtificierZoneDamageSfxAtMs: number = 0;
+  private aliveArtificierCount: number = 0;
   private fastCleanRoomAccumulator: number = 0;
   private fastCleanRoomLastIndex: number = -1;
 
@@ -724,6 +731,7 @@ export class GameManager {
 
     if (this.wallOcclusionManager) { this.wallOcclusionManager.dispose(); this.wallOcclusionManager = null; }
     if (this.musicManager) { this.musicManager.dispose(); this.musicManager = null; }
+    if (this.audioManager) { this.audioManager.dispose(); this.audioManager = null; }
 
     if (this.scene && this.scene !== this.mainMenuScene?.getScene() && this.scene !== this.classSelectScene?.getScene()) {
       this.scene.dispose();
@@ -774,11 +782,16 @@ export class GameManager {
     this.hudManager.setInputManager(this.inputManager);
     this.hudManager.setPauseTutorialMode(this.isTutorialRun, this.selectedClassId);
     this.musicManager = new MusicManager(this.scene);
+    this.audioManager = new AudioManager(this.scene);
     void this.musicManager.loadTrack('bgm', 'music/bgm.mp3').then(() => {
       if (this.gameState === 'playing' || this.gameState === 'bonus' || this.gameState === 'roomclear') {
         this.musicManager?.playTrack('bgm', 1.5);
       }
     });
+    void this.preloadMonsterSounds();
+    void this.preloadUISounds();
+    this.bindMonsterSoundEvents();
+    this.bindUISoundEvents();
 
     this.tileFloorManager = new TileFloorManager(this.scene, 1.2);
     if (this.textureRenderMode === 'proceduralRelief') {
@@ -1332,6 +1345,209 @@ export class GameManager {
         // Ignore and let next gesture retry.
       });
     }
+  }
+
+  private async preloadMonsterSounds(): Promise<void> {
+    if (!this.audioManager) return;
+    const monsterSounds = [
+      { id: 'sfx_bull_charge1', path: 'sfx/monsters/bull/bull_charge1.mp3' },
+      { id: 'sfx_bull_dash1', path: 'sfx/monsters/bull/bull_dash1.mp3' },
+      { id: 'sfx_bull_collision1', path: 'sfx/monsters/bull/bull_oncollision1.mp3' },
+      { id: 'sfx_bull_dmgtaken', path: 'sfx/monsters/bull/bull_dmgtaken.mp3' },
+      { id: 'sfx_jumper_jump1', path: 'sfx/monsters/jumper/jumper_jump1.mp3' },
+      { id: 'sfx_jumper_land1', path: 'sfx/monsters/jumper/jumper_land1.mp3' },
+      { id: 'sfx_jumper_dmg_taken1', path: 'sfx/monsters/jumper/jumper_dmg_taken1.mp3' },
+      { id: 'sfx_jumper_onhit1', path: 'sfx/monsters/jumper/jumper_onhit1.mp3' },
+      { id: 'sfx_pong_flying_close1', path: 'sfx/monsters/pong/flying_close1.mp3' },
+      { id: 'sfx_pong_wall_bounce1', path: 'sfx/monsters/pong/wall_bounce1.mp3' },
+      { id: 'sfx_pong_onhit', path: 'sfx/monsters/pong/pong_onhit.mp3' },
+      { id: 'sfx_zombie_damage_taken1', path: 'sfx/monsters/zombie/damage_taken1.mp3' },
+      { id: 'sfx_artificier_shot_split1', path: 'sfx/monsters/sentries/artificier/shot_split1.mp3' },
+      { id: 'sfx_artificier_splash_zone_hum1', path: 'sfx/monsters/sentries/artificier/splash_zone_hum1.mp3' },
+      { id: 'sfx_artificier_splash_zone_hum2', path: 'sfx/monsters/sentries/artificier/splash_zone_hum2.mp3' },
+      { id: 'sfx_artificier_zone_dmg', path: 'sfx/monsters/sentries/artificier/artificer_zone_dmg.mp3' },
+      { id: 'sfx_healer_heal_beam1', path: 'sfx/monsters/sentries/healer/heal_beam1.mp3' },
+      { id: 'sfx_healer_heal_beam2', path: 'sfx/monsters/sentries/healer/heal_beam2.mp3' },
+      { id: 'sfx_rocket_sentry_launched1', path: 'sfx/monsters/sentries/rocket_sentry/rocket_launched1.mp3' },
+      { id: 'sfx_rocket_sentry_explode', path: 'sfx/monsters/sentries/rocket_sentry/rocket_explode.mp3' },
+      { id: 'sfx_necromancer_spawn', path: 'sfx/monsters/sentries/necromancer/necromancer_spawn.mp3' },
+      { id: 'sfx_sentry_projectile_flying1', path: 'sfx/monsters/sentries/projectile_flying1.mp3' },
+      { id: 'sfx_sentry_shots_fired1', path: 'sfx/monsters/sentries/shots_fired1.mp3' },
+      { id: 'sfx_sentry_onhit_sntry', path: 'sfx/monsters/sentries/onhit_sntry.mp3' },
+      { id: 'sfx_sentry_damage_taken', path: 'sfx/monsters/sentries/sentry_damage_taken.mp3' },
+      { id: 'sfx_sentry_ondeath', path: 'sfx/monsters/sentries/sentry_ondeath.mp3' },
+    ];
+    await Promise.all(
+      monsterSounds.map((sound) =>
+        this.audioManager!.loadSound(sound.id, sound.path, { autoplay: false }).catch(() => null),
+      ),
+    );
+  }
+
+  private async preloadUISounds(): Promise<void> {
+    if (!this.audioManager) return;
+    const uiSounds = [
+      { id: 'sfx_ui_select1', path: 'sfx/ui/select1.mp3' },
+      { id: 'sfx_ui_deselect', path: 'sfx/ui/deselect.mp3' },
+      { id: 'sfx_ui_start_game', path: 'sfx/ui/start_game.mp3' },
+      { id: 'sfx_ui_next_room', path: 'sfx/ui/next_room.mp3' },
+      { id: 'sfx_ui_game_over', path: 'sfx/ui/game_over1.mp3' },
+    ];
+    await Promise.all(
+      uiSounds.map((sound) =>
+        this.audioManager!.loadSound(sound.id, sound.path, { autoplay: false }).catch(() => null),
+      ),
+    );
+  }
+
+  private bindUISoundEvents(): void {
+    if (!this.audioManager) return;
+    this.eventBus.on(GameEvents.UI_SOUND_SELECT, () => this.audioManager?.playSound('sfx_ui_select1', 0.8));
+    this.eventBus.on(GameEvents.UI_SOUND_DESELECT, () => this.audioManager?.playSound('sfx_ui_deselect', 0.8));
+    this.eventBus.on(GameEvents.UI_SOUND_START_GAME, () => this.audioManager?.playSound('sfx_ui_start_game', 0.8));
+    this.eventBus.on(GameEvents.UI_SOUND_NEXT_ROOM, () => this.audioManager?.playSound('sfx_ui_next_room', 0.8));
+  }
+
+  private bindMonsterSoundEvents(): void {
+    if (!this.audioManager) return;
+
+    this.eventBus.on(GameEvents.ENEMY_DAMAGED, (data: any) => {
+      if (!this.audioManager) return;
+      const enemyType = data?.enemyType as string;
+      if (!enemyType) return;
+      const soundMap: Record<string, string> = {
+        zombie: 'sfx_zombie_damage_taken1',
+        zombie_basic: 'sfx_zombie_damage_taken1',
+        zombie_fast: 'sfx_zombie_damage_taken1',
+        zombie_basic_void: 'sfx_zombie_damage_taken1',
+        fuyard: 'sfx_zombie_damage_taken1',
+        strategist: 'sfx_zombie_damage_taken1',
+        spike_strategist_boss: 'sfx_zombie_damage_taken1',
+        jumper: 'sfx_jumper_dmg_taken1',
+        jumper_boss: 'sfx_jumper_dmg_taken1',
+        bull: 'sfx_bull_dmgtaken',
+        bull_boss: 'sfx_bull_dmgtaken',
+        pong: 'sfx_pong_onhit',
+        pong_boss: 'sfx_pong_onhit',
+        sentinel: 'sfx_sentry_damage_taken',
+        prefire_sentinel: 'sfx_sentry_damage_taken',
+        healer: 'sfx_sentry_damage_taken',
+        artificer: 'sfx_sentry_damage_taken',
+        artificier: 'sfx_sentry_damage_taken',
+        rocket_sentry: 'sfx_sentry_damage_taken',
+        swarm_coordinator: 'sfx_sentry_damage_taken',
+        necromancer: 'sfx_sentry_damage_taken',
+        laser_patterns: 'sfx_sentry_damage_taken',
+        mage_missile: 'sfx_sentry_damage_taken',
+        bullet_hell: 'sfx_sentry_damage_taken',
+      };
+      const sound = soundMap[enemyType];
+      if (sound) this.audioManager.playSoundAt(sound, data?.position ?? Vector3.Zero(), 0.7);
+    });
+
+    this.eventBus.on(GameEvents.ENEMY_SPAWNED, (data: any) => {
+      const enemyType = data?.enemyType as string | undefined;
+      if (enemyType === 'artificer' || enemyType === 'artificier') this.aliveArtificierCount += 1;
+    });
+    this.eventBus.on(GameEvents.ENEMY_DIED, (data: any) => {
+      const enemyType = data?.enemyType as string | undefined;
+      if (enemyType === 'artificer' || enemyType === 'artificier') {
+        this.aliveArtificierCount = Math.max(0, this.aliveArtificierCount - 1);
+        if (this.aliveArtificierCount === 0) {
+          this.activeArtificierZoneIds.clear();
+          this.activeArtificierProjectilesInFlight = 0;
+          this.audioManager?.stopSound('sfx_artificier_splash_zone_hum1');
+          this.audioManager?.stopSound('sfx_sentry_projectile_flying1');
+        }
+      }
+    });
+
+    this.eventBus.on(GameEvents.ENEMY_BULL_AUDIO_CUE, (data: any) => {
+      const cue = data?.cue as string | undefined;
+      const position = data?.position || Vector3.Zero();
+      const sound = cue === 'aim' ? 'sfx_bull_charge1' : cue === 'dash' ? 'sfx_bull_dash1' : cue === 'collision' ? 'sfx_bull_collision1' : '';
+      if (sound) this.audioManager?.playSoundAt(sound, position, 0.8);
+    });
+    this.eventBus.on(GameEvents.ENEMY_JUMPER_AUDIO_CUE, (data: any) => {
+      const cue = data?.cue as string | undefined;
+      const position = data?.position || Vector3.Zero();
+      const sound = cue === 'jump' ? 'sfx_jumper_jump1' : cue === 'land' ? 'sfx_jumper_land1' : '';
+      if (sound) this.audioManager?.playSoundAt(sound, position, 0.8);
+    });
+    this.eventBus.on(GameEvents.ENEMY_PONG_AUDIO_CUE, (data: any) => {
+      const cue = data?.cue as string | undefined;
+      const position = data?.position || Vector3.Zero();
+      const sound = cue === 'bounce' ? 'sfx_pong_wall_bounce1' : cue === 'flyby' ? 'sfx_pong_flying_close1' : '';
+      if (sound) this.audioManager?.playSoundAt(sound, position, 0.8);
+    });
+    this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_SPLIT_IMPACT, (data: any) => {
+      this.audioManager?.playSoundAt('sfx_artificier_shot_split1', data?.position ?? Vector3.Zero(), 0.85);
+    });
+    this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_SHOT_FIRED, (data: any) => {
+      this.audioManager?.playSoundAt('sfx_sentry_shots_fired1', data?.position ?? Vector3.Zero(), 0.85);
+    });
+    this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_PROJECTILE_FLIGHT_STARTED, (data: any) => {
+      this.activeArtificierProjectilesInFlight += 1;
+      if (this.activeArtificierProjectilesInFlight === 1) {
+        this.audioManager?.playSoundAt('sfx_sentry_projectile_flying1', data?.position ?? Vector3.Zero(), 0.5);
+      }
+    });
+    this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_PROJECTILE_FLIGHT_ENDED, () => {
+      this.activeArtificierProjectilesInFlight = Math.max(0, this.activeArtificierProjectilesInFlight - 1);
+      if (this.activeArtificierProjectilesInFlight === 0) {
+        this.audioManager?.fadeOutAndStopSound('sfx_sentry_projectile_flying1', 120);
+      }
+    });
+    this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_DOT_ZONE_STARTED, (data: any) => {
+      const zoneId = data?.zoneId as number | undefined;
+      if (typeof zoneId === 'number') this.activeArtificierZoneIds.add(zoneId);
+      if (this.activeArtificierZoneIds.size === 1) {
+        this.audioManager?.playSoundAt('sfx_artificier_splash_zone_hum1', data?.position ?? Vector3.Zero(), 0.55);
+      }
+    });
+    this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_DOT_ZONE_ENDED, (data: any) => {
+      const zoneId = data?.zoneId as number | undefined;
+      if (typeof zoneId === 'number') this.activeArtificierZoneIds.delete(zoneId);
+      else this.activeArtificierZoneIds.clear();
+      if (this.activeArtificierZoneIds.size === 0) this.audioManager?.stopSound('sfx_artificier_splash_zone_hum1');
+    });
+    this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_ZONE_DAMAGE_TICK, (data: any) => {
+      const now = Date.now();
+      if (now - this.lastArtificierZoneDamageSfxAtMs < 180) return;
+      this.lastArtificierZoneDamageSfxAtMs = now;
+      this.audioManager?.playSoundAt('sfx_artificier_zone_dmg', data?.position ?? Vector3.Zero(), 0.65);
+    });
+    this.eventBus.on(GameEvents.ENEMY_HEALER_HEAL_CAST, (data: any) => {
+      const position = data?.targetPosition || data?.casterPosition || Vector3.Zero();
+      this.audioManager?.playSoundAt('sfx_healer_heal_beam1', position, 0.8);
+    });
+    this.eventBus.on(GameEvents.ENEMY_ROCKET_SENTRY_FIRED, (data: any) => {
+      this.audioManager?.playSoundAt('sfx_rocket_sentry_launched1', data?.position ?? Vector3.Zero(), 0.85);
+    });
+    this.eventBus.on(GameEvents.ENEMY_ROCKET_SENTRY_IMPACT, (data: any) => {
+      this.audioManager?.playSoundAt('sfx_rocket_sentry_explode', data?.position ?? Vector3.Zero(), 0.9);
+    });
+    this.eventBus.on(GameEvents.ENEMY_SENTRY_SHOOTER_FIRED, (data: any) => {
+      this.audioManager?.playSoundAt('sfx_sentry_shots_fired1', data?.position ?? Vector3.Zero(), 0.8);
+    });
+    this.eventBus.on(GameEvents.ENEMY_SENTRY_SHOOTER_PROJECTILE_FLIGHT_STARTED, (data: any) => {
+      this.activeSentryShooterProjectilesInFlight += 1;
+      if (this.activeSentryShooterProjectilesInFlight === 1) {
+        this.audioManager?.playSoundAt('sfx_sentry_projectile_flying1', data?.position ?? Vector3.Zero(), 0.45);
+      }
+    });
+    this.eventBus.on(GameEvents.ENEMY_SENTRY_SHOOTER_PROJECTILE_FLIGHT_ENDED, () => {
+      this.activeSentryShooterProjectilesInFlight = Math.max(0, this.activeSentryShooterProjectilesInFlight - 1);
+      if (this.activeSentryShooterProjectilesInFlight === 0) {
+        this.audioManager?.fadeOutAndStopSound('sfx_sentry_projectile_flying1', 120);
+      }
+    });
+    this.eventBus.on(GameEvents.ENEMY_SENTRY_SHOOTER_ONHIT_PLAYER, (data: any) => {
+      this.audioManager?.playSoundAt('sfx_sentry_onhit_sntry', data?.position ?? Vector3.Zero(), 0.8);
+    });
+    this.eventBus.on(GameEvents.ENEMY_NECROMANCER_SUMMON, (data: any) => {
+      this.audioManager?.playSoundAt('sfx_necromancer_spawn', data?.position ?? Vector3.Zero(), 0.8);
+    });
   }
 
   private handleAttackPerformedEvent(data: AttackPerformedPayload): void {

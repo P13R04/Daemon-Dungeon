@@ -886,6 +886,14 @@ export class EnemyController {
         this.healerTimer -= deltaTime;
         if (this.healerTimer <= 0) {
           target.heal(this.healerAmount);
+          this.eventBus.emit(GameEvents.ENEMY_HEALER_HEAL_CAST, {
+            casterId: this.id,
+            casterType: this.typeId,
+            casterPosition: this.position.clone(),
+            targetId: target.getId(),
+            targetPosition: target.getPosition().clone(),
+            amount: this.healerAmount,
+          });
           this.healerTimer = this.healerCooldown;
           
           // Heal ray
@@ -997,6 +1005,10 @@ export class EnemyController {
     const dir = target.subtract(spawnPos);
     if (dir.lengthSquared() <= 0.0001) return;
 
+    this.eventBus.emit(GameEvents.ENEMY_ARTIFICIER_SHOT_FIRED, {
+      position: spawnPos.clone(),
+    });
+
     this.eventBus.emit(GameEvents.PROJECTILE_SPAWNED, {
       position: spawnPos,
       direction: dir.normalize(),
@@ -1082,6 +1094,10 @@ export class EnemyController {
     this.missileTimer -= deltaTime;
     if (this.missileTimer <= 0) {
       const spawnPos = this.position.add(new Vector3(0, 1.0, 0));
+      this.eventBus.emit(GameEvents.ENEMY_ROCKET_SENTRY_FIRED, {
+        position: spawnPos.clone(),
+        enemyType: this.typeId,
+      });
       this.eventBus.emit(GameEvents.ENEMY_SPAWN_REQUESTED, {
         typeId: 'missile',
         position: spawnPos,
@@ -1184,6 +1200,11 @@ export class EnemyController {
     roomManager?: RoomManager,
     forcePlayerHit: boolean = false
   ): void {
+    this.eventBus.emit(GameEvents.ENEMY_ROCKET_SENTRY_IMPACT, {
+      position: explosionPosition.clone(),
+      enemyType: this.typeId,
+    });
+
     const effectiveRadius = roomManager
       ? this.computeMaskedEffectRadius(explosionPosition, this.attackRange, roomManager)
       : this.attackRange;
@@ -1603,6 +1624,11 @@ export class EnemyController {
     }
 
     const summonPosition = this.getNecromancerSummonPosition(roomManager);
+    this.eventBus.emit(GameEvents.ENEMY_NECROMANCER_SUMMON, {
+      position: summonPosition.clone(),
+      enemyType: this.typeId,
+      summonType: this.necromancerSummonType,
+    });
     this.eventBus.emit(GameEvents.ENEMY_SPAWN_REQUESTED, {
       typeId: this.necromancerSummonType,
       position: summonPosition,
@@ -1716,6 +1742,18 @@ export class EnemyController {
       maxBounces: this.rangedProjectileBounces,
       bounceDamping: this.rangedProjectileBounceDamping,
     });
+
+    if (this.behavior === 'rocket_sentry' || this.behavior === 'mage_missile') {
+      this.eventBus.emit(GameEvents.ENEMY_ROCKET_SENTRY_FIRED, {
+        position: startPos.clone(),
+        enemyType: this.typeId,
+      });
+    } else if (['sentinel', 'prefire_sentinel', 'swarm_coordinator', 'turret', 'necromancer'].includes(this.behavior)) {
+      this.eventBus.emit(GameEvents.ENEMY_SENTRY_SHOOTER_FIRED, {
+        position: startPos.clone(),
+        enemyType: this.typeId,
+      });
+    }
 
     const mobileCasters = ['sentinel', 'swarm_coordinator', 'necromancer', 'prefire_sentinel'];
     if (mobileCasters.includes(this.behavior)) {
@@ -1948,6 +1986,10 @@ export class EnemyController {
     }
 
     if (finalAxis) {
+      this.emitPongAudioCue('bounce');
+    }
+
+    if (finalAxis) {
       candidate = this.position.add(dir.scale(this.speed * deltaTime)).add(knock);
       if (this.isPongTouchingPlayer(candidate, playerPosition) || this.isPongBlockedByEnvironment(candidate, roomManager)) {
         dir = dir.scale(-1);
@@ -1995,6 +2037,7 @@ export class EnemyController {
     }
 
     const distance = Vector3.Distance(this.position, playerPosition);
+    const previousState = this.jumperState;
 
     switch (this.jumperState) {
       case 'chase': {
@@ -2084,6 +2127,10 @@ export class EnemyController {
     } else {
       this.verticalOffset = 0;
     }
+
+    if (previousState !== this.jumperState) {
+      this.handleJumperStateChange(previousState, this.jumperState);
+    }
     this.applyMeshPosition();
   }
 
@@ -2147,6 +2194,7 @@ export class EnemyController {
     if (this.behavior === 'bull') {
       if (this.bullState !== 'charge') return null;
       this.attackPlayer();
+      this.emitBullAudioCue('collision');
       this.bullState = 'cooldown';
       this.bullTimer = this.bullCooldownDuration;
       this.velocity = Vector3.Zero();
@@ -2209,6 +2257,7 @@ export class EnemyController {
 
   onWallCollision(): void {
     if (this.behavior === 'bull' && this.bullState === 'charge') {
+      this.emitBullAudioCue('collision');
       this.bullState = 'cooldown';
       this.bullTimer = this.bullCooldownDuration;
       this.velocity = Vector3.Zero();
@@ -3462,7 +3511,11 @@ export class EnemyController {
   }
 
   private handleBullStateChange(previous: typeof this.bullState, next: typeof this.bullState): void {
+    if (next === 'aim') {
+      this.emitBullAudioCue('aim');
+    }
     if (next === 'charge') {
+      this.emitBullAudioCue('dash');
       this.playBullAnimStartThenRun();
       return;
     }
@@ -3515,6 +3568,46 @@ export class EnemyController {
       group.stop();
     }
     this.bullAnimState = 'none';
+  }
+
+  private emitBullAudioCue(cue: 'aim' | 'dash' | 'collision'): void {
+    if (this.behavior !== 'bull') return;
+    this.eventBus.emit(GameEvents.ENEMY_BULL_AUDIO_CUE, {
+      entityId: this.id,
+      enemyType: this.typeId,
+      cue,
+      position: this.position.clone(),
+    });
+  }
+
+  private handleJumperStateChange(previous: typeof this.jumperState, next: typeof this.jumperState): void {
+    if (previous !== 'jump' && next === 'jump') {
+      this.emitJumperAudioCue('jump');
+      return;
+    }
+    if (previous === 'jump' && next === 'cooldown') {
+      this.emitJumperAudioCue('land');
+    }
+  }
+
+  private emitJumperAudioCue(cue: 'jump' | 'land'): void {
+    if (this.behavior !== 'jumper') return;
+    this.eventBus.emit(GameEvents.ENEMY_JUMPER_AUDIO_CUE, {
+      entityId: this.id,
+      enemyType: this.typeId,
+      cue,
+      position: this.position.clone(),
+    });
+  }
+
+  private emitPongAudioCue(cue: 'bounce' | 'flyby'): void {
+    if (this.behavior !== 'pong') return;
+    this.eventBus.emit(GameEvents.ENEMY_PONG_AUDIO_CUE, {
+      entityId: this.id,
+      enemyType: this.typeId,
+      cue,
+      position: this.position.clone(),
+    });
   }
 
   private queueBullModelLoad(): void {

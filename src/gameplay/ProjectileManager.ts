@@ -59,6 +59,7 @@ interface DelayedExplosion {
   radius: number;
   damage: number;
   mesh?: Mesh;
+  sourceProjectileType?: string;
   dotRadius?: number;
   dotDps?: number;
   dotDuration?: number;
@@ -66,11 +67,13 @@ interface DelayedExplosion {
 }
 
 interface AoeZone {
+  id: number;
   position: Vector3;
   radius: number;
   dps: number;
   remaining: number;
   mesh?: Mesh;
+  sourceProjectileType?: string;
 }
 
 interface SplitTravel {
@@ -80,6 +83,7 @@ interface SplitTravel {
   mesh?: Mesh;
   explosionRadius: number;
   explosionDamage: number;
+  sourceProjectileType?: string;
   dotRadius?: number;
   dotDps?: number;
   dotDuration?: number;
@@ -205,6 +209,7 @@ export class ProjectileManager {
   private mageProjectileParticleTexture: DynamicTexture | null = null;
   private deferredMeshDisposalQueue: Mesh[] = [];
   private readonly maxAoeVisualCells: number = 140;
+  private nextAoeZoneId: number = 1;
   private unsubscriber: (() => void) | null = null;
 
   constructor(private scene: Scene, poolSize: number = 20) {
@@ -317,6 +322,17 @@ export class ProjectileManager {
     projectile.setActive(true);
     this.activeProjectiles.push(projectile);
     this.applyProjectileSpawnVisual(projectile);
+    if (projectileType === 'artificer_main') {
+      this.eventBus.emit(GameEvents.ENEMY_ARTIFICIER_PROJECTILE_FLIGHT_STARTED, {
+        position: position.clone(),
+      });
+    }
+    if (projectileType && ['sentinel', 'prefire_sentinel', 'swarm_coordinator', 'turret', 'necromancer'].includes(projectileType)) {
+      this.eventBus.emit(GameEvents.ENEMY_SENTRY_SHOOTER_PROJECTILE_FLIGHT_STARTED, {
+        position: position.clone(),
+        projectileType,
+      });
+    }
   }
 
   private applyProjectileSpawnVisual(projectile: Projectile): void {
@@ -437,10 +453,23 @@ export class ProjectileManager {
   private releaseProjectileAt(index: number): void {
     const projectile = this.activeProjectiles[index];
     if (!projectile) return;
+    const projectileType = projectile.data?.projectileType;
+    const position = projectile.data?.position.clone() ?? new Vector3(0, 0, 0);
     this.disposeProjectileParticleEffect(projectile);
     projectile.setActive(false);
     this.projectilePool.release(projectile);
     this.activeProjectiles.splice(index, 1);
+    if (projectileType === 'artificer_main') {
+      this.eventBus.emit(GameEvents.ENEMY_ARTIFICIER_PROJECTILE_FLIGHT_ENDED, {
+        position,
+      });
+    }
+    if (projectileType && ['sentinel', 'prefire_sentinel', 'swarm_coordinator', 'turret', 'necromancer'].includes(projectileType)) {
+      this.eventBus.emit(GameEvents.ENEMY_SENTRY_SHOOTER_PROJECTILE_FLIGHT_ENDED, {
+        position,
+        projectileType,
+      });
+    }
   }
 
   update(deltaTime: number, enemies: ProjectileEnemy[], player: ProjectilePlayer, roomManager?: RoomManager): void {
@@ -460,15 +489,24 @@ export class ProjectileManager {
         const finalDuration = exp.finalDuration ?? 0.2;
         this.createClippedAoeVisual(exp.position, exp.radius, finalDuration, roomManager);
         if (exp.dotRadius && exp.dotDps && exp.dotDuration) {
+          const zoneId = this.nextAoeZoneId++;
           const zoneMesh = VisualPlaceholder.createAoEPlaceholder(this.scene, `aoe_${Date.now()}`, exp.dotRadius);
           zoneMesh.position = this.toGroundPosition(exp.position);
           this.activeAoeZones.push({
+            id: zoneId,
             position: exp.position.clone(),
             radius: exp.dotRadius,
             dps: exp.dotDps,
             remaining: exp.dotDuration,
             mesh: zoneMesh,
+            sourceProjectileType: exp.sourceProjectileType,
           });
+          if (exp.sourceProjectileType === 'artificer_main') {
+            this.eventBus.emit(GameEvents.ENEMY_ARTIFICIER_DOT_ZONE_STARTED, {
+              zoneId,
+              position: exp.position.clone(),
+            });
+          }
         }
         if (exp.mesh) exp.mesh.dispose();
         this.delayedExplosions.splice(i, 1);
@@ -481,9 +519,20 @@ export class ProjectileManager {
       zone.remaining -= deltaTime;
       if (this.isPointAffectedByExplosion(zone.position, player.getPosition(), zone.radius, roomManager)) {
         player.applyDamage(zone.dps * deltaTime);
+        if (zone.sourceProjectileType === 'artificer_main') {
+          this.eventBus.emit(GameEvents.ENEMY_ARTIFICIER_ZONE_DAMAGE_TICK, {
+            position: zone.position.clone(),
+          });
+        }
       }
       if (zone.remaining <= 0) {
         if (zone.mesh) zone.mesh.dispose();
+        if (zone.sourceProjectileType === 'artificer_main') {
+          this.eventBus.emit(GameEvents.ENEMY_ARTIFICIER_DOT_ZONE_ENDED, {
+            zoneId: zone.id,
+            position: zone.position.clone(),
+          });
+        }
         this.activeAoeZones.splice(i, 1);
       }
     }
@@ -506,15 +555,24 @@ export class ProjectileManager {
         const finalDuration = split.finalDuration ?? 0.2;
         this.createClippedAoeVisual(split.position, split.explosionRadius, finalDuration, roomManager);
         if (split.dotRadius && split.dotDps && split.dotDuration) {
+          const zoneId = this.nextAoeZoneId++;
           const zoneMesh = VisualPlaceholder.createAoEPlaceholder(this.scene, `aoe_${Date.now()}`, split.dotRadius);
           zoneMesh.position = this.toGroundPosition(split.position);
           this.activeAoeZones.push({
+            id: zoneId,
             position: split.position.clone(),
             radius: split.dotRadius,
             dps: split.dotDps,
             remaining: split.dotDuration,
             mesh: zoneMesh,
+            sourceProjectileType: split.sourceProjectileType,
           });
+          if (split.sourceProjectileType === 'artificer_main') {
+            this.eventBus.emit(GameEvents.ENEMY_ARTIFICIER_DOT_ZONE_STARTED, {
+              zoneId,
+              position: split.position.clone(),
+            });
+          }
         }
         this.activeSplitTravels.splice(i, 1);
         continue;
@@ -545,15 +603,24 @@ export class ProjectileManager {
           this.createClippedAoeVisual(impactPos, split.explosionRadius, finalDuration, roomManager);
 
           if (split.dotRadius && split.dotDps && split.dotDuration) {
+            const zoneId = this.nextAoeZoneId++;
             const zoneMesh = VisualPlaceholder.createAoEPlaceholder(this.scene, `aoe_${Date.now()}`, split.dotRadius);
             zoneMesh.position = this.toGroundPosition(impactPos);
             this.activeAoeZones.push({
+              id: zoneId,
               position: impactPos.clone(),
               radius: split.dotRadius,
               dps: split.dotDps,
               remaining: split.dotDuration,
               mesh: zoneMesh,
+              sourceProjectileType: split.sourceProjectileType,
             });
+            if (split.sourceProjectileType === 'artificer_main') {
+              this.eventBus.emit(GameEvents.ENEMY_ARTIFICIER_DOT_ZONE_STARTED, {
+                zoneId,
+                position: impactPos.clone(),
+              });
+            }
           }
 
           this.activeSplitTravels.splice(i, 1);
@@ -610,6 +677,12 @@ export class ProjectileManager {
             }
           }
           const impactPos = this.resolveImpactPosition(blockedPoint, projectile.data.direction, roomManager);
+          if (projectile.data.projectileType === 'rocket_sentry') {
+            this.eventBus.emit(GameEvents.ENEMY_ROCKET_SENTRY_IMPACT, {
+              position: impactPos.clone(),
+              projectileType: projectile.data.projectileType,
+            });
+          }
           this.applyImpactAoeToPlayer(projectile, impactPos, player);
           this.handleProjectileImpact(projectile, impactPos.clone(), roomManager);
           this.releaseProjectileAt(i);
@@ -681,6 +754,12 @@ export class ProjectileManager {
             );
 
             if (reflection) {
+              if (projectile.data.projectileType === 'rocket_sentry') {
+                this.eventBus.emit(GameEvents.ENEMY_ROCKET_SENTRY_IMPACT, {
+                  position: hitPoint.clone(),
+                  projectileType: projectile.data.projectileType,
+                });
+              }
               this.spawnProjectile(
                 reflection.position,
                 reflection.direction,
@@ -699,6 +778,19 @@ export class ProjectileManager {
               this.handleProjectileImpact(projectile, hitPoint.clone(), roomManager);
               this.releaseProjectileAt(i);
               continue;
+            }
+
+            if (projectile.data.projectileType === 'rocket_sentry') {
+              this.eventBus.emit(GameEvents.ENEMY_ROCKET_SENTRY_IMPACT, {
+                position: hitPoint.clone(),
+                projectileType: projectile.data.projectileType,
+              });
+            }
+            if (projectile.data.projectileType && ['sentinel', 'prefire_sentinel', 'swarm_coordinator', 'turret', 'necromancer'].includes(projectile.data.projectileType)) {
+              this.eventBus.emit(GameEvents.ENEMY_SENTRY_SHOOTER_ONHIT_PLAYER, {
+                position: hitPoint.clone(),
+                projectileType: projectile.data.projectileType,
+              });
             }
 
             player.applyDamage(projectile.data.damage);
@@ -720,6 +812,12 @@ export class ProjectileManager {
   private handleProjectileImpact(projectile: Projectile, position: Vector3, roomManager?: RoomManager): void {
     const data = projectile.data;
     if (!data?.splitConfig) return;
+
+    if (data.projectileType === 'artificer_main') {
+      this.eventBus.emit(GameEvents.ENEMY_ARTIFICIER_SPLIT_IMPACT, {
+        position: position.clone(),
+      });
+    }
 
     if (data.splitConfig.impactRadius && data.splitConfig.impactDamage) {
       // Actual player damage handled in update loop; this is a visual-only placeholder hook
@@ -747,6 +845,7 @@ export class ProjectileManager {
           mesh,
           explosionRadius: data.splitConfig.explosionRadius,
           explosionDamage: data.splitConfig.explosionDamage,
+          sourceProjectileType: data.projectileType,
           dotRadius: data.splitConfig.dotRadius,
           dotDps: data.splitConfig.dotDps,
           dotDuration: data.splitConfig.dotDuration,
@@ -761,6 +860,7 @@ export class ProjectileManager {
           radius: data.splitConfig.explosionRadius,
           damage: data.splitConfig.explosionDamage,
           mesh,
+          sourceProjectileType: data.projectileType,
           dotRadius: data.splitConfig.dotRadius,
           dotDps: data.splitConfig.dotDps,
           dotDuration: data.splitConfig.dotDuration,

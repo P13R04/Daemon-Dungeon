@@ -30,6 +30,7 @@ import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { createMenuMatrixBackground } from './MenuMatrixBackground';
 import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
+import { AudioManager } from '../audio/AudioManager';
 
 type AudioChannel = keyof AudioSettings;
 
@@ -84,6 +85,7 @@ export class MainMenuScene {
 
   private awaitingRebind: KeybindingAction | null = null;
   private readonly eventBus: EventBus = EventBus.getInstance();
+  private audioManager: AudioManager | null = null;
   private achievementToast: Rectangle | null = null;
   private achievementToastGlowOuter: Rectangle | null = null;
   private achievementToastGlowInner: Rectangle | null = null;
@@ -145,6 +147,8 @@ export class MainMenuScene {
   ) {
     this.scene = new Scene(engine);
     this.scene.clearColor = Color4.FromHexString(UITheme.colors.bgVoid);
+    this.audioManager = new AudioManager(this.scene);
+    void this.preloadUISounds();
 
     createMenuMatrixBackground(this.scene);
 
@@ -252,8 +256,37 @@ export class MainMenuScene {
     }
     window.removeEventListener('keydown', this.keyCaptureHandler, true);
     this.glitchFx.dispose();
+    this.audioManager?.stopAllSounds();
+    this.audioManager?.dispose();
+    this.audioManager = null;
     this.gui.dispose();
     this.scene.dispose();
+  }
+
+  private async preloadUISounds(): Promise<void> {
+    if (!this.audioManager) return;
+    const uiSounds = [
+      { id: 'sfx_ui_select1', path: 'sfx/ui/select1.mp3' },
+      { id: 'sfx_ui_deselect', path: 'sfx/ui/deselect.mp3' },
+      { id: 'sfx_ui_start_game', path: 'sfx/ui/start_game.mp3' },
+      { id: 'sfx_ui_next_room', path: 'sfx/ui/next_room.mp3' },
+    ];
+    for (const sound of uiSounds) {
+      try {
+        await this.audioManager.loadSound(sound.id, buildHudAssetUrl(sound.path), { autoplay: false });
+      } catch (err) {
+        console.warn(`[MainMenu] Failed to load ${sound.id}:`, err);
+      }
+    }
+  }
+
+  private playUISound(soundId: string, volume: number = 0.8): void {
+    if (!this.audioManager) return;
+    try {
+      this.audioManager.playSound(soundId, volume);
+    } catch (err) {
+      console.warn(`[MainMenu] Error playing sound ${soundId}:`, err);
+    }
   }
 
   private createAchievementToast(): void {
@@ -791,41 +824,48 @@ export class MainMenuScene {
     const topOffsets = [-3, -2, -1, 0, 1, 2, 3].map((mult) => Math.round(mult * buttonStep));
 
     const playBtn = this.makeActionButton('menuPlay', 'START RUN', topOffsets[0], () => {
+      this.playUISound('sfx_ui_start_game', 0.9);
       this.hidePanels();
       this.onPlayRequested();
     });
     panel.addControl(playBtn);
 
     const tutorialBtn = this.makeActionButton('menuTutorial', 'TUTORIAL', topOffsets[1], () => {
+      this.playUISound('sfx_ui_select1', 0.82);
       this.hidePanels();
       this.onTutorialRequested();
     });
     panel.addControl(tutorialBtn);
 
     const codexBtn = this.makeActionButton('menuCodex', 'CODEX', topOffsets[2], () => {
+      this.playUISound('sfx_ui_select1', 0.82);
       this.hidePanels();
       this.onCodexRequested();
     });
     panel.addControl(codexBtn);
 
     const achievementsBtn = this.makeActionButton('menuAchievements', 'ACHIEVEMENTS', topOffsets[3], () => {
+      this.playUISound('sfx_ui_select1', 0.82);
       this.hidePanels();
       this.eventBus.emit(GameEvents.ACHIEVEMENTS_OPEN_REQUESTED);
     });
     panel.addControl(achievementsBtn);
 
     const highscoresBtn = this.makeActionButton('menuHighscores', 'HIGHSCORES', topOffsets[4], () => {
+      this.playUISound('sfx_ui_select1', 0.82);
       this.hidePanels();
       this.eventBus.emit(GameEvents.HIGHSCORES_OPEN_REQUESTED);
     });
     panel.addControl(highscoresBtn);
 
     const settingsBtn = this.makeActionButton('menuSettings', 'SETTINGS', topOffsets[5], () => {
+      this.playUISound('sfx_ui_select1', 0.82);
       this.openSettingsOverlay();
     });
     panel.addControl(settingsBtn);
 
     const creditsBtn = this.makeActionButton('menuCredits', 'CREDITS', topOffsets[6], () => {
+      this.playUISound('sfx_ui_select1', 0.82);
       this.hidePanels();
       this.eventBus.emit(GameEvents.CREDITS_OPEN_REQUESTED);
     });
@@ -1595,6 +1635,7 @@ export class MainMenuScene {
     button.isPointerBlocker = true;
     button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
+    button.onPointerEnterObservable.add(() => this.playUISound('sfx_ui_deselect', 0.42));
     // Inject glitch effects: tear bar + ghost text + click flicker with 220ms delay
     DaemonGlitchFx.inject(button, label, onClick, 220);
     return button;
@@ -1604,7 +1645,11 @@ export class MainMenuScene {
     button.isPointerBlocker = true;
     button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
-    button.onPointerClickObservable.add(onAction);
+    button.onPointerEnterObservable.add(() => this.playUISound('sfx_ui_deselect', 0.36));
+    button.onPointerClickObservable.add(() => {
+      this.playUISound('sfx_ui_select1', 0.8);
+      onAction();
+    });
   }
 
   private openSettingsOverlay(): void {
