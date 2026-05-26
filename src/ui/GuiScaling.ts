@@ -20,6 +20,14 @@ function getCssWidth(engine: Engine): number {
   return canvas ? (canvas.clientWidth || canvas.offsetWidth || DESIGN_WIDTH) : DESIGN_WIDTH;
 }
 
+function getUiRenderScale(): number {
+  if (typeof window === 'undefined') return 1;
+  const dpr = window.devicePixelRatio || 1;
+  // Keep UI crisp on high-DPR screens, but cap to avoid runaway GPU cost.
+  // 2x is a good compromise for mobile readability/perf.
+  return Math.min(2, Math.max(1, dpr));
+}
+
 /**
  * Configure a fullscreen GUI texture for sharp, responsive rendering.
  *
@@ -51,8 +59,8 @@ export function applyResponsiveGuiScaling(
   gui.idealWidth        = idealWidth;
   gui.idealHeight       = idealHeight;
   gui.useSmallestIdeal  = true;
-  gui.renderAtIdealSize = false; // render at native canvas resolution → crisp
-  gui.renderScale       = 1;
+  gui.renderAtIdealSize = false; // keep layout stable in virtual-space coordinates
+  gui.renderScale       = getUiRenderScale();
 
   return { idealWidth, idealHeight };
 }
