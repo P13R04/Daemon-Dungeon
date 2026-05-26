@@ -232,7 +232,7 @@ export class AchievementsScene {
     const sidePanelHeight = Math.round(layoutHeight * 0.78);
     const panelTop = Math.round((layoutHeight - sidePanelHeight) * 0.5);
     const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
-    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 24);
+    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 34);
     const centerCardWidth = Math.round(layoutWidth * (isMobileLayout ? 0.28 : 0.26));
     const centerCardHeight = Math.round(sidePanelHeight * 0.78);
 
@@ -302,18 +302,18 @@ export class AchievementsScene {
     this.leftTitle.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftTitle);
 
-    this.leftDescription = this.makeTerminalText('leftDesc', 16, '#CFFCF3');
-    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.39)}px`;
+    this.leftDescription = this.makeTerminalText('leftDesc', 18, '#CFFCF3');
+    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.37)}px`;
     this.leftDescription.width = `${sideInnerWidth}px`;
     this.leftDescription.height = `${Math.round(sidePanelHeight * 0.07)}px`;
     this.leftDescription.isHitTestVisible = false;
     this.leftDescription.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftDescription);
 
-    const scrollViewer = new ScrollViewer('leftListScroll');
+    const scrollViewer = UIFactory.createScrollViewer('leftListScroll');
     scrollViewer.width = `${sideInnerWidth}px`;
     scrollViewer.height = `${Math.round(sidePanelHeight * 0.8)}px`;
-    scrollViewer.top = `${Math.round(sidePanelHeight * 0.03)}px`;
+    scrollViewer.top = `${Math.round(sidePanelHeight * 0.06)}px`;
     scrollViewer.thickness = 0;
     scrollViewer.barColor = '#3B685C';
     scrollViewer.barBackground = 'rgba(0,0,0,0.5)';
@@ -338,8 +338,8 @@ export class AchievementsScene {
     this.rightTitle.height = `${Math.round(sidePanelHeight * 0.09)}px`;
     this.rightPanel.addControl(this.rightTitle);
 
-    this.rightBody = this.makeTerminalText('rightBody', 18, '#CFFCF3');
-    this.rightBody.top = `${Math.round(sidePanelHeight * 0.03)}px`;
+    this.rightBody = this.makeTerminalText('rightBody', 20, '#CFFCF3');
+    this.rightBody.top = `${Math.round(sidePanelHeight * 0.05)}px`;
     this.rightBody.height = `${Math.round(sidePanelHeight * 0.8)}px`;
     this.rightPanel.addControl(this.rightBody);
 
@@ -374,17 +374,38 @@ export class AchievementsScene {
 
     this.centerCardTitle = new TextBlock('centerTitle', '');
     this.centerCardTitle.fontFamily = this.terminalFont;
-    this.centerCardTitle.fontSize = 30;
+    this.centerCardTitle.fontSize = isMobileLayout ? 36 : 32;
     this.centerCardTitle.color = '#FFFFFF';
     this.centerCardTitle.top = '174px';
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = new TextBlock('centerSubtitle', '');
     this.centerCardSubtitle.fontFamily = this.terminalFont;
-    this.centerCardSubtitle.fontSize = 20;
+    this.centerCardSubtitle.fontSize = isMobileLayout ? 26 : 22;
     this.centerCardSubtitle.color = '#7DFFE8';
     this.centerCardSubtitle.top = '216px';
     this.centerCard.addControl(this.centerCardSubtitle);
+
+    const navButtonWidth = isMobileLayout ? 168 : 156;
+    const navButtonHeight = isMobileLayout ? 74 : 66;
+    const navRow = new StackPanel('achBottomNav');
+    navRow.isVertical = false;
+    navRow.width = `${navButtonWidth * 2 + 18}px`;
+    navRow.height = `${navButtonHeight}px`;
+    navRow.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    navRow.top = `-${Math.round(layoutHeight * 0.05)}px`;
+    navRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    mainLayoutContainer.addControl(navRow);
+
+    const leftNavBtn = UIFactory.createTerminalButton('achNavLeft', '<', `${navButtonWidth}px`, `${navButtonHeight}px`);
+    if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontSize = isMobileLayout ? 25 : 22;
+    leftNavBtn.onPointerClickObservable.add(() => this.navigateBy(-1));
+    navRow.addControl(leftNavBtn);
+
+    const rightNavBtn = UIFactory.createTerminalButton('achNavRight', '>', `${navButtonWidth}px`, `${navButtonHeight}px`);
+    if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontSize = isMobileLayout ? 25 : 22;
+    rightNavBtn.onPointerClickObservable.add(() => this.navigateBy(1));
+    navRow.addControl(rightNavBtn);
   }
 
   private makeTerminalPanel(id: string, w: number, h: number): Rectangle {
@@ -410,15 +431,16 @@ export class AchievementsScene {
   }
 
   private makeTabButton(label: string, onClick: () => void): Button {
+    const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
     const btn = Button.CreateSimpleButton(`tab_${label}`, label);
-    btn.width = '240px';
-    btn.height = '38px';
+    btn.width = `${isMobileLayout ? 300 : 260}px`;
+    btn.height = `${isMobileLayout ? 82 : 74}px`;
     btn.color = '#7CFFEA';
     btn.thickness = 1;
     btn.cornerRadius = 2;
     btn.background = 'rgba(20, 30, 35, 0.6)';
     btn.fontFamily = this.terminalFont;
-    btn.fontSize = 18;
+    btn.fontSize = isMobileLayout ? 25 : 22;
     btn.onPointerUpObservable.add(onClick);
     return btn;
   }
@@ -447,9 +469,10 @@ export class AchievementsScene {
   }
 
   private makeLeftListButton(id: string, label: string, active: boolean, onClick: () => void): Button {
+    const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
     const btn = Button.CreateSimpleButton(id, label);
     btn.width = `${this.leftListButtonWidth}px`;
-    btn.height = '42px';
+    btn.height = `${isMobileLayout ? 64 : 56}px`;
     btn.thickness = 1;
     btn.cornerRadius = 4;
     btn.color = active ? '#F1FFFC' : '#A3DCCF';
@@ -461,7 +484,7 @@ export class AchievementsScene {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
       btn.textBlock.fontFamily = 'Consolas';
-      btn.textBlock.fontSize = 18;
+      btn.textBlock.fontSize = isMobileLayout ? 22 : 19;
     }
     return btn;
   }
@@ -470,6 +493,17 @@ export class AchievementsScene {
     if (this.leftListScroll && this.leftListScroll.verticalBar && total > 1) {
       this.leftListScroll.verticalBar.value = index / (total - 1);
     }
+  }
+
+  private navigateBy(delta: number): void {
+    const achievements = this.codexService.getAchievementsProgress();
+    const total = achievements.length;
+    if (total <= 0) return;
+    this.selectedAchievementIndex = (this.selectedAchievementIndex + delta + total) % total;
+    this.clearLeftList();
+    this.populateAchievementList();
+    this.refreshAchievementSelection(false);
+    this.updateListScroll(this.selectedAchievementIndex, total);
   }
 
   private refreshAchievementSelection(resetTyping: boolean): void {

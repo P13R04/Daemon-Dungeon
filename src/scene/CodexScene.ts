@@ -113,6 +113,8 @@ export class CodexScene {
   private leftFilterNormalBtn: Button;
   private leftFilterBossBtn: Button;
   private leftListButtonWidth: number = 472;
+  private topTabButtonWidth: number = 320;
+  private topTabButtonHeight: number = 56;
 
   private rightPanel: Rectangle;
   private rightTitle: TextBlock;
@@ -211,6 +213,8 @@ export class CodexScene {
     const idealWidth = this.gui.idealWidth || DESIGN_WIDTH;
     const idealHeight = this.gui.idealHeight || DESIGN_HEIGHT;
     const isMobileLayout = idealWidth <= 960;
+    const menuButtonHeight = isMobileLayout ? 82 : 74;
+    const menuButtonFont = isMobileLayout ? 25 : 22;
     const layoutWidth = Math.round(idealWidth);
     const layoutHeight = Math.round(idealHeight);
     const sidePadding = Math.round(layoutWidth * 0.02);
@@ -220,7 +224,7 @@ export class CodexScene {
     const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
     const centerCardWidth = Math.round(Math.min(layoutWidth * 0.24, Math.max(layoutWidth * 0.2, 320)));
     const centerCardHeight = Math.round(layoutHeight * 0.53);
-    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 24);
+    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 34);
 
     const mainLayoutContainer = new Rectangle('mainLayout');
     mainLayoutContainer.width = 1;
@@ -270,10 +274,19 @@ export class CodexScene {
       mainLayoutContainer.addControl(devBtn);
     }
 
+    const centerFreeWidth = Math.max(
+      320,
+      layoutWidth - ((sidePadding + sidePanelWidth) * 2) - 28
+    );
+    const preferredTabsWidth = Math.round(layoutWidth * (isMobileLayout ? 0.38 : 0.34));
+    const tabsRowWidth = Math.min(centerFreeWidth, preferredTabsWidth);
+    this.topTabButtonHeight = Math.round(menuButtonHeight * 0.82);
+    this.topTabButtonWidth = Math.max(150, Math.floor((tabsRowWidth - 10) / 2));
+
     const tabsRow = new StackPanel('codexTabsRow');
     tabsRow.isVertical = false;
-    tabsRow.width = `${Math.round(layoutWidth * 0.34)}px`;
-    tabsRow.height = '54px';
+    tabsRow.width = `${tabsRowWidth}px`;
+    tabsRow.height = `${this.topTabButtonHeight}px`;
     tabsRow.top = `-${Math.round(layoutHeight * 0.31)}px`;
     tabsRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     tabsRow.left = '0px';
@@ -302,8 +315,8 @@ export class CodexScene {
     this.leftTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.addControl(this.leftTitle);
 
-    this.leftDescription = this.makeTerminalText('leftDescription', 16, '#9EE6DB');
-    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.35)}px`;
+    this.leftDescription = this.makeTerminalText('leftDescription', 18, '#9EE6DB');
+    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.34)}px`;
     this.leftDescription.width = `${sideInnerWidth}px`;
     this.leftDescription.height = `${Math.round(sidePanelHeight * 0.18)}px`;
     this.leftDescription.textWrapping = true;
@@ -313,7 +326,7 @@ export class CodexScene {
     this.leftFilterRow = new StackPanel('leftFilterRow');
     this.leftFilterRow.isVertical = false;
     this.leftFilterRow.width = `${sideInnerWidth}px`;
-    this.leftFilterRow.height = '42px';
+    this.leftFilterRow.height = `${Math.round(menuButtonHeight * 0.8)}px`;
     this.leftFilterRow.top = `-${Math.round(sidePanelHeight * 0.21)}px`;
     this.leftPanel.addControl(this.leftFilterRow);
 
@@ -359,8 +372,8 @@ export class CodexScene {
     this.rightTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.rightPanel.addControl(this.rightTitle);
 
-    this.rightBody = this.makeTerminalText('rightBody', 18, '#A7EFE2');
-    this.rightBody.top = '10px';
+    this.rightBody = this.makeTerminalText('rightBody', 20, '#A7EFE2');
+    this.rightBody.top = '18px';
     this.rightBody.width = `${sideInnerWidth}px`;
     this.rightBody.height = `${Math.round(sidePanelHeight * 0.71)}px`;
     this.rightBody.textWrapping = true;
@@ -385,17 +398,17 @@ export class CodexScene {
     this.centerCardArtwork.isVisible = false;
     this.centerCard.addControl(this.centerCardArtwork);
 
-    this.centerCardTitle = this.makeTerminalText('centerCardTitle', 26, '#C8FFF8');
+    this.centerCardTitle = this.makeTerminalText('centerCardTitle', 30, '#C8FFF8');
     this.centerCardTitle.top = `${Math.round(centerCardHeight * 0.17)}px`;
     this.centerCard.addControl(this.centerCardTitle);
 
-    this.centerCardSubtitle = this.makeTerminalText('centerCardSubtitle', 16, '#8FDACF');
+    this.centerCardSubtitle = this.makeTerminalText('centerCardSubtitle', 18, '#8FDACF');
     this.centerCardSubtitle.top = `${Math.round(centerCardHeight * 0.29)}px`;
     this.centerCard.addControl(this.centerCardSubtitle);
 
 
-    const navButtonWidth = 150;
-    const navButtonHeight = 52;
+    const navButtonWidth = isMobileLayout ? 168 : 156;
+    const navButtonHeight = isMobileLayout ? 64 : 56;
     const navRow = new StackPanel('codexBottomNav');
     navRow.isVertical = false;
     navRow.width = `${navButtonWidth * 2 + 16}px`;
@@ -405,14 +418,14 @@ export class CodexScene {
     navRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     mainLayoutContainer.addControl(navRow);
 
-    const leftNavBtn = UIFactory.createTerminalButton('codexNavLeft', '<', `${navButtonWidth}px`, `${navButtonHeight}px`);
+    const leftNavBtn = UIFactory.createTerminalButton('codexNavLeft', '<', `${Math.max(navButtonWidth, isMobileLayout ? 132 : 118)}px`, `${Math.max(navButtonHeight, menuButtonHeight)}px`);
     DaemonGlitchFx.inject(leftNavBtn, '<', () => this.navigateBy(-1), 0);
-    if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontSize = 20;
+    if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontSize = menuButtonFont;
     navRow.addControl(leftNavBtn);
 
-    const rightNavBtn = UIFactory.createTerminalButton('codexNavRight', '>', `${navButtonWidth}px`, `${navButtonHeight}px`);
+    const rightNavBtn = UIFactory.createTerminalButton('codexNavRight', '>', `${Math.max(navButtonWidth, isMobileLayout ? 132 : 118)}px`, `${Math.max(navButtonHeight, menuButtonHeight)}px`);
     DaemonGlitchFx.inject(rightNavBtn, '>', () => this.navigateBy(1), 0);
-    if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontSize = 20;
+    if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontSize = menuButtonFont;
     navRow.addControl(rightNavBtn);
 
 
@@ -522,28 +535,36 @@ export class CodexScene {
   }
 
   private makeTopButton(id: string, label: string, alignment: number, onClick: () => void): Button {
-    const btn = UIFactory.createTerminalButton(id, label, '220px', '40px');
+    const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
+    const btn = UIFactory.createTerminalButton(id, label, `${isMobileLayout ? 260 : 240}px`, `${isMobileLayout ? 76 : 70}px`);
     btn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     btn.horizontalAlignment = alignment;
     btn.top = '20px';
-    if (btn.textBlock) btn.textBlock.fontSize = 18;
+    if (btn.textBlock) btn.textBlock.fontSize = isMobileLayout ? 23 : 21;
     btn.onPointerClickObservable.add(onClick);
     return btn;
   }
 
   private makeTabButton(label: string, onClick: () => void): Button {
-    const btn = UIFactory.createTerminalButton(`tab_${label}`, label, '320px', '46px');
+    const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
+    const btn = UIFactory.createTerminalButton(
+      `tab_${label}`,
+      label,
+      `${this.topTabButtonWidth}px`,
+      `${this.topTabButtonHeight}px`
+    );
     DaemonGlitchFx.inject(btn, label, onClick, 0);
-    if (btn.textBlock) btn.textBlock.fontSize = 20;
+    if (btn.textBlock) btn.textBlock.fontSize = isMobileLayout ? 24 : 21;
     return btn;
   }
 
   private makeFilterButton(label: string, active: boolean, onClick: () => void): Button {
-    const btn = UIFactory.createTerminalButton(`bestiary_filter_${label}`, label, '234px', '42px');
+    const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
+    const btn = UIFactory.createTerminalButton(`bestiary_filter_${label}`, label, `${isMobileLayout ? 258 : 244}px`, `${isMobileLayout ? 64 : 56}px`);
     btn.color = active ? UITheme.colors.textHighlight : UITheme.colors.borderBright;
     btn.background = active ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
     btn.onPointerClickObservable.add(onClick);
-    if (btn.textBlock) btn.textBlock.fontSize = 18;
+    if (btn.textBlock) btn.textBlock.fontSize = isMobileLayout ? 22 : 19;
     return btn;
   }
 
@@ -732,9 +753,10 @@ export class CodexScene {
   }
 
   private makeLeftListButton(id: string, label: string, active: boolean, onClick: () => void): Button {
+    const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
     const btn = Button.CreateSimpleButton(id, label);
     btn.width = `${this.leftListButtonWidth}px`;
-    btn.height = '42px';
+    btn.height = `${isMobileLayout ? 64 : 56}px`;
     btn.thickness = 1;
     btn.cornerRadius = 4;
     btn.color = active ? '#F1FFFC' : '#A3DCCF';
@@ -745,7 +767,7 @@ export class CodexScene {
     if (btn.textBlock) {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
-      btn.textBlock.fontSize = 18;
+      btn.textBlock.fontSize = isMobileLayout ? 22 : 19;
     }
     return btn;
   }

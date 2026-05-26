@@ -1,4 +1,4 @@
-import { Color3, MeshBuilder, Scene, StandardMaterial, Vector3 } from '@babylonjs/core';
+import { Color3, MeshBuilder, Observer, Scene, StandardMaterial, Vector3 } from '@babylonjs/core';
 import { PlayerController } from '../gameplay/PlayerController';
 import { RoomManager } from '../systems/RoomManager';
 
@@ -13,6 +13,16 @@ export class GamePlayerVoidRecoveryManager {
   private playerVoidFallState: PlayerVoidFallState | null = null;
   private playerVoidFxTimer = 0;
   private readonly playerVoidFallDuration = 0.72;
+  private readonly voidSampleRadius = 0.234;
+  private activeVoidShards: Array<{
+    mesh: ReturnType<typeof MeshBuilder.CreateBox>;
+    material: StandardMaterial;
+    velocity: Vector3;
+    ttlMs: number;
+    ageMs: number;
+  }> = [];
+  private voidShardObserver: Observer<Scene> | null = null;
+  private readonly maxActiveVoidShards = 42;
 
   constructor(
     private readonly scene: Scene,
@@ -24,6 +34,7 @@ export class GamePlayerVoidRecoveryManager {
   reset(): void {
     this.playerVoidFallState = null;
     this.playerVoidFxTimer = 0;
+    this.clearVoidShardFx();
     this.playerController.setExternalVerticalOffset(0);
     this.playerController.setRenderVisibility(1);
   }
@@ -35,8 +46,7 @@ export class GamePlayerVoidRecoveryManager {
   detectAndStart(roomOrder: string[], currentRoomIndex: number): void {
     if (this.playerVoidFallState) return;
     const pos = this.playerController.getPosition();
-    const tileType = this.roomManager.getTileTypeAtWorld(pos.x, pos.z);
-    if (tileType !== 'void') return;
+    if (!this.isFullyOverVoid(pos)) return;
 
     const currentRoomId = roomOrder[currentRoomIndex] ?? this.roomManager.getCurrentRoom()?.id;
     const respawn = this.roomManager.getPlayerSpawnPoint(currentRoomId) ?? pos.clone();
@@ -49,6 +59,28 @@ export class GamePlayerVoidRecoveryManager {
     };
     this.playerVoidFxTimer = 0;
     this.spawnPlayerVoidBurst(pos, 10);
+  }
+
+  private isFullyOverVoid(pos: Vector3): boolean {
+    const r = this.voidSampleRadius;
+    const o = r * 0.72;
+    const samplePoints: Array<{ x: number; z: number }> = [
+      { x: pos.x, z: pos.z },
+      { x: pos.x + r, z: pos.z },
+      { x: pos.x - r, z: pos.z },
+      { x: pos.x, z: pos.z + r },
+      { x: pos.x, z: pos.z - r },
+      { x: pos.x + o, z: pos.z + o },
+      { x: pos.x - o, z: pos.z + o },
+      { x: pos.x + o, z: pos.z - o },
+      { x: pos.x - o, z: pos.z - o },
+    ];
+    for (const p of samplePoints) {
+      if (this.roomManager.getTileTypeAtWorld(p.x, p.z) !== 'void') {
+        return false;
+      }
+    }
+    return true;
   }
 
   update(deltaTime: number): boolean {
@@ -92,8 +124,12 @@ export class GamePlayerVoidRecoveryManager {
   }
 
   private spawnPlayerVoidBurst(origin: Vector3, count: number): void {
+    this.ensureVoidShardUpdater();
     const particleCount = Math.max(1, Math.floor(count));
-    for (let i = 0; i < particleCount; i++) {
+    const availableSlots = Math.max(0, this.maxActiveVoidShards - this.activeVoidShards.length);
+    const spawnCount = Math.min(particleCount, availableSlots);
+    if (spawnCount <= 0) return;
+    for (let i = 0; i < spawnCount; i++) {
       const shard = MeshBuilder.CreateBox(`void_player_shard_${Date.now()}_${i}`, {
         size: 0.08 + (Math.random() * 0.07),
       }, this.scene);
@@ -114,30 +150,56 @@ export class GamePlayerVoidRecoveryManager {
         0.5 + (Math.random() * 1.2),
         (Math.random() - 0.5) * 2.4,
       );
-      const gravity = 6.8;
-      const bornAt = Date.now();
       const ttlMs = 260 + (Math.random() * 200);
+      this.activeVoidShards.push({
+        mesh: shard,
+        material: mat,
+        velocity,
+        ttlMs,
+        ageMs: 0,
+      });
+    }
+  }
 
-      const tick = window.setInterval(() => {
-        if (shard.isDisposed()) {
-          window.clearInterval(tick);
-          return;
+  private ensureVoidShardUpdater(): void {
+    if (this.voidShardObserver) return;
+    this.voidShardObserver = this.scene.onBeforeRenderObservable.add(() => {
+      if (this.activeVoidShards.length === 0) return;
+      const dtMs = Math.min(40, this.scene.getEngine().getDeltaTime());
+      const dt = dtMs / 1000;
+      const gravity = 6.8;
+
+      for (let i = this.activeVoidShards.length - 1; i >= 0; i--) {
+        const fx = this.activeVoidShards[i];
+        if (fx.mesh.isDisposed()) {
+          this.activeVoidShards.splice(i, 1);
+          continue;
         }
-
-        const elapsed = Date.now() - bornAt;
-        const t = Math.min(1, elapsed / ttlMs);
-        const dt = 1 / 60;
-        velocity.y -= gravity * dt;
-        shard.position.addInPlace(velocity.scale(dt));
-        shard.scaling.scaleInPlace(0.95);
-        mat.alpha = Math.max(0, 0.9 * (1 - t));
+        fx.ageMs += dtMs;
+        const t = Math.min(1, fx.ageMs / fx.ttlMs);
+        fx.velocity.y -= gravity * dt;
+        fx.mesh.position.addInPlace(fx.velocity.scale(dt));
+        fx.mesh.scaling.scaleInPlace(0.95);
+        fx.material.alpha = Math.max(0, 0.9 * (1 - t));
 
         if (t >= 1) {
-          window.clearInterval(tick);
-          shard.dispose();
-          mat.dispose();
+          fx.mesh.dispose();
+          fx.material.dispose();
+          this.activeVoidShards.splice(i, 1);
         }
-      }, 16);
+      }
+    });
+  }
+
+  private clearVoidShardFx(): void {
+    for (const fx of this.activeVoidShards) {
+      try { fx.mesh.dispose(); } catch {}
+      try { fx.material.dispose(); } catch {}
+    }
+    this.activeVoidShards = [];
+    if (this.voidShardObserver) {
+      this.scene.onBeforeRenderObservable.remove(this.voidShardObserver);
+      this.voidShardObserver = null;
     }
   }
 

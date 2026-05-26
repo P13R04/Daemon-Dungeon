@@ -165,8 +165,7 @@ export class GameWorldCollisionHazardManager {
     return (
       playerTileType === 'wall' ||
       playerTileType === 'out' ||
-      playerTileType === 'void' ||
-      !this.roomManager.isWalkable(position.x, position.z)
+      (playerTileType !== 'void' && !this.roomManager.isWalkable(position.x, position.z))
     );
   }
 

@@ -1155,8 +1155,8 @@ export class MainMenuScene {
 
     // RESET PROGRESSION — at the very bottom of settings
     const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET PROGRESSION');
-    resetProgressBtn.width = `${Math.round(this.isMobileLayout ? 420 : 380)}px`;
-    resetProgressBtn.height = `${Math.round(this.isMobileLayout ? 48 : 44)}px`;
+    resetProgressBtn.width = `${Math.round(this.isMobileLayout ? 480 : 420)}px`;
+    resetProgressBtn.height = `${this.menuButtonHeight}px`;
     resetProgressBtn.color = '#FFE5E5';
     resetProgressBtn.cornerRadius = 4;
     resetProgressBtn.background = 'rgba(72,20,20,0.95)';
@@ -1165,7 +1165,7 @@ export class MainMenuScene {
     resetProgressBtn.top = '8px';
     resetProgressBtn.isPointerBlocker = true;
     resetProgressBtn.isHitTestVisible = true;
-    if (resetProgressBtn.textBlock) resetProgressBtn.textBlock.fontSize = this.isMobileLayout ? 19 : 17;
+    if (resetProgressBtn.textBlock) resetProgressBtn.textBlock.fontSize = this.menuButtonFontSize;
     this.bindButtonAction(resetProgressBtn, () => {
       this.awaitingRebind = null;
       this.showResetProgressConfirmOverlay();

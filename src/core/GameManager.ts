@@ -219,6 +219,7 @@ export class GameManager {
   private gameplayFixedStepSeconds: number = 1 / 60;
   private gameplayStepAccumulator: number = 0;
   private gameplayMaxSubstepsPerFrame: number = 4;
+  private playerDamageSfxLastAtMs: Map<'melee' | 'projectile' | 'dot', number> = new Map();
 
 
   private constructor() {
@@ -1638,11 +1639,11 @@ export class GameManager {
       const projectileType = data?.projectile?.data?.projectileType as string | undefined;
       const position = data?.projectile?.data?.position ?? this.playerController?.getPosition?.() ?? Vector3.Zero();
       if (projectileType === 'rocket_sentry') {
-        this.audioManager.playSoundAt('sfx_rocket_sentry_explode', position, 0.9);
+        this.tryPlayPlayerDamageSfx('projectile', 'sfx_rocket_sentry_explode', position, 0.9);
         return;
       }
       if (projectileType && ['sentinel', 'prefire_sentinel', 'swarm_coordinator', 'turret', 'necromancer', 'bullet_hell'].includes(projectileType)) {
-        this.audioManager.playSoundAt('sfx_sentry_onhit_sntry', position, 0.8);
+        this.tryPlayPlayerDamageSfx('projectile', 'sfx_sentry_onhit_sntry', position, 0.8);
       }
     });
   }
@@ -1664,7 +1665,7 @@ export class GameManager {
       if (finalDamage > 0) {
         this.playerController.applyDamage(finalDamage);
         if (attackerType && this.audioManager && attackerType.includes('pong')) {
-          this.audioManager.playSoundAt('sfx_pong_damagedealt', this.playerController?.getPosition?.() || Vector3.Zero(), 0.75);
+          this.tryPlayPlayerDamageSfx('melee', 'sfx_pong_damagedealt', this.playerController?.getPosition?.() || Vector3.Zero(), 0.75);
         }
       }
     }
@@ -1691,11 +1692,29 @@ export class GameManager {
       if (attackerType.includes('pong')) {
         const estimatedDamage = Number(data?.damage ?? 0);
         if (estimatedDamage > 0 && !this.playerController.isCatGodModeActive()) {
-          this.audioManager.playSoundAt('sfx_pong_damagedealt', this.playerController?.getPosition?.() || Vector3.Zero(), 0.75);
+          this.tryPlayPlayerDamageSfx('melee', 'sfx_pong_damagedealt', this.playerController?.getPosition?.() || Vector3.Zero(), 0.75);
         }
       }
     }
     this.resetDaemonIdleTimer();
+  }
+
+  private tryPlayPlayerDamageSfx(
+    channel: 'melee' | 'projectile' | 'dot',
+    soundId: string,
+    position: Vector3,
+    volume: number,
+  ): void {
+    if (!this.audioManager) return;
+    const now = Date.now();
+    const cooldownMs =
+      channel === 'melee' ? 140 :
+      channel === 'projectile' ? 120 :
+      180;
+    const lastAt = this.playerDamageSfxLastAtMs.get(channel) ?? 0;
+    if (now - lastAt < cooldownMs) return;
+    this.playerDamageSfxLastAtMs.set(channel, now);
+    this.audioManager.playSoundAt(soundId, position, volume);
   }
 
   private resolveIncomingMeleeDamage(rawDamage: number, attackerId: string): number {

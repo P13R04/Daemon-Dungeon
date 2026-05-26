@@ -686,6 +686,14 @@ export class HUDManager {
 
   private createPlayerHUD(): void {
     const fontFamily = 'Consolas';
+    const idealWidth = this.guiClean.idealWidth || 1920;
+    const isCompactHud = idealWidth <= 960;
+    const baseMenuButtonHeight = isCompactHud ? 76 : 70;
+    const baseMenuFontSize = isCompactHud ? 23 : 21;
+    const statsPanelWidth = isCompactHud ? 374 : 348;
+    const statsPanelHeight = isCompactHud ? 156 : 146;
+    const statsLabelFont = isCompactHud ? 24 : 21;
+    const statsCreditsFont = isCompactHud ? 22 : 19;
 
     // Top bar (transparent container for layout)
     this.topBar = new Rectangle('hud_top_bar');
@@ -701,8 +709,8 @@ export class HUDManager {
 
     // Stats Console (Top Right Container)
     const statsContainer = new Rectangle('hud_stats_container');
-    statsContainer.width = '320px';
-    statsContainer.height = '130px';
+    statsContainer.width = `${statsPanelWidth}px`;
+    statsContainer.height = `${statsPanelHeight}px`;
     statsContainer.thickness = 1;
     statsContainer.color = '#3B685C';
     statsContainer.background = 'rgba(10, 18, 22, 0.75)';
@@ -716,13 +724,13 @@ export class HUDManager {
 
     this.scoreText = new TextBlock('score_text');
     this.scoreText.text = 'SCORE: 00000000';
-    this.scoreText.fontSize = 18;
+    this.scoreText.fontSize = statsLabelFont;
     this.scoreText.fontFamily = fontFamily;
     this.scoreText.color = '#7CFFEA';
     this.scoreText.left = 16;
-    this.scoreText.top = 12;
-    this.scoreText.width = '288px';
-    this.scoreText.height = '28px';
+    this.scoreText.top = isCompactHud ? 14 : 12;
+    this.scoreText.width = `${statsPanelWidth - 32}px`;
+    this.scoreText.height = '34px';
     this.scoreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.scoreText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.scoreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -730,13 +738,13 @@ export class HUDManager {
 
     this.waveText = new TextBlock('wave_text');
     this.waveText.text = 'WAVE: 00';
-    this.waveText.fontSize = 18;
+    this.waveText.fontSize = statsLabelFont;
     this.waveText.fontFamily = fontFamily;
     this.waveText.color = '#7CFFEA';
     this.waveText.left = 16;
-    this.waveText.top = 48;
-    this.waveText.width = '288px';
-    this.waveText.height = '28px';
+    this.waveText.top = isCompactHud ? 58 : 54;
+    this.waveText.width = `${statsPanelWidth - 32}px`;
+    this.waveText.height = '34px';
     this.waveText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.waveText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.waveText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -744,13 +752,13 @@ export class HUDManager {
 
     this.currencyText = new TextBlock('currency_text');
     this.currencyText.text = 'CREDITS: 000';
-    this.currencyText.fontSize = 16;
+    this.currencyText.fontSize = statsCreditsFont;
     this.currencyText.fontFamily = fontFamily;
     this.currencyText.color = '#FFD782';
     this.currencyText.left = 16;
-    this.currencyText.top = 84;
-    this.currencyText.width = '288px';
-    this.currencyText.height = '28px';
+    this.currencyText.top = isCompactHud ? 103 : 98;
+    this.currencyText.width = `${statsPanelWidth - 32}px`;
+    this.currencyText.height = '34px';
     this.currencyText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.currencyText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.currencyText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -758,10 +766,10 @@ export class HUDManager {
 
     // Combo Container (integrated in score panel, bottom-right)
     this.comboContainer = new Rectangle('combo_container');
-    this.comboContainer.width = '132px';
-    this.comboContainer.height = '52px';
-    this.comboContainer.left = 174;
-    this.comboContainer.top = 74;
+    this.comboContainer.width = isCompactHud ? '156px' : '146px';
+    this.comboContainer.height = isCompactHud ? '60px' : '56px';
+    this.comboContainer.left = isCompactHud ? 208 : 192;
+    this.comboContainer.top = isCompactHud ? 92 : 84;
     this.comboContainer.thickness = 0;
     this.comboContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.comboContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -770,7 +778,7 @@ export class HUDManager {
 
     this.comboText = new TextBlock('combo_text');
     this.comboText.text = 'COMBO X0';
-    this.comboText.fontSize = 16;
+    this.comboText.fontSize = isCompactHud ? 18 : 17;
     this.comboText.fontFamily = fontFamily;
     this.comboText.color = '#FFD782';
     this.comboText.top = '-8px';
@@ -779,7 +787,7 @@ export class HUDManager {
 
     this.comboMultiplierText = new TextBlock('combo_multiplier_text');
     this.comboMultiplierText.text = '1.0X';
-    this.comboMultiplierText.fontSize = 24;
+    this.comboMultiplierText.fontSize = isCompactHud ? 28 : 25;
     this.comboMultiplierText.fontFamily = fontFamily;
     this.comboMultiplierText.color = '#FFFFFF';
     this.comboMultiplierText.top = '11px';
@@ -802,7 +810,7 @@ export class HUDManager {
 
     const logHeader = new TextBlock('log_header');
     logHeader.text = ' SYSTEM MONITOR // DIAGNOSTIC FEED';
-    logHeader.fontSize = 10;
+    logHeader.fontSize = isCompactHud ? 13 : 12;
     logHeader.fontFamily = fontFamily;
     logHeader.color = '#2EF9C3';
     logHeader.height = '16px';
@@ -822,7 +830,7 @@ export class HUDManager {
     for (let i = 0; i < 6; i++) {
       const line = new TextBlock(`log_line_${i}`);
       line.text = '';
-      line.fontSize = 12;
+      line.fontSize = isCompactHud ? 14 : 13;
       line.fontFamily = fontFamily;
       line.color = '#B8FFE6';
       line.height = '20px';
@@ -837,18 +845,18 @@ export class HUDManager {
 
     // Pause Button (Standalone Top Left)
     const pauseBtn = Button.CreateSimpleButton('pause_btn', '||');
-    pauseBtn.width = '64px';
-    pauseBtn.height = '64px';
+    pauseBtn.width = `${baseMenuButtonHeight}px`;
+    pauseBtn.height = `${baseMenuButtonHeight}px`;
     pauseBtn.color = '#7CFFEA';
     pauseBtn.background = 'rgba(10, 30, 35, 0.75)';
     pauseBtn.thickness = 1;
-    pauseBtn.left = 24;
-    pauseBtn.top = 24;
+    pauseBtn.left = isCompactHud ? 28 : 24;
+    pauseBtn.top = isCompactHud ? 28 : 24;
     pauseBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     pauseBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     pauseBtn.zIndex = 1700;
     if (pauseBtn.textBlock) {
-      pauseBtn.textBlock.fontSize = 20;
+      pauseBtn.textBlock.fontSize = baseMenuFontSize;
       pauseBtn.textBlock.fontFamily = fontFamily;
     }
     pauseBtn.onPointerUpObservable.add(() => {
@@ -952,7 +960,7 @@ export class HUDManager {
 
     const integrityLabel = new TextBlock('integrity_label');
     integrityLabel.text = 'INTEGRITY';
-    integrityLabel.fontSize = 18;
+    integrityLabel.fontSize = isCompactHud ? 24 : 22;
     integrityLabel.fontFamily = fontFamily;
     integrityLabel.color = '#7CFFEA';
     integrityLabel.width = '300px';
@@ -987,7 +995,7 @@ export class HUDManager {
 
     this.healthValueText = new TextBlock('health_value');
     this.healthValueText.text = '100/100';
-    this.healthValueText.fontSize = 16;
+    this.healthValueText.fontSize = isCompactHud ? 22 : 19;
     this.healthValueText.fontFamily = fontFamily;
     this.healthValueText.color = '#CFFCF3';
     this.healthValueText.width = '200px';
@@ -1016,7 +1024,7 @@ export class HUDManager {
 
     this.playerUltDisplay = new TextBlock('ultimate_status');
     this.playerUltDisplay.text = 'ULTI: 0%';
-    this.playerUltDisplay.fontSize = 16;
+    this.playerUltDisplay.fontSize = isCompactHud ? 19 : 17;
     this.playerUltDisplay.fontFamily = fontFamily;
     this.playerUltDisplay.color = '#FFFF00';
     this.playerUltDisplay.left = 16;
@@ -1051,7 +1059,7 @@ export class HUDManager {
 
     this.secondaryStatusText = new TextBlock('secondary_status');
     this.secondaryStatusText.text = 'STANCE: 100% [READY]';
-    this.secondaryStatusText.fontSize = 16;
+    this.secondaryStatusText.fontSize = isCompactHud ? 19 : 17;
     this.secondaryStatusText.fontFamily = fontFamily;
     this.secondaryStatusText.color = '#B8FFE6';
     this.secondaryStatusText.left = 16;
@@ -1114,7 +1122,7 @@ export class HUDManager {
     // Auto-aim indicator (keyboard-only mode badge)
     this.autoAimLabel = new TextBlock('auto_aim_indicator');
     this.autoAimLabel.text = '⊙ AUTO-AIM';
-    this.autoAimLabel.fontSize = 13;
+    this.autoAimLabel.fontSize = isCompactHud ? 15 : 14;
     this.autoAimLabel.fontFamily = fontFamily;
     this.autoAimLabel.color = '#7CFFEA';
     this.autoAimLabel.left = 16;
@@ -1451,6 +1459,11 @@ export class HUDManager {
   }
 
   private createPauseOverlay(): Rectangle {
+    const idealWidth = this.guiClean.idealWidth || 1920;
+    const isCompactHud = idealWidth <= 960;
+    const baseMenuButtonHeight = isCompactHud ? 76 : 70;
+    const baseMenuFontSize = isCompactHud ? 23 : 21;
+
     const container = new Rectangle('pause_overlay');
     container.width = 1;
     container.height = 1;
@@ -1465,26 +1478,26 @@ export class HUDManager {
     const title = new TextBlock('pause_title');
     title.text = 'SYSTEM PAUSED';
     title.color = '#7CFFEA';
-    title.fontSize = 42;
+    title.fontSize = isCompactHud ? 48 : 44;
     title.fontFamily = 'Consolas';
     title.top = '-180px';
     container.addControl(title);
 
     const buttonPanel = new StackPanel('pause_buttons');
-    buttonPanel.width = '340px';
+    buttonPanel.width = `${isCompactHud ? 440 : 380}px`;
     buttonPanel.top = '40px';
     buttonPanel.spacing = 16;
     container.addControl(buttonPanel);
 
     const createButton = (text: string, color: string, onClick: () => void) => {
       const btn = Button.CreateSimpleButton(`pause_btn_${text}`, text);
-      btn.height = '60px';
-      btn.width = '340px';
+      btn.height = `${baseMenuButtonHeight}px`;
+      btn.width = `${isCompactHud ? 440 : 380}px`;
       btn.color = color;
       btn.background = 'rgba(20, 30, 35, 0.8)';
       btn.thickness = 1;
       btn.cornerRadius = 4;
-      btn.fontSize = 22;
+      btn.fontSize = baseMenuFontSize;
       btn.fontFamily = 'Consolas';
       btn.onPointerUpObservable.add(() => onClick());
       buttonPanel.addControl(btn);
@@ -1718,6 +1731,7 @@ export class HUDManager {
 
     // Hide gameplay HUD elements & enemies HUD, keeping only Daemon popup container
     if (this.playerHealthDisplay) this.playerHealthDisplay.isVisible = false;
+    if (this.healthPanel) this.healthPanel.isVisible = false;
     if (this.playerUltDisplay) this.playerUltDisplay.isVisible = false;
     if (this.topBar) this.topBar.isVisible = false;
     if (this.logPanel) this.logPanel.isVisible = false;
@@ -1753,7 +1767,7 @@ export class HUDManager {
     const scoreValue = new TextBlock('go_score_value');
     scoreValue.text = stats.score.toLocaleString('en-US').padStart(8, '0');
     scoreValue.color = '#FFFFFF';
-    scoreValue.fontSize = 42;
+    scoreValue.fontSize = 48;
     scoreValue.fontFamily = fontFamily;
     scoreValue.top = '-150px';
     container.addControl(scoreValue);
@@ -1786,11 +1800,11 @@ export class HUDManager {
     container.addControl(roomInfo);
 
     // Upgrades container
-    const numRows = Math.ceil((stats.bonuses ? stats.bonuses.length : 0) / 8) || 1;
-    const bonusContainerHeight = 60 + numRows * 64;
+    const numRows = Math.ceil((stats.bonuses ? stats.bonuses.length : 0) / 7) || 1;
+    const bonusContainerHeight = 80 + numRows * 82;
 
     const bonusContainer = new Rectangle('go_bonuses');
-    bonusContainer.width = '640px';
+    bonusContainer.width = '820px';
     bonusContainer.height = `${bonusContainerHeight}px`;
     bonusContainer.top = `${40 + bonusContainerHeight / 2}px`;
     bonusContainer.thickness = 1;
@@ -1800,23 +1814,23 @@ export class HUDManager {
 
     const bonusLabel = new TextBlock('go_bonus_label', 'EQUIPPED MODULES');
     bonusLabel.fontFamily = fontFamily;
-    bonusLabel.fontSize = 14;
+    bonusLabel.fontSize = 20;
     bonusLabel.color = '#7CFFEA';
     bonusLabel.top = `${-(bonusContainerHeight / 2) + 25}px`;
     bonusContainer.addControl(bonusLabel);
 
     const bonusStackRows = new StackPanel('go_bonus_stack_rows');
     bonusStackRows.isVertical = true;
-    bonusStackRows.spacing = 10;
+    bonusStackRows.spacing = 14;
     bonusStackRows.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    bonusStackRows.top = '15px';
+    bonusStackRows.top = '24px';
     bonusContainer.addControl(bonusStackRows);
 
     // Detached Details Panel for Tooltips at the bottom center of the screen
     const goDetailsPanel = new Rectangle('go_details_panel');
-    goDetailsPanel.width = '800px';
+    goDetailsPanel.width = '900px';
     goDetailsPanel.height = '130px';
-    goDetailsPanel.top = `${125 + bonusContainerHeight}px`;
+    goDetailsPanel.top = `${135 + bonusContainerHeight}px`;
     goDetailsPanel.thickness = 2;
     goDetailsPanel.color = '#3B685C';
     goDetailsPanel.background = 'rgba(10, 18, 22, 0.95)';
@@ -1866,18 +1880,18 @@ export class HUDManager {
       let currentRowStack: StackPanel | null = null;
       for (let i = 0; i < stats.bonuses.length; i++) {
         const bonus = stats.bonuses[i];
-        if (i % 8 === 0) {
-          currentRowStack = new StackPanel(`go_bonus_row_stack_${Math.floor(i / 8)}`);
+        if (i % 7 === 0) {
+          currentRowStack = new StackPanel(`go_bonus_row_stack_${Math.floor(i / 7)}`);
           currentRowStack.isVertical = false;
-          currentRowStack.spacing = 12;
+          currentRowStack.spacing = 14;
           currentRowStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-          currentRowStack.height = '52px';
+          currentRowStack.height = '66px';
           bonusStackRows.addControl(currentRowStack);
         }
 
         const box = new Rectangle(`go_bonus_box_${bonus.id}`);
-        box.width = '52px';
-        box.height = '52px';
+        box.width = '64px';
+        box.height = '64px';
         box.thickness = 1;
         box.color = '#3B685C';
         box.background = 'rgba(10, 18, 22, 0.85)';
@@ -1886,8 +1900,8 @@ export class HUDManager {
         box.hoverCursor = 'pointer';
         
         const img = new Image(`go_bonus_img_${bonus.id}`, buildHudAssetUrl(`bonuses/${bonus.id}.png`));
-        img.width = '38px';
-        img.height = '38px';
+        img.width = '48px';
+        img.height = '48px';
         img.isHitTestVisible = false;
         box.addControl(img);
 
@@ -5211,20 +5225,21 @@ export class HUDManager {
     const idealWidth = this.guiClean.idealWidth || 1920;
     const idealHeight = this.guiClean.idealHeight || 1080;
     const isMobileLayout = idealWidth <= 960;
-    const controlScale = isMobileLayout ? 1.24 : 1.08;
-    const leftMargin = Math.round(Math.max(40, idealWidth * 0.04));
-    const bottomMargin = Math.round(Math.max(40, idealHeight * 0.06));
-    const extraSafeLift = Math.round(Math.max(26, idealHeight * 0.06));
+    const controlScale = isMobileLayout ? 1.44 : 1.16;
+    const leftMargin = Math.round(Math.max(48, idealWidth * 0.045));
+    const bottomMargin = Math.round(Math.max(52, idealHeight * 0.075));
+    const extraSafeLift = Math.round(Math.max(54, idealHeight * 0.085));
     const logPanelHeight = this.logPanel?.heightInPixels ?? 180;
     const statusPanelHeight = (this.statusPanel as Rectangle | null)?.heightInPixels ?? 180;
     const bottomSafe = Math.round(Math.max(logPanelHeight, statusPanelHeight) + bottomMargin + extraSafeLift);
-    const joystickSize = Math.round(180 * controlScale);
-    const joystickBgSize = Math.round(120 * controlScale);
-    const joystickThumbSize = Math.round(50 * controlScale);
-    const attackSize = Math.round(132 * controlScale);
-    const stanceSize = Math.round(108 * controlScale);
-    const ultSize = Math.round(120 * controlScale);
-    const buttonGap = Math.round(attackSize * 0.24);
+    const joystickBoost = 1.4;
+    const joystickSize = Math.round(194 * controlScale * joystickBoost);
+    const joystickBgSize = Math.round(132 * controlScale * joystickBoost);
+    const joystickThumbSize = Math.round(56 * controlScale * joystickBoost);
+    const attackSize = Math.round(140 * controlScale);
+    const stanceSize = Math.round(116 * controlScale);
+    const ultSize = Math.round(126 * controlScale);
+    const buttonGap = Math.round(attackSize * 0.28);
 
     // 1. LEFT JOYSTICK (Movement - Snapped to 8 Directions)
     const leftJoystickContainer = new Rectangle('left_joystick_container');
@@ -5234,7 +5249,8 @@ export class HUDManager {
     leftJoystickContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     leftJoystickContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     leftJoystickContainer.left = `${leftMargin}px`;
-    leftJoystickContainer.top = `-${bottomSafe}px`;
+    const joystickLowerOffset = Math.round(Math.max(22, idealHeight * 0.035));
+    leftJoystickContainer.top = `-${Math.max(0, bottomSafe - joystickLowerOffset)}px`;
     this.guiClean.addControl(leftJoystickContainer);
     this.mobileControls.push(leftJoystickContainer);
 
@@ -5266,9 +5282,10 @@ export class HUDManager {
     attackBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     attackBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     attackBtn.left = `-${leftMargin}px`;
-    attackBtn.top = `-${bottomSafe}px`;
+    const rightButtonsLowerOffset = Math.round(Math.max(18, idealHeight * 0.03));
+    attackBtn.top = `-${Math.max(0, bottomSafe - rightButtonsLowerOffset)}px`;
     if (attackBtn.textBlock) {
-      attackBtn.textBlock.fontSize = 19;
+      attackBtn.textBlock.fontSize = isMobileLayout ? 24 : 20;
       attackBtn.textBlock.fontFamily = fontFamily;
       attackBtn.textBlock.fontWeight = 'bold';
     }
@@ -5286,9 +5303,9 @@ export class HUDManager {
     stanceBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     stanceBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     stanceBtn.left = `-${leftMargin + attackSize + buttonGap}px`;
-    stanceBtn.top = `-${bottomSafe}px`;
+    stanceBtn.top = `-${Math.max(0, bottomSafe - rightButtonsLowerOffset)}px`;
     if (stanceBtn.textBlock) {
-      stanceBtn.textBlock.fontSize = 17;
+      stanceBtn.textBlock.fontSize = isMobileLayout ? 22 : 18;
       stanceBtn.textBlock.fontFamily = fontFamily;
       stanceBtn.textBlock.fontWeight = 'bold';
     }
@@ -5306,9 +5323,9 @@ export class HUDManager {
     ultBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     ultBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     ultBtn.left = `-${leftMargin + Math.round(attackSize * 0.45)}px`;
-    ultBtn.top = `-${bottomSafe + attackSize + buttonGap}px`;
+    ultBtn.top = `-${Math.max(0, bottomSafe - rightButtonsLowerOffset) + attackSize + buttonGap}px`;
     if (ultBtn.textBlock) {
-      ultBtn.textBlock.fontSize = 18;
+      ultBtn.textBlock.fontSize = isMobileLayout ? 23 : 19;
       ultBtn.textBlock.fontFamily = fontFamily;
       ultBtn.textBlock.fontWeight = 'bold';
     }

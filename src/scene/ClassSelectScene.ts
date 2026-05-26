@@ -403,12 +403,15 @@ export class ClassSelectScene {
     this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
-    const backBtn = UIFactory.createTerminalButton('classSelectBackTopLeft', 'BACK', '96px', '36px');
+    const menuButtonH = isMobileLayout ? 76 : 70;
+    const menuButtonFont = isMobileLayout ? 23 : 21;
+    const backBtn = UIFactory.createTerminalButton('classSelectBackTopLeft', 'BACK', `${isMobileLayout ? 170 : 144}px`, `${menuButtonH}px`);
     backBtn.left = '20px';
     backBtn.top = '20px';
     backBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     backBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     backBtn.zIndex = 1300;
+    if (backBtn.textBlock) backBtn.textBlock.fontSize = menuButtonFont;
     backBtn.onPointerClickObservable.add(() => {
       this.navigateBackToTitle();
     });
@@ -421,33 +424,36 @@ export class ClassSelectScene {
 
 
     // ── Central nav panel (navigation + START only) ──────────────────────────
-    const navPanel = UIFactory.createPanel('classSelectNavPanel', Math.round(layoutWidth * 0.24), Math.round(layoutHeight * 0.12));
+    const navPanel = UIFactory.createPanel('classSelectNavPanel', Math.round(layoutWidth * 0.30), Math.round(layoutHeight * 0.12));
     navPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     navPanel.top = `-${Math.round(layoutHeight * 0.04)}px`;
     mainLayoutContainer.addControl(navPanel);
 
-    const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', '100px', '70px');
-    leftBtn.left = '-140px';
-    leftBtn.top = '0px';
+    const navRow = new StackPanel('classSelectNavRow');
+    navRow.isVertical = false;
+    navRow.height = `${menuButtonH}px`;
+    navRow.width = `${Math.round(layoutWidth * (isMobileLayout ? 0.285 : 0.255))}px`;
+    navRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    navRow.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    navRow.spacing = isMobileLayout ? 10 : 8;
+    navPanel.addControl(navRow);
+
+    const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', `${isMobileLayout ? 120 : 108}px`, `${menuButtonH}px`);
     leftBtn.onPointerClickObservable.add(() => this.rotateCarousel(1));
-    if (leftBtn.textBlock) leftBtn.textBlock.fontSize = 20;
-    navPanel.addControl(leftBtn);
+    if (leftBtn.textBlock) leftBtn.textBlock.fontSize = menuButtonFont;
+    navRow.addControl(leftBtn);
 
-    const rightBtn = UIFactory.createTerminalButton('classSelectRight', '>', '100px', '70px');
-    rightBtn.left = '140px';
-    rightBtn.top = '0px';
-    rightBtn.onPointerClickObservable.add(() => this.rotateCarousel(-1));
-    if (rightBtn.textBlock) rightBtn.textBlock.fontSize = 20;
-    navPanel.addControl(rightBtn);
-
-    const startButton = UIFactory.createTerminalButton('classSelectStart', '[ START ]', '200px', '70px');
-    startButton.top = '0px';
-    startButton.left = '0px';
+    const startButton = UIFactory.createTerminalButton('classSelectStart', '[ START ]', `${isMobileLayout ? 250 : 220}px`, `${menuButtonH}px`);
     startButton.onPointerClickObservable.add(() => {
       this.tryStartSelectedClass();
     });
-    if (startButton.textBlock) startButton.textBlock.fontSize = 20;
-    navPanel.addControl(startButton);
+    if (startButton.textBlock) startButton.textBlock.fontSize = menuButtonFont;
+    navRow.addControl(startButton);
+
+    const rightBtn = UIFactory.createTerminalButton('classSelectRight', '>', `${isMobileLayout ? 120 : 108}px`, `${menuButtonH}px`);
+    rightBtn.onPointerClickObservable.add(() => this.rotateCarousel(-1));
+    if (rightBtn.textBlock) rightBtn.textBlock.fontSize = menuButtonFont;
+    navRow.addControl(rightBtn);
 
     // ── Right-side class info overlay ─────────────────────────────────────────
     const infoOverlay = new Rectangle('classInfoOverlay');
@@ -471,7 +477,7 @@ export class ClassSelectScene {
     infoLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoOverlay.addControl(infoLabel);
 
-    const infoText = UIFactory.createText('classSelectInfoText', '', 20, '#CFFCF3');
+    const infoText = UIFactory.createText('classSelectInfoText', '', isMobileLayout ? 23 : 21, '#CFFCF3');
     infoText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.textWrapping = true;
@@ -504,7 +510,7 @@ export class ClassSelectScene {
     loreLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreOverlay.addControl(loreLabel);
 
-    const loreText = UIFactory.createText('classSelectLoreText', '', 20, '#CFFCF3');
+    const loreText = UIFactory.createText('classSelectLoreText', '', isMobileLayout ? 23 : 21, '#CFFCF3');
     loreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreText.textWrapping = true;
@@ -521,6 +527,10 @@ export class ClassSelectScene {
   }
 
   private createTutorialPromptOverlay(parent: Rectangle): void {
+    const idealWidth = this.gui.idealWidth || DESIGN_WIDTH;
+    const isMobileLayout = idealWidth <= 960;
+    const menuButtonH = isMobileLayout ? 76 : 70;
+
     const overlay = new Rectangle('classTutorialPromptOverlay');
     overlay.width = 1;
     overlay.height = 1;
@@ -562,7 +572,7 @@ export class ClassSelectScene {
     buttonRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     panel.addControl(buttonRow);
 
-    const startTutorialBtn = UIFactory.createTerminalButton('classTutorialPromptStart', 'START QUICK TUTORIAL', '320px', '52px');
+    const startTutorialBtn = UIFactory.createTerminalButton('classTutorialPromptStart', 'START QUICK TUTORIAL', `${isMobileLayout ? 360 : 340}px`, `${Math.round(menuButtonH * 0.8)}px`);
     startTutorialBtn.onPointerClickObservable.add(() => {
       const classId = this.tutorialPromptClassId;
       this.hideTutorialPrompt();
@@ -571,7 +581,7 @@ export class ClassSelectScene {
     });
     buttonRow.addControl(startTutorialBtn);
 
-    const skipBtn = UIFactory.createTerminalButton('classTutorialPromptSkip', 'SKIP TO RUN', '240px', '52px');
+    const skipBtn = UIFactory.createTerminalButton('classTutorialPromptSkip', 'SKIP TO RUN', `${isMobileLayout ? 280 : 260}px`, `${Math.round(menuButtonH * 0.8)}px`);
     skipBtn.onPointerClickObservable.add(() => {
       const classId = this.tutorialPromptClassId;
       this.hideTutorialPrompt();
@@ -1374,7 +1384,7 @@ export class ClassSelectScene {
         this.setInfoTypingTarget(`${selected.label}\n// READY`);
       }
       this.infoText.color = '#CFFCF3';
-      this.infoText.fontSize = 18;
+      this.infoText.fontSize = this.isMobileLayout ? 22 : 20;
 
       if (lore) {
         const loreText =
@@ -1386,7 +1396,7 @@ export class ClassSelectScene {
         this.setLoreTypingTarget(`No lore files found for this class.`);
       }
       this.loreText.color = '#CFFCF3';
-      this.loreText.fontSize = 18;
+      this.loreText.fontSize = this.isMobileLayout ? 22 : 20;
 
       this.startButton.isEnabled = true;
       this.startButton.background = '#1D3B3A';
@@ -1397,11 +1407,11 @@ export class ClassSelectScene {
     } else {
       this.setInfoTypingTarget(`${selected.label}\n// COMING SOON`);
       this.infoText.color = '#7C9C98';
-      this.infoText.fontSize = 20;
+      this.infoText.fontSize = this.isMobileLayout ? 24 : 21;
 
       this.setLoreTypingTarget(`LORE ENCRYPTED`);
       this.loreText.color = '#7C9C98';
-      this.loreText.fontSize = 20;
+      this.loreText.fontSize = this.isMobileLayout ? 24 : 21;
 
       this.startButton.isEnabled = false;
       this.startButton.background = 'rgba(20,30,35,0.75)';

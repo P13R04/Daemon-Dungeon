@@ -53,6 +53,9 @@ export class SettingsMenuBuilder {
   private roomPreloadAheadSlider: Slider | null = null;
   private roomPreloadAheadValueText: TextBlock | null = null;
   private resetProgressConfirmOverlay: Rectangle | null = null;
+  private isMobileLayout: boolean = false;
+  private menuButtonHeight: number = 70;
+  private menuButtonFontSize: number = 21;
 
   public awaitingRebind: KeybindingAction | null = null;
 
@@ -77,6 +80,12 @@ export class SettingsMenuBuilder {
   }
 
   public createSettingsOverlay(gui: any): Rectangle {
+    const idealWidth = gui?.idealWidth || 1920;
+    const idealHeight = gui?.idealHeight || 1080;
+    this.isMobileLayout = idealWidth <= 960;
+    this.menuButtonHeight = this.isMobileLayout ? 82 : 74;
+    this.menuButtonFontSize = this.isMobileLayout ? 25 : 23;
+
     const overlay = new Rectangle('settingsOverlay');
     overlay.width = 1;
     overlay.height = 1;
@@ -88,29 +97,29 @@ export class SettingsMenuBuilder {
     gui.addControl(overlay);
     this.settingsOverlay = overlay;
 
-    const windowPanel = UIFactory.createPanel('settingsWindow', 1200, 780);
+    const windowPanel = UIFactory.createPanel('settingsWindow', Math.round(idealWidth * 0.9), Math.round(idealHeight * 0.92));
     overlay.addControl(windowPanel);
 
     const title = new TextBlock('settingsTitle');
     title.text = 'SETTINGS CONSOLE';
     title.color = '#7CFFEA';
-    title.fontSize = 36;
+    title.fontSize = this.isMobileLayout ? 46 : 40;
     title.fontFamily = 'Consolas';
     title.top = '-350px';
     windowPanel.addControl(title);
 
     const actionRow = new Rectangle('settingsActionRow');
-    actionRow.width = '1140px';
-    actionRow.height = '48px';
+    actionRow.width = `${Math.round(idealWidth * 0.85)}px`;
+    actionRow.height = `${this.menuButtonHeight + 6}px`;
     actionRow.thickness = 0;
-    actionRow.top = '-280px';
+    actionRow.top = `-${Math.round(idealHeight * 0.35)}px`;
     actionRow.isPointerBlocker = true;
     actionRow.zIndex = 120;
     windowPanel.addControl(actionRow);
 
     const closeBtn = Button.CreateSimpleButton('settingsCloseButton', 'BACK');
-    closeBtn.width = '180px';
-    closeBtn.height = '44px';
+    closeBtn.width = `${this.isMobileLayout ? 220 : 200}px`;
+    closeBtn.height = `${this.menuButtonHeight}px`;
     closeBtn.color = '#D2FFF2';
     closeBtn.cornerRadius = 4;
     closeBtn.background = 'rgba(20,38,45,0.95)';
@@ -120,7 +129,7 @@ export class SettingsMenuBuilder {
     closeBtn.isPointerBlocker = true;
     closeBtn.isHitTestVisible = true;
     closeBtn.zIndex = 130;
-    if (closeBtn.textBlock) closeBtn.textBlock.fontSize = 18;
+    if (closeBtn.textBlock) closeBtn.textBlock.fontSize = this.menuButtonFontSize;
     this.bindButtonAction(closeBtn, () => {
       this.awaitingRebind = null;
       this.onClose();
@@ -128,8 +137,8 @@ export class SettingsMenuBuilder {
     actionRow.addControl(closeBtn);
 
     const resetBtn = Button.CreateSimpleButton('settingsResetButton', 'RESET DEFAULTS');
-    resetBtn.width = '240px';
-    resetBtn.height = '44px';
+    resetBtn.width = `${this.isMobileLayout ? 300 : 260}px`;
+    resetBtn.height = `${this.menuButtonHeight}px`;
     resetBtn.color = '#C2FFE2';
     resetBtn.cornerRadius = 4;
     resetBtn.background = 'rgba(22,48,44,0.95)';
@@ -139,7 +148,7 @@ export class SettingsMenuBuilder {
     resetBtn.isPointerBlocker = true;
     resetBtn.isHitTestVisible = true;
     resetBtn.zIndex = 130;
-    if (resetBtn.textBlock) resetBtn.textBlock.fontSize = 18;
+    if (resetBtn.textBlock) resetBtn.textBlock.fontSize = this.menuButtonFontSize;
     this.bindButtonAction(resetBtn, () => {
       this.awaitingRebind = null;
       GameSettingsStore.resetToDefaults();
@@ -147,14 +156,14 @@ export class SettingsMenuBuilder {
     actionRow.addControl(resetBtn);
 
     const scroll = UIFactory.createScrollViewer('settingsScroll');
-    scroll.width = '1140px';
-    scroll.height = '570px';
-    scroll.top = '60px';
+    scroll.width = `${Math.round(idealWidth * 0.85)}px`;
+    scroll.height = `${Math.round(idealHeight * 0.66)}px`;
+    scroll.top = `${Math.round(idealHeight * 0.06)}px`;
     windowPanel.addControl(scroll);
 
     const content = new StackPanel('settingsStack');
     content.isVertical = true;
-    content.spacing = 8;
+    content.spacing = this.isMobileLayout ? 14 : 12;
     content.width = 1;
     scroll.addControl(content);
 
@@ -173,7 +182,7 @@ export class SettingsMenuBuilder {
 
     parent.addControl(this.makeToggleRow(
       'Lightweight Procedural Texture Mode',
-      'Uses lighter procedural texture generation and reduced relief density.',
+      '',
       (checkbox) => {
         this.lightweightTexturesCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -184,8 +193,8 @@ export class SettingsMenuBuilder {
     ));
 
     parent.addControl(this.makeToggleRow(
-      'Progressive Enemy Spawning',
-      'Spawns enemies in small batches over frames to avoid spikes.',
+      'Progressive Enemy Spawning (anti-lag)',
+      '',
       (checkbox) => {
         this.progressiveSpawnCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -197,7 +206,7 @@ export class SettingsMenuBuilder {
 
     parent.addControl(this.makeToggleRow(
       'Wall Occlusion Transparency',
-      'Renders walls partially transparent when they hide the player.',
+      '',
       (checkbox) => {
         this.wallOcclusionCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -209,7 +218,7 @@ export class SettingsMenuBuilder {
 
     parent.addControl(this.makeGraphicsNumberSliderRow(
       'Room Preload Ahead',
-      'How many next rooms are preloaded ahead of the current room.',
+      '',
       1, 8,
       (slider, valueText) => {
         this.roomPreloadAheadSlider = slider;
@@ -231,7 +240,7 @@ export class SettingsMenuBuilder {
 
     parent.addControl(this.makeToggleRow(
       'Keyboard-Only Mode',
-      'Ignore mouse buttons during gameplay.',
+      '',
       (checkbox) => {
         this.keyboardOnlyCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -243,7 +252,7 @@ export class SettingsMenuBuilder {
 
     parent.addControl(this.makeToggleRow(
       'Auto Aim On Movement (8 directions)',
-      'Aim follows last movement direction in keyboard-only mode.',
+      '',
       (checkbox) => {
         this.autoAimCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -256,7 +265,7 @@ export class SettingsMenuBuilder {
     if (!import.meta.env.PROD) {
       parent.addControl(this.makeActionRow(
         'Automated Benchmark',
-        'Runs a repeatable autoplay benchmark and copies full metrics to clipboard.',
+        '',
         'RUN BENCHMARK',
         () => {
           this.awaitingRebind = null;
@@ -280,8 +289,8 @@ export class SettingsMenuBuilder {
     parent.addControl(this.makeSectionHeader('ACCESSIBILITY'));
 
     const row = new Rectangle('accessibilityFilterRow');
-    row.width = '1100px';
-    row.height = '68px';
+    row.width = this.isMobileLayout ? '96%' : '97%';
+    row.height = this.isMobileLayout ? '90px' : '84px';
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -290,7 +299,7 @@ export class SettingsMenuBuilder {
     const label = new TextBlock('accessibilityFilterLabel');
     label.text = 'Color Vision Filter';
     label.color = '#B9F9E8';
-    label.fontSize = 18;
+    label.fontSize = this.isMobileLayout ? 24 : 22;
     label.fontFamily = 'Consolas';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -298,15 +307,15 @@ export class SettingsMenuBuilder {
     row.addControl(label);
 
     const button = Button.CreateSimpleButton('accessibilityFilterButton', 'NONE');
-    button.width = '300px';
-    button.height = '38px';
+    button.width = this.isMobileLayout ? '320px' : '300px';
+    button.height = `${this.menuButtonHeight}px`;
     button.color = '#DAFFF3';
     button.cornerRadius = 4;
     button.background = 'rgba(22,48,44,0.95)';
     button.thickness = 1;
     button.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     button.left = '-16px';
-    if (button.textBlock) button.textBlock.fontSize = 16;
+    if (button.textBlock) button.textBlock.fontSize = this.menuButtonFontSize;
     this.bindButtonAction(button, () => {
       const current = this.settingsSnapshot.accessibility.colorFilter;
       const currentIndex = FILTER_OPTIONS.indexOf(current);
@@ -320,7 +329,7 @@ export class SettingsMenuBuilder {
 
     parent.addControl(this.makeToggleRow(
       'Enable CAT Easter Egg (God Mode)',
-      'Adds CAT class to selection.',
+      '',
       (checkbox) => {
         this.catGodModeCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -333,7 +342,7 @@ export class SettingsMenuBuilder {
     if (!import.meta.env.PROD) {
       parent.addControl(this.makeToggleRow(
         'Enable Developer Mode (Local Only)',
-        'Shows development tools, cheats, and metrics.',
+        '',
         (checkbox) => {
           this.devModeCheckbox = checkbox;
           checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -346,8 +355,8 @@ export class SettingsMenuBuilder {
 
     // RESET PROGRESSION — at the very bottom of settings
     const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET PROGRESSION');
-    resetProgressBtn.width = '360px';
-    resetProgressBtn.height = '38px';
+    resetProgressBtn.width = `${this.isMobileLayout ? 480 : 420}px`;
+    resetProgressBtn.height = `${this.menuButtonHeight}px`;
     resetProgressBtn.color = '#FFE5E5';
     resetProgressBtn.cornerRadius = 4;
     resetProgressBtn.background = 'rgba(72,20,20,0.95)';
@@ -356,7 +365,7 @@ export class SettingsMenuBuilder {
     resetProgressBtn.top = '8px';
     resetProgressBtn.isPointerBlocker = true;
     resetProgressBtn.isHitTestVisible = true;
-    if (resetProgressBtn.textBlock) resetProgressBtn.textBlock.fontSize = 16;
+    if (resetProgressBtn.textBlock) resetProgressBtn.textBlock.fontSize = this.menuButtonFontSize;
     this.bindButtonAction(resetProgressBtn, () => {
       this.awaitingRebind = null;
       this.showResetProgressConfirmOverlay();
@@ -453,15 +462,15 @@ export class SettingsMenuBuilder {
 
   private makeSectionHeader(text: string): Rectangle {
     const row = new Rectangle(`sectionHeader_${text.replace(/\s+/g, '_')}`);
-    row.width = '1100px';
-    row.height = '52px';
+    row.width = this.isMobileLayout ? '96%' : '97%';
+    row.height = this.isMobileLayout ? '64px' : '58px';
     row.thickness = 0;
     row.background = 'rgba(10, 30, 35, 0.6)';
 
     const title = new TextBlock(`sectionHeaderText_${text.replace(/\s+/g, '_')}`);
     title.text = text;
     title.color = '#7CFFEA';
-    title.fontSize = 24;
+    title.fontSize = this.isMobileLayout ? 30 : 28;
     title.fontFamily = 'Consolas';
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     title.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -485,8 +494,8 @@ export class SettingsMenuBuilder {
 
   private makeKeybindRow(action: KeybindingAction, labelText: string): Rectangle {
     const row = new Rectangle(`keybindRow_${action}`);
-    row.width = '1100px';
-    row.height = '60px';
+    row.width = this.isMobileLayout ? '96%' : '97%';
+    row.height = this.isMobileLayout ? '94px' : '86px';
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -495,7 +504,7 @@ export class SettingsMenuBuilder {
     const label = new TextBlock(`keybindLabel_${action}`);
     label.text = labelText;
     label.color = '#B9F9E8';
-    label.fontSize = 18;
+    label.fontSize = this.isMobileLayout ? 24 : 22;
     label.fontFamily = 'Consolas';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -503,15 +512,15 @@ export class SettingsMenuBuilder {
     row.addControl(label);
 
     const keyButton = Button.CreateSimpleButton(`keybindButton_${action}`, '...');
-    keyButton.width = '280px';
-    keyButton.height = '38px';
+    keyButton.width = this.isMobileLayout ? '300px' : '280px';
+    keyButton.height = `${this.menuButtonHeight}px`;
     keyButton.color = '#E3FFF7';
     keyButton.cornerRadius = 4;
     keyButton.background = 'rgba(22,48,44,0.95)';
     keyButton.thickness = 1;
     keyButton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     keyButton.left = '-16px';
-    if (keyButton.textBlock) keyButton.textBlock.fontSize = 18;
+    if (keyButton.textBlock) keyButton.textBlock.fontSize = this.menuButtonFontSize;
     this.bindButtonAction(keyButton, () => {
       if (this.awaitingRebind === action) {
         this.awaitingRebind = null;
@@ -532,8 +541,8 @@ export class SettingsMenuBuilder {
 
   private makeToggleRow(title: string, details: string, onReady: (checkbox: Checkbox) => void): Rectangle {
     const row = new Rectangle(`toggleRow_${title.replace(/\s+/g, '_')}`);
-    row.width = '1100px';
-    row.height = '84px';
+    row.width = this.isMobileLayout ? '96%' : '97%';
+    row.height = this.isMobileLayout ? '94px' : '86px';
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -542,28 +551,30 @@ export class SettingsMenuBuilder {
     const titleText = new TextBlock(`toggleTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
     titleText.color = '#B9F9E8';
-    titleText.fontSize = 18;
+    titleText.fontSize = this.isMobileLayout ? 24 : 22;
     titleText.fontFamily = 'Consolas';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
-    titleText.top = '-14px';
+    titleText.top = '0px';
     row.addControl(titleText);
 
-    const detailText = new TextBlock(`toggleDetails_${title.replace(/\s+/g, '_')}`);
-    detailText.text = details;
-    detailText.color = '#86B9AE';
-    detailText.fontSize = 13;
-    detailText.fontFamily = 'Consolas';
-    detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    detailText.paddingLeft = '14px';
-    detailText.top = '16px';
-    row.addControl(detailText);
+    if (details.trim().length > 0) {
+      const detailText = new TextBlock(`toggleDetails_${title.replace(/\s+/g, '_')}`);
+      detailText.text = details;
+      detailText.color = '#86B9AE';
+      detailText.fontSize = this.isMobileLayout ? 15 : 14;
+      detailText.fontFamily = 'Consolas';
+      detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      detailText.paddingLeft = '14px';
+      detailText.top = '18px';
+      row.addControl(detailText);
+    }
 
     const checkbox = new Checkbox();
-    checkbox.width = '36px';
-    checkbox.height = '36px';
+    checkbox.width = this.isMobileLayout ? '40px' : '36px';
+    checkbox.height = this.isMobileLayout ? '40px' : '36px';
     checkbox.color = '#7CFFEA';
     checkbox.background = 'rgba(0,0,0,0.5)';
     checkbox.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -582,8 +593,8 @@ export class SettingsMenuBuilder {
     onReady: (slider: Slider, valueText: TextBlock) => void
   ): Rectangle {
     const row = new Rectangle(`sliderRow_${title.replace(/\s+/g, '_')}`);
-    row.width = '1100px';
-    row.height = '100px';
+    row.width = this.isMobileLayout ? '96%' : '97%';
+    row.height = this.isMobileLayout ? '104px' : '96px';
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -592,46 +603,48 @@ export class SettingsMenuBuilder {
     const titleText = new TextBlock(`sliderTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
     titleText.color = '#B9F9E8';
-    titleText.fontSize = 18;
+    titleText.fontSize = this.isMobileLayout ? 24 : 22;
     titleText.fontFamily = 'Consolas';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
-    titleText.top = '-24px';
+    titleText.top = '0px';
     row.addControl(titleText);
 
-    const detailText = new TextBlock(`sliderDetails_${title.replace(/\s+/g, '_')}`);
-    detailText.text = details;
-    detailText.color = '#86B9AE';
-    detailText.fontSize = 13;
-    detailText.fontFamily = 'Consolas';
-    detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    detailText.paddingLeft = '14px';
-    detailText.top = '2px';
-    row.addControl(detailText);
+    if (details.trim().length > 0) {
+      const detailText = new TextBlock(`sliderDetails_${title.replace(/\s+/g, '_')}`);
+      detailText.text = details;
+      detailText.color = '#86B9AE';
+      detailText.fontSize = this.isMobileLayout ? 15 : 14;
+      detailText.fontFamily = 'Consolas';
+      detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      detailText.paddingLeft = '14px';
+      detailText.top = '18px';
+      row.addControl(detailText);
+    }
 
     const valueText = new TextBlock(`sliderValueText_${title.replace(/\s+/g, '_')}`);
     valueText.text = '';
     valueText.color = '#7CFFEA';
-    valueText.fontSize = 16;
+    valueText.fontSize = this.isMobileLayout ? 20 : 18;
     valueText.fontFamily = 'Consolas';
     valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.paddingRight = '20px';
-    valueText.top = '-24px';
+    valueText.top = '0px';
     row.addControl(valueText);
 
     const slider = new Slider();
     slider.minimum = min;
     slider.maximum = max;
     slider.step = 1;
-    slider.width = '1060px';
+    slider.width = this.isMobileLayout ? '92%' : '94%';
     slider.height = '20px';
     slider.color = '#7CFFEA';
     slider.background = 'rgba(0,0,0,0.5)';
     slider.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    slider.top = '24px';
+    slider.top = details.trim().length > 0 ? '28px' : '22px';
     row.addControl(slider);
 
     onReady(slider, valueText);
@@ -640,8 +653,8 @@ export class SettingsMenuBuilder {
 
   private makeAudioSliderRow(channel: AudioChannel, labelText: string): Rectangle {
     const row = new Rectangle(`audioRow_${channel}`);
-    row.width = '1100px';
-    row.height = '68px';
+    row.width = this.isMobileLayout ? '96%' : '97%';
+    row.height = this.isMobileLayout ? '90px' : '84px';
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -650,7 +663,7 @@ export class SettingsMenuBuilder {
     const label = new TextBlock(`audioLabel_${channel}`);
     label.text = labelText;
     label.color = '#B9F9E8';
-    label.fontSize = 18;
+    label.fontSize = this.isMobileLayout ? 24 : 22;
     label.fontFamily = 'Consolas';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -660,18 +673,18 @@ export class SettingsMenuBuilder {
     const valueText = new TextBlock(`audioValue_${channel}`);
     valueText.text = '100%';
     valueText.color = '#7CFFEA';
-    valueText.fontSize = 16;
+    valueText.fontSize = this.isMobileLayout ? 20 : 18;
     valueText.fontFamily = 'Consolas';
     valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    valueText.paddingRight = '760px';
+    valueText.paddingRight = this.isMobileLayout ? '64%' : '66%';
     row.addControl(valueText);
     this.audioValueTexts[channel] = valueText;
 
     const slider = new Slider();
     slider.minimum = 0;
     slider.maximum = 100;
-    slider.width = '720px';
+    slider.width = this.isMobileLayout ? '62%' : '64%';
     slider.height = '20px';
     slider.color = '#7CFFEA';
     slider.background = 'rgba(0,0,0,0.5)';
@@ -692,8 +705,8 @@ export class SettingsMenuBuilder {
 
   private makeActionRow(title: string, details: string, buttonText: string, action: () => void): Rectangle {
     const row = new Rectangle(`actionRow_${title.replace(/\s+/g, '_')}`);
-    row.width = '1100px';
-    row.height = '84px';
+    row.width = this.isMobileLayout ? '96%' : '97%';
+    row.height = this.isMobileLayout ? '94px' : '86px';
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -702,35 +715,37 @@ export class SettingsMenuBuilder {
     const titleText = new TextBlock(`actionTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
     titleText.color = '#FFD782';
-    titleText.fontSize = 18;
+    titleText.fontSize = this.isMobileLayout ? 24 : 22;
     titleText.fontFamily = 'Consolas';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
-    titleText.top = '-14px';
+    titleText.top = '0px';
     row.addControl(titleText);
 
-    const detailText = new TextBlock(`actionDetails_${title.replace(/\s+/g, '_')}`);
-    detailText.text = details;
-    detailText.color = '#86B9AE';
-    detailText.fontSize = 13;
-    detailText.fontFamily = 'Consolas';
-    detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    detailText.paddingLeft = '14px';
-    detailText.top = '16px';
-    row.addControl(detailText);
+    if (details.trim().length > 0) {
+      const detailText = new TextBlock(`actionDetails_${title.replace(/\s+/g, '_')}`);
+      detailText.text = details;
+      detailText.color = '#86B9AE';
+      detailText.fontSize = this.isMobileLayout ? 15 : 14;
+      detailText.fontFamily = 'Consolas';
+      detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      detailText.paddingLeft = '14px';
+      detailText.top = '18px';
+      row.addControl(detailText);
+    }
 
     const actionBtn = Button.CreateSimpleButton(`actionBtn_${title.replace(/\s+/g, '_')}`, buttonText);
-    actionBtn.width = '260px';
-    actionBtn.height = '38px';
+    actionBtn.width = this.isMobileLayout ? '300px' : '280px';
+    actionBtn.height = `${this.menuButtonHeight}px`;
     actionBtn.color = '#FFD782';
     actionBtn.cornerRadius = 4;
     actionBtn.background = 'rgba(48,40,22,0.95)';
     actionBtn.thickness = 1;
     actionBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     actionBtn.left = '-16px';
-    if (actionBtn.textBlock) actionBtn.textBlock.fontSize = 16;
+    if (actionBtn.textBlock) actionBtn.textBlock.fontSize = this.menuButtonFontSize;
     this.bindButtonAction(actionBtn, action);
     row.addControl(actionBtn);
 

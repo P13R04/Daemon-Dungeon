@@ -240,7 +240,7 @@ export class HighscoresScene {
     const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
     const centerCardWidth = Math.round(layoutWidth * (isMobileLayout ? 0.34 : 0.32));
     const centerCardHeight = Math.round(sidePanelHeight * 0.56);
-    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 22);
+    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 34);
 
     const mainLayoutContainer = new Rectangle('mainLayout');
     mainLayoutContainer.width = 1;
@@ -307,18 +307,18 @@ export class HighscoresScene {
     this.leftTitle.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftTitle);
 
-    this.leftDescription = this.makeTerminalText('leftDesc', 16, '#CFFCF3');
-    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.39)}px`;
+    this.leftDescription = this.makeTerminalText('leftDesc', 18, '#CFFCF3');
+    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.37)}px`;
     this.leftDescription.width = `${sideInnerWidth}px`;
     this.leftDescription.height = `${Math.round(sidePanelHeight * 0.07)}px`;
     this.leftDescription.isHitTestVisible = false;
     this.leftDescription.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftDescription);
 
-    const scrollViewer = new ScrollViewer('leftListScroll');
+    const scrollViewer = UIFactory.createScrollViewer('leftListScroll');
     scrollViewer.width = `${sideInnerWidth}px`;
     scrollViewer.height = `${Math.round(sidePanelHeight * 0.8)}px`;
-    scrollViewer.top = `${Math.round(sidePanelHeight * 0.08)}px`;
+    scrollViewer.top = `${Math.round(sidePanelHeight * 0.1)}px`;
     scrollViewer.thickness = 0;
     scrollViewer.barColor = '#3B685C';
     scrollViewer.barBackground = 'rgba(0,0,0,0.5)';
@@ -344,8 +344,8 @@ export class HighscoresScene {
     this.rightTitle.height = `${Math.round(sidePanelHeight * 0.09)}px`;
     this.rightPanel.addControl(this.rightTitle);
 
-    this.rightBody = this.makeTerminalText('rightBody', 18, '#CFFCF3');
-    this.rightBody.top = `${Math.round(sidePanelHeight * 0.03)}px`;
+    this.rightBody = this.makeTerminalText('rightBody', 20, '#CFFCF3');
+    this.rightBody.top = `${Math.round(sidePanelHeight * 0.05)}px`;
     this.rightBody.width = `${sideInnerWidth}px`;
     this.rightBody.height = `${Math.round(sidePanelHeight * 0.8)}px`;
     this.rightPanel.addControl(this.rightBody);
@@ -358,14 +358,14 @@ export class HighscoresScene {
 
     this.centerCardTitle = new TextBlock('centerTitle', 'RUN SUMMARY');
     this.centerCardTitle.fontFamily = this.terminalFont;
-    this.centerCardTitle.fontSize = 30;
+    this.centerCardTitle.fontSize = isMobileLayout ? 36 : 32;
     this.centerCardTitle.color = '#FFFFFF';
     this.centerCardTitle.top = `-${Math.round(centerCardHeight * 0.39)}px`;
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = new TextBlock('centerSubtitle', '');
     this.centerCardSubtitle.fontFamily = this.terminalFont;
-    this.centerCardSubtitle.fontSize = 20;
+    this.centerCardSubtitle.fontSize = isMobileLayout ? 26 : 22;
     this.centerCardSubtitle.color = '#7DFFE8';
     this.centerCardSubtitle.top = `-${Math.round(centerCardHeight * 0.28)}px`;
     this.centerCard.addControl(this.centerCardSubtitle);
@@ -381,7 +381,7 @@ export class HighscoresScene {
 
     this.centerBonusLabel = new TextBlock('bonusLabel', 'EQUIPPED BONUSES');
     this.centerBonusLabel.fontFamily = this.terminalFont;
-    this.centerBonusLabel.fontSize = 18;
+    this.centerBonusLabel.fontSize = isMobileLayout ? 22 : 19;
     this.centerBonusLabel.color = '#7CFFEA';
     this.centerBonusLabel.top = `-${Math.round(centerCardHeight * 0.19)}px`;
     this.centerBonusesContainer.addControl(this.centerBonusLabel);
@@ -425,7 +425,7 @@ export class HighscoresScene {
 
     this.centerDetailsTitle = new TextBlock('centerDetailsTitle', '> SYSTEM METRICS');
     this.centerDetailsTitle.fontFamily = this.terminalFont;
-    this.centerDetailsTitle.fontSize = 20;
+    this.centerDetailsTitle.fontSize = isMobileLayout ? 24 : 21;
     this.centerDetailsTitle.color = '#7CFFEA';
     this.centerDetailsTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.centerDetailsTitle.height = '28px';
@@ -433,7 +433,7 @@ export class HighscoresScene {
 
     this.centerDetailsDesc = new TextBlock('centerDetailsDesc', 'Hover a module to analyze database metadata.');
     this.centerDetailsDesc.fontFamily = this.terminalFont;
-    this.centerDetailsDesc.fontSize = 18;
+    this.centerDetailsDesc.fontSize = isMobileLayout ? 21 : 19;
     this.centerDetailsDesc.color = '#647D7D';
     this.centerDetailsDesc.textWrapping = true;
     this.centerDetailsDesc.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -464,15 +464,16 @@ export class HighscoresScene {
   }
 
   private makeTabButton(label: string, onClick: () => void): Button {
+    const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
     const btn = Button.CreateSimpleButton(`tab_${label}`, label);
-    btn.width = '320px';
-    btn.height = '46px';
+    btn.width = `${isMobileLayout ? 380 : 350}px`;
+    btn.height = `${isMobileLayout ? 82 : 74}px`;
     btn.color = '#7CFFEA';
     btn.thickness = 1;
     btn.cornerRadius = 2;
     btn.background = 'rgba(20, 30, 35, 0.6)';
     btn.fontFamily = this.terminalFont;
-    btn.fontSize = 20;
+    btn.fontSize = isMobileLayout ? 25 : 22;
     btn.onPointerUpObservable.add(onClick);
     return btn;
   }
@@ -497,12 +498,13 @@ export class HighscoresScene {
     this.clearLeftList();
     if (this.runs.length === 0) {
       const emptyBtn = Button.CreateSimpleButton('empty_hs', 'NO RECORDED RUNS');
-      emptyBtn.width = '392px';
-      emptyBtn.height = '42px';
+      const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
+      emptyBtn.width = `${Math.max(420, this.leftListButtonWidth)}px`;
+      emptyBtn.height = `${isMobileLayout ? 64 : 56}px`;
       emptyBtn.thickness = 0;
       emptyBtn.color = '#647D7D';
       emptyBtn.fontFamily = 'Consolas';
-      emptyBtn.fontSize = 18;
+      emptyBtn.fontSize = isMobileLayout ? 22 : 19;
       this.leftListStack.addControl(emptyBtn);
       return;
     }
@@ -522,9 +524,10 @@ export class HighscoresScene {
   }
 
   private makeLeftListButton(id: string, label: string, active: boolean, onClick: () => void): Button {
+    const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
     const btn = Button.CreateSimpleButton(id, label);
     btn.width = `${this.leftListButtonWidth}px`;
-    btn.height = '42px';
+    btn.height = `${isMobileLayout ? 64 : 56}px`;
     btn.thickness = 1;
     btn.cornerRadius = 4;
     btn.color = active ? '#F1FFFC' : '#A3DCCF';
@@ -536,7 +539,7 @@ export class HighscoresScene {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
       btn.textBlock.fontFamily = 'Consolas';
-      btn.textBlock.fontSize = 15;
+      btn.textBlock.fontSize = isMobileLayout ? 21 : 18;
     }
     return btn;
   }
