@@ -1418,13 +1418,7 @@ export class PlayerController {
     const isInUltimate = this.rogueUltimateActive || this.tankUltimateActive;
     const hasEnemies = this.enemiesPresent || this.enemies.some(e => e.isActive());
 
-    // Autofire logic: automatically hold slot 1 (primary attack) in keyboard-only mode 
-    // tant que la salle n'est pas clear (unless in stance or ultimate)
-    if (this.keyboardOnlyMode && hasEnemies && !slot2Held && !isInUltimate) {
-      this.inputSlot1Held = true;
-    } else {
-      this.inputSlot1Held = this.inputManager.isAttackSlotHeld(1) || leftHeld;
-    }
+    this.inputSlot1Held = this.inputManager.isAttackSlotHeld(1) || leftHeld;
 
     const slot1Held = this.inputSlot1Held;
     const slot1Pressed = this.inputSlot1Pressed;

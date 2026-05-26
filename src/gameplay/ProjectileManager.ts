@@ -743,7 +743,12 @@ export class ProjectileManager {
         } else {
           const startPos = previousPosition ?? projectile.data.position;
           const playerPos = player.getPosition();
-          const playerHitRadius = projectile.data.projectileType === 'artificer_main' ? 0.95 : 0.8;
+          let playerHitRadius = 0.8;
+          if (projectile.data.projectileType === 'artificer_main') {
+            playerHitRadius = 0.95;
+          } else if (projectile.data.projectileType === 'bullet_hell') {
+            playerHitRadius = 0.35;
+          }
           const hitPoint = this.segmentCircleImpactPointXZ(startPos, projectile.data.position, playerPos, playerHitRadius);
 
           if (hitPoint) {

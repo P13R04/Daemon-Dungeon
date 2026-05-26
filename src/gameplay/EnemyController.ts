@@ -396,7 +396,7 @@ export class EnemyController {
     if (behaviorPreset) {
       this.applyBehaviorPreset(behaviorPreset);
     }
-    if (this.behavior === 'bull') {
+    if (['bull', 'jumper', 'sentinel', 'prefire_sentinel', 'swarm_coordinator'].includes(this.behavior)) {
       this.avoidObstacles = true;
       this.avoidVoid = true;
       this.canFallIntoVoid = false;
@@ -511,7 +511,7 @@ export class EnemyController {
     // Create visual
     this.mesh = VisualPlaceholder.createEnemyPlaceholder(this.scene, this.id);
     this.mesh.position = this.position.clone();
-    this.mesh.rotation = Vector3.Zero();
+    this.mesh.rotation = new Vector3(0, Math.PI, 0);
     // Ensure enemy is at correct height
     this.mesh.position.y = (this.needsLowHeight ? 0.0 : 1.0) + EnemyController.globalHeightOffset;
     this.mesh.checkCollisions = true;
@@ -1820,6 +1820,9 @@ export class EnemyController {
           this.velocity = Vector3.Zero();
         } else {
           this.updateMovement(deltaTime, playerPosition, allEnemies, roomManager);
+          if (this.velocity.lengthSquared() > 0.0001) {
+            this.rotateToward(this.velocity, deltaTime, 10);
+          }
         }
         break;
       }
@@ -2984,6 +2987,9 @@ export class EnemyController {
   }
 
   getRadius(): number {
+    if (this.behavior === 'bull') {
+      return 0.65;
+    }
     return 0.35;
   }
 
