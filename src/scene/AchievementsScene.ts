@@ -16,7 +16,7 @@ import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { AchievementProgress, CodexService } from '../services/CodexService';
-import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
+import { applyResponsiveGuiScaling, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 
 interface TerminalLine {
   block: TextBlock;
@@ -208,7 +208,7 @@ export class AchievementsScene {
     createSynthwaveGridBackground(this.scene, SCENE_LAYER, true);
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('AchievementsUI', true, this.scene);
-    applyResponsiveGuiScaling(this.gui, this.engine);
+    applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true });
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
@@ -228,12 +228,12 @@ export class AchievementsScene {
     const layoutWidth = Math.round(idealWidth);
     const layoutHeight = Math.round(idealHeight);
     const sidePadding = Math.round(layoutWidth * 0.02);
-    const panelTop = Math.round(layoutHeight * 0.06);
-    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.35 : 0.33));
-    const sidePanelHeight = Math.round(layoutHeight * 0.9);
+    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.31 : 0.29));
+    const sidePanelHeight = Math.round(layoutHeight * 0.78);
+    const panelTop = Math.round((layoutHeight - sidePanelHeight) * 0.5);
     const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
-    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 8);
-    const centerCardWidth = Math.round(layoutWidth * (isMobileLayout ? 0.26 : 0.28));
+    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 24);
+    const centerCardWidth = Math.round(layoutWidth * (isMobileLayout ? 0.28 : 0.26));
     const centerCardHeight = Math.round(sidePanelHeight * 0.78);
 
     const mainLayoutContainer = new Rectangle('mainLayout');
@@ -251,7 +251,7 @@ export class AchievementsScene {
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
-    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
+    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
     const backBtn = this.makeTabButton('BACK TO MAIN MENU', () => {
@@ -289,7 +289,7 @@ export class AchievementsScene {
 
     this.leftPanel = this.makeTerminalPanel('achLeftPanel', sidePanelWidth, sidePanelHeight);
     this.leftPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.leftPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.leftPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.leftPanel.left = `${sidePadding}px`;
     this.leftPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.leftPanel);
@@ -322,13 +322,13 @@ export class AchievementsScene {
 
     this.leftListStack = new StackPanel('leftListStack');
     this.leftListStack.isVertical = true;
-    this.leftListStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.leftListStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.leftListStack.spacing = 6;
     scrollViewer.addControl(this.leftListStack);
 
     this.rightPanel = this.makeTerminalPanel('achRightPanel', sidePanelWidth, sidePanelHeight);
     this.rightPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    this.rightPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.rightPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.rightPanel.left = `-${sidePadding}px`;
     this.rightPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.rightPanel);
@@ -345,8 +345,8 @@ export class AchievementsScene {
 
     this.centerCard = this.makeTerminalPanel('centerCard', centerCardWidth, centerCardHeight);
     this.centerCard.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.centerCard.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.centerCard.top = `${panelTop}px`;
+    this.centerCard.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.centerCard.top = `${Math.round(panelTop + (sidePanelHeight - centerCardHeight) * 0.5)}px`;
     mainLayoutContainer.addControl(this.centerCard);
 
     const artContainer = new Rectangle('artContainer');
@@ -376,14 +376,14 @@ export class AchievementsScene {
     this.centerCardTitle.fontFamily = this.terminalFont;
     this.centerCardTitle.fontSize = 30;
     this.centerCardTitle.color = '#FFFFFF';
-    this.centerCardTitle.top = '150px';
+    this.centerCardTitle.top = '174px';
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = new TextBlock('centerSubtitle', '');
     this.centerCardSubtitle.fontFamily = this.terminalFont;
     this.centerCardSubtitle.fontSize = 20;
     this.centerCardSubtitle.color = '#7DFFE8';
-    this.centerCardSubtitle.top = '190px';
+    this.centerCardSubtitle.top = '216px';
     this.centerCard.addControl(this.centerCardSubtitle);
   }
 
@@ -519,6 +519,10 @@ export class AchievementsScene {
   }
 
   private setTerminalText(block: TextBlock, text: string, speedBase: number = 300, clearExisting: boolean = true): void {
+    const existingLine = this.terminalLines.find((line) => line.block === block);
+    if (existingLine && existingLine.fullText === text) {
+      return;
+    }
     if (clearExisting) {
       const existingIndex = this.terminalLines.findIndex((line) => line.block === block);
       if (existingIndex > -1) {

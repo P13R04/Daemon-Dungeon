@@ -125,7 +125,7 @@ export const VOICELINES: Record<string, VoicelineConfig> = {
 
   'test_surpris_pingpong': {
     id: 'test_surpris_pingpong',
-    message: 'Ping en dents de scie détecté... système surpris.',
+    message: 'Jitter spike detected... system mildly offended.',
     animationSequence: [
       {
         emotion: 'surpris',
@@ -141,7 +141,7 @@ export const VOICELINES: Record<string, VoicelineConfig> = {
 
   'test_rire_34_loop': {
     id: 'test_rire_34_loop',
-    message: 'Analyse terminée... hahaha, je reste sur le pic de rire.',
+    message: 'Analysis complete... hahaha, I am keeping the laugh peak.',
     animationSequence: [
       {
         emotion: 'rire',

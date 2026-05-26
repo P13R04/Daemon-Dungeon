@@ -30,7 +30,7 @@ import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { CodexService } from '../services/CodexService';
 import type { EnemyConfigEntry } from '../types/config';
-import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
+import { applyResponsiveGuiScaling, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 
 type CodexSection = 'bestiary' | 'bonuses';
 type BestiaryGroup = 'normal' | 'boss';
@@ -193,7 +193,7 @@ export class CodexScene {
     createSynthwaveGridBackground(this.scene, SCENE_LAYER, true);
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('CodexUI', true, this.scene);
-    applyResponsiveGuiScaling(this.gui, this.engine);
+    applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true });
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
@@ -214,13 +214,13 @@ export class CodexScene {
     const layoutWidth = Math.round(idealWidth);
     const layoutHeight = Math.round(idealHeight);
     const sidePadding = Math.round(layoutWidth * 0.02);
-    const panelTop = Math.round(layoutHeight * 0.08);
-    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.36 : 0.34));
-    const sidePanelHeight = Math.round(layoutHeight * 0.86);
+    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.32 : 0.3));
+    const sidePanelHeight = Math.round(layoutHeight * 0.76);
+    const panelTop = Math.round((layoutHeight - sidePanelHeight) * 0.5);
     const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
-    const centerCardWidth = Math.round(layoutWidth * (isMobileLayout ? 0.24 : 0.26));
+    const centerCardWidth = Math.round(Math.min(layoutWidth * 0.24, Math.max(layoutWidth * 0.2, 320)));
     const centerCardHeight = Math.round(layoutHeight * 0.53);
-    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 8);
+    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 24);
 
     const mainLayoutContainer = new Rectangle('mainLayout');
     mainLayoutContainer.width = 1;
@@ -237,7 +237,7 @@ export class CodexScene {
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
-    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
+    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
     this.headerTitle = new TextBlock('codexHeaderTitle');
@@ -272,9 +272,9 @@ export class CodexScene {
 
     const tabsRow = new StackPanel('codexTabsRow');
     tabsRow.isVertical = false;
-    tabsRow.width = `${Math.round(layoutWidth * 0.78)}px`;
+    tabsRow.width = `${Math.round(layoutWidth * 0.34)}px`;
     tabsRow.height = '54px';
-    tabsRow.top = `-${Math.round(layoutHeight * 0.32)}px`;
+    tabsRow.top = `-${Math.round(layoutHeight * 0.31)}px`;
     tabsRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     tabsRow.left = '0px';
     mainLayoutContainer.addControl(tabsRow);
@@ -290,7 +290,7 @@ export class CodexScene {
 
     this.leftPanel = this.makeTerminalPanel('codexLeftPanel', sidePanelWidth, sidePanelHeight);
     this.leftPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.leftPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.leftPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.leftPanel.left = `${sidePadding}px`;
     this.leftPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.leftPanel);
@@ -340,6 +340,7 @@ export class CodexScene {
     this.leftListStack = new StackPanel('leftListStack');
     this.leftListStack.isVertical = true;
     this.leftListStack.width = '100%';
+    this.leftListStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.leftListStack.paddingTop = '6px';
     this.leftListStack.paddingBottom = '6px';
     this.leftListStack.isPointerBlocker = false;
@@ -347,7 +348,7 @@ export class CodexScene {
 
     this.rightPanel = this.makeTerminalPanel('codexRightPanel', sidePanelWidth, sidePanelHeight);
     this.rightPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    this.rightPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.rightPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.rightPanel.left = `-${sidePadding}px`;
     this.rightPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.rightPanel);
@@ -368,8 +369,8 @@ export class CodexScene {
 
     this.centerCard = this.makeTerminalPanel('centerFlatCard', centerCardWidth, centerCardHeight);
     this.centerCard.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.centerCard.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.centerCard.top = `${Math.round(layoutHeight * 0.05)}px`;
+    this.centerCard.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.centerCard.top = `${Math.round(panelTop + (sidePanelHeight - centerCardHeight) * 0.5)}px`;
     mainLayoutContainer.addControl(this.centerCard);
 
     this.centerCardIcon = this.makeTerminalText('centerCardIcon', 80, '#8CFFF0');
@@ -393,19 +394,23 @@ export class CodexScene {
     this.centerCard.addControl(this.centerCardSubtitle);
 
 
+    const navButtonWidth = 150;
+    const navButtonHeight = 52;
     const navRow = new StackPanel('codexBottomNav');
     navRow.isVertical = false;
-    navRow.width = `${Math.round(layoutWidth * 0.28)}px`;
-    navRow.height = `${Math.round(layoutHeight * 0.09)}px`;
-    navRow.top = `${Math.round(layoutHeight * 0.42)}px`;
+    navRow.width = `${navButtonWidth * 2 + 16}px`;
+    navRow.height = `${Math.max(navButtonHeight, Math.round(layoutHeight * 0.08))}px`;
+    navRow.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    navRow.top = `-${Math.round(layoutHeight * 0.05)}px`;
+    navRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     mainLayoutContainer.addControl(navRow);
 
-    const leftNavBtn = UIFactory.createTerminalButton('codexNavLeft', '<', '150px', '52px');
+    const leftNavBtn = UIFactory.createTerminalButton('codexNavLeft', '<', `${navButtonWidth}px`, `${navButtonHeight}px`);
     DaemonGlitchFx.inject(leftNavBtn, '<', () => this.navigateBy(-1), 0);
     if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontSize = 20;
     navRow.addControl(leftNavBtn);
 
-    const rightNavBtn = UIFactory.createTerminalButton('codexNavRight', '>', '150px', '52px');
+    const rightNavBtn = UIFactory.createTerminalButton('codexNavRight', '>', `${navButtonWidth}px`, `${navButtonHeight}px`);
     DaemonGlitchFx.inject(rightNavBtn, '>', () => this.navigateBy(1), 0);
     if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontSize = 20;
     navRow.addControl(rightNavBtn);
@@ -554,6 +559,9 @@ export class CodexScene {
   private setTerminalText(block: TextBlock, text: string, speed = 220, showCursor = true): void {
     const current = this.terminalLines.find((line) => line.block === block);
     if (current) {
+      if (current.fullText === text) {
+        return;
+      }
       current.fullText = text;
       current.typed = '';
       current.index = 0;
@@ -791,7 +799,7 @@ export class CodexScene {
     if (entry.behavior === 'bull') {
       urlPath = 'models/bull/'; fileName = 'bull.glb';
       mainAnimName = 'charge_run.001';
-      rotation = new Vector3(0, Math.PI, 0); // vers la gauche par rapport à PI/2
+      rotation = new Vector3(0, Math.PI, 0); // faces left relative to PI/2 baseline
     } else if (entry.behavior === 'jumper') {
       urlPath = 'models/jumper/'; fileName = 'sauteur.glb';
       scale = entry.isBoss ? 0.36 : 0.26; // x2
@@ -816,7 +824,7 @@ export class CodexScene {
         fileName = 'caster_mobile.glb';
       }
       mainAnimName = 'forward';
-      rotation = Vector3.Zero(); // vers la droite par rapport à PI/2
+      rotation = Vector3.Zero(); // faces right relative to PI/2 baseline
     } else if (entry.behavior === 'missile') {
       urlPath = 'models/caster/'; fileName = 'missile.glb';
       scale = 0.16; // x2

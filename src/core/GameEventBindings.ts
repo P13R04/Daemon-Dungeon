@@ -1,6 +1,10 @@
 import { EventBus, GameEvents } from './EventBus';
 
-export type GameStartRequestedPayload = { classId?: 'mage' | 'firewall' | 'rogue' | 'cat', mode?: 'normal' | 'tutorial' };
+export type GameStartRequestedPayload = {
+  classId?: 'mage' | 'firewall' | 'rogue' | 'cat',
+  mode?: 'normal' | 'tutorial',
+  source?: 'main_run' | 'tutorial_menu'
+};
 export type DevRoomLoadRequestedPayload = { roomId?: string };
 export type DevTileLoadRequestedPayload = { roomId?: string };
 export type BonusSelectedPayload = { bonusId?: string };

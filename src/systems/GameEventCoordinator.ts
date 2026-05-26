@@ -19,8 +19,11 @@ export class GameEventCoordinator {
     this.eventBus.emit(GameEvents.GAME_START_REQUESTED, { classId });
   }
 
-  emitTutorialStartRequested(classId: 'mage' | 'firewall' | 'rogue' | 'cat'): void {
-    this.eventBus.emit(GameEvents.TUTORIAL_START_REQUESTED, { classId, mode: 'tutorial' });
+  emitTutorialStartRequested(
+    classId: 'mage' | 'firewall' | 'rogue' | 'cat',
+    source: 'main_run' | 'tutorial_menu' = 'main_run'
+  ): void {
+    this.eventBus.emit(GameEvents.TUTORIAL_START_REQUESTED, { classId, mode: 'tutorial', source });
   }
 
   emitRoomCleared(roomId: string): void {

@@ -20,7 +20,7 @@ import {
   Observer,
   PointerInfo,
 } from '@babylonjs/core';
-import { AdvancedDynamicTexture, Button, Control, Rectangle, TextBlock } from '@babylonjs/gui';
+import { AdvancedDynamicTexture, Button, Control, Rectangle, StackPanel, TextBlock } from '@babylonjs/gui';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { getHudAssetBaseUrl } from '../systems/hud/HudAssetPaths';
 import { importMeshWithRetry, loadAssetContainerWithRetry } from '../utils/AssetLoadReliability';
@@ -30,7 +30,8 @@ import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { GameSettingsStore } from '../settings/GameSettings';
 import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
-import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
+import { applyResponsiveGuiScaling, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
+import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
 
 interface ClassCarouselItem {
   id: 'mage' | 'firewall' | 'rogue' | 'cat';
@@ -125,12 +126,31 @@ export class ClassSelectScene {
   private isDisposed: boolean = false;
   private deferredModelLoadTimeoutId: number | null = null;
   private initialVisualReadyPromise: Promise<void> = Promise.resolve();
+  private tutorialPromptOverlay: Rectangle | null = null;
+  private tutorialPromptClassId: 'firewall' | 'rogue' | 'cat' | null = null;
+  private loreTargetText: string = '';
+  private infoTargetText: string = '';
+  private loreTypeIndex: number = 0;
+  private infoTypeIndex: number = 0;
+  private loreTypeAccumulator: number = 0;
+  private infoTypeAccumulator: number = 0;
+  private readonly loreTypeCharsPerSecond = 620;
+  private readonly infoTypeCharsPerSecond = 680;
+  private cursorBlinkTimer: number = 0;
+  private cursorVisible: boolean = true;
+  private readonly typewriterSynth: SciFiTypewriterSynth = new SciFiTypewriterSynth(SCI_FI_TYPEWRITER_PRESETS.oldschool_fast);
+  private typewriterUnlockHandler: (() => void) | null = null;
 
   constructor(
     private engine: Engine,
-    private onStartClass: (classId: 'mage' | 'firewall' | 'rogue' | 'cat') => void,
+    private onStartClass: (
+      classId: 'mage' | 'firewall' | 'rogue' | 'cat',
+      mode?: 'normal' | 'tutorial',
+      options?: { skipShortTutorial?: boolean }
+    ) => void,
     private onBackToTitle: () => void,
-    postProcessingConfig?: Partial<PostProcessingConfig>
+    postProcessingConfig?: Partial<PostProcessingConfig>,
+    private shouldOfferShortTutorial?: (classId: 'mage' | 'firewall' | 'rogue' | 'cat') => boolean
   ) {
     this.scene = new Scene(engine);
     this.scene.clearColor = Color4.FromHexString(UITheme.colors.bgVoid);
@@ -157,6 +177,7 @@ export class ClassSelectScene {
     this.postProcessManager.setupPipeline(this.camera, this.postProcessConfig);
 
     this.createEnvironment();
+    this.setupTypewriterAudioUnlock();
     this.loadRogueSelectionSound();
     this.applyAudioSettingsFromStore();
     this.unsubscribeSettings = GameSettingsStore.subscribe(() => {
@@ -164,7 +185,7 @@ export class ClassSelectScene {
     });
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('ClassSelectUI', true, this.scene);
-    applyResponsiveGuiScaling(this.gui, this.engine);
+    applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true });
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
@@ -232,6 +253,12 @@ export class ClassSelectScene {
     this.carouselRotation = Scalar.Lerp(this.carouselRotation, this.targetRotation, lerpAmount);
     this.updateCarouselLayout();
     this.updateClassAmbientSystems();
+    this.cursorBlinkTimer += Math.max(0, deltaTime);
+    if (this.cursorBlinkTimer >= 0.45) {
+      this.cursorBlinkTimer = 0;
+      this.cursorVisible = !this.cursorVisible;
+    }
+    this.updateClassSelectTypewriter(deltaTime);
   }
 
   dispose(): void {
@@ -244,6 +271,12 @@ export class ClassSelectScene {
       this.unsubscribeSettings();
       this.unsubscribeSettings = null;
     }
+    if (this.typewriterUnlockHandler) {
+      window.removeEventListener('pointerdown', this.typewriterUnlockHandler);
+      window.removeEventListener('keydown', this.typewriterUnlockHandler);
+      this.typewriterUnlockHandler = null;
+    }
+    this.typewriterSynth.dispose();
     if (this.resizeObserver) {
       this.engine.onResizeObservable.remove(this.resizeObserver);
       this.resizeObserver = null;
@@ -348,8 +381,9 @@ export class ClassSelectScene {
     const layoutWidth = Math.round(idealWidth);
     const layoutHeight = Math.round(idealHeight);
     const sidePadding = Math.round(layoutWidth * 0.02);
-    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.36 : 0.34));
-    const sidePanelHeight = Math.round(layoutHeight * 0.66);
+    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.32 : 0.3));
+    const sidePanelHeight = Math.round(layoutHeight * 0.68);
+    const panelTop = Math.round((layoutHeight - sidePanelHeight) * 0.5);
 
     const mainLayoutContainer = new Rectangle('mainLayout');
     mainLayoutContainer.width = 1;
@@ -366,7 +400,7 @@ export class ClassSelectScene {
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
-    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
+    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
     const backBtn = UIFactory.createTerminalButton('classSelectBackTopLeft', 'BACK', '96px', '36px');
@@ -387,19 +421,20 @@ export class ClassSelectScene {
 
 
     // ── Central nav panel (navigation + START only) ──────────────────────────
-    const navPanel = UIFactory.createPanel('classSelectNavPanel', Math.round(layoutWidth * 0.36), Math.round(layoutHeight * 0.14));
-    navPanel.top = `${Math.round(layoutHeight * 0.38)}px`;
+    const navPanel = UIFactory.createPanel('classSelectNavPanel', Math.round(layoutWidth * 0.24), Math.round(layoutHeight * 0.12));
+    navPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+    navPanel.top = `-${Math.round(layoutHeight * 0.04)}px`;
     mainLayoutContainer.addControl(navPanel);
 
     const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', '100px', '70px');
-    leftBtn.left = '-160px';
+    leftBtn.left = '-140px';
     leftBtn.top = '0px';
     leftBtn.onPointerClickObservable.add(() => this.rotateCarousel(1));
     if (leftBtn.textBlock) leftBtn.textBlock.fontSize = 20;
     navPanel.addControl(leftBtn);
 
     const rightBtn = UIFactory.createTerminalButton('classSelectRight', '>', '100px', '70px');
-    rightBtn.left = '160px';
+    rightBtn.left = '140px';
     rightBtn.top = '0px';
     rightBtn.onPointerClickObservable.add(() => this.rotateCarousel(-1));
     if (rightBtn.textBlock) rightBtn.textBlock.fontSize = 20;
@@ -423,8 +458,9 @@ export class ClassSelectScene {
     infoOverlay.background = 'rgba(4, 16, 20, 0.85)';
     infoOverlay.cornerRadius = 4;
     infoOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    infoOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    infoOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     infoOverlay.left = `-${sidePadding}px`;
+    infoOverlay.top = `${panelTop}px`;
     infoOverlay.zIndex = 100;
     mainLayoutContainer.addControl(infoOverlay);
 
@@ -439,9 +475,11 @@ export class ClassSelectScene {
     infoText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.textWrapping = true;
-    infoText.width = `${Math.max(0, sidePanelWidth - 40)}px`;
+    infoText.width = `${Math.max(0, sidePanelWidth - 44)}px`;
     infoText.left = '20px';
     infoText.top = '25px';
+    infoText.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    infoText.height = `${Math.round(sidePanelHeight - 60)}px`;
     infoOverlay.addControl(infoText);
 
     // ── Left-side class lore overlay (symmetric) ──────────────────────────────
@@ -453,8 +491,9 @@ export class ClassSelectScene {
     loreOverlay.background = 'rgba(4, 16, 20, 0.85)';
     loreOverlay.cornerRadius = 4;
     loreOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    loreOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    loreOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     loreOverlay.left = `${sidePadding}px`;
+    loreOverlay.top = `${panelTop}px`;
     loreOverlay.zIndex = 100;
     mainLayoutContainer.addControl(loreOverlay);
 
@@ -469,12 +508,97 @@ export class ClassSelectScene {
     loreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreText.textWrapping = true;
-    loreText.width = `${Math.max(0, sidePanelWidth - 40)}px`;
+    loreText.width = `${Math.max(0, sidePanelWidth - 44)}px`;
     loreText.left = '20px';
     loreText.top = '25px';
+    loreText.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    loreText.height = `${Math.round(sidePanelHeight - 60)}px`;
     loreOverlay.addControl(loreText);
 
+    this.createTutorialPromptOverlay(mainLayoutContainer);
+
     return { infoText, loreText, startButton };
+  }
+
+  private createTutorialPromptOverlay(parent: Rectangle): void {
+    const overlay = new Rectangle('classTutorialPromptOverlay');
+    overlay.width = 1;
+    overlay.height = 1;
+    overlay.thickness = 0;
+    overlay.background = 'rgba(2, 8, 12, 0.82)';
+    overlay.isVisible = false;
+    overlay.zIndex = 2200;
+    parent.addControl(overlay);
+
+    const panel = UIFactory.createPanel('classTutorialPromptPanel', 740, 320);
+    panel.thickness = 2;
+    panel.color = '#41d7ff';
+    panel.background = 'rgba(4, 18, 24, 0.95)';
+    panel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    panel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    overlay.addControl(panel);
+
+    const title = UIFactory.createText('classTutorialPromptTitle', 'CLASS QUICK TUTORIAL', 34, '#CFFFFA');
+    title.top = '-116px';
+    panel.addControl(title);
+
+    const body = UIFactory.createText(
+      'classTutorialPromptBody',
+      'Run a short onboarding room before your first run?\nIt explains core class tools in ~1 minute.',
+      20,
+      '#B7FFF5'
+    );
+    body.textWrapping = true;
+    body.width = '90%';
+    body.height = '100px';
+    body.top = '-22px';
+    panel.addControl(body);
+
+    const buttonRow = new StackPanel('classTutorialPromptButtons');
+    buttonRow.isVertical = false;
+    buttonRow.width = '88%';
+    buttonRow.height = '64px';
+    buttonRow.top = '96px';
+    buttonRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    panel.addControl(buttonRow);
+
+    const startTutorialBtn = UIFactory.createTerminalButton('classTutorialPromptStart', 'START QUICK TUTORIAL', '320px', '52px');
+    startTutorialBtn.onPointerClickObservable.add(() => {
+      const classId = this.tutorialPromptClassId;
+      this.hideTutorialPrompt();
+      if (!classId) return;
+      this.onStartClass(classId, 'tutorial');
+    });
+    buttonRow.addControl(startTutorialBtn);
+
+    const skipBtn = UIFactory.createTerminalButton('classTutorialPromptSkip', 'SKIP TO RUN', '240px', '52px');
+    skipBtn.onPointerClickObservable.add(() => {
+      const classId = this.tutorialPromptClassId;
+      this.hideTutorialPrompt();
+      if (!classId) return;
+      this.onStartClass(classId, 'normal', { skipShortTutorial: true });
+    });
+    buttonRow.addControl(skipBtn);
+
+    overlay.onPointerClickObservable.add((_, state) => {
+      if (state?.target === overlay) this.hideTutorialPrompt();
+    });
+
+    this.tutorialPromptOverlay = overlay;
+  }
+
+  private showTutorialPrompt(classId: 'firewall' | 'rogue' | 'cat'): void {
+    if (!this.tutorialPromptOverlay) return;
+    this.tutorialPromptClassId = classId;
+    this.tutorialPromptOverlay.isVisible = true;
+    this.tutorialPromptOverlay.isPointerBlocker = true;
+  }
+
+  private hideTutorialPrompt(): void {
+    if (!this.tutorialPromptOverlay) return;
+    this.tutorialPromptOverlay.isVisible = false;
+    this.tutorialPromptOverlay.isPointerBlocker = false;
+    this.tutorialPromptClassId = null;
   }
 
   private createCarouselItems(): void {
@@ -1156,9 +1280,17 @@ export class ClassSelectScene {
 
   private tryStartSelectedClass(): void {
     const selected = this.items[this.selectedIndex];
-    if (selected?.playable) {
-      this.onStartClass(selected.id);
+    if (!selected?.playable) return;
+
+    if (
+      (selected.id === 'firewall' || selected.id === 'rogue' || selected.id === 'cat') &&
+      this.shouldOfferShortTutorial?.(selected.id)
+    ) {
+      this.showTutorialPrompt(selected.id);
+      return;
     }
+
+    this.onStartClass(selected.id, 'normal');
   }
 
   private navigateBackToTitle(): void {
@@ -1172,22 +1304,46 @@ export class ClassSelectScene {
     if (!selected) return;
 
     // Per-class flavor data displayed in the right-side info overlay
-    const CLASS_DATA: Record<string, { desc: string; hp: string; spd: string; atk: string; ult: string }> = {
+    const CLASS_DATA: Record<string, { hp: string; spd: string; summary: string; atk: string; stance: string; secondary: string; ult: string; style: string }> = {
       mage: {
-        desc: 'Long-range arcane blaster. Fragile but devastating at distance.',
-        hp: '●○○', spd: '●●○', atk: 'Frost bolts', ult: 'Nova burst',
+        hp: '●○○',
+        spd: '●●○',
+        summary: 'Root-level caster with explosive command output.',
+        atk: 'Executable Bolt: left click / your attack button to fire split-shot packets.',
+        stance: 'Sudo Focus: channel to ramp cast speed and pressure while holding position.',
+        secondary: 'Branch Cast: burst spell that splits and detonates in an AoE zone.',
+        ult: 'Kernel Overwrite: deploy a fixed, massive damage zone.',
+        style: 'Zoner / burst artillery. Keep distance, script clean kill windows.',
       },
       firewall: {
-        desc: 'Armored shock trooper. Nearly indestructible, dangerously slow.',
-        hp: '●●●', spd: '●○○', atk: 'Plasma cannon', ult: 'Shield wall',
+        hp: '●●●',
+        spd: '●○○',
+        summary: 'Kernel-grade antivirus wall built for control and survival.',
+        atk: 'Packet Sweep: short-range arc strike with strong close pressure.',
+        stance: 'Reflect Protocol: shield stance that deflects hostile projectiles.',
+        secondary: 'Shield Bash: targeted dash that stuns and repositions enemies.',
+        ult: 'Quarantine Cyclone: sustained AoE spin for crowd shutdown.',
+        style: 'Frontline controller. Face-tank, deflect, then collapse enemy spacing.',
       },
       rogue: {
-        desc: 'Hyper-mobile infiltrator. High risk, explosive close-range damage.',
-        hp: '●○○', spd: '●●●', atk: 'Blade flurry', ult: 'Phase dash',
+        hp: '●○○',
+        spd: '●●●',
+        summary: 'Stealth exploit assassin with burst mobility.',
+        atk: 'Rapid Daggers: high-tempo melee strikes at close range.',
+        stance: 'Backdoor Cloak: stealth field that drops aggro outside detection range.',
+        secondary: 'Backdoor Breach: directional dash that reveals into a sneak strike.',
+        ult: 'Cyber Kill Chain: chained teleport-attacks inside a marked zone.',
+        style: 'Assassin skirmisher. In-and-out picks, bait vision, erase priority targets.',
       },
       cat: {
-        desc: '[CLASSIFIED DATA] // OwO what\'s this?',
-        hp: '???', spd: '???', atk: '???', ult: '???',
+        hp: '???',
+        spd: '???',
+        summary: '[CLASSIFIED DATA] // OwO what\'s this?',
+        atk: '???',
+        stance: '???',
+        secondary: '???',
+        ult: '???',
+        style: '???',
       },
     };
 
@@ -1203,30 +1359,34 @@ export class ClassSelectScene {
 
     if (selected.playable) {
       if (data) {
-        this.infoText.text =
+        const infoText =
           `${selected.label}\n` +
           `────────────────\n` +
-          `${data.desc}\n\n` +
-          `HP   ${data.hp}\n` +
-          `SPD  ${data.spd}\n` +
-          `ATK  ${data.atk}\n` +
-          `ULT  ${data.ult}`;
+          `PLAYSTYLE: ${data.style}\n` +
+          `CORE: HP ${data.hp}   SPD ${data.spd}\n` +
+          `${data.summary}\n\n` +
+          `• PRIMARY\n  ${data.atk}\n\n` +
+          `• STANCE\n  ${data.stance}\n\n` +
+          `• SECONDARY\n  ${data.secondary}\n\n` +
+          `• ULTIMATE\n  ${data.ult}`;
+        this.setInfoTypingTarget(infoText);
       } else {
-        this.infoText.text = `${selected.label}\n// READY`;
+        this.setInfoTypingTarget(`${selected.label}\n// READY`);
       }
       this.infoText.color = '#CFFCF3';
-      this.infoText.fontSize = 20;
+      this.infoText.fontSize = 18;
 
       if (lore) {
-        this.loreText.text =
+        const loreText =
           `USER LORE\n` +
           `────────────────\n` +
           `${lore}`;
+        this.setLoreTypingTarget(loreText);
       } else {
-        this.loreText.text = `No lore files found for this class.`;
+        this.setLoreTypingTarget(`No lore files found for this class.`);
       }
       this.loreText.color = '#CFFCF3';
-      this.loreText.fontSize = 20;
+      this.loreText.fontSize = 18;
 
       this.startButton.isEnabled = true;
       this.startButton.background = '#1D3B3A';
@@ -1235,11 +1395,11 @@ export class ClassSelectScene {
         this.startButton.textBlock.text = '[ START ]';
       }
     } else {
-      this.infoText.text = `${selected.label}\n// COMING SOON`;
+      this.setInfoTypingTarget(`${selected.label}\n// COMING SOON`);
       this.infoText.color = '#7C9C98';
       this.infoText.fontSize = 20;
 
-      this.loreText.text = `LORE ENCRYPTED`;
+      this.setLoreTypingTarget(`LORE ENCRYPTED`);
       this.loreText.color = '#7C9C98';
       this.loreText.fontSize = 20;
 
@@ -1250,6 +1410,71 @@ export class ClassSelectScene {
         this.startButton.textBlock.text = '// LOCKED';
       }
     }
+  }
+
+  private setLoreTypingTarget(next: string): void {
+    if (this.loreTargetText === next) return;
+    this.loreTargetText = next;
+    this.loreTypeIndex = 0;
+    this.loreTypeAccumulator = 0;
+    this.loreText.text = '';
+  }
+
+  private setInfoTypingTarget(next: string): void {
+    if (this.infoTargetText === next) return;
+    this.infoTargetText = next;
+    this.infoTypeIndex = 0;
+    this.infoTypeAccumulator = 0;
+    this.infoText.text = '';
+  }
+
+  private updateClassSelectTypewriter(deltaTime: number): void {
+    const dtRaw = Math.max(0, deltaTime);
+    const dt = dtRaw > 1 ? dtRaw / 1000 : dtRaw;
+    const cursor = this.cursorVisible ? ' _' : '  ';
+    if (this.infoTypeIndex < this.infoTargetText.length) {
+      this.infoTypeAccumulator += dt * this.infoTypeCharsPerSecond;
+      const advance = Math.floor(this.infoTypeAccumulator);
+      if (advance > 0) {
+        this.infoTypeAccumulator -= advance;
+        const audioTicks = Math.min(4, Math.ceil(advance / 12));
+        for (let i = 0; i < audioTicks; i++) this.typewriterSynth.triggerForTypedChar();
+        this.infoTypeIndex = Math.min(this.infoTargetText.length, this.infoTypeIndex + advance);
+      }
+      this.infoText.text = `${this.infoTargetText.slice(0, this.infoTypeIndex)}${cursor}`;
+    } else {
+      this.infoText.text = `${this.infoTargetText}${cursor}`;
+    }
+    if (this.loreTypeIndex < this.loreTargetText.length) {
+      this.loreTypeAccumulator += dt * this.loreTypeCharsPerSecond;
+      const advance = Math.floor(this.loreTypeAccumulator);
+      if (advance > 0) {
+        this.loreTypeAccumulator -= advance;
+        const audioTicks = Math.min(4, Math.ceil(advance / 12));
+        for (let i = 0; i < audioTicks; i++) this.typewriterSynth.triggerForTypedChar();
+        this.loreTypeIndex = Math.min(this.loreTargetText.length, this.loreTypeIndex + advance);
+      }
+      this.loreText.text = `${this.loreTargetText.slice(0, this.loreTypeIndex)}${cursor}`;
+    } else {
+      this.loreText.text = `${this.loreTargetText}${cursor}`;
+    }
+  }
+
+  private setupTypewriterAudioUnlock(): void {
+    const unlock = async () => {
+      await this.typewriterSynth.unlock();
+      // Warm-up tick so the first visible typed burst is not silently swallowed.
+      this.typewriterSynth.triggerForTypedChar();
+      window.setTimeout(() => this.typewriterSynth.triggerForTypedChar(), 24);
+      if (this.typewriterUnlockHandler) {
+        window.removeEventListener('pointerdown', this.typewriterUnlockHandler);
+        window.removeEventListener('keydown', this.typewriterUnlockHandler);
+        this.typewriterUnlockHandler = null;
+      }
+    };
+    this.typewriterUnlockHandler = unlock;
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
   }
 
   private updateCarouselLayout(): void {

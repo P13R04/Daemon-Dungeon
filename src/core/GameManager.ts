@@ -674,15 +674,21 @@ export class GameManager {
       this.disposeFrontendScenes();
 
       const classSelectPostFx = this.configLoader.getGameplayConfig()?.postProcessing;
-      this.classSelectScene = new ClassSelectScene(this.engine, (classId) => {
-        if (isTutorial) {
-          this.eventCoordinator.emitTutorialStartRequested(classId);
+      this.classSelectScene = new ClassSelectScene(this.engine, (classId, mode, options) => {
+        if (options?.skipShortTutorial) {
+          this.codexService.recordTutorialCompleted(classId);
+        }
+        if (isTutorial || mode === 'tutorial') {
+          this.eventCoordinator.emitTutorialStartRequested(classId, isTutorial ? 'tutorial_menu' : 'main_run');
         } else {
           this.eventCoordinator.emitGameStartRequested(classId);
         }
       }, () => {
         void this.openMainMenuScene();
-      }, classSelectPostFx);
+      }, classSelectPostFx, (classId) => {
+        if (isTutorial) return false;
+        return this.shouldLaunchShortClassTutorial(classId);
+      });
       this.scene = this.classSelectScene.getScene();
       await this.awaitPromiseWithTimeout(this.classSelectScene.waitUntilVisuallyReady(), 2200);
     } finally {
@@ -960,11 +966,6 @@ export class GameManager {
         if (classId) {
           this.selectedClassId = classId;
         }
-        if (data?.mode !== 'tutorial' && this.shouldLaunchShortClassTutorial(this.selectedClassId)) {
-          this.pendingPostTutorialClass = this.selectedClassId;
-          this.eventCoordinator.emitTutorialStartRequested(this.selectedClassId);
-          return;
-        }
         this.isTutorialRun = data?.mode === 'tutorial';
         this.tutorialReplayRun = this.isTutorialRun && !!this.codexService.hasCompletedTutorialForClass(this.selectedClassId);
         this.hudManager?.setPauseTutorialMode(this.isTutorialRun, this.selectedClassId);
@@ -1120,6 +1121,13 @@ export class GameManager {
         if (classId) {
           this.selectedClassId = classId;
         }
+        const classKey = this.selectedClassId === 'cat' ? 'rogue' : this.selectedClassId;
+        const tutorialSource = data?.source ?? 'main_run';
+        const classTutorialAlreadyCompleted = this.codexService.hasCompletedTutorialForClass(this.selectedClassId);
+        this.pendingPostTutorialClass =
+          tutorialSource === 'main_run' && (classKey === 'firewall' || classKey === 'rogue') && !classTutorialAlreadyCompleted
+            ? this.selectedClassId
+            : null;
         this.isTutorialRun = true;
         this.tutorialReplayRun = !!this.codexService.hasCompletedTutorialForClass(this.selectedClassId);
         
@@ -1191,15 +1199,22 @@ export class GameManager {
         this.hudManager?.setVoicelinesMuted(false);
         const classKey = this.selectedClassId === 'cat' ? 'rogue' : this.selectedClassId;
         if (classKey === 'firewall' || classKey === 'rogue') {
-          this.codexService.recordTutorialCompleted(this.selectedClassId);
+          const shouldStartRunAfterSkip = this.pendingPostTutorialClass === this.selectedClassId;
+          if (shouldStartRunAfterSkip) {
+            this.codexService.recordTutorialCompleted(this.selectedClassId);
+          }
           this.codexService.endRunTracking();
           this.isTutorialRun = false;
           this.tutorialReplayRun = false;
           this.pendingPostTutorialClass = null;
           this.daemonVoicelineManager?.setTutorialMode(false);
           this.hudManager?.setPauseTutorialMode(false);
-          this.codexService.startRunTracking(this.selectedClassId);
-          void this.startNewGame();
+          if (shouldStartRunAfterSkip) {
+            this.codexService.startRunTracking(this.selectedClassId);
+            void this.startNewGame();
+          } else {
+            void this.openMainMenuScene();
+          }
           return;
         }
         // Mage keeps legacy behavior: skip returns to main menu.

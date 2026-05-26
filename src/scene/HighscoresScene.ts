@@ -17,7 +17,7 @@ import { UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { CodexService, RunRecord } from '../services/CodexService';
 import { BONUS_CODEX_ENTRIES } from '../data/codex/bonuses';
-import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
+import { applyResponsiveGuiScaling, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 
 interface TerminalLine {
   block: TextBlock;
@@ -215,7 +215,7 @@ export class HighscoresScene {
     createSynthwaveGridBackground(this.scene, SCENE_LAYER, true);
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('HighscoresUI', true, this.scene);
-    applyResponsiveGuiScaling(this.gui, this.engine);
+    applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true });
     if (this.gui.layer) {
       this.gui.layer.layerMask = UI_LAYER;
     }
@@ -233,13 +233,14 @@ export class HighscoresScene {
     const layoutWidth = Math.round(idealWidth);
     const layoutHeight = Math.round(idealHeight);
     const sidePadding = Math.round(layoutWidth * 0.02);
-    const panelTop = Math.round(layoutHeight * 0.06);
-    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.32 : 0.3));
-    const sidePanelHeight = Math.round(layoutHeight * 0.9);
+    const panelTop = Math.round(layoutHeight * 0.15);
+    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.31 : 0.29));
+    const bottomStripHeight = Math.round(layoutHeight * 0.19);
+    const sidePanelHeight = Math.round(layoutHeight - panelTop - bottomStripHeight - Math.round(layoutHeight * 0.04));
     const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
-    const centerCardWidth = Math.round(layoutWidth * (isMobileLayout ? 0.3 : 0.34));
-    const centerCardHeight = Math.round(layoutHeight * 0.5);
-    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 8);
+    const centerCardWidth = Math.round(layoutWidth * (isMobileLayout ? 0.34 : 0.32));
+    const centerCardHeight = Math.round(sidePanelHeight * 0.56);
+    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 22);
 
     const mainLayoutContainer = new Rectangle('mainLayout');
     mainLayoutContainer.width = 1;
@@ -256,7 +257,7 @@ export class HighscoresScene {
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
-    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
+    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
     const backBtn = this.makeTabButton('BACK TO MAIN MENU', () => {
@@ -293,7 +294,7 @@ export class HighscoresScene {
 
     this.leftPanel = this.makeTerminalPanel('hsLeftPanel', sidePanelWidth, sidePanelHeight);
     this.leftPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.leftPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.leftPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.leftPanel.left = `${sidePadding}px`;
     this.leftPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.leftPanel);
@@ -317,7 +318,7 @@ export class HighscoresScene {
     const scrollViewer = new ScrollViewer('leftListScroll');
     scrollViewer.width = `${sideInnerWidth}px`;
     scrollViewer.height = `${Math.round(sidePanelHeight * 0.8)}px`;
-    scrollViewer.top = `${Math.round(sidePanelHeight * 0.03)}px`;
+    scrollViewer.top = `${Math.round(sidePanelHeight * 0.08)}px`;
     scrollViewer.thickness = 0;
     scrollViewer.barColor = '#3B685C';
     scrollViewer.barBackground = 'rgba(0,0,0,0.5)';
@@ -326,13 +327,13 @@ export class HighscoresScene {
 
     this.leftListStack = new StackPanel('leftListStack');
     this.leftListStack.isVertical = true;
-    this.leftListStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.leftListStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.leftListStack.spacing = 6;
     scrollViewer.addControl(this.leftListStack);
 
     this.rightPanel = this.makeTerminalPanel('hsRightPanel', sidePanelWidth, sidePanelHeight);
     this.rightPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    this.rightPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.rightPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.rightPanel.left = `-${sidePadding}px`;
     this.rightPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.rightPanel);
@@ -351,8 +352,8 @@ export class HighscoresScene {
 
     this.centerCard = this.makeTerminalPanel('centerCard', centerCardWidth, centerCardHeight);
     this.centerCard.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.centerCard.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    this.centerCard.top = `${panelTop}px`;
+    this.centerCard.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.centerCard.top = `${Math.round(panelTop + Math.max(0, (sidePanelHeight - centerCardHeight) * 0.5))}px`;
     mainLayoutContainer.addControl(this.centerCard);
 
     this.centerCardTitle = new TextBlock('centerTitle', 'RUN SUMMARY');
@@ -395,9 +396,9 @@ export class HighscoresScene {
     // Detached Details Panel for Tooltips at the bottom center of the screen
     this.centerDetailsPanel = new Rectangle('centerDetailsPanel');
     this.centerDetailsPanel.width = `${Math.round(layoutWidth * 0.7)}px`;
-    this.centerDetailsPanel.height = '150px';
+    this.centerDetailsPanel.height = `${bottomStripHeight}px`;
     this.centerDetailsPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    this.centerDetailsPanel.top = `-${Math.round(layoutHeight * 0.06)}px`;
+    this.centerDetailsPanel.top = `-${Math.round(layoutHeight * 0.025)}px`;
     this.centerDetailsPanel.thickness = 2;
     this.centerDetailsPanel.color = '#3B685C';
     this.centerDetailsPanel.background = 'rgba(10, 18, 22, 0.95)';
@@ -699,6 +700,10 @@ export class HighscoresScene {
   }
 
   private setTerminalText(block: TextBlock, text: string, speedBase: number = 300, clearExisting: boolean = true): void {
+    const existingLine = this.terminalLines.find((line) => line.block === block);
+    if (existingLine && existingLine.fullText === text) {
+      return;
+    }
     if (clearExisting) {
       const existingIndex = this.terminalLines.findIndex((line) => line.block === block);
       if (existingIndex > -1) {

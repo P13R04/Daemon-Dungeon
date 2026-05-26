@@ -224,8 +224,11 @@ export class HUDManager {
     lockText: TextBlock;
   }> = new Map();
   private bonusSubtitle: TextBlock | null = null;
-  private bonusPaidHint: TextBlock | null = null;
-  private bonusPaidChoiceCountLabel: TextBlock | null = null;
+  private bonusHoverPopup: Rectangle | null = null;
+  private bonusHoverPopupText: TextBlock | null = null;
+  private bonusHoverPopupVisible: boolean = false;
+  private bonusCreditsPanel: Rectangle | null = null;
+  private bonusCreditsText: TextBlock | null = null;
   private bonusFullHealButton: Button | null = null;
   private bonusCardClickState: Array<{ id: string; isPaid: boolean; cost?: number } | null> = [];
   private bonusCurrentRerollCost: number = 0;
@@ -233,6 +236,8 @@ export class HUDManager {
   private bonusInsufficientFlashOverlay: Rectangle | null = null;
   private bonusInsufficientFlashTimer: number = 0;
   private readonly bonusInsufficientFlashDuration: number = 0.3;
+  private bonusCreditsPulseTimer: number = 0;
+  private readonly bonusCreditsPulseDuration: number = 0.65;
   private activeBonusCardFx: Array<{
     id: string;
     idSeed: number;
@@ -2117,6 +2122,8 @@ export class HUDManager {
     this.updateAchievementToast(deltaTime);
     this.updateIntegrityDamagePulse(deltaTime);
     this.updateBonusInsufficientFlash(deltaTime);
+    this.updateBonusCreditsPulse(deltaTime);
+    this.updateBonusHoverPopupPosition();
     this.updateRunBonusLayout();
     this.updateBonusCardJuice(deltaTime);
     this.pruneOrphanEnemyHealthBars();
@@ -3930,16 +3937,19 @@ export class HUDManager {
     selectionState?: BonusSelectionUiState,
   ): void {
     if (!this.bonusScreen) return;
+    const wasBonusHidden = !this.bonusScreen.isVisible;
     this.allowDaemonDuringOverlays = true;
     this.bonusScreen.isVisible = true;
     this.hideMenuScreens();
     this.setHudVisible(false);
-    if (this.topBar) this.topBar.isVisible = true;
     if (this.pauseButton) this.pauseButton.isVisible = true;
     if (this.healthPanel) this.healthPanel.isVisible = true;
     if (this.playerHealthDisplay) this.playerHealthDisplay.isVisible = true;
-    if (this.statusPanel) this.statusPanel.isVisible = true;
-    if (this.runBonusContainer) this.runBonusContainer.isVisible = true;
+    if (this.topBar) this.topBar.isVisible = false;
+    if (this.statusPanel) this.statusPanel.isVisible = false;
+    if (this.runBonusContainer) this.runBonusContainer.isVisible = false;
+    if (this.comboContainer) this.comboContainer.isVisible = false;
+    if (this.logPanel) this.logPanel.isVisible = false;
     this.ensureBonusUiPool();
     if (!this.bonusDynamicRoot || !this.bonusRerollButton || !this.bonusFullHealButton) {
       console.warn('[HUDManager] Bonus UI pool incomplete, aborting showBonusChoices safely.');
@@ -3962,11 +3972,20 @@ export class HUDManager {
 
     for (const child of this.bonusScreen.children) {
       if (child.name === 'CHOOSE BONUS_title') {
-        child.isVisible = false;
+        child.isVisible = true;
+        if (child instanceof TextBlock) {
+          child.top = '-350px';
+        }
       }
     }
 
     const dynamicRoot = this.bonusDynamicRoot!;
+    if (this.bonusCreditsText) {
+      this.bonusCreditsText.text = `CREDITS: ${String(Math.max(0, Math.floor(currency))).padStart(3, '0')}`;
+    }
+    if (wasBonusHidden) {
+      this.bonusCreditsPulseTimer = this.bonusCreditsPulseDuration;
+    }
     this.bonusButtons = [];
     this.bonusDynamicControls = [];
     this.bonusCardClickState = [];
@@ -3979,6 +3998,7 @@ export class HUDManager {
       this.bonusSubtitle.text = freePicksRemaining > 1 ? `PICK ${freePicksRemaining} FREE BONUSES` : 'PICK 1 FREE BONUS';
       this.bonusSubtitle.isVisible = true;
     }
+    this.hideBonusHoverPopup();
 
     const paidOfferVisible = !!paidRareChoice;
     const cards: Array<{
@@ -4041,18 +4061,6 @@ export class HUDManager {
     const artworkGlowSize = Math.floor(180 * cardScale);
     const artworkFrameSize = Math.floor(170 * cardScale);
 
-    if (!paidOfferVisible) {
-      if (this.bonusPaidHint) {
-        this.bonusPaidHint.text = paidRarePurchased
-        ? 'EXTRA PAID CARD ALREADY PURCHASED'
-        : 'NO PAID RARE CARD OFFER THIS ROOM';
-        this.bonusPaidHint.color = paidRarePurchased ? '#80FFB0' : '#A3B0BF';
-        this.bonusPaidHint.isVisible = true;
-      }
-    } else if (this.bonusPaidHint) {
-      this.bonusPaidHint.isVisible = false;
-    }
-
     for (let i = 0; i < cards.length; i++) {
       const card = cards[i];
       const poolKey = `${card.id}:${card.isPaid ? 'paid' : 'free'}`;
@@ -4079,6 +4087,8 @@ export class HUDManager {
       btn.top = `${cardTop}px`;
       btn.isEnabled = card.isEnabled;
       btn.isVisible = true;
+      btn.onPointerEnterObservable.clear();
+      btn.onPointerOutObservable.clear();
       this.bonusCardClickState[i] = { id: card.id, isPaid: card.isPaid, cost: card.cost };
       if (btn.parent !== dynamicRoot) {
         if (btn.parent) {
@@ -4167,6 +4177,37 @@ export class HUDManager {
         auraShellC: uiCard.auraShellC,
         title: uiCard.title,
       });
+
+      const showCardHover = () => {
+        const credits = Math.max(0, Math.floor(currency));
+        if (card.isPaid) {
+          const cost = Math.max(0, Math.floor(card.cost ?? 0));
+          if ((card.isAffordable ?? false)) {
+            this.showBonusHoverPopup(`PAID PICK • ${credits}/${cost} CREDITS • FREE PICKS LEFT: ${freePicksRemaining}`, '#FFD782');
+          } else {
+            const missing = Math.max(0, cost - credits);
+            this.showBonusHoverPopup(`PAID PICK • NEED ${missing} MORE CREDITS (${credits}/${cost})`, '#FF9A9A');
+          }
+          return;
+        }
+        const remainingAfter = Math.max(0, freePicksRemaining - 1);
+        if (remainingAfter > 0) {
+          this.showBonusHoverPopup(`FREE PICK • ${remainingAfter} FREE PICK${remainingAfter > 1 ? 'S' : ''} AFTER THIS`, '#AEEFE2');
+        } else {
+          this.showBonusHoverPopup('FREE PICK • THIS WILL START THE NEXT WAVE', '#8CFFC3');
+        }
+      };
+      btn.onPointerEnterObservable.add(showCardHover);
+      btn.onPointerOutObservable.add(() => {
+        this.hideBonusHoverPopup();
+      });
+      btn.onPointerDownObservable.add(() => {
+        // Mobile/touch fallback: hold briefly to read tooltip.
+        showCardHover();
+      });
+      btn.onPointerUpObservable.add(() => {
+        this.hideBonusHoverPopup();
+      });
     }
 
     const actionButtonsStacked = viewportWidth < 1300;
@@ -4188,12 +4229,35 @@ export class HUDManager {
     rerollButton.background = rerollButtonEnabled ? (rerollAffordable ? '#2F3D55' : '#3B2020') : '#2A2A2A';
     rerollButton.isEnabled = rerollButtonEnabled;
     rerollButton.isVisible = !hideRerollButton;
+    rerollButton.onPointerEnterObservable.clear();
+    rerollButton.onPointerOutObservable.clear();
+    const showRerollHover = () => {
+      if (!rerollButtonEnabled) {
+        this.showBonusHoverPopup('REROLL DISABLED UNTIL YOU RESOLVE CURRENT PICKS', '#9AA6B8');
+        return;
+      }
+      if (rerollAffordable) {
+        this.showBonusHoverPopup(`${currency}/${rerollCost} CREDITS`, '#A9C9FF');
+      } else {
+        this.showBonusHoverPopup(`NEED ${Math.max(0, rerollCost - currency)} MORE CREDITS`, '#FF9A9A');
+      }
+    };
+    rerollButton.onPointerEnterObservable.add(showRerollHover);
+    rerollButton.onPointerOutObservable.add(() => {
+      this.hideBonusHoverPopup();
+    });
+    rerollButton.onPointerDownObservable.add(() => {
+      showRerollHover();
+    });
+    rerollButton.onPointerUpObservable.add(() => {
+      this.hideBonusHoverPopup();
+    });
 
     const fullHealEnabled = missingHealth > 0 || forceFullHealClickable;
     const fullHealAffordable = currency >= fullHealCost;
     const fullHealLabel = missingHealth > 0
-      ? `FULL HEAL  -  ${fullHealCost} CREDITS  (${playerHealthCurrent}/${playerHealthMax})`
-      : `FULL HEAL  -  HP FULL  (${playerHealthCurrent}/${playerHealthMax})`;
+      ? `FULL HEAL  -  ${fullHealCost} CREDITS`
+      : 'FULL HEAL  -  HP FULL';
     const fullHealButton = this.bonusFullHealButton!;
     this.bonusCurrentFullHealCost = fullHealCost;
     if (fullHealButton.textBlock) {
@@ -4206,15 +4270,29 @@ export class HUDManager {
     fullHealButton.background = fullHealEnabled ? (fullHealAffordable ? '#2E4A3A' : '#3B2020') : '#2A2A2A';
     fullHealButton.isEnabled = fullHealEnabled;
     fullHealButton.isVisible = !hideFullHealButton;
-
-    if (this.bonusPaidChoiceCountLabel) {
-      this.bonusPaidChoiceCountLabel.text = paidOfferVisible
-      ? 'PAID CARD IS AN EXTRA PICK (+1), NOT A FREE CHOICE'
-      : 'ONLY FREE CHOICES THIS ROOM';
-      this.bonusPaidChoiceCountLabel.color = paidOfferVisible ? '#FFD782' : '#90A2B8';
-      this.bonusPaidChoiceCountLabel.top = `${actionButtonsStacked ? actionSecondRowTop + 56 : actionTop + 56}px`;
-      this.bonusPaidChoiceCountLabel.isVisible = true;
-    }
+    fullHealButton.onPointerEnterObservable.clear();
+    fullHealButton.onPointerOutObservable.clear();
+    const showFullHealHover = () => {
+      if (!fullHealEnabled) {
+        this.showBonusHoverPopup('ALREADY AT MAX INTEGRITY', '#9AA6B8');
+        return;
+      }
+      if (fullHealAffordable) {
+        this.showBonusHoverPopup(`${currency}/${fullHealCost} CREDITS`, '#A9FFC7');
+      } else {
+        this.showBonusHoverPopup(`NEED ${Math.max(0, fullHealCost - currency)} MORE CREDITS`, '#FF9A9A');
+      }
+    };
+    fullHealButton.onPointerEnterObservable.add(showFullHealHover);
+    fullHealButton.onPointerOutObservable.add(() => {
+      this.hideBonusHoverPopup();
+    });
+    fullHealButton.onPointerDownObservable.add(() => {
+      showFullHealHover();
+    });
+    fullHealButton.onPointerUpObservable.add(() => {
+      this.hideBonusHoverPopup();
+    });
   }
 
   private ensureBonusUiPool(): void {
@@ -4230,6 +4308,8 @@ export class HUDManager {
     dynamicRoot.thickness = 0;
     dynamicRoot.background = 'rgba(0,0,0,0)';
     dynamicRoot.isPointerBlocker = false;
+    dynamicRoot.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    dynamicRoot.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.bonusScreen.addControl(dynamicRoot);
     this.bonusDynamicRoot = dynamicRoot;
 
@@ -4237,25 +4317,56 @@ export class HUDManager {
     this.bonusSubtitle.color = '#FFD782';
     this.bonusSubtitle.fontSize = 20;
     this.bonusSubtitle.fontFamily = 'Consolas';
-    this.bonusSubtitle.top = '-210px';
+    this.bonusSubtitle.top = '-292px';
     this.bonusSubtitle.height = '30px';
     dynamicRoot.addControl(this.bonusSubtitle);
 
-    this.bonusPaidHint = new TextBlock('bonus_paid_hint');
-    this.bonusPaidHint.fontSize = 13;
-    this.bonusPaidHint.fontFamily = 'Consolas';
-    this.bonusPaidHint.top = '-184px';
-    this.bonusPaidHint.height = '20px';
-    this.bonusPaidHint.isVisible = false;
-    dynamicRoot.addControl(this.bonusPaidHint);
+    this.bonusCreditsPanel = new Rectangle('bonus_credits_panel');
+    this.bonusCreditsPanel.width = '300px';
+    this.bonusCreditsPanel.height = '84px';
+    this.bonusCreditsPanel.thickness = 1;
+    this.bonusCreditsPanel.cornerRadius = 5;
+    this.bonusCreditsPanel.color = '#2EF9C3';
+    this.bonusCreditsPanel.background = 'rgba(0, 0, 0, 0.55)';
+    this.bonusCreditsPanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.bonusCreditsPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.bonusCreditsPanel.left = '-28px';
+    this.bonusCreditsPanel.top = '28px';
+    dynamicRoot.addControl(this.bonusCreditsPanel);
+
+    this.bonusCreditsText = new TextBlock('bonus_credits_text');
+    this.bonusCreditsText.text = 'CREDITS: 000';
+    this.bonusCreditsText.fontSize = 34;
+    this.bonusCreditsText.fontFamily = 'Consolas';
+    this.bonusCreditsText.color = '#FFD782';
+    this.bonusCreditsText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.bonusCreditsText.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.bonusCreditsPanel.addControl(this.bonusCreditsText);
 
     this.ensureBonusActionControls(dynamicRoot);
 
-    this.bonusPaidChoiceCountLabel = new TextBlock('bonus_paid_choice_count_label');
-    this.bonusPaidChoiceCountLabel.fontSize = 13;
-    this.bonusPaidChoiceCountLabel.fontFamily = 'Consolas';
-    this.bonusPaidChoiceCountLabel.height = '20px';
-    dynamicRoot.addControl(this.bonusPaidChoiceCountLabel);
+    this.bonusHoverPopup = new Rectangle('bonus_hover_popup');
+    this.bonusHoverPopup.width = '640px';
+    this.bonusHoverPopup.height = '56px';
+    this.bonusHoverPopup.thickness = 1;
+    this.bonusHoverPopup.cornerRadius = 4;
+    this.bonusHoverPopup.color = '#2EF9C3';
+    this.bonusHoverPopup.background = 'rgba(0, 0, 0, 0.86)';
+    this.bonusHoverPopup.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.bonusHoverPopup.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.bonusHoverPopup.isPointerBlocker = false;
+    this.bonusHoverPopup.isVisible = false;
+    this.bonusHoverPopup.zIndex = 1810;
+    dynamicRoot.addControl(this.bonusHoverPopup);
+
+    this.bonusHoverPopupText = new TextBlock('bonus_hover_popup_text');
+    this.bonusHoverPopupText.fontSize = 18;
+    this.bonusHoverPopupText.fontFamily = 'Consolas';
+    this.bonusHoverPopupText.color = '#AEEFE2';
+    this.bonusHoverPopupText.textWrapping = false;
+    this.bonusHoverPopupText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.bonusHoverPopupText.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.bonusHoverPopup.addControl(this.bonusHoverPopupText);
 
     const insufficientOverlay = new Rectangle('bonus_insufficient_overlay');
     insufficientOverlay.width = 1;
@@ -4328,6 +4439,71 @@ export class HUDManager {
     const ratio = this.bonusInsufficientFlashTimer / this.bonusInsufficientFlashDuration;
     this.bonusInsufficientFlashOverlay.alpha = 0.04 + (0.2 * ratio);
     this.bonusInsufficientFlashOverlay.isVisible = true;
+  }
+
+  private updateBonusCreditsPulse(deltaTime: number): void {
+    if (!this.bonusCreditsPanel || !this.bonusCreditsText || !this.bonusScreen?.isVisible) return;
+    if (this.bonusCreditsPulseTimer <= 0) {
+      this.bonusCreditsPanel.scaleX = 1;
+      this.bonusCreditsPanel.scaleY = 1;
+      this.bonusCreditsText.scaleX = 1;
+      this.bonusCreditsText.scaleY = 1;
+      return;
+    }
+
+    this.bonusCreditsPulseTimer = Math.max(0, this.bonusCreditsPulseTimer - deltaTime);
+    const t = 1 - (this.bonusCreditsPulseTimer / this.bonusCreditsPulseDuration);
+    const grow = t < 0.45
+      ? 1 + (0.17 * (t / 0.45))
+      : 1.17 - (0.17 * ((t - 0.45) / 0.55));
+    this.bonusCreditsPanel.scaleX = grow;
+    this.bonusCreditsPanel.scaleY = grow;
+    this.bonusCreditsText.scaleX = 1 + ((grow - 1) * 0.85);
+    this.bonusCreditsText.scaleY = this.bonusCreditsText.scaleX;
+  }
+
+  private showBonusHoverPopup(text: string, color: string): void {
+    if (!this.bonusHoverPopup || !this.bonusHoverPopupText || !this.bonusScreen?.isVisible) return;
+    const fontSize = Number(this.bonusHoverPopupText.fontSize) || 18;
+    const approxCharWidth = fontSize * 0.62;
+    const horizontalPadding = Math.max(28, Math.round(fontSize * 1.5));
+    const minWidth = 360;
+    const maxWidth = 980;
+    const dynamicWidth = Math.round((text.length * approxCharWidth) + (horizontalPadding * 2));
+    const clampedWidth = Math.max(minWidth, Math.min(maxWidth, dynamicWidth));
+    this.bonusHoverPopup.width = `${clampedWidth}px`;
+    this.bonusHoverPopupText.text = text;
+    this.bonusHoverPopupText.color = color;
+    this.bonusHoverPopup.isVisible = true;
+    this.bonusHoverPopupVisible = true;
+    this.updateBonusHoverPopupPosition();
+  }
+
+  private hideBonusHoverPopup(): void {
+    this.bonusHoverPopupVisible = false;
+    if (this.bonusHoverPopup) this.bonusHoverPopup.isVisible = false;
+  }
+
+  private updateBonusHoverPopupPosition(): void {
+    if (!this.bonusHoverPopup || !this.bonusHoverPopupVisible || !this.bonusScreen?.isVisible) return;
+    const renderWidth = Math.max(1, this.scene.getEngine().getRenderWidth(true));
+    const renderHeight = Math.max(1, this.scene.getEngine().getRenderHeight(true));
+    const guiWidth = this.guiClean.idealWidth || renderWidth;
+    const guiHeight = this.guiClean.idealHeight || renderHeight;
+
+    const pointerX = this.scene.pointerX;
+    const pointerY = this.scene.pointerY;
+
+    // Precise 1:1 pointer mapping in GUI space (no smoothing, no offsets).
+    const guiX = (pointerX / renderWidth) * guiWidth;
+    const guiY = (pointerY / renderHeight) * guiHeight;
+    const popupWidth = this.bonusHoverPopup.widthInPixels || 640;
+    const popupHeight = this.bonusHoverPopup.heightInPixels || 56;
+    const topMargin = popupHeight;
+    const left = guiX - (popupWidth / 3);
+    const top = guiY - popupHeight - topMargin;
+    this.bonusHoverPopup.left = `${left}px`;
+    this.bonusHoverPopup.top = `${top}px`;
   }
 
   private getOrCreateBonusCard(poolKey: string): {
@@ -4483,6 +4659,7 @@ export class HUDManager {
 
   hideOverlays(): void {
     this.allowDaemonDuringOverlays = false;
+    this.hideBonusHoverPopup();
     this.forceHideOverlays();
     this.setHudVisible(true);
   }

@@ -40,9 +40,10 @@ function getCssWidth(engine: Engine): number {
 export function applyResponsiveGuiScaling(
   gui: AdvancedDynamicTexture,
   engine: Engine,
+  options?: { desktopFirst?: boolean }
 ): { idealWidth: number; idealHeight: number } {
   const cssWidth  = getCssWidth(engine);
-  const isMobile  = cssWidth < MOBILE_BREAKPOINT_CSS_PX;
+  const isMobile  = !options?.desktopFirst && cssWidth < MOBILE_BREAKPOINT_CSS_PX;
 
   const idealWidth  = isMobile ? 960  : DESIGN_WIDTH;
   const idealHeight = isMobile ? 540  : DESIGN_HEIGHT;
