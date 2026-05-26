@@ -813,8 +813,8 @@ export class MainMenuScene {
     const panelHeight = Math.round(Math.min(720, Math.max(560, this.layoutHeight * 0.78)));
     const buttonStep = Math.round((panelHeight / 7) * 0.9);
     this.menuButtonWidth = Math.round(panelWidth * 0.62);
-    this.menuButtonHeight = Math.round(Math.max(56, panelHeight * 0.1));
-    this.menuButtonFontSize = this.isMobileLayout ? 20 : 21;
+    this.menuButtonHeight = Math.round(Math.max(62, panelHeight * 0.105));
+    this.menuButtonFontSize = this.isMobileLayout ? 22 : 23;
 
     const panel = UIFactory.createPanel('menuPanel', panelWidth, panelHeight);
     panel.top = `${Math.round(this.layoutHeight * 0.05)}px`;
@@ -890,10 +890,14 @@ export class MainMenuScene {
     const windowPanel = UIFactory.createPanel('settingsWindow', windowWidth, windowHeight);
     overlay.addControl(windowPanel);
 
+    const settingsScale = this.isMobileLayout ? 1.16 : 1.08;
+    const settingsButtonHeight = this.menuButtonHeight;
+    const settingsButtonFont = this.menuButtonFontSize;
+
     const title = new TextBlock('settingsTitle');
     title.text = 'SETTINGS CONSOLE';
     title.color = '#7CFFEA';
-    title.fontSize = 34;
+    title.fontSize = Math.round(34 * settingsScale);
     title.fontFamily = UITheme.fonts.primary;
     title.top = `-${Math.round(windowHeight * 0.45)}px`;
     windowPanel.addControl(title);
@@ -902,7 +906,7 @@ export class MainMenuScene {
 
     const actionRow = new Rectangle('settingsActionRow');
     actionRow.width = `${Math.round(windowWidth - 40)}px`;
-    actionRow.height = '44px';
+    actionRow.height = `${Math.max(settingsButtonHeight + 4, Math.round(44 * settingsScale))}px`;
     actionRow.thickness = 0;
     actionRow.top = `-${Math.round(windowHeight * 0.37)}px`;
     actionRow.isPointerBlocker = true;
@@ -910,8 +914,8 @@ export class MainMenuScene {
     windowPanel.addControl(actionRow);
 
     const closeBtn = Button.CreateSimpleButton('settingsCloseButton', 'BACK');
-    closeBtn.width = '160px';
-    closeBtn.height = '38px';
+    closeBtn.width = `${Math.round(220 * settingsScale)}px`;
+    closeBtn.height = `${settingsButtonHeight}px`;
     closeBtn.color = '#D2FFF2';
     closeBtn.cornerRadius = 4;
     closeBtn.background = 'rgba(20,38,45,0.95)';
@@ -921,7 +925,7 @@ export class MainMenuScene {
     closeBtn.isPointerBlocker = true;
     closeBtn.isHitTestVisible = true;
     closeBtn.zIndex = 130;
-    if (closeBtn.textBlock) closeBtn.textBlock.fontSize = 18;
+    if (closeBtn.textBlock) closeBtn.textBlock.fontSize = settingsButtonFont;
     this.bindButtonAction(closeBtn, () => {
       this.awaitingRebind = null;
       this.closeSettingsOverlay();
@@ -929,8 +933,8 @@ export class MainMenuScene {
     actionRow.addControl(closeBtn);
 
     const resetBtn = Button.CreateSimpleButton('settingsResetButton', 'RESET DEFAULTS');
-    resetBtn.width = '220px';
-    resetBtn.height = '38px';
+    resetBtn.width = `${Math.round(290 * settingsScale)}px`;
+    resetBtn.height = `${settingsButtonHeight}px`;
     resetBtn.color = '#C2FFE2';
     resetBtn.cornerRadius = 4;
     resetBtn.background = 'rgba(22,48,44,0.95)';
@@ -940,14 +944,14 @@ export class MainMenuScene {
     resetBtn.isPointerBlocker = true;
     resetBtn.isHitTestVisible = true;
     resetBtn.zIndex = 130;
-    if (resetBtn.textBlock) resetBtn.textBlock.fontSize = 18;
+    if (resetBtn.textBlock) resetBtn.textBlock.fontSize = settingsButtonFont;
     this.bindButtonAction(resetBtn, () => {
       this.awaitingRebind = null;
       GameSettingsStore.resetToDefaults();
     });
     actionRow.addControl(resetBtn);
 
-    this.captureHintText = UIFactory.createText('settingsCaptureHint', '', 12, UITheme.colors.textDim);
+    this.captureHintText = UIFactory.createText('settingsCaptureHint', '', Math.round(14 * settingsScale), UITheme.colors.textDim);
     this.captureHintText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.captureHintText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.captureHintText.top = `-${Math.round(windowHeight * 0.31)}px`;
@@ -961,7 +965,7 @@ export class MainMenuScene {
 
     const content = new StackPanel('settingsStack');
     content.isVertical = true;
-    content.spacing = 8;
+    content.spacing = Math.round(10 * settingsScale);
     content.width = 1;
     scroll.addControl(content);
 
@@ -976,7 +980,7 @@ export class MainMenuScene {
 
     parent.addControl(this.makeToggleRow(
       'Lightweight Procedural Texture Mode',
-      'Uses lighter procedural texture generation and reduced relief density.',
+      '',
       (checkbox) => {
         this.lightweightTexturesCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -987,8 +991,8 @@ export class MainMenuScene {
     ));
 
     parent.addControl(this.makeToggleRow(
-      'Progressive Enemy Spawning',
-      'Spawns enemies in small batches over frames to avoid spikes.',
+      'Progressive Enemy Spawning (anti-lag)',
+      '',
       (checkbox) => {
         this.progressiveSpawnCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -1000,7 +1004,7 @@ export class MainMenuScene {
 
     parent.addControl(this.makeToggleRow(
       'Wall Occlusion Transparency',
-      'Walls become transparent when hiding the player.',
+      '',
       (checkbox) => {
         this.wallOcclusionCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -1012,7 +1016,7 @@ export class MainMenuScene {
 
     parent.addControl(this.makeGraphicsNumberSliderRow(
       'Room Preload Ahead',
-      'How many next rooms are preloaded ahead of the current room.',
+      '',
       1,
       8,
       (slider, valueText) => {
@@ -1035,7 +1039,7 @@ export class MainMenuScene {
 
     parent.addControl(this.makeToggleRow(
       'Keyboard-Only Mode',
-      'Ignore mouse buttons during gameplay.',
+      '',
       (checkbox) => {
         this.keyboardOnlyCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -1047,7 +1051,7 @@ export class MainMenuScene {
 
     parent.addControl(this.makeToggleRow(
       'Auto Aim On Movement (8 directions)',
-      'Aim follows last movement direction in keyboard-only mode.',
+      '',
       (checkbox) => {
         this.autoAimCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -1060,7 +1064,7 @@ export class MainMenuScene {
     if (!import.meta.env.PROD) {
       parent.addControl(this.makeActionRow(
         'Automated Benchmark',
-        'Runs a repeatable autoplay benchmark and copies full metrics to clipboard.',
+        '',
         'RUN BENCHMARK',
         () => {
           this.awaitingRebind = null;
@@ -1086,7 +1090,7 @@ export class MainMenuScene {
 
     const row = new Rectangle('accessibilityFilterRow');
     row.width = '1020px';
-    row.height = '68px';
+    row.height = `${Math.round((this.isMobileLayout ? 78 : 74))}px`;
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -1095,7 +1099,7 @@ export class MainMenuScene {
     const label = new TextBlock('accessibilityFilterLabel');
     label.text = 'Color Vision Filter';
     label.color = '#B9F9E8';
-    label.fontSize = 18;
+    label.fontSize = this.isMobileLayout ? 22 : 20;
     label.fontFamily = UITheme.fonts.primary;
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1104,14 +1108,14 @@ export class MainMenuScene {
 
     const button = Button.CreateSimpleButton('accessibilityFilterButton', 'NONE');
     button.width = '280px';
-    button.height = '38px';
+    button.height = `${Math.round((this.isMobileLayout ? 46 : 42))}px`;
     button.color = '#DAFFF3';
     button.cornerRadius = 4;
     button.background = 'rgba(22,48,44,0.95)';
     button.thickness = 1;
     button.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     button.left = '-10px';
-    if (button.textBlock) button.textBlock.fontSize = 16;
+    if (button.textBlock) button.textBlock.fontSize = this.isMobileLayout ? 19 : 17;
     this.bindButtonAction(button, () => {
       const current = this.settingsSnapshot.accessibility.colorFilter;
       const currentIndex = FILTER_OPTIONS.indexOf(current);
@@ -1125,7 +1129,7 @@ export class MainMenuScene {
 
     parent.addControl(this.makeToggleRow(
       'Enable CAT Easter Egg (God Mode)',
-      'Adds CAT class to selection. CAT takes no damage and deals massive contact retaliation damage.',
+      '',
       (checkbox) => {
         this.catGodModeCheckbox = checkbox;
         checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -1138,7 +1142,7 @@ export class MainMenuScene {
     if (!import.meta.env.PROD) {
       parent.addControl(this.makeToggleRow(
         'Enable Developer Mode (Local Only)',
-        'Shows development tools, cheats, and performance metrics.',
+        '',
         (checkbox) => {
           this.devModeCheckbox = checkbox;
           checkbox.onIsCheckedChangedObservable.add((isChecked) => {
@@ -1151,8 +1155,8 @@ export class MainMenuScene {
 
     // RESET PROGRESSION — at the very bottom of settings
     const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET PROGRESSION');
-    resetProgressBtn.width = '340px';
-    resetProgressBtn.height = '38px';
+    resetProgressBtn.width = `${Math.round(this.isMobileLayout ? 420 : 380)}px`;
+    resetProgressBtn.height = `${Math.round(this.isMobileLayout ? 48 : 44)}px`;
     resetProgressBtn.color = '#FFE5E5';
     resetProgressBtn.cornerRadius = 4;
     resetProgressBtn.background = 'rgba(72,20,20,0.95)';
@@ -1161,7 +1165,7 @@ export class MainMenuScene {
     resetProgressBtn.top = '8px';
     resetProgressBtn.isPointerBlocker = true;
     resetProgressBtn.isHitTestVisible = true;
-    if (resetProgressBtn.textBlock) resetProgressBtn.textBlock.fontSize = 16;
+    if (resetProgressBtn.textBlock) resetProgressBtn.textBlock.fontSize = this.isMobileLayout ? 19 : 17;
     this.bindButtonAction(resetProgressBtn, () => {
       this.awaitingRebind = null;
       this.showResetProgressConfirmOverlay();
@@ -1255,18 +1259,18 @@ export class MainMenuScene {
   private makeSectionHeader(text: string): Rectangle {
     const row = new Rectangle(`sectionHeader_${text.replace(/\s+/g, '_')}`);
     row.width = '1020px';
-    row.height = '52px';
+    row.height = `${this.isMobileLayout ? 58 : 54}px`;
     row.thickness = 0;
     row.background = 'rgba(10, 30, 35, 0.6)';
 
     const title = new TextBlock(`sectionHeaderText_${text.replace(/\s+/g, '_')}`);
     title.text = text;
     title.color = '#7CFFEA';
-    title.fontSize = 24;
+    title.fontSize = this.isMobileLayout ? 28 : 26;
     title.fontFamily = UITheme.fonts.primary;
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     title.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    title.paddingLeft = '10px';
+    title.paddingLeft = '12px';
     row.addControl(title);
 
     return row;
@@ -1288,7 +1292,7 @@ export class MainMenuScene {
   private makeKeybindRow(action: KeybindingAction, labelText: string): Rectangle {
     const row = new Rectangle(`keybindRow_${action}`);
     row.width = '1020px';
-    row.height = '60px';
+    row.height = `${Math.max(this.menuButtonHeight + 18, this.isMobileLayout ? 78 : 72)}px`;
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -1297,7 +1301,7 @@ export class MainMenuScene {
     const label = new TextBlock(`keybindLabel_${action}`);
     label.text = labelText;
     label.color = '#B9F9E8';
-    label.fontSize = 18;
+    label.fontSize = this.isMobileLayout ? 22 : 20;
     label.fontFamily = UITheme.fonts.primary;
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1305,15 +1309,15 @@ export class MainMenuScene {
     row.addControl(label);
 
     const keyButton = Button.CreateSimpleButton(`keybindButton_${action}`, '...');
-    keyButton.width = '260px';
-    keyButton.height = '38px';
+    keyButton.width = `${this.isMobileLayout ? 300 : 270}px`;
+    keyButton.height = `${this.menuButtonHeight}px`;
     keyButton.color = '#E3FFF7';
     keyButton.cornerRadius = 4;
     keyButton.background = 'rgba(22,48,44,0.95)';
     keyButton.thickness = 1;
     keyButton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     keyButton.left = '-10px';
-    if (keyButton.textBlock) keyButton.textBlock.fontSize = 18;
+    if (keyButton.textBlock) keyButton.textBlock.fontSize = this.menuButtonFontSize;
     this.bindButtonAction(keyButton, () => {
       this.awaitingRebind = this.awaitingRebind === action ? null : action;
       this.refreshSettingsUi();
@@ -1331,7 +1335,7 @@ export class MainMenuScene {
   ): Rectangle {
     const row = new Rectangle(`toggleRow_${title.replace(/\s+/g, '_')}`);
     row.width = '1020px';
-    row.height = '84px';
+    row.height = `${Math.max(this.menuButtonHeight + 18, this.isMobileLayout ? 82 : 76)}px`;
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -1340,28 +1344,30 @@ export class MainMenuScene {
     const titleText = new TextBlock(`toggleTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
     titleText.color = '#B9F9E8';
-    titleText.fontSize = 18;
+    titleText.fontSize = Math.max(this.menuButtonFontSize - 1, this.isMobileLayout ? 22 : 20);
     titleText.fontFamily = UITheme.fonts.primary;
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
-    titleText.top = '-14px';
+    titleText.top = '0px';
     row.addControl(titleText);
 
-    const detailText = new TextBlock(`toggleDetails_${title.replace(/\s+/g, '_')}`);
-    detailText.text = details;
-    detailText.color = '#86B9AE';
-    detailText.fontSize = 13;
-    detailText.fontFamily = UITheme.fonts.primary;
-    detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    detailText.paddingLeft = '14px';
-    detailText.top = '16px';
-    row.addControl(detailText);
+    if (details.trim().length > 0) {
+      const detailText = new TextBlock(`toggleDetails_${title.replace(/\s+/g, '_')}`);
+      detailText.text = details;
+      detailText.color = '#86B9AE';
+      detailText.fontSize = this.isMobileLayout ? 15 : 14;
+      detailText.fontFamily = UITheme.fonts.primary;
+      detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      detailText.paddingLeft = '14px';
+      detailText.top = '18px';
+      row.addControl(detailText);
+    }
 
     const checkbox = new Checkbox(`toggleCheckbox_${title.replace(/\s+/g, '_')}`);
-    checkbox.width = '36px';
-    checkbox.height = '36px';
+    checkbox.width = `${this.isMobileLayout ? 40 : 36}px`;
+    checkbox.height = `${this.isMobileLayout ? 40 : 36}px`;
     checkbox.color = '#B9F9E8';
     checkbox.background = '#122D2B';
     checkbox.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -1380,7 +1386,7 @@ export class MainMenuScene {
   ): Rectangle {
     const row = new Rectangle(`actionRow_${title.replace(/\s+/g, '_')}`);
     row.width = '1020px';
-    row.height = '84px';
+    row.height = `${Math.max(this.menuButtonHeight + 18, this.isMobileLayout ? 82 : 76)}px`;
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -1389,35 +1395,37 @@ export class MainMenuScene {
     const titleText = new TextBlock(`actionTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
     titleText.color = '#B9F9E8';
-    titleText.fontSize = 18;
+    titleText.fontSize = Math.max(this.menuButtonFontSize - 1, this.isMobileLayout ? 22 : 20);
     titleText.fontFamily = UITheme.fonts.primary;
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
-    titleText.top = '-14px';
+    titleText.top = '0px';
     row.addControl(titleText);
 
-    const detailText = new TextBlock(`actionDetails_${title.replace(/\s+/g, '_')}`);
-    detailText.text = details;
-    detailText.color = '#86B9AE';
-    detailText.fontSize = 13;
-    detailText.fontFamily = UITheme.fonts.primary;
-    detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    detailText.paddingLeft = '14px';
-    detailText.top = '16px';
-    row.addControl(detailText);
+    if (details.trim().length > 0) {
+      const detailText = new TextBlock(`actionDetails_${title.replace(/\s+/g, '_')}`);
+      detailText.text = details;
+      detailText.color = '#86B9AE';
+      detailText.fontSize = this.isMobileLayout ? 15 : 14;
+      detailText.fontFamily = UITheme.fonts.primary;
+      detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      detailText.paddingLeft = '14px';
+      detailText.top = '18px';
+      row.addControl(detailText);
+    }
 
     const actionButton = Button.CreateSimpleButton(`actionButton_${title.replace(/\s+/g, '_')}`, buttonLabel);
-    actionButton.width = '240px';
-    actionButton.height = '38px';
+    actionButton.width = `${this.isMobileLayout ? 280 : 250}px`;
+    actionButton.height = `${this.menuButtonHeight}px`;
     actionButton.color = '#E3FFF7';
     actionButton.cornerRadius = 4;
     actionButton.background = 'rgba(22,48,44,0.95)';
     actionButton.thickness = 1;
     actionButton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     actionButton.left = '-10px';
-    if (actionButton.textBlock) actionButton.textBlock.fontSize = 16;
+    if (actionButton.textBlock) actionButton.textBlock.fontSize = Math.max(this.menuButtonFontSize - 2, this.isMobileLayout ? 18 : 17);
     this.bindButtonAction(actionButton, onAction);
     row.addControl(actionButton);
 
@@ -1427,7 +1435,7 @@ export class MainMenuScene {
   private makeAudioSliderRow(channel: AudioChannel, labelText: string): Rectangle {
     const row = new Rectangle(`audioRow_${channel}`);
     row.width = '1020px';
-    row.height = '68px';
+    row.height = `${Math.max(this.menuButtonHeight + 16, this.isMobileLayout ? 82 : 74)}px`;
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -1436,7 +1444,7 @@ export class MainMenuScene {
     const label = new TextBlock(`audioLabel_${channel}`);
     label.text = labelText;
     label.color = '#B9F9E8';
-    label.fontSize = 18;
+    label.fontSize = Math.max(this.menuButtonFontSize - 1, this.isMobileLayout ? 22 : 20);
     label.fontFamily = UITheme.fonts.primary;
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1448,7 +1456,7 @@ export class MainMenuScene {
     slider.width = '640px';
     slider.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     slider.left = '12px';
-    slider.top = '18px';
+    slider.top = '20px';
     slider.onValueChangedObservable.add((value) => {
       if (this.isRefreshingUi) return;
       const normalized = Math.round(value) / 100;
@@ -1459,7 +1467,7 @@ export class MainMenuScene {
     const valueText = new TextBlock(`audioValue_${channel}`);
     valueText.text = '100%';
     valueText.color = '#DFFEF6';
-    valueText.fontSize = 16;
+    valueText.fontSize = Math.max(this.menuButtonFontSize - 3, this.isMobileLayout ? 19 : 17);
     valueText.fontFamily = UITheme.fonts.primary;
     valueText.width = '80px';
     valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -1483,7 +1491,7 @@ export class MainMenuScene {
   ): Rectangle {
     const row = new Rectangle(`graphicsNumberRow_${title.replace(/\s+/g, '_')}`);
     row.width = '1020px';
-    row.height = '100px';
+    row.height = `${Math.max(this.menuButtonHeight + 16, this.isMobileLayout ? 88 : 78)}px`;
     row.thickness = 1;
     row.cornerRadius = 4;
     row.color = '#285148';
@@ -1492,42 +1500,44 @@ export class MainMenuScene {
     const titleText = new TextBlock(`graphicsNumberTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
     titleText.color = '#B9F9E8';
-    titleText.fontSize = 18;
+    titleText.fontSize = Math.max(this.menuButtonFontSize - 1, this.isMobileLayout ? 22 : 20);
     titleText.fontFamily = UITheme.fonts.primary;
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
-    titleText.top = '-24px';
+    titleText.top = '0px';
     row.addControl(titleText);
 
-    const detailText = new TextBlock(`graphicsNumberDetails_${title.replace(/\s+/g, '_')}`);
-    detailText.text = details;
-    detailText.color = '#86B9AE';
-    detailText.fontSize = 13;
-    detailText.fontFamily = UITheme.fonts.primary;
-    detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    detailText.paddingLeft = '14px';
-    detailText.top = '2px';
-    row.addControl(detailText);
+    if (details.trim().length > 0) {
+      const detailText = new TextBlock(`graphicsNumberDetails_${title.replace(/\s+/g, '_')}`);
+      detailText.text = details;
+      detailText.color = '#86B9AE';
+      detailText.fontSize = this.isMobileLayout ? 15 : 14;
+      detailText.fontFamily = UITheme.fonts.primary;
+      detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      detailText.paddingLeft = '14px';
+      detailText.top = '18px';
+      row.addControl(detailText);
+    }
 
     const slider = UIFactory.createSlider(`graphicsNumberSlider_${title.replace(/\s+/g, '_')}`, min, max, min);
     slider.width = '640px';
     slider.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     slider.left = '12px';
-    slider.top = '30px';
+    slider.top = `${details.trim().length > 0 ? 30 : 20}px`;
     row.addControl(slider);
 
     const valueText = new TextBlock(`graphicsNumberValue_${title.replace(/\s+/g, '_')}`);
     valueText.text = `${min}`;
     valueText.color = '#DFFEF6';
-    valueText.fontSize = 14;
+    valueText.fontSize = Math.max(this.menuButtonFontSize - 4, this.isMobileLayout ? 18 : 16);
     valueText.fontFamily = UITheme.fonts.primary;
     valueText.width = '120px';
     valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.left = '-12px';
-    valueText.top = '26px';
+    valueText.top = `${details.trim().length > 0 ? 26 : 20}px`;
     row.addControl(valueText);
 
     onReady(slider, valueText);

@@ -79,6 +79,51 @@ export class UIFactory {
     
     // Block pointers so you can actually click the background to scroll
     scroll.isPointerBlocker = true;
+
+    // Mobile ergonomics: allow hold + swipe on the whole list area (not only scrollbar).
+    // Keeps tap interactions on list items when there is no drag.
+    const isTouchPreferred = (() => {
+      try {
+        const touchPoints = (globalThis.navigator && (navigator.maxTouchPoints || 0)) || 0;
+        return touchPoints > 0;
+      } catch {
+        return false;
+      }
+    })();
+    if (isTouchPreferred) {
+      let dragging = false;
+      let dragStarted = false;
+      let lastY = 0;
+      const DRAG_THRESHOLD_PX = 8;
+      const DRAG_SPEED = 0.0038;
+
+      scroll.onPointerDownObservable.add((coords: any) => {
+        dragging = true;
+        dragStarted = false;
+        lastY = typeof coords?.y === 'number' ? coords.y : 0;
+      });
+
+      scroll.onPointerMoveObservable.add((coords: any) => {
+        if (!dragging) return;
+        const y = typeof coords?.y === 'number' ? coords.y : lastY;
+        const dy = y - lastY;
+        if (!dragStarted && Math.abs(dy) >= DRAG_THRESHOLD_PX) {
+          dragStarted = true;
+        }
+        if (dragStarted && scroll.verticalBar) {
+          const next = Math.min(1, Math.max(0, scroll.verticalBar.value - dy * DRAG_SPEED));
+          scroll.verticalBar.value = next;
+        }
+        lastY = y;
+      });
+
+      const endDrag = () => {
+        dragging = false;
+        dragStarted = false;
+      };
+      scroll.onPointerUpObservable.add(endDrag);
+      scroll.onPointerOutObservable.add(endDrag);
+    }
     
     return scroll;
   }
@@ -112,4 +157,3 @@ export class UIFactory {
     return slider;
   }
 }
-
