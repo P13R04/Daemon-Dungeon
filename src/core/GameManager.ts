@@ -1447,6 +1447,7 @@ export class GameManager {
         zombie_basic_void: 'sfx_zombie_damage_taken1',
         fuyard: 'sfx_zombie_damage_taken1',
         strategist: 'sfx_zombie_damage_taken1',
+        spike_strategist: 'sfx_zombie_damage_taken1',
         spike_strategist_boss: 'sfx_zombie_damage_taken1',
         jumper: 'sfx_jumper_dmg_taken1',
         jumper_boss: 'sfx_jumper_dmg_taken1',
@@ -1454,6 +1455,8 @@ export class GameManager {
         bull_boss: 'sfx_bull_dmgtaken',
         pong: 'sfx_pong_onhit',
         pong_boss: 'sfx_pong_onhit',
+        turret: 'sfx_sentry_damage_taken',
+        shooter: 'sfx_sentry_damage_taken',
         sentinel: 'sfx_sentry_damage_taken',
         prefire_sentinel: 'sfx_sentry_damage_taken',
         healer: 'sfx_sentry_damage_taken',
@@ -1461,8 +1464,10 @@ export class GameManager {
         artificier: 'sfx_sentry_damage_taken',
         rocket_sentry: 'sfx_sentry_damage_taken',
         swarm_coordinator: 'sfx_sentry_damage_taken',
+        necromancer_boss: 'sfx_sentry_damage_taken',
         necromancer: 'sfx_sentry_damage_taken',
         laser_patterns: 'sfx_sentry_damage_taken',
+        laser_pattern_boss: 'sfx_sentry_damage_taken',
         mage_missile: 'sfx_sentry_damage_taken',
         bullet_hell: 'sfx_sentry_damage_taken',
       };
@@ -1493,6 +1498,7 @@ export class GameManager {
         zombie_basic_void: 'sfx_zombie_death_sound1',
         fuyard: 'sfx_zombie_death_sound1',
         strategist: 'sfx_zombie_death_sound1',
+        spike_strategist: 'sfx_zombie_death_sound1',
         spike_strategist_boss: 'sfx_zombie_death_sound1',
         bull: 'sfx_bull_dash1',
         bull_boss: 'sfx_bull_dash1',
@@ -1500,6 +1506,8 @@ export class GameManager {
         jumper_boss: 'sfx_jumper_dmg_taken1',
         pong: 'sfx_pong_ondeath',
         pong_boss: 'sfx_pong_ondeath',
+        turret: 'sfx_sentry_ondeath',
+        shooter: 'sfx_sentry_ondeath',
         sentinel: 'sfx_sentry_ondeath',
         prefire_sentinel: 'sfx_sentry_ondeath',
         healer: 'sfx_sentry_ondeath',
@@ -1507,8 +1515,10 @@ export class GameManager {
         artificier: 'sfx_sentry_ondeath',
         rocket_sentry: 'sfx_sentry_ondeath',
         swarm_coordinator: 'sfx_sentry_ondeath',
+        necromancer_boss: 'sfx_sentry_ondeath',
         necromancer: 'sfx_sentry_ondeath',
         laser_patterns: 'sfx_sentry_ondeath',
+        laser_pattern_boss: 'sfx_sentry_ondeath',
         mage_missile: 'sfx_sentry_ondeath',
         bullet_hell: 'sfx_sentry_ondeath',
       };
@@ -1535,6 +1545,9 @@ export class GameManager {
       const position = data?.position || Vector3.Zero();
       const sound = cue === 'bounce' ? 'sfx_pong_wall_bounce1' : cue === 'flyby' ? 'sfx_pong_flying_close1' : '';
       if (sound) this.audioManager?.playSoundAt(sound, position, 0.8);
+    });
+    this.eventBus.on(GameEvents.ENEMY_PONG_CORNER_HIT, () => {
+      this.codexService.completeAchievement('pong_corner_hit');
     });
     this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_SPLIT_IMPACT, (data: any) => {
       this.audioManager?.playSoundAt('sfx_artificier_shot_split1', data?.position ?? Vector3.Zero(), 0.85);
@@ -1726,6 +1739,7 @@ export class GameManager {
       zombie_basic_void: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
       fuyard: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
       strategist: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
+      spike_strategist: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
       spike_strategist_boss: ['sfx_zombie_onhit1', 'sfx_zombie_onhit2', 'sfx_zombie_onhit3'],
       bull: ['sfx_bull_collision1'],
       bull_boss: ['sfx_bull_collision1'],
@@ -1733,6 +1747,15 @@ export class GameManager {
       jumper_boss: ['sfx_jumper_onhit1'],
       pong: ['sfx_pong_onhit'],
       pong_boss: ['sfx_pong_onhit'],
+      turret: ['sfx_sentry_onhit_sntry'],
+      shooter: ['sfx_sentry_onhit_sntry'],
+      sentinel: ['sfx_sentry_onhit_sntry'],
+      prefire_sentinel: ['sfx_sentry_onhit_sntry'],
+      swarm_coordinator: ['sfx_sentry_onhit_sntry'],
+      necromancer: ['sfx_sentry_onhit_sntry'],
+      necromancer_boss: ['sfx_sentry_onhit_sntry'],
+      bullet_hell: ['sfx_sentry_onhit_sntry'],
+      laser_pattern_boss: ['sfx_sentry_onhit_sntry'],
     };
     const sounds =
       soundMap[attackerType]

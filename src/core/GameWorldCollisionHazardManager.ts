@@ -97,6 +97,7 @@ export class GameWorldCollisionHazardManager {
     }
 
     for (const enemy of enemies) {
+      if (enemy.getBehavior?.() === 'pong') continue;
       if (enemy.isStationary?.() || enemy.isRooted?.()) continue;
       let enemyPos = enemy.getPosition();
       const radius = enemy.getRadius();
@@ -107,6 +108,7 @@ export class GameWorldCollisionHazardManager {
     }
 
     for (const enemy of enemies) {
+      if (enemy.getBehavior?.() === 'pong') continue;
       if (!enemy.isAlive || enemy.isAirborne() || enemy.isFalling() || enemy.isStationary?.()) continue;
       const enemyPos = enemy.getPosition();
       const enemyRadius = enemy.getRadius();
@@ -143,6 +145,7 @@ export class GameWorldCollisionHazardManager {
       playerPos.y = 1.0;
 
       for (const enemy of enemies) {
+        if (enemy.getBehavior?.() === 'pong') continue;
         if (!enemy.isAlive || enemy.isFalling()) continue;
         const enemyPos = enemy.getPosition();
         const radius = enemy.getRadius();

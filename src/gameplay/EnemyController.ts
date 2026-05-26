@@ -85,8 +85,8 @@ export class EnemyController {
   private emitterNodes: TransformNode[] = [];
 
   private static flareTextureCache: Texture | null = null;
-  private static createLocalFlareTexture(scene: Scene): Texture {
-    const texture = new DynamicTexture('enemy_flare_local', { width: 64, height: 64 }, scene, false);
+  private static createLocalFlareTexture(scene: Scene, name: string = 'enemy_flare_local'): Texture {
+    const texture = new DynamicTexture(name, { width: 64, height: 64 }, scene, false);
     const ctx = texture.getContext();
     ctx.clearRect(0, 0, 64, 64);
     const grad = ctx.createRadialGradient(32, 32, 2, 32, 32, 31);
@@ -1970,45 +1970,92 @@ export class EnemyController {
 
     let dir = this.pongDirection.clone();
     const knock = this.knockback.update(deltaTime);
-    const movement = dir.scale(this.speed * deltaTime).add(knock);
-
+    const step = dir.scale(this.speed * deltaTime);
+    const rawCandidate = this.position.add(step).add(knock);
     this.previousPosition = this.position.clone();
-    let candidate = this.position.add(movement);
 
-    const bounceAxis = this.getPongBounceAxis(candidate, movement, roomManager);
-
-    const hitsPlayer = this.isPongTouchingPlayer(candidate, playerPosition);
+    const hitsPlayer = this.isPongTouchingPlayer(rawCandidate, playerPosition);
     if (hitsPlayer && this.attackCooldown <= 0) {
       this.applyPongContactDamage();
     }
 
-    let finalAxis = bounceAxis;
-    if (!finalAxis && hitsPlayer) {
-      finalAxis = this.getPongPlayerBounceAxis(candidate, playerPosition, movement);
+    // Deterministic DVD-style axis collision:
+    // - one axis test each frame (no competing systems)
+    // - each blocked axis is inverted at most once per frame
+    // - reflected step is applied immediately in the same frame
+    let bouncedX = false;
+    let bouncedZ = false;
+    let resolved = this.position.clone();
+
+    if (roomManager) {
+      const targetX = this.position.x + step.x;
+      const targetZ = this.position.z + step.z;
+      const xBlocked = this.isPongAxisBlocked('x', targetX, this.position.z, dir, roomManager);
+      const zBlocked = this.isPongAxisBlocked('z', this.position.x, targetZ, dir, roomManager);
+
+      if (xBlocked) {
+        dir.x *= -1;
+        bouncedX = true;
+      }
+      if (zBlocked) {
+        dir.z *= -1;
+        bouncedZ = true;
+      }
+
+      const reflectedStepX = bouncedX ? -step.x : step.x;
+      const reflectedStepZ = bouncedZ ? -step.z : step.z;
+      const proposed = new Vector3(
+        this.position.x + reflectedStepX,
+        this.position.y,
+        this.position.z + reflectedStepZ
+      );
+
+      // Final safety: if the full reflected move is still invalid,
+      // resolve per-axis in a stable order to avoid wall sliding lock.
+      if (!this.isPongBlockedByEnvironment(proposed, roomManager)) {
+        resolved = proposed;
+      } else {
+        let nextX = this.position.x;
+        let nextZ = this.position.z;
+        const tryX = new Vector3(this.position.x + reflectedStepX, this.position.y, this.position.z);
+        const tryZ = new Vector3(this.position.x, this.position.y, this.position.z + reflectedStepZ);
+        if (!this.isPongBlockedByEnvironment(tryX, roomManager)) nextX = tryX.x;
+        if (!this.isPongBlockedByEnvironment(tryZ, roomManager)) nextZ = tryZ.z;
+        resolved = new Vector3(nextX, this.position.y, nextZ);
+      }
+
+      // Apply knockback only after wall resolution; never tunnel into walls.
+      const knockCandidate = resolved.add(knock);
+      if (!this.isPongBlockedByEnvironment(knockCandidate, roomManager)) {
+        resolved = knockCandidate;
+      }
+    } else {
+      resolved = rawCandidate;
     }
 
-    if (finalAxis === 'x') {
-      dir = new Vector3(-dir.x, 0, dir.z);
-    } else if (finalAxis === 'z') {
-      dir = new Vector3(dir.x, 0, -dir.z);
-    }
-
-    if (finalAxis) {
-      this.emitPongAudioCue('bounce');
-    }
-
-    if (finalAxis) {
-      candidate = this.position.add(dir.scale(this.speed * deltaTime)).add(knock);
-      if (this.isPongTouchingPlayer(candidate, playerPosition) || this.isPongBlockedByEnvironment(candidate, roomManager)) {
-        dir = dir.scale(-1);
-        candidate = this.position.add(dir.scale(this.speed * deltaTime)).add(knock);
+    // Player collision fallback only if no wall bounce happened this frame.
+    if (!bouncedX && !bouncedZ && hitsPlayer) {
+      const playerAxis = this.getPongPlayerBounceAxis(rawCandidate, playerPosition, step);
+      if (playerAxis === 'x') {
+        dir.x *= -1;
+        bouncedX = true;
+      } else {
+        dir.z *= -1;
+        bouncedZ = true;
       }
     }
 
-    if (!this.isPongBlockedByEnvironment(candidate, roomManager)) {
-      this.position.copyFrom(candidate);
+    if (bouncedX || bouncedZ) {
+      this.emitPongAudioCue('bounce');
+      if (bouncedX && bouncedZ) {
+        this.eventBus.emit(GameEvents.ENEMY_PONG_CORNER_HIT, {
+          enemyType: this.typeId,
+          position: this.position.clone(),
+        });
+      }
     }
 
+    this.position.copyFrom(resolved);
     this.pongDirection = dir.normalize();
     this.velocity = this.pongDirection.scale(this.speed);
     this.applyMeshPosition();
@@ -2677,13 +2724,22 @@ export class EnemyController {
     }
 
     const maxHP = this.health?.getMaxHP?.() ?? (this.config.baseStats?.hp || 40);
+    const displayName = this.getEnemyDisplayName();
     this.eventBus.emit(GameEvents.ENEMY_SPAWNED, {
       entityId: this.id,
       enemyType: this.typeId,
-      enemyName: this.config?.name ?? this.id,
+      enemyName: displayName,
       maxHP,
       mesh: this.mesh,
     });
+  }
+
+  private getEnemyDisplayName(): string {
+    const configured = (this.config?.name ?? '').trim();
+    if (configured.length > 0) return configured;
+    const type = (this.typeId ?? '').toLowerCase();
+    if (type.includes('fuyard')) return 'Skittish';
+    return this.id;
   }
 
   revealSpawnEventIfSuppressed(): void {
@@ -2768,6 +2824,7 @@ export class EnemyController {
 
     this.eventBus.emit(GameEvents.ENEMY_DAMAGED, {
       entityId: this.id,
+      enemyType: this.typeId,
       damage: amount,
       position: this.position.clone(),
     });
@@ -4235,6 +4292,8 @@ export class EnemyController {
   private isPongBlockedByEnvironment(position: Vector3, roomManager?: RoomManager): boolean {
     if (!roomManager) return false;
     if (!roomManager.isWalkable(position.x, position.z)) return true;
+    const tile = roomManager.getTileTypeAtWorld(position.x, position.z);
+    if (tile === 'wall' || tile === 'out') return true;
 
     const bounds = roomManager.getRoomBounds();
     if (bounds) {
@@ -4265,6 +4324,47 @@ export class EnemyController {
     return false;
   }
 
+  private isPongAxisBlocked(
+    axis: 'x' | 'z',
+    testX: number,
+    testZ: number,
+    direction: Vector3,
+    roomManager: RoomManager
+  ): boolean {
+    const probe = this.pongRadius + 0.08;
+    const lateral = this.pongRadius * 0.65;
+    const signX = direction.x >= 0 ? 1 : -1;
+    const signZ = direction.z >= 0 ? 1 : -1;
+
+    if (axis === 'x') {
+      const probeX = testX + (signX * probe);
+      const checks = [
+        { x: probeX, z: testZ },
+        { x: probeX, z: testZ + lateral },
+        { x: probeX, z: testZ - lateral },
+      ];
+      for (const check of checks) {
+        const tile = roomManager.getTileTypeAtWorld(check.x, check.z);
+        if (tile === 'wall' || tile === 'out') return true;
+        if (!roomManager.isWalkable(check.x, check.z)) return true;
+      }
+      return this.isPongBlockedByEnvironment(new Vector3(testX, this.position.y, testZ), roomManager);
+    }
+
+    const probeZ = testZ + (signZ * probe);
+    const checks = [
+      { x: testX, z: probeZ },
+      { x: testX + lateral, z: probeZ },
+      { x: testX - lateral, z: probeZ },
+    ];
+    for (const check of checks) {
+      const tile = roomManager.getTileTypeAtWorld(check.x, check.z);
+      if (tile === 'wall' || tile === 'out') return true;
+      if (!roomManager.isWalkable(check.x, check.z)) return true;
+    }
+    return this.isPongBlockedByEnvironment(new Vector3(testX, this.position.y, testZ), roomManager);
+  }
+
   private isPongTouchingPlayer(position: Vector3, playerPosition: Vector3): boolean {
     const minDistance = this.pongRadius + 0.35;
     return Vector3.DistanceSquared(position, playerPosition) <= minDistance * minDistance;
@@ -4283,7 +4383,7 @@ export class EnemyController {
     return 'z';
   }
 
-  private getPongBounceAxis(candidate: Vector3, movement: Vector3, roomManager?: RoomManager): 'x' | 'z' | null {
+  private getPongBounceAxis(candidate: Vector3, movement: Vector3, roomManager?: RoomManager): 'x' | 'z' | 'both' | null {
     if (!roomManager) return null;
 
     const physicalNormal = roomManager.getPhysicsBounceNormal(this.position, candidate);
@@ -4291,63 +4391,32 @@ export class EnemyController {
       return Math.abs(physicalNormal.x) >= Math.abs(physicalNormal.z) ? 'x' : 'z';
     }
 
-    let axis: 'x' | 'z' | null = null;
-    let penetration = Number.POSITIVE_INFINITY;
+    const xCandidate = new Vector3(candidate.x, this.position.y, this.position.z);
+    const zCandidate = new Vector3(this.position.x, this.position.y, candidate.z);
+    let xBlocked = this.isPongBlockedByEnvironment(xCandidate, roomManager);
+    let zBlocked = this.isPongBlockedByEnvironment(zCandidate, roomManager);
+    const candidateBlocked = this.isPongBlockedByEnvironment(candidate, roomManager);
 
-    const consider = (candidateAxis: 'x' | 'z', candidatePenetration: number) => {
-      if (candidatePenetration < penetration) {
-        penetration = candidatePenetration;
-        axis = candidateAxis;
-      }
-    };
+    // Tile-grid fallback to prevent wall sliding and force a deterministic axis bounce.
+    const probe = this.pongRadius + 0.08;
+    const signX = movement.x >= 0 ? 1 : -1;
+    const signZ = movement.z >= 0 ? 1 : -1;
+    const xTile = roomManager.getTileTypeAtWorld(candidate.x + (signX * probe), this.position.z);
+    const zTile = roomManager.getTileTypeAtWorld(this.position.x, candidate.z + (signZ * probe));
+    if (xTile === 'wall' || xTile === 'out') xBlocked = true;
+    if (zTile === 'wall' || zTile === 'out') zBlocked = true;
 
-    const bounds = roomManager.getRoomBounds();
-    if (bounds) {
-      const minX = bounds.minX + this.pongRadius;
-      const maxX = bounds.maxX - this.pongRadius;
-      const minZ = bounds.minZ + this.pongRadius;
-      const maxZ = bounds.maxZ - this.pongRadius;
-      if (candidate.x < minX) consider('x', minX - candidate.x);
-      if (candidate.x > maxX) consider('x', candidate.x - maxX);
-      if (candidate.z < minZ) consider('z', minZ - candidate.z);
-      if (candidate.z > maxZ) consider('z', candidate.z - maxZ);
+    if (xBlocked && zBlocked) return 'both';
+    if (xBlocked) return 'x';
+    if (zBlocked) return 'z';
+
+    if (candidateBlocked) {
+      if (Math.abs(movement.x) > Math.abs(movement.z)) return 'x';
+      if (Math.abs(movement.z) > Math.abs(movement.x)) return 'z';
+      return 'both';
     }
 
-    for (const obstacle of roomManager.getObstacleBounds()) {
-      const expanded = {
-        minX: obstacle.minX - this.pongRadius,
-        maxX: obstacle.maxX + this.pongRadius,
-        minZ: obstacle.minZ - this.pongRadius,
-        maxZ: obstacle.maxZ + this.pongRadius,
-      };
-      const inside =
-        candidate.x >= expanded.minX && candidate.x <= expanded.maxX &&
-        candidate.z >= expanded.minZ && candidate.z <= expanded.maxZ;
-      if (!inside) continue;
-
-      const distLeft = Math.abs(candidate.x - expanded.minX);
-      const distRight = Math.abs(expanded.maxX - candidate.x);
-      const distBottom = Math.abs(candidate.z - expanded.minZ);
-      const distTop = Math.abs(expanded.maxZ - candidate.z);
-      const minX = Math.min(distLeft, distRight);
-      const minZ = Math.min(distBottom, distTop);
-      if (minX <= minZ) {
-        consider('x', minX);
-      } else {
-        consider('z', minZ);
-      }
-    }
-
-    if (!axis && !roomManager.isWalkable(candidate.x, candidate.z)) {
-      const xBlocked = !roomManager.isWalkable(candidate.x, this.position.z);
-      const zBlocked = !roomManager.isWalkable(this.position.x, candidate.z);
-      if (xBlocked && !zBlocked) return 'x';
-      if (zBlocked && !xBlocked) return 'z';
-      if (Math.abs(movement.x) >= Math.abs(movement.z)) return 'x';
-      return 'z';
-    }
-
-    return axis;
+    return null;
   }
 
   private queueJumperModelLoad(): void {
@@ -4933,8 +5002,12 @@ export class EnemyController {
 
     // Fire trail
     const particles = new ParticleSystem(`missile_trail_${this.id}_${Date.now()}`, 2000, this.scene);
-    // Shared local flare texture: avoids cross-origin fetches and keeps startup deterministic.
-    this.missileTrailTexture = EnemyController.getFlareTexture(this.scene);
+    // Missile trails are intentionally fully isolated per missile instance:
+    // dedicated texture + dedicated particle system + dedicated cleanup.
+    this.missileTrailTexture = EnemyController.createLocalFlareTexture(
+      this.scene,
+      `missile_trail_tex_${this.id}_${Date.now()}`,
+    );
     particles.particleTexture = this.missileTrailTexture;
     
     particles.layerMask = SCENE_LAYER;
@@ -4994,7 +5067,7 @@ export class EnemyController {
     }
     if (this.missileTrailTexture) {
       try { this.missileTrailTexture.dispose(); } catch {}
-      this.missileTrailTexture = null;
     }
+    this.missileTrailTexture = null;
   }
 }

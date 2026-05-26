@@ -246,7 +246,8 @@ export class GameRuntimeOrchestrator {
       context.playerController.getSecondaryResourceCurrent(),
       context.playerController.getSecondaryResourceMax(),
       context.playerController.isSecondaryActive(),
-      context.playerController.getSecondaryActivationThreshold()
+      context.playerController.getSecondaryActivationThreshold(),
+      context.playerController.getSecondaryActionCost()
     );
     context.hudManager.updateCurrency(context.getCurrency());
     context.hudManager.updateItemStatus(context.getConsumableStatusLabel());

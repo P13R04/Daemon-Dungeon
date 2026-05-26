@@ -232,5 +232,11 @@
     "description": "As a Rogue, get intercepted by security.",
     "type": "oneTime",
     "target": 1
+  },
+  "pong_corner_hit": {
+    "name": "Perfect Corner.exe",
+    "description": "Witness a Pong unit ricochet exactly on a room corner.",
+    "type": "oneTime",
+    "target": 1
   }
 }

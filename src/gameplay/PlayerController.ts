@@ -288,6 +288,7 @@ export class PlayerController {
   private rogueDashImpactPending: boolean = false;
   private rogueDashTrailLastPoint: Vector3 | null = null;
   private rogueDashTrailAccumulatedDistance: number = 0;
+  private secondaryBlockedFeedbackCooldown: number = 0;
   private pendingRogueDashTrailSegments: Array<{
     from: Vector3;
     to: Vector3;
@@ -936,6 +937,7 @@ export class PlayerController {
 
     // Update attack cooldown
     this.timeSinceLastAttack += deltaTime;
+    this.secondaryBlockedFeedbackCooldown = Math.max(0, this.secondaryBlockedFeedbackCooldown - deltaTime);
 
     // Update just-attacking flag timer (keep attack direction for 0.3 seconds)
     if (this.wasJustAttacking) {
@@ -1434,6 +1436,8 @@ export class PlayerController {
           this.tankShieldActive = true;
           this.animationController.activateShield();
         }
+      } else if (!this.tankShieldLockUntilRightRelease && slot2Held && this.tankStanceResource < this.tankStanceActivationThreshold) {
+        this.emitSecondaryBlockedFeedback(this.tankStanceActivationThreshold, this.tankStanceResource, 'stance');
       } else if (!slot2Held && this.tankShieldActive) {
         this.tankShieldActive = false;
         this.animationController.deactivateShield();
@@ -1465,6 +1469,8 @@ export class PlayerController {
         this.tankShieldLockUntilRightRelease = true;
         this.animationController.playShieldBash();
         this.isFiring = false;
+      } else if (this.tankShieldActive && slot1Pressed && this.tankStanceResource < this.tankShieldBashCost) {
+        this.emitSecondaryBlockedFeedback(this.tankShieldBashCost, this.tankStanceResource, 'secondary');
       } else if (
         !this.tankShieldActive &&
         this.tankShieldBashRemaining <= 0 &&
@@ -1520,6 +1526,8 @@ export class PlayerController {
       // Right Click (or slot 2) to HOLD stance (Stealth)
       if (!this.rogueStealthLockUntilRightRelease && slot2Held && this.rogueStealthResource >= this.rogueStealthActivationThreshold) {
         this.rogueStealthActive = true;
+      } else if (!this.rogueStealthLockUntilRightRelease && slot2Held && this.rogueStealthResource < this.rogueStealthActivationThreshold) {
+        this.emitSecondaryBlockedFeedback(this.rogueStealthActivationThreshold, this.rogueStealthResource, 'stance');
       } else if (!slot2Held) {
         this.rogueStealthActive = false;
       }
@@ -1565,6 +1573,8 @@ export class PlayerController {
           this.computeRogueDashAnimationSpeed(actualDistance, maxDashDistance)
         );
         this.isFiring = false;
+      } else if (this.rogueStealthActive && slot1Pressed && this.rogueStealthResource < this.rogueDashCost) {
+        this.emitSecondaryBlockedFeedback(this.rogueDashCost, this.rogueStealthResource, 'secondary');
       } else if (!this.rogueStealthActive && this.rogueDashRemaining <= 0 && this.timeSinceLastAttack >= this.fireRate && slot1Held) {
         this.lockAttackFacing(this.attackDirection, Math.max(0.22, this.fireRate * 0.8));
         this.pendingRogueStrike = {
@@ -2173,6 +2183,8 @@ export class PlayerController {
     if (!this.secondaryLockUntilRightRelease && rightHeld) {
       if (!this.secondaryActive && this.secondaryResource >= this.secondaryActivationThreshold) {
         this.secondaryActive = true;
+      } else if (!this.secondaryActive && this.secondaryResource < this.secondaryActivationThreshold) {
+        this.emitSecondaryBlockedFeedback(this.secondaryActivationThreshold, this.secondaryResource, 'stance');
       }
     }
 
@@ -2187,6 +2199,8 @@ export class PlayerController {
         this.secondaryResource = Math.max(0, this.secondaryResource - this.secondaryBurstCost);
         this.secondaryActive = false;
         this.secondaryLockUntilRightRelease = true;
+      } else if (leftClicked && this.secondaryResource < this.secondaryBurstCost) {
+        this.emitSecondaryBlockedFeedback(this.secondaryBurstCost, this.secondaryResource, 'secondary');
       } else {
         const efficiency = this.getStanceEfficiencyMultiplier();
         this.secondaryResource = Math.max(0, this.secondaryResource - (this.secondaryDrainPerSecond / efficiency) * deltaTime);
@@ -2928,6 +2942,23 @@ export class PlayerController {
     return this.position.add(side.normalize().scale(lateralOffset));
   }
 
+  private emitSecondaryBlockedFeedback(required: number, current: number, reason: 'stance' | 'secondary'): void {
+    if (this.secondaryBlockedFeedbackCooldown > 0) return;
+    this.secondaryBlockedFeedbackCooldown = 0.22;
+    const max =
+      this.classId === 'mage' ? this.secondaryResourceMax
+      : this.classId === 'firewall' ? this.tankStanceResourceMax
+      : this.isRogueLikeClass() ? this.rogueStealthResourceMax
+      : 100;
+    const safeMax = Math.max(1, max);
+    this.eventBus.emit(GameEvents.PLAYER_SECONDARY_BLOCKED, {
+      classId: this.classId,
+      reason,
+      requiredPct: Math.round((required / safeMax) * 100),
+      currentPct: Math.round((current / safeMax) * 100),
+    });
+  }
+
   isSecondaryActive(): boolean {
     if (this.classId === 'mage') return this.secondaryActive;
     if (this.classId === 'firewall') return this.tankShieldActive;
@@ -2964,6 +2995,13 @@ export class PlayerController {
     if (this.classId === 'mage') return this.secondaryActivationThreshold;
     if (this.classId === 'firewall') return this.tankStanceActivationThreshold;
     if (this.isRogueLikeClass()) return this.rogueStealthActivationThreshold;
+    return 0;
+  }
+
+  getSecondaryActionCost(): number {
+    if (this.classId === 'mage') return this.secondaryBurstCost;
+    if (this.classId === 'firewall') return this.tankShieldBashCost;
+    if (this.isRogueLikeClass()) return this.rogueDashCost;
     return 0;
   }
 

@@ -122,6 +122,8 @@ export class HUDManager {
   private statusPanel: Rectangle | StackPanel | null = null;
   private secondaryStatusText: TextBlock | null = null;
   private secondaryResourceBarFill: Rectangle | null = null;
+  private secondaryThresholdMarker: Rectangle | null = null;
+  private secondaryActionMarker: Rectangle | null = null;
   private itemStatusText: TextBlock | null = null;
   private playerUltBarFill: Rectangle | null = null;
   private ultBarContainer: Rectangle | null = null;
@@ -133,6 +135,9 @@ export class HUDManager {
   private lastStanceRatio: number = 1.0;
   private lastStanceActive: boolean = false;
   private lastStanceThresholdRatio: number = 0.5;
+  private secondaryBlockedFeedbackTimer: number = 0;
+  private secondaryBlockedFeedbackMessage: string | null = null;
+  private secondaryBlockedFeedbackReason: 'stance' | 'secondary' | null = null;
   private daemonContainer: Rectangle | null = null;
   private daemonGlitchOverlay: Rectangle | null = null;
   private daemonPopupFlashOverlay: Rectangle | null = null;
@@ -317,17 +322,27 @@ export class HUDManager {
 
     // Create GUIs on main camera
     this.guiFx = AdvancedDynamicTexture.CreateFullscreenUI('HUD_FX', true, scene);
-    if (this.guiFx.layer) this.guiFx.layer.layerMask = SCENE_LAYER;
+    if (this.guiFx.layer) {
+      this.guiFx.layer.layerMask = SCENE_LAYER;
+      this.guiFx.layer.renderingGroupId = 3;
+    }
     this.guiFx.useInvalidateRectOptimization = false;
     this.guiFx.background = 'transparent';
     this.guiClean = AdvancedDynamicTexture.CreateFullscreenUI('HUD_CLEAN', true, scene);
-    if (this.guiClean.layer) this.guiClean.layer.layerMask = UI_LAYER;
+    if (this.guiClean.layer) {
+      this.guiClean.layer.layerMask = UI_LAYER;
+      this.guiClean.layer.renderingGroupId = 4;
+    }
     this.guiClean.useInvalidateRectOptimization = false;
     this.guiClean.background = 'transparent';
     this.enemyGui = AdvancedDynamicTexture.CreateFullscreenUI('EnemyHUD', true, scene);
-    if (this.enemyGui.layer) this.enemyGui.layer.layerMask = UI_LAYER;
+    if (this.enemyGui.layer) {
+      this.enemyGui.layer.layerMask = UI_LAYER;
+      this.enemyGui.layer.renderingGroupId = 2;
+    }
     this.enemyGui.useInvalidateRectOptimization = false;
     this.enemyGui.background = 'transparent';
+    this.enemyGui.rootContainer.zIndex = 1200;
     
     this.setupEventListeners();
     this.createPlayerHUD();
@@ -420,6 +435,16 @@ export class HUDManager {
     this.unsubscribers.push(this.eventBus.on(GameEvents.HIGH_SCORE_BEATEN, () => this.handleHighScoreBeaten()));
     this.unsubscribers.push(this.eventBus.on(GameEvents.ACHIEVEMENT_UNLOCKED, (data: any) => {
       this.handleAchievementUnlockedEvent(data);
+    }));
+    this.unsubscribers.push(this.eventBus.on(GameEvents.PLAYER_SECONDARY_BLOCKED, (data: any) => {
+      const required = Number.isFinite(data?.requiredPct) ? Math.max(0, Math.round(data.requiredPct)) : 0;
+      const current = Number.isFinite(data?.currentPct) ? Math.max(0, Math.round(data.currentPct)) : 0;
+      const reason = data?.reason === 'secondary' ? 'secondary' : 'stance';
+      this.secondaryBlockedFeedbackReason = reason;
+      this.secondaryBlockedFeedbackMessage = reason === 'secondary'
+        ? `SECONDARY FAILED: ${current}% / ${required}% REQUIRED`
+        : `STANCE LOW: ${current}% / ${required}% REQUIRED`;
+      this.secondaryBlockedFeedbackTimer = 0.9;
     }));
   }
 
@@ -1058,6 +1083,28 @@ export class HUDManager {
     this.secondaryResourceBarFill.background = '#66CCFF';
     this.secondaryResourceBarFill.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     secondaryBarContainer.addControl(this.secondaryResourceBarFill);
+
+    const secondaryThresholdMarker = new Rectangle('secondary_threshold_marker');
+    secondaryThresholdMarker.width = '3px';
+    secondaryThresholdMarker.height = '100%';
+    secondaryThresholdMarker.thickness = 0;
+    secondaryThresholdMarker.background = '#FFD782';
+    secondaryThresholdMarker.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    secondaryThresholdMarker.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    secondaryThresholdMarker.left = '50%';
+    secondaryBarContainer.addControl(secondaryThresholdMarker);
+    this.secondaryThresholdMarker = secondaryThresholdMarker;
+
+    const secondaryActionMarker = new Rectangle('secondary_action_marker');
+    secondaryActionMarker.width = '3px';
+    secondaryActionMarker.height = '100%';
+    secondaryActionMarker.thickness = 0;
+    secondaryActionMarker.background = '#FF4A66';
+    secondaryActionMarker.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    secondaryActionMarker.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    secondaryActionMarker.left = '50%';
+    secondaryBarContainer.addControl(secondaryActionMarker);
+    this.secondaryActionMarker = secondaryActionMarker;
 
     // Keep itemStatusText hidden / dummy to preserve compatibility
     this.itemStatusText = new TextBlock('item_status');
@@ -1979,6 +2026,7 @@ export class HUDManager {
     container.height = '12px';
     container.background = 'rgba(0, 0, 0, 0.8)';
     container.thickness = 2;
+    container.zIndex = 12;
 
     const bar = new Rectangle(`healthbar_${enemyId}`);
     bar.width = '100%';
@@ -1994,9 +2042,11 @@ export class HUDManager {
     label.color = '#FFFFFF';
     label.width = '80px';
     label.height = '20px';
+    label.zIndex = 13;
 
-    this.enemyGui?.addControl(container);
-    this.enemyGui?.addControl(label);
+    // Keep enemy HP UI in clean HUD layer (above postprocess), but beneath gameplay popups/HUD overlays.
+    this.guiClean?.addControl(container);
+    this.guiClean?.addControl(label);
 
     let anchor: TransformNode | null = null;
     let anchorObserver: any = null;
@@ -2224,6 +2274,7 @@ export class HUDManager {
         this.secondaryBarContainer.color = '#FFCC66';
       }
     }
+    this.updateSecondaryBlockedFeedback(deltaTime);
 
     // Process pending health bars
     if (this.pendingEnemyHealthBars.length > 0) {
@@ -2419,11 +2470,12 @@ export class HUDManager {
     }
   }
 
-  updateSecondaryResource(current: number, max: number, active: boolean, activationThreshold: number): void {
+  updateSecondaryResource(current: number, max: number, active: boolean, activationThreshold: number, secondaryActionCost: number): void {
     const clampedMax = Math.max(1, max);
     const clampedCurrent = Math.max(0, Math.min(clampedMax, current));
     const ratio = clampedCurrent / clampedMax;
     const thresholdRatio = Math.max(0, Math.min(1, activationThreshold / clampedMax));
+    const secondaryActionRatio = Math.max(0, Math.min(1, secondaryActionCost / clampedMax));
     const percentage = Math.round(ratio * 100);
 
     this.lastStanceRatio = ratio;
@@ -2433,9 +2485,21 @@ export class HUDManager {
     if (!this.secondaryStatusText || !this.secondaryResourceBarFill) return;
 
     this.secondaryResourceBarFill.width = `${Math.floor(ratio * 100)}%`;
+    if (this.secondaryThresholdMarker) {
+      this.secondaryThresholdMarker.left = `${Math.floor(thresholdRatio * 100)}%`;
+      this.secondaryThresholdMarker.width = '3px';
+      this.secondaryThresholdMarker.alpha = 0.78;
+      this.secondaryThresholdMarker.background = '#FFD782';
+    }
+    if (this.secondaryActionMarker) {
+      this.secondaryActionMarker.left = `${Math.floor(secondaryActionRatio * 100)}%`;
+      this.secondaryActionMarker.width = '3px';
+      this.secondaryActionMarker.alpha = 0.88;
+      this.secondaryActionMarker.background = '#FF4A66';
+    }
 
     if (active) {
-      this.secondaryStatusText.text = `STANCE: ${percentage}% [ACTIVE]`;
+      this.secondaryStatusText.text = `STANCE: ${percentage}% [ACTIVE | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
       this.secondaryStatusText.color = '#66CCFF'; // Active stance blue
       this.secondaryResourceBarFill.background = '#66CCFF';
       if (this.secondaryBarContainer) {
@@ -2449,22 +2513,50 @@ export class HUDManager {
         this.secondaryBarContainer.color = '#00FFD1';
       }
     } else if (ratio >= thresholdRatio) {
-      this.secondaryStatusText.text = `STANCE: ${percentage}% [BURST READY]`;
+      this.secondaryStatusText.text = `STANCE: ${percentage}% [READY | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
       this.secondaryStatusText.color = '#7CFFEA'; // Ready bright cyan
       this.secondaryResourceBarFill.background = '#7CFFEA';
       if (this.secondaryBarContainer) {
         this.secondaryBarContainer.color = '#7CFFEA';
       }
     } else if (ratio <= 0.0) {
-      this.secondaryStatusText.text = `STANCE: 0% [RECHARGE]`;
+      this.secondaryStatusText.text = `STANCE: 0% [RECHARGE | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
       this.secondaryStatusText.color = '#FFCC66'; // Warning orange
       this.secondaryResourceBarFill.background = '#FFCC66';
     } else {
-      this.secondaryStatusText.text = `STANCE: ${percentage}% [RECHARGE]`;
+      this.secondaryStatusText.text = `STANCE: ${percentage}% [RECHARGE | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
       this.secondaryStatusText.color = '#FFCC66';
       this.secondaryResourceBarFill.background = '#FFCC66';
       if (this.secondaryBarContainer) {
         this.secondaryBarContainer.color = '#FFCC66';
+      }
+    }
+
+    // Failure overlay pass (must run after normal state, so it cannot be overwritten).
+    if (this.secondaryBlockedFeedbackTimer > 0 && this.secondaryStatusText) {
+      const progress = 1 - (this.secondaryBlockedFeedbackTimer / 0.9);
+      const hardFlash = Math.sin(progress * 40) > 0;
+      const flash = hardFlash ? '#FF1E4D' : '#FFAA66';
+      this.secondaryStatusText.text = this.secondaryBlockedFeedbackMessage ?? this.secondaryStatusText.text;
+      this.secondaryStatusText.color = flash;
+      if (this.secondaryBarContainer) {
+        this.secondaryBarContainer.thickness = 4;
+        this.secondaryBarContainer.color = flash;
+        this.secondaryBarContainer.background = hardFlash ? 'rgba(72, 4, 20, 0.94)' : 'rgba(62, 20, 6, 0.9)';
+      }
+      if (this.secondaryResourceBarFill) {
+        this.secondaryResourceBarFill.background = flash;
+      }
+      const markerPulse = 1.2 + (Math.max(0, Math.sin(progress * 24)) * 1.5);
+      if (this.secondaryThresholdMarker) {
+        this.secondaryThresholdMarker.background = '#FF6A52';
+        this.secondaryThresholdMarker.width = `${Math.round(4 * markerPulse)}px`;
+        this.secondaryThresholdMarker.alpha = 1;
+      }
+      if (this.secondaryActionMarker) {
+        this.secondaryActionMarker.background = this.secondaryBlockedFeedbackReason === 'secondary' ? '#FF1448' : '#FF7E58';
+        this.secondaryActionMarker.width = `${Math.round(4 * (markerPulse + 0.45))}px`;
+        this.secondaryActionMarker.alpha = 1;
       }
     }
   }
@@ -5119,20 +5211,20 @@ export class HUDManager {
     const idealWidth = this.guiClean.idealWidth || 1920;
     const idealHeight = this.guiClean.idealHeight || 1080;
     const isMobileLayout = idealWidth <= 960;
-    const controlScale = isMobileLayout ? 1.1 : 1;
+    const controlScale = isMobileLayout ? 1.24 : 1.08;
     const leftMargin = Math.round(Math.max(40, idealWidth * 0.04));
     const bottomMargin = Math.round(Math.max(40, idealHeight * 0.06));
-    const extraSafeLift = Math.round(Math.max(16, idealHeight * 0.04));
+    const extraSafeLift = Math.round(Math.max(26, idealHeight * 0.06));
     const logPanelHeight = this.logPanel?.heightInPixels ?? 180;
     const statusPanelHeight = (this.statusPanel as Rectangle | null)?.heightInPixels ?? 180;
     const bottomSafe = Math.round(Math.max(logPanelHeight, statusPanelHeight) + bottomMargin + extraSafeLift);
     const joystickSize = Math.round(180 * controlScale);
     const joystickBgSize = Math.round(120 * controlScale);
     const joystickThumbSize = Math.round(50 * controlScale);
-    const attackSize = Math.round(120 * controlScale);
-    const stanceSize = Math.round(96 * controlScale);
-    const ultSize = Math.round(108 * controlScale);
-    const buttonGap = Math.round(attackSize * 0.18);
+    const attackSize = Math.round(132 * controlScale);
+    const stanceSize = Math.round(108 * controlScale);
+    const ultSize = Math.round(120 * controlScale);
+    const buttonGap = Math.round(attackSize * 0.24);
 
     // 1. LEFT JOYSTICK (Movement - Snapped to 8 Directions)
     const leftJoystickContainer = new Rectangle('left_joystick_container');
@@ -5176,7 +5268,7 @@ export class HUDManager {
     attackBtn.left = `-${leftMargin}px`;
     attackBtn.top = `-${bottomSafe}px`;
     if (attackBtn.textBlock) {
-      attackBtn.textBlock.fontSize = 16;
+      attackBtn.textBlock.fontSize = 19;
       attackBtn.textBlock.fontFamily = fontFamily;
       attackBtn.textBlock.fontWeight = 'bold';
     }
@@ -5196,7 +5288,7 @@ export class HUDManager {
     stanceBtn.left = `-${leftMargin + attackSize + buttonGap}px`;
     stanceBtn.top = `-${bottomSafe}px`;
     if (stanceBtn.textBlock) {
-      stanceBtn.textBlock.fontSize = 14;
+      stanceBtn.textBlock.fontSize = 17;
       stanceBtn.textBlock.fontFamily = fontFamily;
       stanceBtn.textBlock.fontWeight = 'bold';
     }
@@ -5216,7 +5308,7 @@ export class HUDManager {
     ultBtn.left = `-${leftMargin + Math.round(attackSize * 0.45)}px`;
     ultBtn.top = `-${bottomSafe + attackSize + buttonGap}px`;
     if (ultBtn.textBlock) {
-      ultBtn.textBlock.fontSize = 15;
+      ultBtn.textBlock.fontSize = 18;
       ultBtn.textBlock.fontFamily = fontFamily;
       ultBtn.textBlock.fontWeight = 'bold';
     }
@@ -5467,6 +5559,11 @@ export class HUDManager {
     }
 
     this.wasStanceActive = isStanceActive;
+  }
+
+  private updateSecondaryBlockedFeedback(deltaTime: number): void {
+    if (this.secondaryBlockedFeedbackTimer <= 0) return;
+    this.secondaryBlockedFeedbackTimer = Math.max(0, this.secondaryBlockedFeedbackTimer - deltaTime);
   }
 
   private resetMobileInputState(): void {

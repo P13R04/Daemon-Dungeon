@@ -345,7 +345,17 @@ export class GameTutorialManager {
         this.clearIndicator();
         if (this.classId === 'mage' && this.isReplayTutorial) {
           this.dependencies?.playerController?.setInputSuppressed(false);
-          this.daemonSay("Start with your basic attack: left click or your attack button to cast bolts.", "happy", 3.8);
+          this.daemonSay(
+            this.isMobileTutorialMode()
+              ? "Start with your basic attack: use the ATTACK button to cast bolts."
+              : "Start with your basic attack: left click or your attack button to cast bolts.",
+            "happy",
+            3.8
+          );
+          this.timer = window.setTimeout(() => this.deferUntilDaemonFinished(() => this.triggerPhase('combat_aim')), 140);
+        } else if (this.isMobileTutorialMode()) {
+          this.dependencies?.playerController?.setInputSuppressed(false);
+          this.daemonSay("Basic attack loaded. Use ATTACK, then aim with your right thumb.", "happy", 3.4);
           this.timer = window.setTimeout(() => this.deferUntilDaemonFinished(() => this.triggerPhase('combat_aim')), 140);
         } else {
           this.dependencies?.playerController?.setInputSuppressed(true);
@@ -357,7 +367,13 @@ export class GameTutorialManager {
         if (this.tutorialAttackAutoAimEnabled) {
           this.daemonSay("I knew you were weak, but relying on assistance this early is still disappointing.", "enerve", 5);
         } else {
-          this.daemonSay("Aim with your cursor — that glowing line shows where you're pointing. Line it up, then shoot.", "happy", 5);
+          this.daemonSay(
+            this.isMobileTutorialMode()
+              ? "Aim with your right thumb near ATTACK. Line it up and fire."
+              : "Aim with your cursor — that glowing line shows where you're pointing. Line it up, then shoot.",
+            "happy",
+            5
+          );
         }
         this.startAimIndicator();
         this.timer = window.setTimeout(() => this.deferUntilDaemonFinished(() => this.triggerPhase('combat_dummy')), 5000);
@@ -371,7 +387,18 @@ export class GameTutorialManager {
         this.clearIndicator();
         if (this.classId === 'mage' && this.isReplayTutorial) {
           this.dependencies?.playerController?.setInputSuppressed(false);
-          this.daemonSay("Now stance: hold it to slow threats, then attack to trigger a burst.", "happy", 4.6);
+          this.daemonSay(
+            this.isMobileTutorialMode()
+              ? "Now stance: hold STANCE to slow threats, then hit ATTACK for a burst."
+              : "Now stance: hold it to slow threats, then attack to trigger a burst.",
+            "happy",
+            4.6
+          );
+          this.spawnEnemyAtMap('tutorial_dummy_mobile', 7, 6.5);
+          this.pointToMap(7, 6.5);
+        } else if (this.isMobileTutorialMode()) {
+          this.dependencies?.playerController?.setInputSuppressed(false);
+          this.daemonSay("Hold STANCE to slow it down, then use ATTACK to detonate.", "happy", 4.8);
           this.spawnEnemyAtMap('tutorial_dummy_mobile', 7, 6.5);
           this.pointToMap(7, 6.5);
         } else {
@@ -398,7 +425,21 @@ export class GameTutorialManager {
         this.clearIndicator();
         if (this.classId === 'mage' && this.isReplayTutorial) {
           this.dependencies?.playerController?.setInputSuppressed(false);
-          this.daemonSay("Ultimate ready: place a fixed zone of massive damage and melt the group.", "happy", 4.8);
+          this.daemonSay(
+            this.isMobileTutorialMode()
+              ? "Ultimate ready: tap ULT to place a fixed massive damage zone."
+              : "Ultimate ready: place a fixed zone of massive damage and melt the group.",
+            "happy",
+            4.8
+          );
+          this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_REFILL_REQUESTED);
+          this.spawnEnemyAtMap('tutorial_dummy_basic', 7, 6.5);
+          this.spawnEnemyAtMap('tutorial_dummy_basic', 6.2, 6.1);
+          this.spawnEnemyAtMap('tutorial_dummy_basic', 7.8, 6.1);
+          this.pointToMap(7, 6.3);
+        } else if (this.isMobileTutorialMode()) {
+          this.dependencies?.playerController?.setInputSuppressed(false);
+          this.daemonSay("Your core is charged. Tap ULT and wipe the group.", "happy", 3.8);
           this.eventBus.emit(GameEvents.PLAYER_ULTIMATE_REFILL_REQUESTED);
           this.spawnEnemyAtMap('tutorial_dummy_basic', 7, 6.5);
           this.spawnEnemyAtMap('tutorial_dummy_basic', 6.2, 6.1);
@@ -563,7 +604,13 @@ export class GameTutorialManager {
         this.clearIndicator();
         if (this.classId === 'firewall') {
           this.spawnEnemyAtMap('tutorial_dummy_mobile', 7.0, 6.2, { hpMultiplier: 3.0 });
-          this.daemonSay("Shield bash: aim with cursor, dash in, and shove the target off its line.", "goofy", 4.0);
+          this.daemonSay(
+            this.isMobileTutorialMode()
+              ? "Shield bash: aim with your right thumb, dash in, and shove the target off its line."
+              : "Shield bash: aim with cursor, dash in, and shove the target off its line.",
+            "goofy",
+            4.0
+          );
           this.pointToMap(7.0, 6.2);
         } else {
           this.daemonSay("Now dash. Break stealth with a fast in-and-out sneak attack.", "superieur", 3.8);
@@ -1436,6 +1483,12 @@ export class GameTutorialManager {
   private getMovementCurrentKeysLabel(): string {
     const kb = GameSettingsStore.get().controls.keybindings;
     return `Current keys: Up ${kb.moveUp.toUpperCase()} / Left ${kb.moveLeft.toUpperCase()} / Down ${kb.moveDown.toUpperCase()} / Right ${kb.moveRight.toUpperCase()}`;
+  }
+
+  private isMobileTutorialMode(): boolean {
+    const uaMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const forcedMobileQuery = typeof window !== 'undefined' && window.location?.search?.includes('mobile=true');
+    return uaMobile || forcedMobileQuery;
   }
 
   private deferUntilDaemonFinished(action: () => void, minDelayMs: number = 0): void {

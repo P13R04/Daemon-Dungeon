@@ -194,7 +194,7 @@
     }
   },
   "fuyard": {
-    "name": "Fuyard",
+    "name": "Skittish",
     "description": "Ranged harasser: pokes from distance, retreats when you get close.",
     "baseStats": {
       "hp": 35,
