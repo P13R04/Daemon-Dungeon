@@ -17,6 +17,10 @@ export class AudioManager {
   private activeBeepClones: Sound[] = [];
   private isMuted: boolean = false;
   private readonly MAX_CONCURRENT_BEEPS = 3;
+  private fadeTimers: Map<string, number> = new Map();
+  private lastSoundPlayAtMs: Map<string, number> = new Map();
+  private defaultSoundCooldownMs: number = 24;
+  private soundCooldownOverridesMs: Map<string, number> = new Map();
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -36,6 +40,7 @@ export class AudioManager {
   }
 
   playSound(name: string, volume?: number): void {
+    if (!this.canPlayNow(name)) return;
     const sound = this.sounds.get(name);
     if (sound) {
       sound.setVolume((volume ?? 1.0) * this.sfxVolume * this.masterVolume);
@@ -44,6 +49,7 @@ export class AudioManager {
   }
 
   playSoundAt(name: string, position: Vector3, volume?: number): void {
+    if (!this.canPlayNow(name)) return;
     const sound = this.sounds.get(name);
     if (sound) {
       sound.setVolume((volume ?? 1.0) * this.sfxVolume * this.masterVolume);
@@ -62,6 +68,11 @@ export class AudioManager {
   fadeOutAndStopSound(name: string, durationMs: number = 300): void {
     const sound = this.sounds.get(name);
     if (!sound) return;
+    const existing = this.fadeTimers.get(name);
+    if (existing != null) {
+      window.clearInterval(existing);
+      this.fadeTimers.delete(name);
+    }
 
     const startVolume = this.isMuted ? 0 : this.sfxVolume * this.masterVolume;
     if (durationMs <= 0 || startVolume <= 0) {
@@ -77,10 +88,12 @@ export class AudioManager {
       sound.setVolume(startVolume * (1 - t));
       if (t >= 1) {
         window.clearInterval(timer);
+        this.fadeTimers.delete(name);
         sound.stop();
         sound.setVolume(startVolume);
       }
     }, stepMs);
+    this.fadeTimers.set(name, timer);
   }
 
   stopAllSounds(except: string[] = []): void {
@@ -112,6 +125,14 @@ export class AudioManager {
   setMuted(muted: boolean): void {
     this.isMuted = muted;
     this.updateAllVolumes();
+  }
+
+  setDefaultSoundCooldownMs(ms: number): void {
+    this.defaultSoundCooldownMs = Math.max(0, Math.min(120, Math.round(ms)));
+  }
+
+  setSoundCooldownMs(name: string, ms: number): void {
+    this.soundCooldownOverridesMs.set(name, Math.max(0, Math.min(500, Math.round(ms))));
   }
 
   /**
@@ -165,7 +186,26 @@ export class AudioManager {
   }
 
   dispose(): void {
+    this.fadeTimers.forEach((timerId) => window.clearInterval(timerId));
+    this.fadeTimers.clear();
+    this.lastSoundPlayAtMs.clear();
+    this.soundCooldownOverridesMs.clear();
     this.sounds.forEach(sound => sound.dispose());
     this.sounds.clear();
+  }
+
+  private canPlayNow(name: string): boolean {
+    const now = Date.now();
+    const cooldown = this.soundCooldownOverridesMs.get(name) ?? this.defaultSoundCooldownMs;
+    if (cooldown <= 0) {
+      this.lastSoundPlayAtMs.set(name, now);
+      return true;
+    }
+    const last = this.lastSoundPlayAtMs.get(name) ?? 0;
+    if (now - last < cooldown) {
+      return false;
+    }
+    this.lastSoundPlayAtMs.set(name, now);
+    return true;
   }
 }

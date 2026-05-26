@@ -216,6 +216,9 @@ export class GameManager {
   private aliveArtificierCount: number = 0;
   private fastCleanRoomAccumulator: number = 0;
   private fastCleanRoomLastIndex: number = -1;
+  private gameplayFixedStepSeconds: number = 1 / 60;
+  private gameplayStepAccumulator: number = 0;
+  private gameplayMaxSubstepsPerFrame: number = 4;
 
 
   private constructor() {
@@ -1426,6 +1429,18 @@ export class GameManager {
 
   private bindUISoundEvents(): void {
     if (!this.audioManager) return;
+    this.audioManager.setDefaultSoundCooldownMs(24);
+    this.audioManager.setSoundCooldownMs('sfx_zombie_onhit1', 70);
+    this.audioManager.setSoundCooldownMs('sfx_zombie_onhit2', 70);
+    this.audioManager.setSoundCooldownMs('sfx_zombie_onhit3', 70);
+    this.audioManager.setSoundCooldownMs('sfx_sentry_onhit_sntry', 55);
+    this.audioManager.setSoundCooldownMs('sfx_zombie_damage_taken1', 55);
+    this.audioManager.setSoundCooldownMs('sfx_jumper_dmg_taken1', 55);
+    this.audioManager.setSoundCooldownMs('sfx_bull_dmgtaken', 55);
+    this.audioManager.setSoundCooldownMs('sfx_pong_onhit', 45);
+    this.audioManager.setSoundCooldownMs('sfx_artificier_zone_dmg', 120);
+    this.audioManager.setSoundCooldownMs('sfx_player_cast1', 45);
+    this.audioManager.setSoundCooldownMs('sfx_player_cast2', 45);
     this.eventBus.on(GameEvents.UI_SOUND_SELECT, () => this.audioManager?.playSound('sfx_ui_select1', 0.8));
     this.eventBus.on(GameEvents.UI_SOUND_DESELECT, () => this.audioManager?.playSound('sfx_ui_deselect', 0.8));
     this.eventBus.on(GameEvents.UI_SOUND_START_GAME, () => this.audioManager?.playSound('sfx_ui_start_game', 0.8));
@@ -1860,9 +1875,8 @@ export class GameManager {
       const loopProfiler = this.benchmarkRunner ? createRuntimeFrameProfiler() : null;
       const currentTime = performance.now();
       const rawFrameMs = Math.max(0, currentTime - lastTime);
-      // Keep gameplay clock closer to real time during frame drops (avoid slow-motion cheating),
-      // while still clamping catastrophic stalls.
-      const deltaTime = Math.min(rawFrameMs / 1000, 0.05);
+      // Clamp catastrophic stalls but preserve enough real delta for fixed-step catch-up.
+      const frameDeltaSeconds = Math.min(rawFrameMs / 1000, 0.2);
       lastTime = currentTime;
 
       // Sync UI camera with main camera for correct HUD projection on UI_LAYER
@@ -1914,16 +1928,16 @@ export class GameManager {
               : 0.8;
 
       if (!this.isPaused) {
-        this.time.update(deltaTime);
+        this.time.update(frameDeltaSeconds);
       }
       loopProfiler?.mark('timeUpdate');
 
       if (this.classSelectScene && this.scene === this.classSelectScene.getScene()) {
-        this.classSelectScene.update(deltaTime);
+        this.classSelectScene.update(frameDeltaSeconds);
         loopProfiler?.mark('classSelectUpdate');
       }
 
-      this.updateCameraTransition(deltaTime);
+      this.updateCameraTransition(frameDeltaSeconds);
       loopProfiler?.mark('cameraTransitionUpdate');
       this.updateFogCurtain();
       loopProfiler?.mark('fogCurtainUpdate');
@@ -1938,15 +1952,27 @@ export class GameManager {
         if (this.isPaused || this.isCountingDown) {
           shouldSkipRender = this.updatePlayingFrame(0);
         } else {
-          const playerIsMoving = this.playerController?.getIsMoving() ?? false;
-          this.daemonVoicelineManager?.update(deltaTime, playerIsMoving);
-          this.daemonVoicelineManager?.setDaemonActive(this.hudManager.isDaemonMessageActive());
-          
-          shouldSkipRender = this.updatePlayingFrame(deltaTime);
+          this.gameplayStepAccumulator += frameDeltaSeconds;
+          const fixedDt = this.gameplayFixedStepSeconds;
+          const maxSteps = this.gameplayMaxSubstepsPerFrame;
+          let steps = 0;
+          while (this.gameplayStepAccumulator >= fixedDt && steps < maxSteps) {
+            const playerIsMoving = this.playerController?.getIsMoving() ?? false;
+            this.daemonVoicelineManager?.update(fixedDt, playerIsMoving);
+            this.daemonVoicelineManager?.setDaemonActive(this.hudManager.isDaemonMessageActive());
+            shouldSkipRender = this.updatePlayingFrame(fixedDt) || shouldSkipRender;
+            this.gameplayStepAccumulator -= fixedDt;
+            steps++;
+          }
+          // If we can't keep up, drop extra sim backlog to avoid spiral-of-death stalls.
+          if (steps >= maxSteps && this.gameplayStepAccumulator > fixedDt * 2) {
+            this.gameplayStepAccumulator = fixedDt * 2;
+          }
         }
         loopProfiler?.mark('playingUpdate');
       } else if (this.gameplayInitialized) {
-        this.updateNonPlayingFrame(deltaTime);
+        this.gameplayStepAccumulator = 0;
+        this.updateNonPlayingFrame(frameDeltaSeconds);
         loopProfiler?.mark('nonPlayingUpdate');
       }
 
@@ -1958,9 +1984,9 @@ export class GameManager {
         });
         loopProfiler?.mark('roomStreamingDeferred');
         
-        this.updateAutoplayBenchmark(deltaTime);
+        this.updateAutoplayBenchmark(frameDeltaSeconds);
 
-        this.benchmarkRunner.update(deltaTime, rawFrameMs);
+        this.benchmarkRunner.update(frameDeltaSeconds, rawFrameMs);
         loopProfiler?.mark('benchmarkUpdate');
         if (this.gameState === 'gameover') {
           const runner = this.benchmarkRunner;
@@ -2608,7 +2634,7 @@ export class GameManager {
   private async startNewGame(): Promise<void> {
     if (this.gameplayStartInProgress) return;
     // Invalidate any pending async transition/bonus sequence from a previous state.
-    this.transitionSequenceId++;
+    this.resetTransientRunFlowState();
     this.disposeBenchmarkReportOverlay();
     this.stopBenchmarkRunner();
     this.gameplayStartInProgress = true;
@@ -2630,6 +2656,11 @@ export class GameManager {
       await this.waitForNextPaint(1);
 
       this.prepareRunStateForStart();
+      if (this.roomOrder.length === 0) {
+        console.warn('[GameManager] Empty room order at run start, applying fallback room.');
+        this.roomOrder = ['room_test_dummies'];
+        this.currentRoomIndex = 0;
+      }
       this.transitionGameState('transition');
       this.preloadRoomsAround(this.currentRoomIndex, this.currentRoomIndex, true);
       this.setLoadingOverlay(true, 'PRELOADING ENEMY MODEL CONTAINERS...', '90%');
@@ -3053,6 +3084,33 @@ export class GameManager {
     this.hudManager.setRunEquippedBonuses([]);
   }
 
+  private resetTransientRunFlowState(): void {
+    // Cancel all pending async flow paths from previous gameplay/menu/debug actions.
+    this.transitionSequenceId++;
+    this.roomIntroSequenceRunning = false;
+    this.roomIntroSequencePendingIndex = null;
+    this.interRoomPreloadPromise = null;
+    this.interRoomPreloadTargetIndex = null;
+    this.interRoomPreloadPrimedRoomKey = null;
+    this.primedTransitionRoomKey = null;
+    this.backgroundPreparationAccumulator = 0;
+    this.benchmarkPreparationLastPumpMs = 0;
+    this.gameplayStepAccumulator = 0;
+    if (this.deferredRoomEnteredEventTimer !== null) {
+      window.clearTimeout(this.deferredRoomEnteredEventTimer);
+      this.deferredRoomEnteredEventTimer = null;
+    }
+
+    // If the previous flow left the player/enemy orchestration half-transitioned,
+    // force a neutral baseline before bootstrapping a new run.
+    this.enemySpawner?.pauseSuppressedActivationQueue(false);
+    this.enemySpawner?.releaseAllSuppressedEnemyAI();
+    this.playerController?.setInputSuppressed(false);
+    this.playerController?.setMovementLocked(false);
+    this.playerController?.setRenderVisibility(1);
+    this.playerController?.setExternalVerticalOffset(0);
+  }
+
   private generateRunRoomOrder(targetLength: number): string[] {
     const order: string[] = [];
     
@@ -3151,6 +3209,13 @@ export class GameManager {
   private loadRoomByIndex(index: number, options?: { preferPreparedEnemies?: boolean }): void {
     if (!this.gameplayInitialized) return;
     const roomId = this.roomOrder[index];
+    if (!roomId) {
+      console.error(`[GameManager] Missing roomId for index ${index}. Aborting room load.`);
+      this.transitionGameState('playing');
+      this.playerController.setInputSuppressed(false);
+      this.playerController.setMovementLocked(false);
+      return;
+    }
     const instanceKey = `${roomId}::${index}`;
     this.roomManager.setCurrentRoom(instanceKey);
     this.roomManager.setDoorActive(false);
@@ -3487,7 +3552,11 @@ export class GameManager {
   }
 
   private async runRoomIntroSequence(roomIndex: number): Promise<void> {
-    if (this.roomIntroSequenceRunning) return;
+    if (this.roomIntroSequenceRunning) {
+      // Preempt stale intro flow and restart from current state.
+      this.transitionSequenceId++;
+      this.roomIntroSequenceRunning = false;
+    }
     this.roomIntroSequenceRunning = true;
     const sequenceId = ++this.transitionSequenceId;
     try {
