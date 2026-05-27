@@ -152,7 +152,7 @@ export class CreditsScene {
 
     const subtitle = new TextBlock('creditsSubtitle', 'SYSTEM READY // CREDITS CONSOLE');
     subtitle.color = '#E0B4FF';
-    subtitle.fontFamily = 'JetBrains Mono, Consolas, monospace';
+    subtitle.fontFamily = 'Arcade8Bit';
     subtitle.fontSize = 19;
     subtitle.top = '-240px';
     subtitle.height = '34px';
@@ -176,7 +176,7 @@ export class CreditsScene {
     consoleHeader.height = '34px';
     consoleHeader.top = '-8px';
     consoleHeader.color = '#B7A0FF';
-    consoleHeader.fontFamily = 'JetBrains Mono, Consolas, monospace';
+    consoleHeader.fontFamily = 'Arcade8Bit';
     consoleHeader.fontSize = 15;
     this.consoleBody.addControl(consoleHeader);
 
@@ -263,7 +263,7 @@ export class CreditsScene {
     this.popupText.textWrapping = true;
     this.popupText.resizeToFit = false;
     this.popupText.color = '#FFD1DA';
-    this.popupText.fontFamily = 'Consolas';
+    this.popupText.fontFamily = 'Arcade8Bit';
     this.popupText.fontSize = 24;
     this.popupText.height = '180px';
     this.popupText.textWrapping = true;
@@ -480,7 +480,7 @@ export class CreditsScene {
     block.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     block.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     block.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    block.fontFamily = 'JetBrains Mono, Consolas, monospace';
+    block.fontFamily = 'Arcade8Bit';
     block.fontSize = 22;
     block.color = line.color ?? '#E9E1FF';
     block.alpha = 1;

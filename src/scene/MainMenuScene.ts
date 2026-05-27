@@ -455,7 +455,7 @@ export class MainMenuScene {
     const title = new TextBlock('menuAchievementToastTitle');
     title.text = 'ACHIEVEMENT UNLOCKED';
     title.color = '#7CFFEA';
-    title.fontFamily = 'Consolas';
+    title.fontFamily = 'Arcade8Bit';
     title.fontSize = titleFont;
     title.left = textLeft;
     title.top = 14;
@@ -472,7 +472,7 @@ export class MainMenuScene {
     const description = new TextBlock('menuAchievementToastDescription');
     description.text = '';
     description.color = '#CFFCF3';
-    description.fontFamily = 'Consolas';
+    description.fontFamily = 'Arcade8Bit';
     description.fontSize = descFont;
     description.left = textLeft;
     description.top = 55;
@@ -499,7 +499,7 @@ export class MainMenuScene {
 
     const achievementIconText = new TextBlock('menuAchievementToastIconText');
     achievementIconText.text = '?';
-    achievementIconText.fontFamily = 'Consolas';
+    achievementIconText.fontFamily = 'Arcade8Bit';
     achievementIconText.fontSize = 32;
     achievementIconText.color = '#B8FFE6';
     this.achievementIconPlaceholder.addControl(achievementIconText);
@@ -1416,7 +1416,7 @@ export class MainMenuScene {
     title.text = 'RESET PROGRESSION';
     title.color = '#FFE5E5';
     title.fontSize = 32;
-    title.fontFamily = 'Consolas';
+    title.fontFamily = 'Arcade8Bit';
     title.top = '-104px';
     panel.addControl(title);
 
@@ -1424,7 +1424,7 @@ export class MainMenuScene {
     body.text = 'This will reset codex, achievements, settings, and tutorial completion.\nThe game will restart as a first launch.';
     body.color = '#FFD0D0';
     body.fontSize = 18;
-    body.fontFamily = 'Consolas';
+    body.fontFamily = 'Arcade8Bit';
     body.width = '600px';
     body.height = '110px';
     body.textWrapping = true;

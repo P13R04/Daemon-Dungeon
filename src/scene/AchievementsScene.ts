@@ -483,7 +483,7 @@ export class AchievementsScene {
     if (btn.textBlock) {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
-      btn.textBlock.fontFamily = 'Consolas';
+      btn.textBlock.fontFamily = 'Arcade8Bit';
       btn.textBlock.fontSize = isMobileLayout ? 22 : 19;
     }
     return btn;

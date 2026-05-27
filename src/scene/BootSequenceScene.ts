@@ -293,7 +293,7 @@ export class BootSequenceScene {
     hdrTxt.text       = 'DAEMON_OS  [TERMINAL]   PID:0×D43M  UID:root   KERNEL:2.6.1-daemon';
     hdrTxt.color      = '#1E5C50';
     hdrTxt.fontSize   = 16;
-    hdrTxt.fontFamily = 'Lucida Console, Courier New, monospace';
+    hdrTxt.fontFamily = 'Arcade8Bit';
     hdrTxt.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     hdrTxt.paddingLeft = '16px';
     hdr.addControl(hdrTxt);
@@ -316,7 +316,7 @@ export class BootSequenceScene {
     this._cursor.color      = '#2EF9C3';
     this._cursor.fontSize   = 20;
     this._cursor.height     = '32px';
-    this._cursor.fontFamily = 'Lucida Console, Courier New, monospace';
+    this._cursor.fontFamily = 'Arcade8Bit';
     this._cursor.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this._logPanel.addControl(this._cursor);
 
@@ -354,7 +354,7 @@ export class BootSequenceScene {
     this._progressLabel.text       = 'LOADING...  0%';
     this._progressLabel.color      = '#2EF9C3';
     this._progressLabel.fontSize   = 15;
-    this._progressLabel.fontFamily = 'Lucida Console, Courier New, monospace';
+    this._progressLabel.fontFamily = 'Arcade8Bit';
     this._progressLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this._progressLabel.verticalAlignment       = Control.VERTICAL_ALIGNMENT_BOTTOM;
     this._progressLabel.paddingBottom           = '4px';
@@ -366,7 +366,7 @@ export class BootSequenceScene {
       skipHint.text       = '[ SPACE ] or [ CLICK ] to skip';
       skipHint.color      = '#1E4030';
       skipHint.fontSize   = 15;
-      skipHint.fontFamily = 'Lucida Console, Courier New, monospace';
+      skipHint.fontFamily = 'Arcade8Bit';
       skipHint.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
       skipHint.verticalAlignment       = Control.VERTICAL_ALIGNMENT_BOTTOM;
       skipHint.paddingBottom           = '4px';
@@ -636,7 +636,7 @@ export class BootSequenceScene {
     block.color       = color;
     block.fontSize    = 20;
     block.height      = '32px';
-    block.fontFamily  = 'Lucida Console, Courier New, monospace';
+    block.fontFamily  = 'Arcade8Bit';
     block.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     block.textWrapping = false;
 

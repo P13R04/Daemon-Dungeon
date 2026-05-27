@@ -977,14 +977,14 @@ export class GameTutorialManager {
     title.height = '40px';
     title.color = '#00FFD1';
     title.fontSize = 24;
-    title.fontFamily = 'Consolas';
+    title.fontFamily = 'Arcade8Bit';
     container.addControl(title);
 
     const keyRow = new TextBlock('moveCurrentKeys', this.getMovementCurrentKeysLabel());
     keyRow.height = '34px';
     keyRow.color = '#FFD59A';
     keyRow.fontSize = 18;
-    keyRow.fontFamily = 'Consolas';
+    keyRow.fontFamily = 'Arcade8Bit';
     keyRow.paddingBottom = '8px';
     container.addControl(keyRow);
 
@@ -992,7 +992,7 @@ export class GameTutorialManager {
     remapHint.height = '28px';
     remapHint.color = '#9FC6D0';
     remapHint.fontSize = 16;
-    remapHint.fontFamily = 'Consolas';
+    remapHint.fontFamily = 'Arcade8Bit';
     remapHint.paddingBottom = '10px';
     container.addControl(remapHint);
 
@@ -1003,7 +1003,7 @@ export class GameTutorialManager {
       btn.color = '#7CFFEA';
       btn.background = '#1A332C';
       btn.paddingTop = '10px';
-      btn.fontFamily = 'Consolas';
+      btn.fontFamily = 'Arcade8Bit';
       btn.onPointerUpObservable.add(action);
       container.addControl(btn);
     };
@@ -1078,7 +1078,7 @@ export class GameTutorialManager {
     title.height = '42px';
     title.color = '#00FFD1';
     title.fontSize = 28;
-    title.fontFamily = 'Consolas';
+    title.fontFamily = 'Arcade8Bit';
     stack.addControl(title);
 
     const lines = [
@@ -1092,7 +1092,7 @@ export class GameTutorialManager {
       line.height = '40px';
       line.color = '#DDF9F3';
       line.fontSize = 20;
-      line.fontFamily = 'Consolas';
+      line.fontFamily = 'Arcade8Bit';
       line.textWrapping = true;
       stack.addControl(line);
     }
@@ -1103,7 +1103,7 @@ export class GameTutorialManager {
     autoAimBtn.height = '50px';
     autoAimBtn.color = '#FFCC82';
     autoAimBtn.background = '#3A2310';
-    autoAimBtn.fontFamily = 'Consolas';
+    autoAimBtn.fontFamily = 'Arcade8Bit';
     autoAimBtn.paddingTop = '8px';
     autoAimBtn.onPointerUpObservable.add(() => {
       autoAim = !autoAim;
@@ -1120,7 +1120,7 @@ export class GameTutorialManager {
     keyInfo.height = '32px';
     keyInfo.color = '#FFCB7A';
     keyInfo.fontSize = 19;
-    keyInfo.fontFamily = 'Consolas';
+    keyInfo.fontFamily = 'Arcade8Bit';
     keyInfo.paddingTop = '8px';
     stack.addControl(keyInfo);
 
@@ -1129,7 +1129,7 @@ export class GameTutorialManager {
     remapBtn.height = '48px';
     remapBtn.color = '#FFD59A';
     remapBtn.background = '#3A2310';
-    remapBtn.fontFamily = 'Consolas';
+    remapBtn.fontFamily = 'Arcade8Bit';
     remapBtn.paddingTop = '8px';
     stack.addControl(remapBtn);
 
@@ -1164,7 +1164,7 @@ export class GameTutorialManager {
     okBtn.height = '54px';
     okBtn.color = '#7CFFEA';
     okBtn.background = '#1A332C';
-    okBtn.fontFamily = 'Consolas';
+    okBtn.fontFamily = 'Arcade8Bit';
     okBtn.paddingTop = '10px';
     okBtn.onPointerUpObservable.add(() => {
       this.tutorialAttackAutoAimEnabled = autoAim;
@@ -1229,7 +1229,7 @@ export class GameTutorialManager {
     title.height = '44px';
     title.color = '#00FFD1';
     title.fontSize = 28;
-    title.fontFamily = 'Consolas';
+    title.fontFamily = 'Arcade8Bit';
     stack.addControl(title);
 
     for (const lineText of config.description) {
@@ -1237,7 +1237,7 @@ export class GameTutorialManager {
       line.height = '42px';
       line.color = '#DDF9F3';
       line.fontSize = 21;
-      line.fontFamily = 'Consolas';
+      line.fontFamily = 'Arcade8Bit';
       line.textWrapping = true;
       stack.addControl(line);
     }
@@ -1247,7 +1247,7 @@ export class GameTutorialManager {
     keyInfo.height = '34px';
     keyInfo.color = '#FFCB7A';
     keyInfo.fontSize = 20;
-    keyInfo.fontFamily = 'Consolas';
+    keyInfo.fontFamily = 'Arcade8Bit';
     keyInfo.paddingTop = '10px';
     stack.addControl(keyInfo);
 
@@ -1256,7 +1256,7 @@ export class GameTutorialManager {
     remapBtn.height = '50px';
     remapBtn.color = '#FFD59A';
     remapBtn.background = '#3A2310';
-    remapBtn.fontFamily = 'Consolas';
+    remapBtn.fontFamily = 'Arcade8Bit';
     remapBtn.paddingTop = '10px';
     stack.addControl(remapBtn);
 
@@ -1291,7 +1291,7 @@ export class GameTutorialManager {
     okBtn.height = '56px';
     okBtn.color = '#7CFFEA';
     okBtn.background = '#1A332C';
-    okBtn.fontFamily = 'Consolas';
+    okBtn.fontFamily = 'Arcade8Bit';
     okBtn.paddingTop = '12px';
     okBtn.onPointerUpObservable.add(() => {
       this.disposePromptGui();

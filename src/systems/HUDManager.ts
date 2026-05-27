@@ -686,7 +686,7 @@ export class HUDManager {
   }
 
   private createPlayerHUD(): void {
-    const fontFamily = 'Consolas';
+    const fontFamily = 'Arcade8Bit';
     const idealWidth = this.guiClean.idealWidth || 1920;
     const isCompactHud = idealWidth <= 960;
     const baseMenuButtonHeight = isCompactHud ? 76 : 70;
@@ -1132,7 +1132,8 @@ export class HUDManager {
     this.autoAimLabel.left = 16;
     this.autoAimLabel.top = 148;
     this.autoAimLabel.width = '240px';
-    this.autoAimLabel.height = '20px';
+    this.autoAimlabel.height = '20px';
+      label.fontFamily = 'Arcade8Bit';
     this.autoAimLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.autoAimLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.autoAimLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1364,7 +1365,7 @@ export class HUDManager {
     this.daemonMessageText = new TextBlock('daemon_message');
     this.daemonMessageText.text = '';
     this.daemonMessageText.fontSize = 24;
-    this.daemonMessageText.fontFamily = fontFamily;
+    this.daemonMessageText.fontFamily = 'Consolas';
     this.daemonMessageText.color = '#FFD1DA';
     this.daemonMessageText.left = 208;
     this.daemonMessageText.top = 0;
@@ -1483,7 +1484,7 @@ export class HUDManager {
     title.text = 'SYSTEM PAUSED';
     title.color = '#7CFFEA';
     title.fontSize = isCompactHud ? 48 : 44;
-    title.fontFamily = 'Consolas';
+    title.fontFamily = 'Arcade8Bit';
     title.top = '-180px';
     container.addControl(title);
 
@@ -1502,7 +1503,7 @@ export class HUDManager {
       btn.thickness = 1;
       btn.cornerRadius = 4;
       btn.fontSize = baseMenuFontSize;
-      btn.fontFamily = 'Consolas';
+      btn.fontFamily = 'Arcade8Bit';
       DaemonGlitchFx.injectWithOptions(
         btn,
         text,
@@ -1592,7 +1593,7 @@ export class HUDManager {
     label.text = '3';
     label.color = '#7CFFEA';
     label.fontSize = 140;
-    label.fontFamily = 'Consolas';
+    label.fontFamily = 'Arcade8Bit';
     label.shadowBlur = 30;
     label.shadowColor = '#00FFCC';
     label.scaleX = 1.0;
@@ -1703,7 +1704,7 @@ export class HUDManager {
     title.text = titleText;
     title.color = '#FFFFFF';
     title.fontSize = 38;
-    title.fontFamily = 'Arial';
+    title.fontFamily = 'Arcade8Bit';
     title.top = '-60px';
     container.addControl(title);
 
@@ -1751,7 +1752,7 @@ export class HUDManager {
     this.gameOverScreen.clearControls();
     
     const container = this.gameOverScreen;
-    const fontFamily = 'Consolas, monospace';
+    const fontFamily = 'Arcade8Bit';
 
     // Title
     const title = new TextBlock('go_title');
@@ -2065,6 +2066,7 @@ export class HUDManager {
     label.color = '#FFFFFF';
     label.width = '80px';
     label.height = '20px';
+      label.fontFamily = 'Arcade8Bit';
     label.zIndex = 13;
 
     // Keep enemy HP UI in clean HUD layer (above postprocess), but beneath gameplay popups/HUD overlays.
@@ -2138,6 +2140,7 @@ export class HUDManager {
     text.fontSize = 18;
     text.outlineColor = '#000000';
     text.outlineWidth = 2;
+      text.fontFamily = 'Arcade8Bit';
     text.alpha = 1.0;
     text.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     text.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
@@ -4431,7 +4434,7 @@ export class HUDManager {
     this.bonusSubtitle = new TextBlock('bonus_shop_subtitle');
     this.bonusSubtitle.color = '#FFD782';
     this.bonusSubtitle.fontSize = 20;
-    this.bonusSubtitle.fontFamily = 'Consolas';
+    this.bonusSubtitle.fontFamily = 'Arcade8Bit';
     this.bonusSubtitle.top = '-292px';
     this.bonusSubtitle.height = '30px';
     dynamicRoot.addControl(this.bonusSubtitle);
@@ -4452,7 +4455,7 @@ export class HUDManager {
     this.bonusCreditsText = new TextBlock('bonus_credits_text');
     this.bonusCreditsText.text = 'CREDITS: 000';
     this.bonusCreditsText.fontSize = 34;
-    this.bonusCreditsText.fontFamily = 'Consolas';
+    this.bonusCreditsText.fontFamily = 'Arcade8Bit';
     this.bonusCreditsText.color = '#FFD782';
     this.bonusCreditsText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.bonusCreditsText.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
@@ -4476,7 +4479,7 @@ export class HUDManager {
 
     this.bonusHoverPopupText = new TextBlock('bonus_hover_popup_text');
     this.bonusHoverPopupText.fontSize = 18;
-    this.bonusHoverPopupText.fontFamily = 'Consolas';
+    this.bonusHoverPopupText.fontFamily = 'Arcade8Bit';
     this.bonusHoverPopupText.color = '#AEEFE2';
     this.bonusHoverPopupText.textWrapping = false;
     this.bonusHoverPopupText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
@@ -4501,7 +4504,7 @@ export class HUDManager {
       rerollButton.cornerRadius = 8;
       rerollButton.thickness = 2;
       rerollButton.color = '#FFFFFF';
-      rerollButton.fontFamily = 'Consolas';
+      rerollButton.fontFamily = 'Arcade8Bit';
       rerollButton.onPointerUpObservable.add(() => {
         this.eventBus.emit(GameEvents.BONUS_REROLL_REQUESTED, { cost: this.bonusCurrentRerollCost });
       });
@@ -4517,7 +4520,7 @@ export class HUDManager {
       fullHealButton.cornerRadius = 8;
       fullHealButton.thickness = 2;
       fullHealButton.color = '#FFFFFF';
-      fullHealButton.fontFamily = 'Consolas';
+      fullHealButton.fontFamily = 'Arcade8Bit';
       fullHealButton.onPointerUpObservable.add(() => {
         this.eventBus.emit(GameEvents.SHOP_PURCHASE_REQUESTED, {
           itemId: 'full_heal',
@@ -4661,17 +4664,17 @@ export class HUDManager {
 
     const title = new TextBlock(`bonus_title_${poolKey}`);
     title.color = '#F7FBFF';
-    title.fontFamily = 'Consolas';
+    title.fontFamily = 'Arcade8Bit';
     title.height = '30px';
     btn.addControl(title);
 
     const modeText = new TextBlock(`bonus_mode_${poolKey}`);
-    modeText.fontFamily = 'Consolas';
+    modeText.fontFamily = 'Arcade8Bit';
     modeText.height = '20px';
     btn.addControl(modeText);
 
     const rarityText = new TextBlock(`bonus_rarity_${poolKey}`);
-    rarityText.fontFamily = 'Consolas';
+    rarityText.fontFamily = 'Arcade8Bit';
     rarityText.height = '24px';
     btn.addControl(rarityText);
 
@@ -4742,19 +4745,19 @@ export class HUDManager {
 
     const description = new TextBlock(`bonus_desc_${poolKey}`);
     description.color = '#DDE6EF';
-    description.fontFamily = 'Consolas';
+    description.fontFamily = 'Arcade8Bit';
     description.textWrapping = true;
     btn.addControl(description);
 
     const stackText = new TextBlock(`bonus_stack_${poolKey}`);
-    stackText.fontFamily = 'Consolas';
+    stackText.fontFamily = 'Arcade8Bit';
     stackText.height = '18px';
     btn.addControl(stackText);
 
     const selectedTag = new TextBlock(`bonus_selected_${poolKey}`);
     selectedTag.text = 'OBTAINED';
     selectedTag.color = '#D8DFEA';
-    selectedTag.fontFamily = 'Consolas';
+    selectedTag.fontFamily = 'Arcade8Bit';
     selectedTag.height = '22px';
     selectedTag.isVisible = false;
     btn.addControl(selectedTag);
@@ -4762,7 +4765,7 @@ export class HUDManager {
     const lockText = new TextBlock(`bonus_locked_${poolKey}`);
     lockText.text = '';
     lockText.color = '#FF9A9A';
-    lockText.fontFamily = 'Consolas';
+    lockText.fontFamily = 'Arcade8Bit';
     lockText.height = '22px';
     lockText.isVisible = false;
     btn.addControl(lockText);
@@ -4885,7 +4888,7 @@ export class HUDManager {
         badge.isHitTestVisible = false;
 
         const badgeText = new TextBlock(`run_bonus_badge_text_${bonus.id}_${index}`, `x${bonus.stacks}`);
-        badgeText.fontFamily = 'Consolas, monospace';
+        badgeText.fontFamily = 'Arcade8Bit';
         badgeText.fontSize = compact ? 9 : 10;
         badgeText.color = '#FFFFFF';
         badgeText.isHitTestVisible = false;
@@ -5091,7 +5094,7 @@ export class HUDManager {
     title.text = titleText;
     title.color = '#A7FFF2';
     title.fontSize = 48;
-    title.fontFamily = 'Consolas';
+    title.fontFamily = 'Arcade8Bit';
     title.top = '-24px';
     title.alpha = 0;
     overlay.addControl(title);
@@ -5100,7 +5103,7 @@ export class HUDManager {
     subtitle.text = subtitleText;
     subtitle.color = '#E6FFFB';
     subtitle.fontSize = 20;
-    subtitle.fontFamily = 'Consolas';
+    subtitle.fontFamily = 'Arcade8Bit';
     subtitle.top = '34px';
     subtitle.alpha = 0;
     overlay.addControl(subtitle);
@@ -5230,7 +5233,7 @@ export class HUDManager {
   }
 
   private createMobileControls(): void {
-    const fontFamily = 'Consolas';
+    const fontFamily = 'Arcade8Bit';
     const idealWidth = this.guiClean.idealWidth || 1920;
     const idealHeight = this.guiClean.idealHeight || 1080;
     const isMobileLayout = idealWidth <= 960;

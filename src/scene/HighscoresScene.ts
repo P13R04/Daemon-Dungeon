@@ -33,7 +33,7 @@ interface TerminalLine {
 }
 
 export class HighscoresScene {
-  private readonly terminalFont = 'Lucida Console';
+  private readonly terminalFont = 'Arcade8Bit';
 
   private scene: Scene;
   private camera!: ArcRotateCamera;
@@ -503,7 +503,7 @@ export class HighscoresScene {
       emptyBtn.height = `${isMobileLayout ? 64 : 56}px`;
       emptyBtn.thickness = 0;
       emptyBtn.color = '#647D7D';
-      emptyBtn.fontFamily = 'Consolas';
+      emptyBtn.fontFamily = 'Arcade8Bit';
       emptyBtn.fontSize = isMobileLayout ? 22 : 19;
       this.leftListStack.addControl(emptyBtn);
       return;
@@ -538,7 +538,7 @@ export class HighscoresScene {
     if (btn.textBlock) {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
-      btn.textBlock.fontFamily = 'Consolas';
+      btn.textBlock.fontFamily = 'Arcade8Bit';
       btn.textBlock.fontSize = isMobileLayout ? 21 : 18;
     }
     return btn;

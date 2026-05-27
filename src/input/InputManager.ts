@@ -255,7 +255,6 @@ export class InputManager {
    */
   isMouseDown(): boolean {
     if (this.mobileMode) return this.joystickAimActive;
-    if (this.keyboardOnlyMode) return false;
     return this.mouseClick;
   }
 
@@ -266,10 +265,6 @@ export class InputManager {
     if (this.mobileMode) {
       return this.joystickAimPressedThisFrame;
     }
-    if (this.keyboardOnlyMode) {
-      this.mouseClickThisFrame = false;
-      return false;
-    }
     const result = this.mouseClickThisFrame;
     this.mouseClickThisFrame = false;
     return result;
@@ -277,16 +272,11 @@ export class InputManager {
 
   isRightMouseDown(): boolean {
     if (this.mobileMode) return this.mobileStancePressed;
-    if (this.keyboardOnlyMode) return false;
     return this.rightMouseClick;
   }
 
   isRightMouseClickedThisFrame(): boolean {
     if (this.mobileMode) return this.mobileStancePressed;
-    if (this.keyboardOnlyMode) {
-      this.rightMouseClickThisFrame = false;
-      return false;
-    }
     const result = this.rightMouseClickThisFrame;
     this.rightMouseClickThisFrame = false;
     return result;
@@ -386,27 +376,19 @@ export class InputManager {
 
   private isPhysicalBindingHeld(key: string): boolean {
     const normalized = normalizeInputKey(key);
-    if (normalized === 'mouse0') return this.keyboardOnlyMode ? false : this.mouseClick;
-    if (normalized === 'mouse2') return this.keyboardOnlyMode ? false : this.rightMouseClick;
+    if (normalized === 'mouse0') return this.mouseClick;
+    if (normalized === 'mouse2') return this.rightMouseClick;
     return this.keys.has(normalized);
   }
 
   private isPhysicalBindingPressedThisFrame(key: string): boolean {
     const normalized = normalizeInputKey(key);
     if (normalized === 'mouse0') {
-      if (this.keyboardOnlyMode) {
-        this.mouseClickThisFrame = false;
-        return false;
-      }
       const value = this.mouseClickThisFrame;
       this.mouseClickThisFrame = false;
       return value;
     }
     if (normalized === 'mouse2') {
-      if (this.keyboardOnlyMode) {
-        this.rightMouseClickThisFrame = false;
-        return false;
-      }
       const value = this.rightMouseClickThisFrame;
       this.rightMouseClickThisFrame = false;
       return value;

@@ -307,11 +307,11 @@ export class EnemyController {
   private artificerSplitRadius: number = 1.6;
   private artificerSplitDelay: number = 2.0;
   private artificerExplosionRadius: number = 1.6;
-  private artificerExplosionDamage: number = 10;
+  private artificerExplosionDamage: number = 6;
   private artificerImpactRadius: number = 1.6;
-  private artificerImpactDamage: number = 12;
+  private artificerImpactDamage: number = 8;
   private artificerDotRadius: number = 1.4;
-  private artificerDotDps: number = 4;
+  private artificerDotDps: number = 2;
   private artificerDotDuration: number = 4.0;
   private artificerSplitTravelSpeed: number = 6.0;
   private artificerImpactDuration: number = 0.6;
@@ -396,7 +396,7 @@ export class EnemyController {
     if (behaviorPreset) {
       this.applyBehaviorPreset(behaviorPreset);
     }
-    if (['bull', 'jumper', 'sentinel', 'prefire_sentinel', 'swarm_coordinator'].includes(this.behavior)) {
+    if (['bull', 'bull_boss', 'jumper', 'jumper_boss', 'sentinel', 'prefire_sentinel', 'swarm_coordinator'].includes(this.behavior)) {
       this.avoidObstacles = true;
       this.avoidVoid = true;
       this.canFallIntoVoid = false;
@@ -3044,8 +3044,10 @@ export class EnemyController {
   }
 
   getRadius(): number {
-    if (this.behavior === 'bull') {
-      return 0.65;
+    if (this.behavior === 'bull_boss') {
+      return 2.2;
+    } else if (this.behavior === 'bull') {
+      return 1.0;
     }
     return 0.35;
   }
@@ -4124,7 +4126,7 @@ export class EnemyController {
       EnemyController.markBullVisualHierarchy(root, this.id);
 
       root.position = Vector3.Zero();
-      root.rotation = new Vector3(0, -Math.PI / 2, 0);
+      root.rotation = new Vector3(0, Math.PI / 2, 0);
       root.scaling = new Vector3(this.bullModelScale, this.bullModelScale, this.bullModelScale);
       root.parent = this.mesh;
 
@@ -4719,7 +4721,7 @@ export class EnemyController {
       });
       EnemyController.markPongVisualHierarchy(root, this.id);
       root.position = Vector3.Zero();
-      root.rotation = new Vector3(0, -Math.PI / 2, 0);
+      root.rotation = new Vector3(0, Math.PI / 2, 0);
       root.scaling = new Vector3(0.1, 0.1, 0.1);
       root.parent = this.mesh;
       this.mesh.isVisible = false;

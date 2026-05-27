@@ -2913,7 +2913,7 @@ export class GameManager {
     const title = document.createElement('h2');
     title.textContent = 'Automated Benchmark Report';
     title.style.margin = '0';
-    title.style.fontFamily = 'Consolas, monospace';
+    title.style.fontFamily = 'Arcade8Bit';
     title.style.fontSize = '24px';
     title.style.color = '#7cffea';
 
@@ -2926,7 +2926,7 @@ export class GameManager {
     summary.style.background = 'rgba(7, 17, 21, 0.95)';
     summary.style.color = '#cffff1';
     summary.style.whiteSpace = 'pre-wrap';
-    summary.style.fontFamily = 'Consolas, monospace';
+    summary.style.fontFamily = 'Arcade8Bit';
     summary.style.fontSize = '13px';
 
     const reportPre = document.createElement('pre');
@@ -2942,7 +2942,7 @@ export class GameManager {
     reportPre.style.background = 'rgba(4, 11, 14, 0.98)';
     reportPre.style.color = '#9fe8da';
     reportPre.style.whiteSpace = 'pre';
-    reportPre.style.fontFamily = 'Consolas, monospace';
+    reportPre.style.fontFamily = 'Arcade8Bit';
     reportPre.style.fontSize = '12px';
 
     const actions = document.createElement('div');

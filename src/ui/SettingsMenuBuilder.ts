@@ -104,7 +104,7 @@ export class SettingsMenuBuilder {
     title.text = 'SETTINGS CONSOLE';
     title.color = '#7CFFEA';
     title.fontSize = this.isMobileLayout ? 46 : 40;
-    title.fontFamily = 'Consolas';
+    title.fontFamily = 'Arcade8Bit';
     title.top = '-350px';
     windowPanel.addControl(title);
 
@@ -300,7 +300,7 @@ export class SettingsMenuBuilder {
     label.text = 'Color Vision Filter';
     label.color = '#B9F9E8';
     label.fontSize = this.isMobileLayout ? 24 : 22;
-    label.fontFamily = 'Consolas';
+    label.fontFamily = 'Arcade8Bit';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.paddingLeft = '14px';
@@ -399,7 +399,7 @@ export class SettingsMenuBuilder {
     title.text = 'RESET PROGRESSION';
     title.color = '#FFE5E5';
     title.fontSize = 32;
-    title.fontFamily = 'Consolas';
+    title.fontFamily = 'Arcade8Bit';
     title.top = '-104px';
     panel.addControl(title);
 
@@ -407,7 +407,7 @@ export class SettingsMenuBuilder {
     body.text = 'This will reset codex, achievements, settings, and tutorial completion.\nThe game will restart as a first launch.';
     body.color = '#FFD0D0';
     body.fontSize = 18;
-    body.fontFamily = 'Consolas';
+    body.fontFamily = 'Arcade8Bit';
     body.width = '600px';
     body.height = '110px';
     body.textWrapping = true;
@@ -471,7 +471,7 @@ export class SettingsMenuBuilder {
     title.text = text;
     title.color = '#7CFFEA';
     title.fontSize = this.isMobileLayout ? 30 : 28;
-    title.fontFamily = 'Consolas';
+    title.fontFamily = 'Arcade8Bit';
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     title.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     title.paddingLeft = '10px';
@@ -484,7 +484,7 @@ export class SettingsMenuBuilder {
     info.text = text;
     info.color = '#8EC8BD';
     info.fontSize = 14;
-    info.fontFamily = 'Consolas';
+    info.fontFamily = 'Arcade8Bit';
     info.height = '28px';
     info.width = '1100px';
     info.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -505,7 +505,7 @@ export class SettingsMenuBuilder {
     label.text = labelText;
     label.color = '#B9F9E8';
     label.fontSize = this.isMobileLayout ? 24 : 22;
-    label.fontFamily = 'Consolas';
+    label.fontFamily = 'Arcade8Bit';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.paddingLeft = '14px';
@@ -552,7 +552,7 @@ export class SettingsMenuBuilder {
     titleText.text = title;
     titleText.color = '#B9F9E8';
     titleText.fontSize = this.isMobileLayout ? 24 : 22;
-    titleText.fontFamily = 'Consolas';
+    titleText.fontFamily = 'Arcade8Bit';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
@@ -564,7 +564,7 @@ export class SettingsMenuBuilder {
       detailText.text = details;
       detailText.color = '#86B9AE';
       detailText.fontSize = this.isMobileLayout ? 15 : 14;
-      detailText.fontFamily = 'Consolas';
+      detailText.fontFamily = 'Arcade8Bit';
       detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       detailText.paddingLeft = '14px';
@@ -604,7 +604,7 @@ export class SettingsMenuBuilder {
     titleText.text = title;
     titleText.color = '#B9F9E8';
     titleText.fontSize = this.isMobileLayout ? 24 : 22;
-    titleText.fontFamily = 'Consolas';
+    titleText.fontFamily = 'Arcade8Bit';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
@@ -616,7 +616,7 @@ export class SettingsMenuBuilder {
       detailText.text = details;
       detailText.color = '#86B9AE';
       detailText.fontSize = this.isMobileLayout ? 15 : 14;
-      detailText.fontFamily = 'Consolas';
+      detailText.fontFamily = 'Arcade8Bit';
       detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       detailText.paddingLeft = '14px';
@@ -628,7 +628,7 @@ export class SettingsMenuBuilder {
     valueText.text = '';
     valueText.color = '#7CFFEA';
     valueText.fontSize = this.isMobileLayout ? 20 : 18;
-    valueText.fontFamily = 'Consolas';
+    valueText.fontFamily = 'Arcade8Bit';
     valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.paddingRight = '20px';
@@ -664,7 +664,7 @@ export class SettingsMenuBuilder {
     label.text = labelText;
     label.color = '#B9F9E8';
     label.fontSize = this.isMobileLayout ? 24 : 22;
-    label.fontFamily = 'Consolas';
+    label.fontFamily = 'Arcade8Bit';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.paddingLeft = '14px';
@@ -674,7 +674,7 @@ export class SettingsMenuBuilder {
     valueText.text = '100%';
     valueText.color = '#7CFFEA';
     valueText.fontSize = this.isMobileLayout ? 20 : 18;
-    valueText.fontFamily = 'Consolas';
+    valueText.fontFamily = 'Arcade8Bit';
     valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.paddingRight = this.isMobileLayout ? '64%' : '66%';
@@ -716,7 +716,7 @@ export class SettingsMenuBuilder {
     titleText.text = title;
     titleText.color = '#FFD782';
     titleText.fontSize = this.isMobileLayout ? 24 : 22;
-    titleText.fontFamily = 'Consolas';
+    titleText.fontFamily = 'Arcade8Bit';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.paddingLeft = '14px';
@@ -728,7 +728,7 @@ export class SettingsMenuBuilder {
       detailText.text = details;
       detailText.color = '#86B9AE';
       detailText.fontSize = this.isMobileLayout ? 15 : 14;
-      detailText.fontFamily = 'Consolas';
+      detailText.fontFamily = 'Arcade8Bit';
       detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       detailText.paddingLeft = '14px';
