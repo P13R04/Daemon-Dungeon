@@ -31,8 +31,10 @@ import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { createMenuMatrixBackground } from './MenuMatrixBackground';
 import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 import { AudioManager } from '../audio/AudioManager';
+import { DAEMON_FOUR_FRAME_PRESET_NAMES, getDaemonAnimationPreset } from '../data/voicelines/DaemonAnimationPresets';
 
 type AudioChannel = keyof AudioSettings;
+type BeatPulseSampler = (deltaSeconds: number) => number;
 
 const ACTION_LABELS: Array<{ action: KeybindingAction; label: string }> = [
   { action: 'moveUp', label: 'Move Forward' },
@@ -62,6 +64,29 @@ export class MainMenuScene {
   private menuButtonWidth = 320;
   private menuButtonHeight = 56;
   private menuButtonFontSize = 18;
+  private menuBeatSampler: BeatPulseSampler | null = null;
+  private menuBeatCooldown = 0;
+  private menuBeatWarmup = 1.3;
+  private menuBeatChainDungeon = false;
+  private menuBeatTargets: Control[] = [];
+  private menuBeatDaemonTarget: Control | null = null;
+  private menuBeatDungeonTarget: Control | null = null;
+  private menuBeatFx = new Map<Control, {
+    timer: number;
+    duration: number;
+    jitterSeed: number;
+    baseScaleX: number;
+    baseScaleY: number;
+    baseRotation: number;
+    baseColor?: string;
+    baseBg?: string;
+  }>();
+  private menuBeatObserver: any = null;
+  private daemonAvatarFrames: Image[] = [];
+  private daemonAvatarPresetName: string = 'rire';
+  private daemonAvatarFrameTime: number = 0;
+  private daemonAvatarFrameIndex: number = 0;
+  private daemonAvatarIsPressed = false;
 
   private settingsSnapshot: GameSettings = GameSettingsStore.get();
   private unsubscribeSettings: (() => void) | null = null;
@@ -143,9 +168,11 @@ export class MainMenuScene {
     private onPlayRequested: () => void,
     private onCodexRequested: () => void,
     private onTutorialRequested: () => void,
-    private onBenchmarkRequested: () => void = () => {}
+    private onBenchmarkRequested: () => void = () => {},
+    beatSampler?: BeatPulseSampler
   ) {
     this.scene = new Scene(engine);
+    this.menuBeatSampler = beatSampler ?? null;
     this.scene.clearColor = Color4.FromHexString(UITheme.colors.bgVoid);
     this.audioManager = new AudioManager(this.scene);
     void this.preloadUISounds();
@@ -253,6 +280,10 @@ export class MainMenuScene {
     if (this.resizeObserver) {
       this.engine.onResizeObservable.remove(this.resizeObserver);
       this.resizeObserver = null;
+    }
+    if (this.menuBeatObserver) {
+      this.scene.onBeforeRenderObservable.remove(this.menuBeatObserver);
+      this.menuBeatObserver = null;
     }
     window.removeEventListener('keydown', this.keyCaptureHandler, true);
     this.glitchFx.dispose();
@@ -753,6 +784,8 @@ export class MainMenuScene {
     titlePart1.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titlePart1.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     titleContainer.addControl(titlePart1);
+    this.menuBeatTargets.push(titlePart1);
+    this.menuBeatDaemonTarget = titlePart1;
 
     const daemonFrames: Image[] = [];
     for (let i = 1; i <= 4; i++) {
@@ -765,6 +798,42 @@ export class MainMenuScene {
       titleContainer.addControl(frame);
       daemonFrames.push(frame);
     }
+    this.daemonAvatarFrames = daemonFrames;
+
+    const avatarHitbox = Button.CreateSimpleButton('daemonAvatarHitbox', '');
+    avatarHitbox.width = '116px';
+    avatarHitbox.height = '116px';
+    avatarHitbox.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    avatarHitbox.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    avatarHitbox.thickness = 0;
+    avatarHitbox.background = 'rgba(0,0,0,0)';
+    avatarHitbox.zIndex = 40;
+    avatarHitbox.onPointerDownObservable.add(() => {
+      this.daemonAvatarIsPressed = true;
+      this.playUISound('sfx_ui_deselect', 0.24);
+      for (const f of this.daemonAvatarFrames) {
+        f.scaleX = 1.16;
+        f.scaleY = 1.16;
+      }
+    });
+    avatarHitbox.onPointerUpObservable.add(() => {
+      if (!this.daemonAvatarIsPressed) return;
+      this.daemonAvatarIsPressed = false;
+      for (const f of this.daemonAvatarFrames) {
+        f.scaleX = 1;
+        f.scaleY = 1;
+      }
+      this.rotateDaemonAvatarPreset();
+    });
+    avatarHitbox.onPointerOutObservable.add(() => {
+      if (!this.daemonAvatarIsPressed) return;
+      this.daemonAvatarIsPressed = false;
+      for (const f of this.daemonAvatarFrames) {
+        f.scaleX = 1;
+        f.scaleY = 1;
+      }
+    });
+    titleContainer.addControl(avatarHitbox);
 
     const titlePart2 = UIFactory.createText('menuTitle2', 'DUNGEON', 72, UITheme.colors.textHighlight);
     titlePart2.fontFamily = 'Wonder8Bit';
@@ -773,16 +842,28 @@ export class MainMenuScene {
     titlePart2.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     titlePart2.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleContainer.addControl(titlePart2);
+    this.menuBeatTargets.push(titlePart2);
+    this.menuBeatDungeonTarget = titlePart2;
 
     // Title flicker animation — slow oscillation between highlight colors
     this.scene.onBeforeRenderObservable.add(() => {
       this.titleFlickerTime += this.scene.getEngine().getDeltaTime();
       const t = this.titleFlickerTime;
 
-      // Daemon laugh animation (~10 fps)
-      const currentFrame = Math.floor(t / 100) % 4;
-      for (let i = 0; i < 4; i++) {
-        daemonFrames[i].isVisible = (i === currentFrame);
+      // Daemon avatar animation from active emotion preset.
+      const presetFrames = getDaemonAnimationPreset(this.daemonAvatarPresetName) ?? getDaemonAnimationPreset('rire') ?? [];
+      this.daemonAvatarFrameTime += this.scene.getEngine().getDeltaTime();
+      if (this.daemonAvatarFrameTime >= 105) {
+        this.daemonAvatarFrameTime = 0;
+        this.daemonAvatarFrameIndex = (this.daemonAvatarFrameIndex + 1) % Math.max(1, presetFrames.length);
+      }
+      for (let i = 0; i < daemonFrames.length; i++) {
+        if (i < presetFrames.length) {
+          daemonFrames[i].source = buildHudAssetUrl(`avatar_frames_cutout2/${presetFrames[i]}`);
+          daemonFrames[i].isVisible = (i === this.daemonAvatarFrameIndex);
+        } else {
+          daemonFrames[i].isVisible = false;
+        }
       }
 
       // Slow pulse: green -> cyan -> white, very subtle, period ~6s
@@ -829,6 +910,7 @@ export class MainMenuScene {
       this.onPlayRequested();
     });
     panel.addControl(playBtn);
+    this.menuBeatTargets.push(playBtn);
 
     const tutorialBtn = this.makeActionButton('menuTutorial', 'TUTORIAL', topOffsets[1], () => {
       this.playUISound('sfx_ui_select1', 0.82);
@@ -836,6 +918,7 @@ export class MainMenuScene {
       this.onTutorialRequested();
     });
     panel.addControl(tutorialBtn);
+    this.menuBeatTargets.push(tutorialBtn);
 
     const codexBtn = this.makeActionButton('menuCodex', 'CODEX', topOffsets[2], () => {
       this.playUISound('sfx_ui_select1', 0.82);
@@ -843,6 +926,7 @@ export class MainMenuScene {
       this.onCodexRequested();
     });
     panel.addControl(codexBtn);
+    this.menuBeatTargets.push(codexBtn);
 
     const achievementsBtn = this.makeActionButton('menuAchievements', 'ACHIEVEMENTS', topOffsets[3], () => {
       this.playUISound('sfx_ui_select1', 0.82);
@@ -850,6 +934,7 @@ export class MainMenuScene {
       this.eventBus.emit(GameEvents.ACHIEVEMENTS_OPEN_REQUESTED);
     });
     panel.addControl(achievementsBtn);
+    this.menuBeatTargets.push(achievementsBtn);
 
     const highscoresBtn = this.makeActionButton('menuHighscores', 'HIGHSCORES', topOffsets[4], () => {
       this.playUISound('sfx_ui_select1', 0.82);
@@ -857,12 +942,14 @@ export class MainMenuScene {
       this.eventBus.emit(GameEvents.HIGHSCORES_OPEN_REQUESTED);
     });
     panel.addControl(highscoresBtn);
+    this.menuBeatTargets.push(highscoresBtn);
 
     const settingsBtn = this.makeActionButton('menuSettings', 'SETTINGS', topOffsets[5], () => {
       this.playUISound('sfx_ui_select1', 0.82);
       this.openSettingsOverlay();
     });
     panel.addControl(settingsBtn);
+    this.menuBeatTargets.push(settingsBtn);
 
     const creditsBtn = this.makeActionButton('menuCredits', 'CREDITS', topOffsets[6], () => {
       this.playUISound('sfx_ui_select1', 0.82);
@@ -870,9 +957,139 @@ export class MainMenuScene {
       this.eventBus.emit(GameEvents.CREDITS_OPEN_REQUESTED);
     });
     panel.addControl(creditsBtn);
+    this.menuBeatTargets.push(creditsBtn);
 
     this.menuHint = null;
+    this.installMenuMusicReactiveFx();
   }
+
+  private installMenuMusicReactiveFx(): void {
+    if (!this.menuBeatSampler || this.menuBeatObserver) return;
+    this.menuBeatObserver = this.scene.onBeforeRenderObservable.add(() => {
+      const dt = Math.max(0.001, this.engine.getDeltaTime() / 1000);
+      const pulse = this.menuBeatSampler ? this.menuBeatSampler(dt) : 0;
+      if (this.menuBeatWarmup > 0) {
+        this.menuBeatWarmup = Math.max(0, this.menuBeatWarmup - dt);
+      }
+      if (this.menuBeatCooldown > 0) {
+        this.menuBeatCooldown = Math.max(0, this.menuBeatCooldown - dt);
+      }
+
+      if (pulse > 0.2 && this.menuBeatWarmup <= 0 && this.menuBeatCooldown <= 0 && this.menuBeatTargets.length > 0) {
+        if (this.menuBeatChainDungeon && this.menuBeatDungeonTarget) {
+          this.triggerMenuBeatFx(this.menuBeatDungeonTarget, pulse);
+          this.menuBeatChainDungeon = false;
+          this.menuBeatCooldown = 0.04 + Math.random() * 0.045;
+          this.updateMenuBeatFx(dt);
+          return;
+        }
+        // Sparse random trigger: not every beat, and only one element at a time.
+        const triggerChance = 0.56 + Math.min(0.34, pulse * 0.35);
+        if (Math.random() < triggerChance) {
+          const idx = Math.floor(Math.random() * this.menuBeatTargets.length);
+          let target = this.menuBeatTargets[idx];
+          // Never trigger DUNGEON alone: title sequence must always be DAEMON -> DUNGEON.
+          if (target === this.menuBeatDungeonTarget && this.menuBeatDaemonTarget) {
+            target = this.menuBeatDaemonTarget;
+          }
+          this.triggerMenuBeatFx(target, pulse);
+          if (target === this.menuBeatDaemonTarget && this.menuBeatDungeonTarget) {
+            this.menuBeatChainDungeon = true;
+          }
+          this.menuBeatCooldown = 0.07 + Math.random() * 0.1;
+        }
+      }
+
+      this.updateMenuBeatFx(dt);
+    });
+  }
+
+  private triggerMenuBeatFx(target: Control, pulse: number): void {
+    const prev = this.menuBeatFx.get(target);
+    if (prev) {
+      this.restoreMenuBeatTarget(target, prev);
+      this.menuBeatFx.delete(target);
+    }
+    const fx = {
+      timer: 0,
+      duration: 0.14 + Math.min(0.2, pulse * 0.2) + (Math.random() * 0.08),
+      jitterSeed: Math.random() * 1000,
+      baseScaleX: target.scaleX || 1,
+      baseScaleY: target.scaleY || 1,
+      baseRotation: Number.isFinite(target.rotation) ? target.rotation : 0,
+      baseColor: undefined as string | undefined,
+      baseBg: undefined as string | undefined,
+    };
+    if (target instanceof TextBlock) {
+      fx.baseColor = target.color;
+    } else if (target instanceof Button) {
+      fx.baseColor = target.color;
+      fx.baseBg = target.background;
+    }
+    this.menuBeatFx.set(target, fx);
+  }
+
+  private updateMenuBeatFx(deltaSeconds: number): void {
+    if (this.menuBeatFx.size <= 0) return;
+    const now = performance.now() * 0.001;
+    const finished: Control[] = [];
+    for (const [target, fx] of this.menuBeatFx) {
+      fx.timer += deltaSeconds;
+      const t = Math.min(1, fx.timer / Math.max(0.001, fx.duration));
+      const hit = 1 - t;
+      const easeOut = hit * hit;
+      const scaleBoost = 1 + (0.07 * easeOut);
+      const rotJitter = Math.sin((now * 95) + fx.jitterSeed) * (0.012 + 0.016 * easeOut);
+      target.scaleX = fx.baseScaleX * scaleBoost;
+      target.scaleY = fx.baseScaleY * (1 + (0.05 * easeOut));
+      target.rotation = fx.baseRotation + rotJitter;
+
+      if (target instanceof TextBlock) {
+        target.color = easeOut > 0.42
+          ? '#FF5D75'
+          : easeOut > 0.16
+            ? '#FF92B2'
+            : (fx.baseColor || UITheme.colors.textHighlight);
+      } else if (target instanceof Button) {
+        target.color = easeOut > 0.2 ? '#FF6C86' : (fx.baseColor || '#C8FFF2');
+        target.background = easeOut > 0.18
+          ? 'rgba(72, 14, 24, 0.96)'
+          : (fx.baseBg || 'rgba(22,48,44,0.95)');
+        target.thickness = easeOut > 0.14 ? 2 : 1;
+      }
+
+      if (t >= 1) {
+        finished.push(target);
+      }
+    }
+
+    for (const target of finished) {
+      const fx = this.menuBeatFx.get(target);
+      if (!fx) continue;
+      this.restoreMenuBeatTarget(target, fx);
+      this.menuBeatFx.delete(target);
+    }
+  }
+
+  private restoreMenuBeatTarget(target: Control, fx: {
+    baseScaleX: number;
+    baseScaleY: number;
+    baseRotation: number;
+    baseColor?: string;
+    baseBg?: string;
+  }): void {
+    target.scaleX = fx.baseScaleX;
+    target.scaleY = fx.baseScaleY;
+    target.rotation = fx.baseRotation;
+    if (target instanceof TextBlock) {
+      target.color = fx.baseColor || target.color;
+    } else if (target instanceof Button) {
+      target.color = fx.baseColor || target.color;
+      target.background = fx.baseBg || target.background;
+      target.thickness = 1;
+    }
+  }
+
 
   private createSettingsOverlay(): void {
     const overlay = new Rectangle('settingsOverlay');
@@ -1646,8 +1863,8 @@ export class MainMenuScene {
     button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
     button.onPointerEnterObservable.add(() => this.playUISound('sfx_ui_deselect', 0.42));
-    // Inject glitch effects: tear bar + ghost text + click flicker with 220ms delay
-    DaemonGlitchFx.inject(button, label, onClick, 220);
+    // Click glitch only (no hover glitch).
+    DaemonGlitchFx.injectWithOptions(button, label, onClick, { clickDelayMs: 220, enableHoverGlitch: false });
     return button;
   }
 
@@ -1656,10 +1873,19 @@ export class MainMenuScene {
     button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
     button.onPointerEnterObservable.add(() => this.playUISound('sfx_ui_deselect', 0.36));
-    button.onPointerClickObservable.add(() => {
+    const label = button.textBlock?.text ?? button.name ?? 'ACTION';
+    DaemonGlitchFx.injectWithOptions(button, label, () => {
       this.playUISound('sfx_ui_select1', 0.8);
       onAction();
-    });
+    }, { clickDelayMs: 170, enableHoverGlitch: false });
+  }
+
+  private rotateDaemonAvatarPreset(): void {
+    const candidates = DAEMON_FOUR_FRAME_PRESET_NAMES.filter((n) => n !== this.daemonAvatarPresetName);
+    if (candidates.length <= 0) return;
+    this.daemonAvatarPresetName = candidates[Math.floor(Math.random() * candidates.length)];
+    this.daemonAvatarFrameIndex = 0;
+    this.daemonAvatarFrameTime = 0;
   }
 
   private openSettingsOverlay(): void {

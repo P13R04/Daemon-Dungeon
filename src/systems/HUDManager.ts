@@ -22,6 +22,7 @@ import { getMergedAchievementDefinitions } from '../data/achievements/loadAchiev
 import type { BonusSelectionUiState } from './BonusSystemManager';
 import { applyResponsiveGuiScaling } from '../ui/GuiScaling';
 import { getAdaptivePreloadConcurrency, loadImageWithRetry, mapWithConcurrency } from '../utils/AssetLoadReliability';
+import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import type {
   AudioEngineLike,
   DamageNumber,
@@ -859,9 +860,12 @@ export class HUDManager {
       pauseBtn.textBlock.fontSize = baseMenuFontSize;
       pauseBtn.textBlock.fontFamily = fontFamily;
     }
-    pauseBtn.onPointerUpObservable.add(() => {
-      this.eventBus.emit(GameEvents.UI_PAUSE_TOGGLE);
-    });
+    DaemonGlitchFx.injectWithOptions(
+      pauseBtn,
+      '||',
+      () => this.eventBus.emit(GameEvents.UI_PAUSE_TOGGLE),
+      { clickDelayMs: 150, enableHoverGlitch: false }
+    );
     this.guiClean.addControl(pauseBtn);
     this.pauseButton = pauseBtn;
 
@@ -1499,7 +1503,12 @@ export class HUDManager {
       btn.cornerRadius = 4;
       btn.fontSize = baseMenuFontSize;
       btn.fontFamily = 'Consolas';
-      btn.onPointerUpObservable.add(() => onClick());
+      DaemonGlitchFx.injectWithOptions(
+        btn,
+        text,
+        () => onClick(),
+        { clickDelayMs: 170, enableHoverGlitch: false }
+      );
       buttonPanel.addControl(btn);
       return btn;
     };

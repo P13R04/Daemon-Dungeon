@@ -25,6 +25,17 @@ export class DaemonGlitchFx {
    * @param clickDelay ms delay before firing onClick (0 = immediate)
    */
   static inject(btn: Button, label: string, onClick: () => void, clickDelay = 220): void {
+    DaemonGlitchFx.injectWithOptions(btn, label, onClick, { clickDelayMs: clickDelay, enableHoverGlitch: true });
+  }
+
+  static injectWithOptions(
+    btn: Button,
+    label: string,
+    onClick: () => void,
+    options?: { clickDelayMs?: number; enableHoverGlitch?: boolean }
+  ): void {
+    const clickDelay = Math.max(0, options?.clickDelayMs ?? 220);
+    const enableHoverGlitch = options?.enableHoverGlitch !== false;
 
     // ── Tear slab ─────────────────────────────────────────────────────────────
     // An opaque band at the button's background color, positioned at a random Y,
@@ -109,9 +120,11 @@ export class DaemonGlitchFx {
       if (clicking) return;
       btn.background = UITheme.colors.hoverBg;
       btn.color      = '#FFFFFF';
-      // Approximate button height; main buttons are 46px, others vary
-      const h = parseFloat(btn.height as string) || 46;
-      fireTear(h, 1);
+      if (enableHoverGlitch) {
+        // Approximate button height; main buttons are 46px, others vary
+        const h = parseFloat(btn.height as string) || 46;
+        fireTear(h, 1);
+      }
     });
 
     // ── Hover out ─────────────────────────────────────────────────────────────

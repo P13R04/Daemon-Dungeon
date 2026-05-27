@@ -572,7 +572,7 @@ export class GameManager {
       void this.openClassSelectScene(true);
     }, () => {
       void this.startBenchmarkFromMenu();
-    });
+    }, (deltaSeconds: number) => this.musicManager?.sampleBeatPulse(deltaSeconds) ?? 0);
     this.scene = this.mainMenuScene.getScene();
     void this.playFrontendMusic('menu');
     void ClassSelectScene.prewarmCoreClassAssets(this.engine).catch((error) => {

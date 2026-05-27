@@ -9,10 +9,15 @@ export class MusicManager {
   private lpfVolumeMultiplier: number = 1.0;
   
   private filterNode?: BiquadFilterNode;
+  private analyserNode?: AnalyserNode;
+  private analyserData?: Uint8Array;
   private musicGainNode?: GainNode;
   private isLowPassEnabled: boolean = false;
   private musicBusGain: number = 1.0;
   private busFadeRafId: number | null = null;
+  private beatFloor: number = 0.12;
+  private beatAvg: number = 0.12;
+  private beatCooldown: number = 0;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -134,12 +139,67 @@ export class MusicManager {
       this.filterNode.type = 'lowpass';
       this.filterNode.frequency.value = this.isLowPassEnabled ? 800 : 22050;
 
+      this.analyserNode = context.createAnalyser();
+      this.analyserNode.fftSize = 512;
+      this.analyserNode.smoothingTimeConstant = 0.72;
+      this.analyserData = new Uint8Array(this.analyserNode.frequencyBinCount);
+
       this.musicGainNode = context.createGain();
       this.musicGainNode.gain.value = this.musicBusGain;
-      console.log('[MusicManager] Connecting filter -> music gain -> destination');
-      this.filterNode.connect(this.musicGainNode);
+      console.log('[MusicManager] Connecting filter -> analyser -> music gain -> destination');
+      this.filterNode.connect(this.analyserNode);
+      this.analyserNode.connect(this.musicGainNode);
       this.musicGainNode.connect(context.destination);
     }
+  }
+
+  /**
+   * Returns a short pulse [0..1] when a strong beat/kick is detected.
+   * Designed for subtle UI sync effects.
+   */
+  sampleBeatPulse(deltaSeconds: number): number {
+    if (!this.analyserNode || !this.analyserData || !this.currentTrack?.isPlaying) return 0;
+    this.analyserNode.getByteFrequencyData(this.analyserData);
+    const data = this.analyserData;
+    const count = data.length;
+    if (count < 8) return 0;
+
+    // Low-end focus for kick feeling.
+    const lowStart = 1;
+    const lowEnd = Math.min(count - 1, 18);
+    let lowSum = 0;
+    let lowCount = 0;
+    for (let i = lowStart; i <= lowEnd; i++) {
+      lowSum += data[i];
+      lowCount++;
+    }
+    const lowNorm = lowCount > 0 ? (lowSum / lowCount) / 255 : 0;
+
+    // Dynamic baseline + short moving average.
+    const dt = Math.max(0.001, deltaSeconds);
+    const floorLerp = Math.min(1, dt * 2.4);
+    const avgLerp = Math.min(1, dt * 6.5);
+    this.beatFloor += (lowNorm - this.beatFloor) * floorLerp;
+    this.beatAvg += (lowNorm - this.beatAvg) * avgLerp;
+    this.beatFloor = Math.max(0.04, Math.min(0.92, this.beatFloor));
+    this.beatAvg = Math.max(0.04, Math.min(0.96, this.beatAvg));
+
+    if (this.beatCooldown > 0) {
+      this.beatCooldown = Math.max(0, this.beatCooldown - dt);
+      return 0;
+    }
+
+    const dynThreshold = Math.max(0.09, this.beatFloor * 1.14 + 0.022);
+    const over = lowNorm - dynThreshold;
+    if (over <= 0) return 0;
+
+    // Avoid constant triggering on sustained bass.
+    const transient = Math.max(0, lowNorm - this.beatAvg);
+    const pulse = Math.min(1, (over * 3.8) + (transient * 2.5));
+    if (pulse < 0.14) return 0;
+
+    this.beatCooldown = 0.075 + Math.random() * 0.06;
+    return pulse;
   }
 
   private setMusicBusGain(value: number): void {
