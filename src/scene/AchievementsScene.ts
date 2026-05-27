@@ -205,7 +205,7 @@ export class AchievementsScene {
   }
 
   private buildUI(): void {
-    createSynthwaveGridBackground(this.scene, SCENE_LAYER, true);
+    createSynthwaveGridBackground(this.scene, SCENE_LAYER, true, 'neutralHub');
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('AchievementsUI', true, this.scene);
     applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true });

@@ -220,6 +220,7 @@ export class GameManager {
   private gameplayStepAccumulator: number = 0;
   private gameplayMaxSubstepsPerFrame: number = 4;
   private playerDamageSfxLastAtMs: Map<'melee' | 'projectile' | 'dot', number> = new Map();
+  private frontendMusicMode: 'menu' | 'codex' | null = null;
 
 
   private constructor() {
@@ -573,6 +574,7 @@ export class GameManager {
       void this.startBenchmarkFromMenu();
     });
     this.scene = this.mainMenuScene.getScene();
+    void this.playFrontendMusic('menu');
     void ClassSelectScene.prewarmCoreClassAssets(this.engine).catch((error) => {
       console.warn('[GameManager] Class asset prewarm failed in menu background:', error);
     });
@@ -600,6 +602,7 @@ export class GameManager {
       );
       this.scene = this.codexScene.getScene();
       this.transitionGameState('menu');
+      void this.playFrontendMusic('codex');
     } catch (error) {
       console.error('[GameManager] Failed to open Codex scene:', error);
       await this.openMainMenuScene();
@@ -619,6 +622,7 @@ export class GameManager {
       );
       this.scene = this.achievementsScene.getScene();
       this.transitionGameState('menu');
+      void this.playFrontendMusic('codex');
     } catch (error) {
       console.error('[GameManager] Failed to open Achievements scene:', error);
       await this.openMainMenuScene();
@@ -638,6 +642,7 @@ export class GameManager {
       );
       this.scene = this.highscoresScene.getScene();
       this.transitionGameState('menu');
+      void this.playFrontendMusic('codex');
     } catch (error) {
       console.error('[GameManager] Failed to open Highscores scene:', error);
       await this.openMainMenuScene();
@@ -656,6 +661,7 @@ export class GameManager {
       );
       this.scene = this.creditsScene.getScene();
       this.transitionGameState('menu');
+      void this.playFrontendMusic('menu');
     } catch (error) {
       console.error('[GameManager] Failed to open Credits scene:', error);
       await this.openMainMenuScene();
@@ -694,9 +700,41 @@ export class GameManager {
         return this.shouldLaunchShortClassTutorial(classId);
       });
       this.scene = this.classSelectScene.getScene();
+      void this.playFrontendMusic('codex');
       await this.awaitPromiseWithTimeout(this.classSelectScene.waitUntilVisuallyReady(), 2200);
     } finally {
       this.setLoadingOverlay(false);
+    }
+  }
+
+  private ensureMusicManagerForScene(scene: Scene): MusicManager {
+    if (!this.musicManager || this.musicManager.getScene() !== scene) {
+      this.musicManager?.dispose();
+      this.musicManager = new MusicManager(scene);
+      const settings = GameSettingsStore.get();
+      this.musicManager.setMusicVolume(settings.audio.music);
+      this.musicManager.setMasterVolume(settings.audio.master);
+    }
+    return this.musicManager;
+  }
+
+  private async playFrontendMusic(mode: 'menu' | 'codex'): Promise<void> {
+    try {
+      const manager = this.ensureMusicManagerForScene(this.scene);
+      const trackName = mode === 'menu' ? 'menu' : 'codex';
+      const trackPath = mode === 'menu' ? 'music/menu.mp3' : 'music/codex.mp3';
+      if (!manager.hasTrack(trackName)) {
+        await manager.loadTrack(trackName, trackPath);
+      }
+      manager.playTrack(trackName, {
+        fadeInDuration: mode === 'menu' ? 8 : 1.2,
+        startAt: mode === 'menu' ? 45 : 0,
+        restart: this.frontendMusicMode !== mode,
+      });
+      manager.setLowPass(false, 0.25);
+      this.frontendMusicMode = mode;
+    } catch (error) {
+      console.warn('[GameManager] Failed to play frontend music:', error);
     }
   }
 
@@ -792,6 +830,7 @@ export class GameManager {
     this.hudManager.setInputManager(this.inputManager);
     this.hudManager.setPauseTutorialMode(this.isTutorialRun, this.selectedClassId);
     this.musicManager = new MusicManager(this.scene);
+    this.frontendMusicMode = null;
     this.audioManager = new AudioManager(this.scene);
     void this.musicManager.loadTrack('bgm', 'music/bgm.mp3').then(() => {
       if (this.gameState === 'playing' || this.gameState === 'bonus' || this.gameState === 'roomclear') {
@@ -1854,7 +1893,7 @@ export class GameManager {
     switch (nextState) {
       case 'playing':
         // Ensure music is playing and exit the muffled state
-        this.musicManager.playTrack('bgm', 0.8);
+        this.musicManager.playTrack('bgm', { fadeInDuration: 0.8, restart: prevState === 'menu' || prevState === 'gameover' });
         this.musicManager.setLowPass(keepMuffledForTutorialPopup, 0.45);
         break;
       case 'bonus':
@@ -3611,6 +3650,12 @@ export class GameManager {
       if (!this.isSequenceCurrent(sequenceId) || !this.gameplayInitialized || this.currentRoomIndex !== roomIndex) return;
 
       if (needsCountdownGate && this.hudManager) {
+        // Start gameplay BGM before the 3-2-1 countdown so audio kicks in
+        // immediately at run launch, not only after countdown completes.
+        if (this.musicManager) {
+          this.musicManager.playTrack('bgm', { fadeInDuration: 0.8, restart: false });
+          this.musicManager.setLowPass(false, 0.25);
+        }
         this.isCountingDown = true;
         await new Promise<void>((resolve) => {
           this.hudManager.showCountdown(() => {

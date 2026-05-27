@@ -192,7 +192,7 @@ export class CodexScene {
     const fill = new HemisphericLight('codexFill', new Vector3(-1, 1, 0), this.scene);
     fill.intensity = 0.34;
 
-    createSynthwaveGridBackground(this.scene, SCENE_LAYER, true);
+    createSynthwaveGridBackground(this.scene, SCENE_LAYER, true, 'neutralHub');
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('CodexUI', true, this.scene);
     applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true });

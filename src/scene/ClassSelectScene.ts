@@ -128,6 +128,7 @@ export class ClassSelectScene {
   private initialVisualReadyPromise: Promise<void> = Promise.resolve();
   private tutorialPromptOverlay: Rectangle | null = null;
   private tutorialPromptClassId: 'firewall' | 'rogue' | 'cat' | null = null;
+  private isMobileLayout: boolean = false;
   private loreTargetText: string = '';
   private infoTargetText: string = '';
   private loreTypeIndex: number = 0;
@@ -351,7 +352,7 @@ export class ClassSelectScene {
   }
 
   private createEnvironment(): void {
-    createSynthwaveGridBackground(this.scene, SCENE_LAYER);
+    createSynthwaveGridBackground(this.scene, SCENE_LAYER, false, 'neutralHub');
   }
 
   private loadRogueSelectionSound(): void {
@@ -378,6 +379,7 @@ export class ClassSelectScene {
     const idealWidth = this.gui.idealWidth || DESIGN_WIDTH;
     const idealHeight = this.gui.idealHeight || DESIGN_HEIGHT;
     const isMobileLayout = idealWidth <= 960;
+    this.isMobileLayout = isMobileLayout;
     const layoutWidth = Math.round(idealWidth);
     const layoutHeight = Math.round(idealHeight);
     const sidePadding = Math.round(layoutWidth * 0.02);
@@ -549,12 +551,15 @@ export class ClassSelectScene {
     overlay.addControl(panel);
 
     const title = UIFactory.createText('classTutorialPromptTitle', 'CLASS QUICK TUTORIAL', 34, '#CFFFFA');
+    title.width = '94%';
+    title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    title.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     title.top = '-116px';
     panel.addControl(title);
 
     const body = UIFactory.createText(
       'classTutorialPromptBody',
-      'Run a short onboarding room before your first run?\nIt explains core class tools in ~1 minute.',
+      'Run a short onboarding room before your first run with this class?\nIt explains core class tools in ~1 minute.',
       20,
       '#B7FFF5'
     );

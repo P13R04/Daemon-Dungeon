@@ -2735,7 +2735,7 @@ export class EnemyController {
   }
 
   private getEnemyDisplayName(): string {
-    const configured = (this.config?.name ?? '').trim();
+    const configured = String(this.config?.name ?? '').trim();
     if (configured.length > 0) return configured;
     const type = (this.typeId ?? '').toLowerCase();
     if (type.includes('fuyard')) return 'Skittish';

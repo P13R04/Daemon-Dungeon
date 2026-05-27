@@ -355,7 +355,7 @@ export class GameTutorialManager {
           this.timer = window.setTimeout(() => this.deferUntilDaemonFinished(() => this.triggerPhase('combat_aim')), 140);
         } else if (this.isMobileTutorialMode()) {
           this.dependencies?.playerController?.setInputSuppressed(false);
-          this.daemonSay("Basic attack loaded. Use ATTACK, then aim with your right thumb.", "happy", 3.4);
+          this.daemonSay("Basic attack loaded. Press ATTACK. Auto-aim locks the nearest enemy.", "happy", 3.8);
           this.timer = window.setTimeout(() => this.deferUntilDaemonFinished(() => this.triggerPhase('combat_aim')), 140);
         } else {
           this.dependencies?.playerController?.setInputSuppressed(true);
@@ -367,13 +367,7 @@ export class GameTutorialManager {
         if (this.tutorialAttackAutoAimEnabled) {
           this.daemonSay("I knew you were weak, but relying on assistance this early is still disappointing.", "enerve", 5);
         } else {
-          this.daemonSay(
-            this.isMobileTutorialMode()
-              ? "Aim with your right thumb near ATTACK. Line it up and fire."
-              : "Aim with your cursor — that glowing line shows where you're pointing. Line it up, then shoot.",
-            "happy",
-            5
-          );
+          this.daemonSay("Aim with your cursor — that glowing line shows where you're pointing. Line it up, then shoot.", "happy", 5);
         }
         this.startAimIndicator();
         this.timer = window.setTimeout(() => this.deferUntilDaemonFinished(() => this.triggerPhase('combat_dummy')), 5000);
@@ -398,7 +392,7 @@ export class GameTutorialManager {
           this.pointToMap(7, 6.5);
         } else if (this.isMobileTutorialMode()) {
           this.dependencies?.playerController?.setInputSuppressed(false);
-          this.daemonSay("Hold STANCE to slow it down, then use ATTACK to detonate.", "happy", 4.8);
+          this.daemonSay("Toggle STANCE on and off with the STANCE button. While stance is active, press ATTACK to trigger your secondary if you have enough resource.", "happy", 6.0);
           this.spawnEnemyAtMap('tutorial_dummy_mobile', 7, 6.5);
           this.pointToMap(7, 6.5);
         } else {
@@ -634,6 +628,9 @@ export class GameTutorialManager {
           this.daemonSay("Ultimate ready: a heavy vortex. Pull the pack and grind them down.", "rire", 4.0);
         } else {
           this.daemonSay("Ultimate ready: mark a zone and chain teleport-attacks inside it.", "superieur", 4.0);
+        }
+        if (this.isMobileTutorialMode()) {
+          this.daemonSay("Use the ULT button when you're ready.", "happy", 2.8);
         }
         this.pointToMap(7.0, 6.0);
         break;

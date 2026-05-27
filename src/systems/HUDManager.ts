@@ -5249,7 +5249,7 @@ export class HUDManager {
     leftJoystickContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     leftJoystickContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     leftJoystickContainer.left = `${leftMargin}px`;
-    const joystickLowerOffset = Math.round(Math.max(22, idealHeight * 0.035));
+    const joystickLowerOffset = 24;
     leftJoystickContainer.top = `-${Math.max(0, bottomSafe - joystickLowerOffset)}px`;
     this.guiClean.addControl(leftJoystickContainer);
     this.mobileControls.push(leftJoystickContainer);
@@ -5282,7 +5282,7 @@ export class HUDManager {
     attackBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     attackBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     attackBtn.left = `-${leftMargin}px`;
-    const rightButtonsLowerOffset = Math.round(Math.max(18, idealHeight * 0.03));
+    const rightButtonsLowerOffset = 20;
     attackBtn.top = `-${Math.max(0, bottomSafe - rightButtonsLowerOffset)}px`;
     if (attackBtn.textBlock) {
       attackBtn.textBlock.fontSize = isMobileLayout ? 24 : 20;

@@ -9,10 +9,21 @@ export class MusicManager {
   private lpfVolumeMultiplier: number = 1.0;
   
   private filterNode?: BiquadFilterNode;
+  private musicGainNode?: GainNode;
   private isLowPassEnabled: boolean = false;
+  private musicBusGain: number = 1.0;
+  private busFadeRafId: number | null = null;
 
   constructor(scene: Scene) {
     this.scene = scene;
+  }
+
+  getScene(): Scene {
+    return this.scene;
+  }
+
+  hasTrack(name: string): boolean {
+    return this.tracks.has(name);
   }
 
   loadTrack(name: string, path: string): Promise<Sound> {
@@ -40,7 +51,15 @@ export class MusicManager {
     });
   }
 
-  playTrack(name: string, fadeInDuration: number = 0): void {
+  playTrack(
+    name: string,
+    options?: number | { fadeInDuration?: number; startAt?: number; restart?: boolean }
+  ): void {
+    const fadeInDuration =
+      typeof options === 'number' ? options : Math.max(0, options?.fadeInDuration ?? 0);
+    const startAt = typeof options === 'number' ? 0 : Math.max(0, options?.startAt ?? 0);
+    const restart = typeof options === 'number' ? false : !!options?.restart;
+
     const track = this.tracks.get(name);
     if (!track) {
       console.warn(`[MusicManager] Track not found: ${name}`);
@@ -54,7 +73,9 @@ export class MusicManager {
     }
 
     if (this.currentTrack && this.currentTrack !== track) {
-      this.stopCurrentTrack(fadeInDuration);
+      // Hard-stop previous track so the next one can fade in from silence
+      // with no audible overlap/"flash" at transition start.
+      this.stopCurrentTrack(0);
     }
 
     const wasAlreadyPlaying = track.isPlaying;
@@ -67,14 +88,22 @@ export class MusicManager {
       this.connectTrackToFilter(track);
     }
 
-    if (!wasAlreadyPlaying) {
+    if (wasAlreadyPlaying && restart) {
+      track.stop();
+    }
+
+    if (!wasAlreadyPlaying || restart) {
       if (fadeInDuration > 0) {
-        track.setVolume(0);
-        track.play();
+        this.updateTrackVolume(track);
+        this.setMusicBusGain(0);
+        (track as unknown as { play: (time?: number, offset?: number, length?: number) => void })
+          .play(0, startAt);
         this.fadeIn(track, fadeInDuration);
       } else {
         this.updateTrackVolume(track);
-        track.play();
+        this.setMusicBusGain(1);
+        (track as unknown as { play: (time?: number, offset?: number, length?: number) => void })
+          .play(0, startAt);
       }
     } else {
       this.updateTrackVolume(track);
@@ -104,10 +133,19 @@ export class MusicManager {
       this.filterNode = context.createBiquadFilter();
       this.filterNode.type = 'lowpass';
       this.filterNode.frequency.value = this.isLowPassEnabled ? 800 : 22050;
-      
-      // Connect filter directly to destination to eliminate masterGain issues
-      console.log('[MusicManager] Connecting filter to destination');
-      this.filterNode.connect(context.destination);
+
+      this.musicGainNode = context.createGain();
+      this.musicGainNode.gain.value = this.musicBusGain;
+      console.log('[MusicManager] Connecting filter -> music gain -> destination');
+      this.filterNode.connect(this.musicGainNode);
+      this.musicGainNode.connect(context.destination);
+    }
+  }
+
+  private setMusicBusGain(value: number): void {
+    this.musicBusGain = Math.max(0, Math.min(1, value));
+    if (this.musicGainNode) {
+      this.musicGainNode.gain.value = this.musicBusGain;
     }
   }
 
@@ -168,15 +206,29 @@ export class MusicManager {
   }
 
   private fadeIn(sound: Sound, duration: number): void {
-    const targetVolume = this.musicVolume * this.masterVolume * this.lpfVolumeMultiplier;
-    const startTime = performance.now();
-    const animate = () => {
-      const elapsed = (performance.now() - startTime) / 1000;
-      const progress = Math.min(elapsed / duration, 1);
-      sound.setVolume(progress * targetVolume);
-      if (progress < 1) requestAnimationFrame(animate);
+    void sound;
+    if (this.busFadeRafId !== null) {
+      cancelAnimationFrame(this.busFadeRafId);
+      this.busFadeRafId = null;
+    }
+
+    const start = performance.now();
+    const durationMs = Math.max(80, duration * 1000);
+    this.setMusicBusGain(0);
+
+    const step = () => {
+      const elapsed = performance.now() - start;
+      const t = Math.max(0, Math.min(1, elapsed / durationMs));
+      const eased = t * t * (3 - 2 * t);
+      this.setMusicBusGain(eased);
+      if (t < 1) {
+        this.busFadeRafId = requestAnimationFrame(step);
+      } else {
+        this.busFadeRafId = null;
+        this.setMusicBusGain(1);
+      }
     };
-    animate();
+    this.busFadeRafId = requestAnimationFrame(step);
   }
 
   private fadeOut(sound: Sound, duration: number): void {
@@ -211,15 +263,23 @@ export class MusicManager {
 
   stop(): void {
     if (this.currentTrack) this.currentTrack.stop();
+    this.setMusicBusGain(1);
   }
 
   resume(): void {
     if (this.currentTrack) this.currentTrack.play();
+    this.setMusicBusGain(1);
   }
 
   dispose(): void {
+    if (this.busFadeRafId !== null) {
+      cancelAnimationFrame(this.busFadeRafId);
+      this.busFadeRafId = null;
+    }
     this.tracks.forEach(track => track.dispose());
     this.tracks.clear();
     this.currentTrack = undefined;
+    this.musicGainNode = undefined;
+    this.filterNode = undefined;
   }
 }
