@@ -337,6 +337,7 @@ export class PlayerController {
   private catContactDamage: number = 260;
   private keyboardOnlyMode: boolean = false;
   private autoAimTowardMovement: boolean = true;
+  private wasAutoFiringLastFrame: boolean = false;
   private enemies: EnemyController[] = [];
   private enemiesPresent: boolean = false;
   private unsubscribeSettings: (() => void) | null = null;
@@ -1040,7 +1041,7 @@ export class PlayerController {
   }
 
   private updateAimDirection(): void {
-    if (this.isTankShieldActive() && (this.inputManager.isMobileMode() || (this.keyboardOnlyMode && this.autoAimTowardMovement))) {
+    if (this.isTankShieldActive() && (this.inputManager.isMobileMode() || this.autoAimTowardMovement)) {
       let nearestThreatDir: Vector3 | null = null;
       let nearestDistanceSq = Number.MAX_VALUE;
 
@@ -1105,7 +1106,7 @@ export class PlayerController {
       return;
     }
 
-    if (this.keyboardOnlyMode && this.autoAimTowardMovement) {
+    if (this.autoAimTowardMovement && !this.inputManager.isMobileMode()) {
       // Prioritize nearest enemy for auto-aim
       const nearest = this.getNearestEnemy(this.enemies);
       if (nearest) {
@@ -1420,7 +1421,18 @@ export class PlayerController {
     const isInUltimate = this.rogueUltimateActive || this.tankUltimateActive;
     const hasEnemies = this.enemiesPresent || this.enemies.some(e => e.isActive());
 
-    this.inputSlot1Held = this.inputManager.isAttackSlotHeld(1) || leftHeld;
+    // PC Auto-Aim & Auto-Fire: fire automatically when enemies present, not in stance
+    if (this.autoAimTowardMovement && !this.inputManager.isMobileMode()) {
+      const inStance = this.secondaryActive || this.tankShieldActive || this.rogueStealthActive || isInUltimate;
+      const shouldAutoFire = hasEnemies && !inStance;
+      if (shouldAutoFire) {
+        this.inputSlot1Held = true;
+        this.inputSlot1Pressed = !this.wasAutoFiringLastFrame;
+      }
+      this.wasAutoFiringLastFrame = shouldAutoFire;
+    } else if (!this.inputManager.isMobileMode()) {
+      this.wasAutoFiringLastFrame = false;
+    }
 
     const slot1Held = this.inputSlot1Held;
     const slot1Pressed = this.inputSlot1Pressed;

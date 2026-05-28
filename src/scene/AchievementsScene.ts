@@ -427,13 +427,13 @@ export class AchievementsScene {
     const leftNavBtn = UIFactory.createTerminalButton('achNavLeft', '<', `${navButtonWidth}px`, `${navButtonHeight}px`);
     if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontSize = isMobileLayout ? 25 : 22;
     if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontFamily = 'Wonder8Bit';
-    this.bindGlitchButton(leftNavBtn, '<', () => this.navigateBy(-1));
+    this.bindGlitchButton(leftNavBtn, '<', () => this.navigateBy(-1), { silent: true });
     navRow.addControl(leftNavBtn);
 
     const rightNavBtn = UIFactory.createTerminalButton('achNavRight', '>', `${navButtonWidth}px`, `${navButtonHeight}px`);
     if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontSize = isMobileLayout ? 25 : 22;
     if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontFamily = 'Wonder8Bit';
-    this.bindGlitchButton(rightNavBtn, '>', () => this.navigateBy(1));
+    this.bindGlitchButton(rightNavBtn, '>', () => this.navigateBy(1), { silent: true });
     navRow.addControl(rightNavBtn);
   }
 
@@ -693,12 +693,12 @@ export class AchievementsScene {
     playUiSelectClick(0.8);
   }
 
-  private bindGlitchButton(button: Button, label: string, onAction: () => void): void {
+  private bindGlitchButton(button: Button, label: string, onAction: () => void, options?: { silent?: boolean }): void {
     button.isPointerBlocker = true;
     button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
     DaemonGlitchFx.injectWithOptions(button, label, () => {
-      this.playUiClickSound();
+      if (!options?.silent) this.playUiClickSound();
       onAction();
     }, { clickDelayMs: 170, enableHoverGlitch: false });
   }

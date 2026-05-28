@@ -5403,13 +5403,10 @@ export class HUDManager {
     let isDraggingLeft = false;
     let leftPointerId = -1;
     const maxRadius = joystickBgSize / 2;
-    const getJoystickHalfSize = () => {
-      const w = leftJoystickContainer.widthInPixels || joystickSize;
-      const h = leftJoystickContainer.heightInPixels || joystickSize;
-      return { halfW: w / 2, halfH: h / 2 };
-    };
+    const joystickCenterX = leftMargin + joystickSize / 2;
+    const joystickCenterY = idealHeight - Math.max(0, bottomSafe - joystickLowerOffset) - joystickSize / 2;
 
-    const toJoystickLocal = (clientX: number, clientY: number, result: Vector2): void => {
+    const getIdealPointerCoords = (clientX: number, clientY: number, result: Vector2): void => {
       const engine = this.scene.getEngine();
       const canvas = engine.getRenderingCanvas();
       if (!canvas) return;
@@ -5418,11 +5415,23 @@ export class HUDManager {
       const sy = canvas.height / (rect.height || 1);
       const renderX = (clientX - rect.left) * sx;
       const renderY = (clientY - rect.top)  * sy;
-      // Maps render-pixel canvas coords → control local space.
-      leftJoystickContainer.getLocalCoordinatesToRef(new Vector2(renderX, renderY), result);
-      const { halfW, halfH } = getJoystickHalfSize();
-      result.x -= halfW;
-      result.y -= halfH;
+
+      const idealW = this.guiClean.idealWidth || 1920;
+      const idealH = this.guiClean.idealHeight || 1080;
+      const scaleX = canvas.width / idealW;
+      const scaleY = canvas.height / idealH;
+      const guiScale = Math.min(scaleX, scaleY);
+      const offsetX = (canvas.width - idealW * guiScale) / 2;
+      const offsetY = (canvas.height - idealH * guiScale) / 2;
+
+      result.x = (renderX - offsetX) / guiScale;
+      result.y = (renderY - offsetY) / guiScale;
+    };
+
+    const toJoystickLocal = (clientX: number, clientY: number, result: Vector2): void => {
+      getIdealPointerCoords(clientX, clientY, result);
+      result.x -= joystickCenterX;
+      result.y -= joystickCenterY;
     };
 
     const applyJoystickInput = (localX: number, localY: number) => {
@@ -5462,21 +5471,13 @@ export class HUDManager {
     };
     this.resetMobileJoystick = resetLeftJoystick;
 
+    const joystickHalfSize = joystickSize / 2;
     const isInsideJoystick = (clientX: number, clientY: number): boolean => {
-      const engine = this.scene.getEngine();
-      const canvas = engine.getRenderingCanvas();
-      if (!canvas) return false;
-      const rect  = canvas.getBoundingClientRect();
-      const sx    = canvas.width  / (rect.width  || 1);
-      const sy    = canvas.height / (rect.height || 1);
-      const renderX = (clientX - rect.left) * sx;
-      const renderY = (clientY - rect.top)  * sy;
-      const local   = new Vector2();
-      leftJoystickContainer.getLocalCoordinatesToRef(new Vector2(renderX, renderY), local);
-      const { halfW, halfH } = getJoystickHalfSize();
-      const centeredX = local.x - halfW;
-      const centeredY = local.y - halfH;
-      return centeredX >= -halfW && centeredX <= halfW && centeredY >= -halfH && centeredY <= halfH;
+      const coords = new Vector2();
+      getIdealPointerCoords(clientX, clientY, coords);
+      const dx = coords.x - joystickCenterX;
+      const dy = coords.y - joystickCenterY;
+      return Math.abs(dx) <= joystickHalfSize && Math.abs(dy) <= joystickHalfSize;
     };
 
     // Global scene observer — supports multi-touch, works outside container bounds

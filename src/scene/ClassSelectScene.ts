@@ -452,7 +452,7 @@ export class ClassSelectScene {
     navPanel.addControl(navRow);
 
     const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', `${isMobileLayout ? 120 : 108}px`, `${menuButtonH}px`);
-    this.bindGlitchButton(leftBtn, '<', () => this.rotateCarousel(1));
+    this.bindGlitchButton(leftBtn, '<', () => this.rotateCarousel(1), { silent: true });
     if (leftBtn.textBlock) leftBtn.textBlock.fontSize = menuButtonFont;
     if (leftBtn.textBlock) leftBtn.textBlock.fontFamily = 'Wonder8Bit';
     navRow.addControl(leftBtn);
@@ -466,7 +466,7 @@ export class ClassSelectScene {
     navRow.addControl(startButton);
 
     const rightBtn = UIFactory.createTerminalButton('classSelectRight', '>', `${isMobileLayout ? 120 : 108}px`, `${menuButtonH}px`);
-    this.bindGlitchButton(rightBtn, '>', () => this.rotateCarousel(-1));
+    this.bindGlitchButton(rightBtn, '>', () => this.rotateCarousel(-1), { silent: true });
     if (rightBtn.textBlock) rightBtn.textBlock.fontSize = menuButtonFont;
     if (rightBtn.textBlock) rightBtn.textBlock.fontFamily = 'Wonder8Bit';
     navRow.addControl(rightBtn);
@@ -1768,12 +1768,12 @@ export class ClassSelectScene {
     playUiSelectClick(0.8);
   }
 
-  private bindGlitchButton(button: Button, label: string, onAction: () => void): void {
+  private bindGlitchButton(button: Button, label: string, onAction: () => void, options?: { silent?: boolean }): void {
     button.isPointerBlocker = true;
     button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
     DaemonGlitchFx.injectWithOptions(button, label, () => {
-      this.playUiClickSound();
+      if (!options?.silent) this.playUiClickSound();
       onAction();
     }, { clickDelayMs: 170, enableHoverGlitch: false });
   }

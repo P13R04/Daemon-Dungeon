@@ -42,7 +42,7 @@ export class SettingsMenuBuilder {
   private keybindButtons: Partial<Record<KeybindingAction, Button>> = {};
   private audioSliders: Partial<Record<AudioChannel, Slider>> = {};
   private audioValueTexts: Partial<Record<AudioChannel, TextBlock>> = {};
-  private keyboardOnlyCheckbox: Checkbox | null = null;
+
   private autoAimCheckbox: Checkbox | null = null;
   private colorFilterButton: Button | null = null;
   private catGodModeCheckbox: Checkbox | null = null;
@@ -169,8 +169,11 @@ export class SettingsMenuBuilder {
     content.width = 1;
     scroll.addControl(content);
 
-    this.addGameplaySection(content);
     this.addAudioSection(content);
+    if (!this.isMobileLayout) {
+      this.addControlsSection(content);
+    }
+    this.addPerformanceSection(content);
     this.addAccessibilitySection(content);
     this.createResetProgressConfirmOverlay(overlay);
     
@@ -179,8 +182,40 @@ export class SettingsMenuBuilder {
     return overlay;
   }
 
-  private addGameplaySection(parent: StackPanel): void {
-    parent.addControl(this.makeSectionHeader('GAMEPLAY'));
+  private addControlsSection(parent: StackPanel): void {
+    parent.addControl(this.makeSectionHeader('CONTROLS'));
+
+    for (const descriptor of ACTION_LABELS) {
+      parent.addControl(this.makeKeybindRow(descriptor.action, descriptor.label));
+    }
+
+    parent.addControl(this.makeToggleRow(
+      'Auto-Aim & Auto-Fire',
+      '',
+      (checkbox) => {
+        this.autoAimCheckbox = checkbox;
+        checkbox.onIsCheckedChangedObservable.add((isChecked) => {
+          if (this.isRefreshingUi) return;
+          GameSettingsStore.updateControls({ autoAimTowardMovement: !!isChecked });
+        });
+      }
+    ));
+
+    if (!import.meta.env.PROD) {
+      parent.addControl(this.makeActionRow(
+        'Automated Benchmark',
+        '',
+        'RUN BENCHMARK',
+        () => {
+          this.awaitingRebind = null;
+          this.onBenchmarkRequested();
+        }
+      ));
+    }
+  }
+
+  private addPerformanceSection(parent: StackPanel): void {
+    parent.addControl(this.makeSectionHeader('PERFORMANCE'));
 
     parent.addControl(this.makeToggleRow(
       'Lightweight Procedural Texture Mode',
@@ -233,48 +268,6 @@ export class SettingsMenuBuilder {
         });
       },
     ));
-
-    parent.addControl(this.makeSectionHeader('CONTROLS'));
-
-    for (const descriptor of ACTION_LABELS) {
-      parent.addControl(this.makeKeybindRow(descriptor.action, descriptor.label));
-    }
-
-    parent.addControl(this.makeToggleRow(
-      'Keyboard-Only Mode',
-      '',
-      (checkbox) => {
-        this.keyboardOnlyCheckbox = checkbox;
-        checkbox.onIsCheckedChangedObservable.add((isChecked) => {
-          if (this.isRefreshingUi) return;
-          GameSettingsStore.updateControls({ keyboardOnlyMode: !!isChecked });
-        });
-      }
-    ));
-
-    parent.addControl(this.makeToggleRow(
-      'Auto Aim On Movement (8 directions)',
-      '',
-      (checkbox) => {
-        this.autoAimCheckbox = checkbox;
-        checkbox.onIsCheckedChangedObservable.add((isChecked) => {
-          if (this.isRefreshingUi) return;
-          GameSettingsStore.updateControls({ autoAimTowardMovement: !!isChecked });
-        });
-      }
-    ));
-
-    if (!import.meta.env.PROD) {
-      parent.addControl(this.makeActionRow(
-        'Automated Benchmark',
-        '',
-        'RUN BENCHMARK',
-        () => {
-          this.awaitingRebind = null;
-          this.onBenchmarkRequested();
-        }
-      ));
-    }
   }
 
   private addAudioSection(parent: StackPanel): void {
@@ -796,7 +789,7 @@ export class SettingsMenuBuilder {
       }
     }
 
-    if (this.keyboardOnlyCheckbox) this.keyboardOnlyCheckbox.isChecked = !!this.settingsSnapshot.controls.keyboardOnlyMode;
+
     if (this.autoAimCheckbox) this.autoAimCheckbox.isChecked = !!this.settingsSnapshot.controls.autoAimTowardMovement;
 
     if (this.lightweightTexturesCheckbox) this.lightweightTexturesCheckbox.isChecked = !!this.settingsSnapshot.graphics.lightweightTexturesMode;

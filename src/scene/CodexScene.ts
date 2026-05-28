@@ -437,13 +437,13 @@ export class CodexScene {
     mainLayoutContainer.addControl(navRow);
 
     const leftNavBtn = UIFactory.createTerminalButton('codexNavLeft', '<', `${Math.max(navButtonWidth, isMobileLayout ? 132 : 118)}px`, `${Math.max(navButtonHeight, menuButtonHeight)}px`);
-    this.bindGlitchButton(leftNavBtn, '<', () => this.navigateBy(-1));
+    this.bindGlitchButton(leftNavBtn, '<', () => this.navigateBy(-1), { silent: true });
     if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontSize = menuButtonFont;
     if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontFamily = 'Wonder8Bit';
     navRow.addControl(leftNavBtn);
 
     const rightNavBtn = UIFactory.createTerminalButton('codexNavRight', '>', `${Math.max(navButtonWidth, isMobileLayout ? 132 : 118)}px`, `${Math.max(navButtonHeight, menuButtonHeight)}px`);
-    this.bindGlitchButton(rightNavBtn, '>', () => this.navigateBy(1));
+    this.bindGlitchButton(rightNavBtn, '>', () => this.navigateBy(1), { silent: true });
     if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontSize = menuButtonFont;
     if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontFamily = 'Wonder8Bit';
     navRow.addControl(rightNavBtn);
@@ -680,12 +680,12 @@ export class CodexScene {
     playUiSelectClick(0.8);
   }
 
-  private bindGlitchButton(button: Button, label: string, onAction: () => void): void {
+  private bindGlitchButton(button: Button, label: string, onAction: () => void, options?: { silent?: boolean }): void {
     button.isPointerBlocker = true;
     button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
     DaemonGlitchFx.injectWithOptions(button, label, () => {
-      this.playUiClickSound();
+      if (!options?.silent) this.playUiClickSound();
       onAction();
     }, { clickDelayMs: 170, enableHoverGlitch: false });
   }

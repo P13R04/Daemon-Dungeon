@@ -376,7 +376,7 @@ export class GameManager {
       this.applyGraphicsSettings(settings);
       this.applyAudioSettings(settings);
       // Update auto-aim HUD badge
-      const autoAimActive = !!settings.controls.keyboardOnlyMode && !!settings.controls.autoAimTowardMovement;
+      const autoAimActive = !!settings.controls.autoAimTowardMovement;
       if (this.hudManager) this.hudManager.setAutoAimIndicator(autoAimActive);
     });
 
