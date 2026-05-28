@@ -39,7 +39,7 @@ interface UltimateZoneData {
 interface UltimateEnemy {
   getPosition(): Vector3;
   getId(): string;
-  takeDamage(amount: number): void;
+  takeDamage(amount: number, options?: { silentFx?: boolean; suppressDamageSfx?: boolean; damageSource?: string }): void;
 }
 
 interface UltimatePlayer {
@@ -52,6 +52,7 @@ class UltimateZone implements IPoolable {
   data: UltimateZoneData | null = null;
   private activeFlag: boolean = false;
   private damagedEnemies: Set<string> = new Set();
+  private enemiesInside: Set<string> = new Set();
   private dotTickTimer: number = 0;
 
   constructor(private scene: Scene) {}
@@ -59,6 +60,7 @@ class UltimateZone implements IPoolable {
   setData(data: Omit<UltimateZoneData, 'timeElapsed'>): void {
     this.data = { ...data, timeElapsed: 0 };
     this.damagedEnemies.clear();
+    this.enemiesInside.clear();
     this.dotTickTimer = 0;
     
     if (!this.mesh) {
@@ -89,6 +91,7 @@ class UltimateZone implements IPoolable {
   reset(): void {
     this.data = null;
     this.damagedEnemies.clear();
+    this.enemiesInside.clear();
     if (this.mesh) {
       this.mesh.position = new Vector3(0, -100, 0);
     }
@@ -111,6 +114,15 @@ class UltimateZone implements IPoolable {
 
   markEnemyHit(enemyId: string): void {
     this.damagedEnemies.add(enemyId);
+  }
+
+  wasEnemyInside(enemyId: string): boolean {
+    return this.enemiesInside.has(enemyId);
+  }
+
+  setEnemyInside(enemyId: string, inside: boolean): void {
+    if (inside) this.enemiesInside.add(enemyId);
+    else this.enemiesInside.delete(enemyId);
   }
 
   getTickDamage(): number {
@@ -189,15 +201,26 @@ export class UltimateManager {
 
       // Apply DOT to enemies in radius
       for (const enemy of enemies) {
+        const enemyId = enemy.getId();
         const distance = Vector3.Distance(zone.data.position, enemy.getPosition());
         if (distance <= zone.data.radius) {
-          if (!zone.hasHitEnemy(enemy.getId())) {
-            zone.markEnemyHit(enemy.getId());
+          const wasInside = zone.wasEnemyInside(enemyId);
+          zone.setEnemyInside(enemyId, true);
+
+          if (!zone.hasHitEnemy(enemyId)) {
+            zone.markEnemyHit(enemyId);
           }
-          
+
           // Apply tick damage
           const tickDamage = zone.getTickDamage() * zone.data.dotTickRate;
-          enemy.takeDamage(tickDamage);
+          enemy.takeDamage(tickDamage, {
+            silentFx: wasInside,
+            suppressDamageSfx: wasInside,
+            damageSource: 'ultimate_zone_tick',
+          });
+        } else if (zone.wasEnemyInside(enemyId)) {
+          // Leaving then re-entering should replay entry-hit SFX once.
+          zone.setEnemyInside(enemyId, false);
         }
       }
 

@@ -951,7 +951,7 @@ export class GameManager {
       (reason) => this.eventCoordinator.emitPlayerDied(reason),
     );
     
-    this.daemonVoicelineManager = new DaemonVoicelineManager(this.eventBus);
+    this.daemonVoicelineManager = new DaemonVoicelineManager(this.eventBus, () => this.runEconomy.getCurrency());
     this.daemonVoicelineManager.setPlayerClass(this.selectedClassId === 'cat' ? 'rogue' : this.selectedClassId as any);
     this.daemonVoicelineManager.setOnVoicelineSelected((vl, forceCrash) => {
       if (this.isTutorialRun) return; // Tutorial uses only scripted lines
@@ -1528,6 +1528,7 @@ export class GameManager {
 
     this.eventBus.on(GameEvents.ENEMY_DAMAGED, (data: any) => {
       if (!this.audioManager) return;
+      if (data?.sfxSuppressed === true) return;
       const enemyType = data?.enemyType as string;
       if (!enemyType) return;
       const soundMap: Record<string, string> = {

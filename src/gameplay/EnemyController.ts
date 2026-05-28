@@ -721,7 +721,7 @@ export class EnemyController {
         const dot = this.dots[i];
         const dmg = dot.dps * deltaTime;
         if (dmg > 0) {
-          this.takeDamage(dmg, { silentFx: true });
+          this.takeDamage(dmg, { silentFx: true, suppressDamageSfx: true, damageSource: 'dot' });
         }
         dot.remaining -= deltaTime;
         if (dot.remaining <= 0) {
@@ -2809,7 +2809,7 @@ export class EnemyController {
     }
   }
 
-  takeDamage(amount: number, options?: { silentFx?: boolean }): void {
+  takeDamage(amount: number, options?: { silentFx?: boolean; suppressDamageSfx?: boolean; damageSource?: string }): void {
     if (EnemyController.tutorialDamageGate && !EnemyController.tutorialDamageGate(this, amount)) {
       return;
     }
@@ -2827,6 +2827,8 @@ export class EnemyController {
       enemyType: this.typeId,
       damage: amount,
       position: this.position.clone(),
+      sfxSuppressed: options?.suppressDamageSfx === true,
+      damageSource: options?.damageSource ?? null,
     });
 
     if (this.health.getCurrentHP() <= 0) {
