@@ -1132,8 +1132,7 @@ export class HUDManager {
     this.autoAimLabel.left = 16;
     this.autoAimLabel.top = 148;
     this.autoAimLabel.width = '240px';
-    this.autoAimlabel.height = '20px';
-      label.fontFamily = 'Arcade8Bit';
+    this.autoAimLabel.height = '20px';
     this.autoAimLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.autoAimLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.autoAimLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
