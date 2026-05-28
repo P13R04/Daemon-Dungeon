@@ -1,23 +1,24 @@
 export const UITheme = {
   colors: {
     bgVoid: 'rgba(4, 8, 15, 0.95)',
-    bgPanel: 'rgba(10, 24, 34, 0.85)',
-    bgPanelSolid: '#0A1822',
+    bgPanel: 'rgba(8, 22, 34, 0.88)',
+    bgPanelSolid: '#081622',
+    buttonBg: 'rgba(6, 16, 28, 0.98)',
     
-    borderBright: '#00F0FF',
-    borderDim: '#1A4B5C',
+    borderBright: '#5AA7FF',
+    borderDim: '#17415A',
     
-    textHighlight: '#39FF14', // Matrix green
-    textNormal: '#CFFCF3', // Light cyan
-    textDim: '#5B8A88', // Muted text
+    textHighlight: '#B4D8FF', // Bright blue
+    textNormal: '#EAF9FF', // Light icy white
+    textDim: '#7B9BA8', // Muted blue-grey
     
     danger: '#FF003C', // Magenta/Red for destructive or boss elements
     dangerDim: '#660018',
     
-    hoverBg: 'rgba(0, 240, 255, 0.15)',
+    hoverBg: 'rgba(0, 212, 255, 0.18)',
     hoverText: '#FFFFFF',
     
-    scrollBar: '#00D4FF',
+    scrollBar: '#5AA7FF',
     scrollBg: 'rgba(5, 16, 20, 0.85)',
   },
   

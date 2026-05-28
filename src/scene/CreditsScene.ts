@@ -311,7 +311,7 @@ export class CreditsScene {
     this.popupText.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.popupBubble.addControl(this.popupText);
 
-    const backButton = Button.CreateSimpleButton('creditsBackButton', 'BACK TO MAIN MENU');
+    const backButton = Button.CreateSimpleButton('creditsBackButton', 'BACK');
     backButton.width = '330px';
     backButton.height = '62px';
     backButton.cornerRadius = 8;
@@ -319,10 +319,11 @@ export class CreditsScene {
     backButton.background = 'rgba(10, 30, 38, 0.94)';
     backButton.thickness = 2;
     backButton.fontSize = 30;
-    backButton.fontFamily = 'Arcade8Bit';
+    backButton.fontFamily = 'Wonder8Bit';
     backButton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     backButton.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     backButton.top = '84%';
+    if (backButton.textBlock) backButton.textBlock.color = '#FFFFFF';
     backButton.onPointerClickObservable.add(() => {
       playUiSelectClick(0.8);
       this.onBack();

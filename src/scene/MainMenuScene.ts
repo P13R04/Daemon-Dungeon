@@ -72,6 +72,16 @@ export class MainMenuScene {
   private menuBeatTargets: Control[] = [];
   private menuBeatDaemonTarget: Control | null = null;
   private menuBeatDungeonTarget: Control | null = null;
+  private titlePart1: TextBlock | null = null;
+  private titlePart2: TextBlock | null = null;
+  private titlePart1Container: Rectangle | null = null;
+  private titlePart2Container: Rectangle | null = null;
+  private titlePart1OverlayLetters: TextBlock[] = [];
+  private titlePart2OverlayLetters: TextBlock[] = [];
+  private layoutsCalculated = false;
+  private daemonPixelShift = 11;
+  private dungeonPixelShift = 0;
+  private overlayFontSize = 72;
   private menuBeatFx = new Map<Control, {
     timer: number;
     duration: number;
@@ -88,6 +98,8 @@ export class MainMenuScene {
   private daemonAvatarFrameTime: number = 0;
   private daemonAvatarFrameIndex: number = 0;
   private daemonAvatarIsPressed = false;
+  private daemonCascadeTriggeredThisCycle = false;
+  private daemonCascadePopTimer = 0;
 
   private settingsSnapshot: GameSettings = GameSettingsStore.get();
   private unsubscribeSettings: (() => void) | null = null;
@@ -769,30 +781,103 @@ export class MainMenuScene {
     return `#${rr}${rg}${rb}`;
   }
 
+  private calculateTitleOverlayLayouts(): void {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.font = "72px Wonder8Bit";
+
+    // DAEMON (Right-aligned in 500px container)
+    const daemonWord = 'DAEMON';
+    const totalW1 = ctx.measureText(daemonWord).width;
+    const startX1 = 500 - totalW1;
+
+    for (let i = 0; i < daemonWord.length; i++) {
+      const letter = this.titlePart1OverlayLetters[i];
+      if (letter) {
+        const wBefore = ctx.measureText(daemonWord.substring(0, i)).width;
+        const wWithChar = ctx.measureText(daemonWord.substring(0, i + 1)).width;
+        const charW = wWithChar - wBefore;
+
+        letter.width = `${charW}px`;
+        letter.left = `${startX1 + wBefore + this.daemonPixelShift}px`;
+      }
+    }
+
+    // DUNGEON (Left-aligned in 500px container)
+    const dungeonWord = 'DUNGEON';
+    const startX2 = 0;
+
+    for (let i = 0; i < dungeonWord.length; i++) {
+      const letter = this.titlePart2OverlayLetters[i];
+      if (letter) {
+        const wBefore = ctx.measureText(dungeonWord.substring(0, i)).width;
+        const wWithChar = ctx.measureText(dungeonWord.substring(0, i + 1)).width;
+        const charW = wWithChar - wBefore;
+
+        letter.width = `${charW}px`;
+        letter.left = `${startX2 + wBefore + this.dungeonPixelShift}px`;
+      }
+    }
+  }
+
+
+
   private createMainButtons(): void {
+    const panelHeight = Math.round(Math.min(720, Math.max(560, this.layoutHeight * 0.78)));
+    const titleTopVal = Math.round(this.layoutHeight * 0.225 + panelHeight * 0.25);
+
     const titleContainer = new Rectangle('titleContainer');
     titleContainer.thickness = 0;
     titleContainer.width = '1200px';
-    titleContainer.height = '120px';
-    titleContainer.top = `-${Math.round(this.layoutHeight * 0.44)}px`;
+    titleContainer.height = '180px';
+    titleContainer.top = `-${titleTopVal}px`;
     titleContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    titleContainer.clipChildren = false;
     this.mainLayoutContainer.addControl(titleContainer);
+
+    const titlePart1Container = new Rectangle('titlePart1Container');
+    titlePart1Container.width = '500px';
+    titlePart1Container.height = '180px';
+    titlePart1Container.thickness = 0;
+    titlePart1Container.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    titlePart1Container.clipChildren = false;
+    titleContainer.addControl(titlePart1Container);
+    this.titlePart1Container = titlePart1Container;
 
     const titlePart1 = UIFactory.createText('menuTitle1', 'DAEMON', 72, UITheme.colors.textHighlight);
     titlePart1.fontFamily = 'Wonder8Bit';
     titlePart1.textWrapping = false;
     titlePart1.width = '500px';
-    titlePart1.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    titlePart1.height = '180px';
+    titlePart1.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     titlePart1.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    titleContainer.addControl(titlePart1);
-    this.menuBeatTargets.push(titlePart1);
-    this.menuBeatDaemonTarget = titlePart1;
+    titlePart1.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    titlePart1Container.addControl(titlePart1);
+    this.titlePart1 = titlePart1;
+    this.menuBeatTargets.push(titlePart1Container);
+    this.menuBeatDaemonTarget = titlePart1Container;
+
+    // Create separate letter overlays for DAEMON (to be positioned precisely on layout calculation)
+    const daemonWord = 'DAEMON';
+    for (let i = 0; i < daemonWord.length; i++) {
+      const letter = UIFactory.createText(`menuTitle1_overlay_${i}`, daemonWord[i], this.overlayFontSize, '#B800FF');
+      letter.fontFamily = 'Wonder8Bit';
+      letter.textWrapping = false;
+      letter.height = '180px';
+      letter.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      letter.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      letter.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+      letter.isVisible = false;
+      titlePart1Container.addControl(letter);
+      this.titlePart1OverlayLetters.push(letter);
+    }
 
     const daemonFrames: Image[] = [];
     for (let i = 1; i <= 4; i++) {
       const frame = new Image(`daemonAvatar${i}`, buildHudAssetUrl(`avatar_frames_cutout2/rire_0${i}.png`));
-      frame.width = '100px';
-      frame.height = '100px';
+      frame.width = '150px';
+      frame.height = '150px';
       frame.stretch = Image.STRETCH_UNIFORM;
       frame.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
       frame.isVisible = (i === 1);
@@ -802,8 +887,8 @@ export class MainMenuScene {
     this.daemonAvatarFrames = daemonFrames;
 
     const avatarHitbox = Button.CreateSimpleButton('daemonAvatarHitbox', '');
-    avatarHitbox.width = '116px';
-    avatarHitbox.height = '116px';
+    avatarHitbox.width = '174px';
+    avatarHitbox.height = '174px';
     avatarHitbox.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     avatarHitbox.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     avatarHitbox.thickness = 0;
@@ -836,17 +921,44 @@ export class MainMenuScene {
     });
     titleContainer.addControl(avatarHitbox);
 
+    const titlePart2Container = new Rectangle('titlePart2Container');
+    titlePart2Container.width = '500px';
+    titlePart2Container.height = '180px';
+    titlePart2Container.thickness = 0;
+    titlePart2Container.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    titlePart2Container.clipChildren = false;
+    titleContainer.addControl(titlePart2Container);
+    this.titlePart2Container = titlePart2Container;
+
     const titlePart2 = UIFactory.createText('menuTitle2', 'DUNGEON', 72, UITheme.colors.textHighlight);
     titlePart2.fontFamily = 'Wonder8Bit';
     titlePart2.textWrapping = false;
     titlePart2.width = '500px';
-    titlePart2.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    titlePart2.height = '180px';
+    titlePart2.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titlePart2.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    titleContainer.addControl(titlePart2);
-    this.menuBeatTargets.push(titlePart2);
-    this.menuBeatDungeonTarget = titlePart2;
+    titlePart2.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    titlePart2Container.addControl(titlePart2);
+    this.titlePart2 = titlePart2;
+    this.menuBeatTargets.push(titlePart2Container);
+    this.menuBeatDungeonTarget = titlePart2Container;
 
-    // Title flicker animation — slow oscillation between highlight colors
+    // Create separate letter overlays for DUNGEON (to be positioned precisely on layout calculation)
+    const dungeonWord = 'DUNGEON';
+    for (let i = 0; i < dungeonWord.length; i++) {
+      const letter = UIFactory.createText(`menuTitle2_overlay_${i}`, dungeonWord[i], this.overlayFontSize, '#B800FF');
+      letter.fontFamily = 'Wonder8Bit';
+      letter.textWrapping = false;
+      letter.height = '180px';
+      letter.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      letter.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      letter.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+      letter.isVisible = false;
+      titlePart2Container.addControl(letter);
+      this.titlePart2OverlayLetters.push(letter);
+    }
+
+    // Title flicker animation — slow oscillation between highlight colors + letter-by-letter violet cascade
     this.scene.onBeforeRenderObservable.add(() => {
       this.titleFlickerTime += this.scene.getEngine().getDeltaTime();
       const t = this.titleFlickerTime;
@@ -867,32 +979,97 @@ export class MainMenuScene {
         }
       }
 
-      // Slow pulse: green -> cyan -> white, very subtle, period ~6s
+      // Compute layouts once the font is loaded to ensure accurate measurements
+      if (!this.layoutsCalculated && document.fonts.check("72px Wonder8Bit")) {
+        this.calculateTitleOverlayLayouts();
+        this.layoutsCalculated = true;
+      }
+
+      // Slow pulse: White -> Electric Cyan, period ~6s
       const phase = (t * 0.001) % (Math.PI * 2);
       const pulse = Math.sin(phase);
-      let newColor = '';
-      if (pulse > 0.7) {
-        newColor = '#FFFFFF';
-      } else if (pulse > 0.2) {
-        newColor = UITheme.colors.borderBright; // cyan
+      const baseColor = pulse > 0 ? '#FFFFFF' : '#00E5FF';
+
+      // Cascade of violet letters: runs every 5 seconds, divided into 14 steps (120ms each)
+      // Steps 0-5: DAEMON letters
+      // Step 6: Daemon Avatar Pop & Emotion Change (middle of the cascade)
+      // Steps 7-13: DUNGEON letters
+      const cascadePeriod = 5000;
+      const stepDuration = 120;
+      const totalSteps = 14;
+      const totalCascadeDuration = totalSteps * stepDuration; // 14 * 120 = 1680ms
+      const cycleTime = t % cascadePeriod;
+      const activeStepIndex = cycleTime < totalCascadeDuration
+        ? Math.floor(cycleTime / stepDuration)
+        : -1;
+
+      // Update DAEMON overlay letters visibility (steps 0-5)
+      for (let i = 0; i < this.titlePart1OverlayLetters.length; i++) {
+        const overlay = this.titlePart1OverlayLetters[i];
+        if (overlay) {
+          overlay.isVisible = (activeStepIndex === i);
+        }
+      }
+
+      // Update DUNGEON overlay letters visibility (steps 7-13, shifted by 7)
+      for (let i = 0; i < this.titlePart2OverlayLetters.length; i++) {
+        const overlay = this.titlePart2OverlayLetters[i];
+        if (overlay) {
+          overlay.isVisible = (activeStepIndex === i + 7);
+        }
+      }
+
+      // Trigger daemon popup at step 6
+      if (activeStepIndex === 6) {
+        if (!this.daemonCascadeTriggeredThisCycle) {
+          this.daemonCascadeTriggeredThisCycle = true;
+          this.daemonCascadePopTimer = 300; // pop duration in ms
+          this.rotateDaemonAvatarPreset();
+        }
       } else {
-        newColor = UITheme.colors.textHighlight; // green
+        this.daemonCascadeTriggeredThisCycle = false;
       }
+
+      // Update daemon popup scale
+      if (this.daemonCascadePopTimer > 0) {
+        this.daemonCascadePopTimer = Math.max(0, this.daemonCascadePopTimer - this.scene.getEngine().getDeltaTime());
+        const scaleVal = this.daemonCascadePopTimer > 0 ? 1.16 : 1;
+        for (const f of this.daemonAvatarFrames) {
+          f.scaleX = scaleVal;
+          f.scaleY = scaleVal;
+        }
+      } else if (!this.daemonAvatarIsPressed) {
+        for (const f of this.daemonAvatarFrames) {
+          f.scaleX = 1;
+          f.scaleY = 1;
+        }
+      }
+
       // Occasional fast flicker — 1-2 frames, ~every 8s
+      let colorPart1 = baseColor;
+      let colorPart2 = baseColor;
       if (Math.random() < 0.0004) {
-        newColor = '#CC00FF'; // daemon magenta flash
+        colorPart1 = '#CC00FF';
+        colorPart2 = '#CC00FF';
       }
-      titlePart1.color = newColor;
-      titlePart2.color = newColor;
+
+      // Apply colors to the text blocks (considering active beat fx)
+      const fx1 = this.menuBeatFx.get(titlePart1Container);
+      if (fx1) {
+        fx1.baseColor = colorPart1;
+      } else {
+        titlePart1.color = colorPart1;
+      }
+
+      const fx2 = this.menuBeatFx.get(titlePart2Container);
+      if (fx2) {
+        fx2.baseColor = colorPart2;
+      } else {
+        titlePart2.color = colorPart2;
+      }
     });
 
-    const subtitle = UIFactory.createText('menuSubtitle', 'SYSTEM READY // MAIN CONSOLE', 20, UITheme.colors.borderBright);
-    subtitle.top = `-${Math.round(this.layoutHeight * 0.36)}px`;
-    subtitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    this.mainLayoutContainer.addControl(subtitle);
-
     const panelWidth = Math.round(Math.min(760, Math.max(560, this.layoutWidth * 0.58)));
-    const panelHeight = Math.round(Math.min(720, Math.max(560, this.layoutHeight * 0.78)));
     const buttonStep = Math.round((panelHeight / 7) * 0.9);
     this.menuButtonWidth = Math.round(panelWidth * 0.62);
     this.menuButtonHeight = Math.round(Math.max(62, panelHeight * 0.105));
@@ -909,6 +1086,7 @@ export class MainMenuScene {
       this.hidePanels();
       this.onPlayRequested();
     });
+    if (playBtn.textBlock) playBtn.textBlock.color = '#FFFFFF';
     panel.addControl(playBtn);
     this.menuBeatTargets.push(playBtn);
 
@@ -916,6 +1094,7 @@ export class MainMenuScene {
       this.hidePanels();
       this.onTutorialRequested();
     });
+    if (tutorialBtn.textBlock) tutorialBtn.textBlock.color = '#FFFFFF';
     panel.addControl(tutorialBtn);
     this.menuBeatTargets.push(tutorialBtn);
 
@@ -970,8 +1149,10 @@ export class MainMenuScene {
       }
 
       if (pulse > 0.2 && this.menuBeatWarmup <= 0 && this.menuBeatCooldown <= 0 && this.menuBeatTargets.length > 0) {
-        if (this.menuBeatChainDungeon && this.menuBeatDungeonTarget) {
-          this.triggerMenuBeatFx(this.menuBeatDungeonTarget, pulse);
+        if (this.menuBeatChainDungeon) {
+          if (this.titlePart2Container) {
+            this.triggerMenuBeatFx(this.titlePart2Container, pulse);
+          }
           this.menuBeatChainDungeon = false;
           this.menuBeatCooldown = 0.04 + Math.random() * 0.045;
           this.updateMenuBeatFx(dt);
@@ -981,14 +1162,17 @@ export class MainMenuScene {
         const triggerChance = 0.56 + Math.min(0.34, pulse * 0.35);
         if (Math.random() < triggerChance) {
           const idx = Math.floor(Math.random() * this.menuBeatTargets.length);
-          let target = this.menuBeatTargets[idx];
-          // Never trigger DUNGEON alone: title sequence must always be DAEMON -> DUNGEON.
-          if (target === this.menuBeatDungeonTarget && this.menuBeatDaemonTarget) {
-            target = this.menuBeatDaemonTarget;
-          }
-          this.triggerMenuBeatFx(target, pulse);
-          if (target === this.menuBeatDaemonTarget && this.menuBeatDungeonTarget) {
+          const target = this.menuBeatTargets[idx];
+          
+          if (target === this.titlePart1Container) {
+            // Trigger DAEMON word beat, and queue DUNGEON word beat next
+            if (this.titlePart1Container) {
+              this.triggerMenuBeatFx(this.titlePart1Container, pulse);
+            }
             this.menuBeatChainDungeon = true;
+          } else {
+            // Trigger regular button beat
+            this.triggerMenuBeatFx(target, pulse);
           }
           this.menuBeatCooldown = 0.07 + Math.random() * 0.1;
         }
@@ -1014,7 +1198,10 @@ export class MainMenuScene {
       baseColor: undefined as string | undefined,
       baseBg: undefined as string | undefined,
     };
-    if (target instanceof TextBlock) {
+    if (target === this.titlePart1Container || target === this.titlePart2Container) {
+      const textBlock = target === this.titlePart1Container ? this.titlePart1 : this.titlePart2;
+      fx.baseColor = textBlock ? textBlock.color : undefined;
+    } else if (target instanceof TextBlock) {
       fx.baseColor = target.color;
     } else if (target instanceof Button) {
       fx.baseColor = target.color;
@@ -1044,11 +1231,20 @@ export class MainMenuScene {
           : easeOut > 0.16
             ? '#FF92B2'
             : (fx.baseColor || UITheme.colors.textHighlight);
+      } else if (target === this.titlePart1Container || target === this.titlePart2Container) {
+        const textBlock = target === this.titlePart1Container ? this.titlePart1 : this.titlePart2;
+        if (textBlock) {
+          textBlock.color = easeOut > 0.42
+            ? '#FF5D75'
+            : easeOut > 0.16
+              ? '#FF92B2'
+              : (fx.baseColor || UITheme.colors.textHighlight);
+        }
       } else if (target instanceof Button) {
-        target.color = easeOut > 0.2 ? '#FF6C86' : (fx.baseColor || '#C8FFF2');
+        target.color = easeOut > 0.2 ? '#FF6C86' : (fx.baseColor || UITheme.colors.borderBright);
         target.background = easeOut > 0.18
           ? 'rgba(72, 14, 24, 0.96)'
-          : (fx.baseBg || 'rgba(22,48,44,0.95)');
+          : (fx.baseBg || UITheme.colors.buttonBg);
         target.thickness = easeOut > 0.14 ? 2 : 1;
       }
 
@@ -1075,7 +1271,12 @@ export class MainMenuScene {
     target.scaleX = fx.baseScaleX;
     target.scaleY = fx.baseScaleY;
     target.rotation = fx.baseRotation;
-    if (target instanceof TextBlock) {
+    if (target === this.titlePart1Container || target === this.titlePart2Container) {
+      const textBlock = target === this.titlePart1Container ? this.titlePart1 : this.titlePart2;
+      if (textBlock) {
+        textBlock.color = fx.baseColor || UITheme.colors.textHighlight;
+      }
+    } else if (target instanceof TextBlock) {
       target.color = fx.baseColor || target.color;
     } else if (target instanceof Button) {
       target.color = fx.baseColor || target.color;
@@ -1107,9 +1308,9 @@ export class MainMenuScene {
 
     const title = new TextBlock('settingsTitle');
     title.text = 'SETTINGS CONSOLE';
-    title.color = '#7CFFEA';
+    title.color = UITheme.colors.textHighlight;
     title.fontSize = Math.round(34 * settingsScale);
-    title.fontFamily = UITheme.fonts.primary;
+    title.fontFamily = 'Wonder8Bit';
     title.top = `-${Math.round(windowHeight * 0.45)}px`;
     windowPanel.addControl(title);
 
@@ -1127,9 +1328,9 @@ export class MainMenuScene {
     const closeBtn = Button.CreateSimpleButton('settingsCloseButton', 'BACK');
     closeBtn.width = `${Math.round(220 * settingsScale)}px`;
     closeBtn.height = `${settingsButtonHeight}px`;
-    closeBtn.color = '#D2FFF2';
+    closeBtn.color = UITheme.colors.textNormal;
     closeBtn.cornerRadius = 4;
-    closeBtn.background = 'rgba(20,38,45,0.95)';
+    closeBtn.background = UITheme.colors.buttonBg;
     closeBtn.thickness = 1;
     closeBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     closeBtn.left = '0px';
@@ -1137,6 +1338,7 @@ export class MainMenuScene {
     closeBtn.isHitTestVisible = true;
     closeBtn.zIndex = 130;
     if (closeBtn.textBlock) closeBtn.textBlock.fontSize = settingsButtonFont;
+    if (closeBtn.textBlock) closeBtn.textBlock.fontFamily = 'Wonder8Bit';
     this.bindButtonAction(closeBtn, () => {
       this.awaitingRebind = null;
       this.closeSettingsOverlay();
@@ -1146,9 +1348,9 @@ export class MainMenuScene {
     const resetBtn = Button.CreateSimpleButton('settingsResetButton', 'RESET DEFAULTS');
     resetBtn.width = `${Math.round(290 * settingsScale)}px`;
     resetBtn.height = `${settingsButtonHeight}px`;
-    resetBtn.color = '#C2FFE2';
+    resetBtn.color = UITheme.colors.textNormal;
     resetBtn.cornerRadius = 4;
-    resetBtn.background = 'rgba(22,48,44,0.95)';
+    resetBtn.background = UITheme.colors.buttonBg;
     resetBtn.thickness = 1;
     resetBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     resetBtn.left = '0px';
@@ -1156,6 +1358,7 @@ export class MainMenuScene {
     resetBtn.isHitTestVisible = true;
     resetBtn.zIndex = 130;
     if (resetBtn.textBlock) resetBtn.textBlock.fontSize = settingsButtonFont;
+    if (resetBtn.textBlock) resetBtn.textBlock.fontFamily = 'Wonder8Bit';
     this.bindButtonAction(resetBtn, () => {
       this.awaitingRebind = null;
       GameSettingsStore.resetToDefaults();
@@ -1304,12 +1507,12 @@ export class MainMenuScene {
     row.height = `${Math.round((this.isMobileLayout ? 78 : 74))}px`;
     row.thickness = 1;
     row.cornerRadius = 4;
-    row.color = '#285148';
-    row.background = 'rgba(8, 19, 24, 0.9)';
+    row.color = UITheme.colors.borderDim;
+    row.background = UITheme.colors.buttonBg;
 
     const label = new TextBlock('accessibilityFilterLabel');
     label.text = 'Color Vision Filter';
-    label.color = '#B9F9E8';
+    label.color = UITheme.colors.textNormal;
     label.fontSize = this.isMobileLayout ? 22 : 20;
     label.fontFamily = UITheme.fonts.primary;
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1320,9 +1523,9 @@ export class MainMenuScene {
     const button = Button.CreateSimpleButton('accessibilityFilterButton', 'NONE');
     button.width = '280px';
     button.height = `${Math.round((this.isMobileLayout ? 46 : 42))}px`;
-    button.color = '#DAFFF3';
+    button.color = UITheme.colors.textNormal;
     button.cornerRadius = 4;
-    button.background = 'rgba(22,48,44,0.95)';
+    button.background = UITheme.colors.buttonBg;
     button.thickness = 1;
     button.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     button.left = '-10px';
@@ -1377,6 +1580,7 @@ export class MainMenuScene {
     resetProgressBtn.isPointerBlocker = true;
     resetProgressBtn.isHitTestVisible = true;
     if (resetProgressBtn.textBlock) resetProgressBtn.textBlock.fontSize = this.menuButtonFontSize;
+    if (resetProgressBtn.textBlock) resetProgressBtn.textBlock.fontFamily = 'Wonder8Bit';
     this.bindButtonAction(resetProgressBtn, () => {
       this.awaitingRebind = null;
       this.showResetProgressConfirmOverlay();
@@ -1436,8 +1640,8 @@ export class MainMenuScene {
     const cancel = Button.CreateSimpleButton('menuResetProgressConfirmCancel', 'CANCEL');
     cancel.width = '220px';
     cancel.height = '48px';
-    cancel.color = '#DDFCF3';
-    cancel.background = 'rgba(22,48,44,0.95)';
+    cancel.color = UITheme.colors.textNormal;
+    cancel.background = UITheme.colors.buttonBg;
     cancel.thickness = 1;
     cancel.cornerRadius = 4;
     if (cancel.textBlock) cancel.textBlock.fontSize = 18;
@@ -1472,13 +1676,13 @@ export class MainMenuScene {
     row.width = '1020px';
     row.height = `${this.isMobileLayout ? 58 : 54}px`;
     row.thickness = 0;
-    row.background = 'rgba(10, 30, 35, 0.6)';
+    row.background = UITheme.colors.buttonBg;
 
     const title = new TextBlock(`sectionHeaderText_${text.replace(/\s+/g, '_')}`);
     title.text = text;
-    title.color = '#7CFFEA';
+    title.color = UITheme.colors.textHighlight;
     title.fontSize = this.isMobileLayout ? 28 : 26;
-    title.fontFamily = UITheme.fonts.primary;
+    title.fontFamily = 'Wonder8Bit';
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     title.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     title.paddingLeft = '12px';
@@ -1490,7 +1694,7 @@ export class MainMenuScene {
   private makeSectionSubText(text: string): TextBlock {
     const info = new TextBlock(`sectionInfo_${text.replace(/\s+/g, '_').slice(0, 18)}`);
     info.text = text;
-    info.color = '#8EC8BD';
+    info.color = UITheme.colors.textDim;
     info.fontSize = 14;
     info.fontFamily = UITheme.fonts.primary;
     info.height = '28px';
@@ -1506,12 +1710,12 @@ export class MainMenuScene {
     row.height = `${Math.max(this.menuButtonHeight + 18, this.isMobileLayout ? 78 : 72)}px`;
     row.thickness = 1;
     row.cornerRadius = 4;
-    row.color = '#285148';
-    row.background = 'rgba(8, 19, 24, 0.9)';
+    row.color = UITheme.colors.borderDim;
+    row.background = UITheme.colors.buttonBg;
 
     const label = new TextBlock(`keybindLabel_${action}`);
     label.text = labelText;
-    label.color = '#B9F9E8';
+    label.color = UITheme.colors.textNormal;
     label.fontSize = this.isMobileLayout ? 22 : 20;
     label.fontFamily = UITheme.fonts.primary;
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1522,9 +1726,9 @@ export class MainMenuScene {
     const keyButton = Button.CreateSimpleButton(`keybindButton_${action}`, '...');
     keyButton.width = `${this.isMobileLayout ? 300 : 270}px`;
     keyButton.height = `${this.menuButtonHeight}px`;
-    keyButton.color = '#E3FFF7';
+    keyButton.color = UITheme.colors.textNormal;
     keyButton.cornerRadius = 4;
-    keyButton.background = 'rgba(22,48,44,0.95)';
+    keyButton.background = UITheme.colors.buttonBg;
     keyButton.thickness = 1;
     keyButton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     keyButton.left = '-10px';
@@ -1549,12 +1753,12 @@ export class MainMenuScene {
     row.height = `${Math.max(this.menuButtonHeight + 18, this.isMobileLayout ? 82 : 76)}px`;
     row.thickness = 1;
     row.cornerRadius = 4;
-    row.color = '#285148';
-    row.background = 'rgba(8, 19, 24, 0.9)';
+    row.color = UITheme.colors.borderDim;
+    row.background = UITheme.colors.buttonBg;
 
     const titleText = new TextBlock(`toggleTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
-    titleText.color = '#B9F9E8';
+    titleText.color = UITheme.colors.textNormal;
     titleText.fontSize = Math.max(this.menuButtonFontSize - 1, this.isMobileLayout ? 22 : 20);
     titleText.fontFamily = UITheme.fonts.primary;
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1566,7 +1770,7 @@ export class MainMenuScene {
     if (details.trim().length > 0) {
       const detailText = new TextBlock(`toggleDetails_${title.replace(/\s+/g, '_')}`);
       detailText.text = details;
-      detailText.color = '#86B9AE';
+      detailText.color = UITheme.colors.textDim;
       detailText.fontSize = this.isMobileLayout ? 15 : 14;
       detailText.fontFamily = UITheme.fonts.primary;
       detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1579,8 +1783,8 @@ export class MainMenuScene {
     const checkbox = new Checkbox(`toggleCheckbox_${title.replace(/\s+/g, '_')}`);
     checkbox.width = `${this.isMobileLayout ? 40 : 36}px`;
     checkbox.height = `${this.isMobileLayout ? 40 : 36}px`;
-    checkbox.color = '#B9F9E8';
-    checkbox.background = '#122D2B';
+    checkbox.color = UITheme.colors.borderBright;
+    checkbox.background = UITheme.colors.bgPanelSolid;
     checkbox.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     checkbox.left = '-24px';
     row.addControl(checkbox);
@@ -1600,12 +1804,12 @@ export class MainMenuScene {
     row.height = `${Math.max(this.menuButtonHeight + 18, this.isMobileLayout ? 82 : 76)}px`;
     row.thickness = 1;
     row.cornerRadius = 4;
-    row.color = '#285148';
-    row.background = 'rgba(8, 19, 24, 0.9)';
+    row.color = UITheme.colors.borderDim;
+    row.background = UITheme.colors.buttonBg;
 
     const titleText = new TextBlock(`actionTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
-    titleText.color = '#B9F9E8';
+    titleText.color = UITheme.colors.textNormal;
     titleText.fontSize = Math.max(this.menuButtonFontSize - 1, this.isMobileLayout ? 22 : 20);
     titleText.fontFamily = UITheme.fonts.primary;
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1617,7 +1821,7 @@ export class MainMenuScene {
     if (details.trim().length > 0) {
       const detailText = new TextBlock(`actionDetails_${title.replace(/\s+/g, '_')}`);
       detailText.text = details;
-      detailText.color = '#86B9AE';
+      detailText.color = UITheme.colors.textDim;
       detailText.fontSize = this.isMobileLayout ? 15 : 14;
       detailText.fontFamily = UITheme.fonts.primary;
       detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1630,9 +1834,9 @@ export class MainMenuScene {
     const actionButton = Button.CreateSimpleButton(`actionButton_${title.replace(/\s+/g, '_')}`, buttonLabel);
     actionButton.width = `${this.isMobileLayout ? 280 : 250}px`;
     actionButton.height = `${this.menuButtonHeight}px`;
-    actionButton.color = '#E3FFF7';
+    actionButton.color = UITheme.colors.textNormal;
     actionButton.cornerRadius = 4;
-    actionButton.background = 'rgba(22,48,44,0.95)';
+    actionButton.background = UITheme.colors.buttonBg;
     actionButton.thickness = 1;
     actionButton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     actionButton.left = '-10px';
@@ -1649,12 +1853,12 @@ export class MainMenuScene {
     row.height = `${Math.max(this.menuButtonHeight + 16, this.isMobileLayout ? 82 : 74)}px`;
     row.thickness = 1;
     row.cornerRadius = 4;
-    row.color = '#285148';
-    row.background = 'rgba(8, 19, 24, 0.9)';
+    row.color = UITheme.colors.borderDim;
+    row.background = UITheme.colors.buttonBg;
 
     const label = new TextBlock(`audioLabel_${channel}`);
     label.text = labelText;
-    label.color = '#B9F9E8';
+    label.color = UITheme.colors.textNormal;
     label.fontSize = Math.max(this.menuButtonFontSize - 1, this.isMobileLayout ? 22 : 20);
     label.fontFamily = UITheme.fonts.primary;
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1677,7 +1881,7 @@ export class MainMenuScene {
 
     const valueText = new TextBlock(`audioValue_${channel}`);
     valueText.text = '100%';
-    valueText.color = '#DFFEF6';
+    valueText.color = UITheme.colors.textHighlight;
     valueText.fontSize = Math.max(this.menuButtonFontSize - 3, this.isMobileLayout ? 19 : 17);
     valueText.fontFamily = UITheme.fonts.primary;
     valueText.width = '80px';
@@ -1705,12 +1909,12 @@ export class MainMenuScene {
     row.height = `${Math.max(this.menuButtonHeight + 16, this.isMobileLayout ? 88 : 78)}px`;
     row.thickness = 1;
     row.cornerRadius = 4;
-    row.color = '#285148';
-    row.background = 'rgba(8, 19, 24, 0.9)';
+    row.color = UITheme.colors.borderDim;
+    row.background = UITheme.colors.buttonBg;
 
     const titleText = new TextBlock(`graphicsNumberTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
-    titleText.color = '#B9F9E8';
+    titleText.color = UITheme.colors.textNormal;
     titleText.fontSize = Math.max(this.menuButtonFontSize - 1, this.isMobileLayout ? 22 : 20);
     titleText.fontFamily = UITheme.fonts.primary;
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1722,7 +1926,7 @@ export class MainMenuScene {
     if (details.trim().length > 0) {
       const detailText = new TextBlock(`graphicsNumberDetails_${title.replace(/\s+/g, '_')}`);
       detailText.text = details;
-      detailText.color = '#86B9AE';
+      detailText.color = UITheme.colors.textDim;
       detailText.fontSize = this.isMobileLayout ? 15 : 14;
       detailText.fontFamily = UITheme.fonts.primary;
       detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1741,7 +1945,7 @@ export class MainMenuScene {
 
     const valueText = new TextBlock(`graphicsNumberValue_${title.replace(/\s+/g, '_')}`);
     valueText.text = `${min}`;
-    valueText.color = '#DFFEF6';
+    valueText.color = UITheme.colors.textHighlight;
     valueText.fontSize = Math.max(this.menuButtonFontSize - 4, this.isMobileLayout ? 18 : 16);
     valueText.fontFamily = UITheme.fonts.primary;
     valueText.width = '120px';
@@ -1765,10 +1969,12 @@ export class MainMenuScene {
       if (this.awaitingRebind === descriptor.action) {
         button.textBlock!.text = 'PRESS A KEY...';
         button.background = 'rgba(90, 44, 14, 0.95)';
+        (button as any).__daemonBaseBackground = 'rgba(90, 44, 14, 0.95)';
       } else {
         const binding = this.settingsSnapshot.controls.keybindings[descriptor.action];
         button.textBlock!.text = formatInputKeyLabel(binding);
-        button.background = 'rgba(22,48,44,0.95)';
+        button.background = UITheme.colors.buttonBg;
+        (button as any).__daemonBaseBackground = UITheme.colors.buttonBg;
       }
     }
 
@@ -1776,7 +1982,7 @@ export class MainMenuScene {
       this.captureHintText.text = this.awaitingRebind
         ? `Capturing: ${this.getActionDisplayName(this.awaitingRebind)}  (ESC to cancel)`
         : '';
-      this.captureHintText.color = this.awaitingRebind ? '#FFD092' : '#8CC6BD';
+      this.captureHintText.color = this.awaitingRebind ? '#FFD092' : UITheme.colors.textDim;
     }
 
     if (this.keyboardOnlyCheckbox) {
@@ -1851,6 +2057,7 @@ export class MainMenuScene {
     button.top = `${top}px`;
     if (button.textBlock) {
       button.textBlock.fontSize = this.menuButtonFontSize;
+      button.textBlock.fontFamily = 'Wonder8Bit';
     }
     button.zIndex = 50;
     button.isPointerBlocker = true;
@@ -1860,7 +2067,7 @@ export class MainMenuScene {
     DaemonGlitchFx.injectWithOptions(button, label, () => {
       playUiSelectClick(0.82);
       window.setTimeout(() => onClick(), 36);
-    }, { clickDelayMs: 240, enableHoverGlitch: false });
+    }, { clickDelayMs: 240, enableHoverGlitch: false, hoverBackground: UITheme.colors.hoverBg });
     return button;
   }
 

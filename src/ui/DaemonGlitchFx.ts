@@ -32,10 +32,22 @@ export class DaemonGlitchFx {
     btn: Button,
     label: string,
     onClick: () => void,
-    options?: { clickDelayMs?: number; enableHoverGlitch?: boolean }
+    options?: { clickDelayMs?: number; enableHoverGlitch?: boolean; hoverBackground?: string }
   ): void {
     const clickDelay = Math.max(0, options?.clickDelayMs ?? 220);
     const enableHoverGlitch = options?.enableHoverGlitch !== false;
+    const hoverBackground = options?.hoverBackground ?? UITheme.colors.hoverBg;
+    const baseBackground = (btn as Button & { __daemonBaseBackground?: string }).__daemonBaseBackground
+      ?? btn.background;
+    const baseColor = (btn as Button & { __daemonBaseColor?: string }).__daemonBaseColor
+      ?? btn.color;
+    const baseTextColor = btn.textBlock?.color;
+
+    (btn as Button & { __daemonBaseBackground?: string }).__daemonBaseBackground = baseBackground;
+    (btn as Button & { __daemonBaseColor?: string }).__daemonBaseColor = baseColor;
+    if (btn.textBlock) {
+      (btn.textBlock as TextBlock & { __daemonBaseColor?: string }).__daemonBaseColor = baseTextColor;
+    }
 
     // ── Tear slab ─────────────────────────────────────────────────────────────
     // An opaque band at the button's background color, positioned at a random Y,
@@ -118,8 +130,7 @@ export class DaemonGlitchFx {
     // ── Hover in ──────────────────────────────────────────────────────────────
     btn.onPointerEnterObservable.add(() => {
       if (clicking) return;
-      btn.background = UITheme.colors.hoverBg;
-      btn.color      = '#FFFFFF';
+      btn.background = hoverBackground;
       if (enableHoverGlitch) {
         // Approximate button height; main buttons are 46px, others vary
         const h = parseFloat(btn.height as string) || 46;
@@ -130,8 +141,14 @@ export class DaemonGlitchFx {
     // ── Hover out ─────────────────────────────────────────────────────────────
     btn.onPointerOutObservable.add(() => {
       if (clicking) return;
-      btn.background = UITheme.colors.bgPanel;
-      btn.color      = UITheme.colors.borderBright;
+      btn.background = (btn as Button & { __daemonBaseBackground?: string }).__daemonBaseBackground ?? baseBackground;
+      btn.color = (btn as Button & { __daemonBaseColor?: string }).__daemonBaseColor ?? baseColor;
+      if (btn.textBlock) {
+        const textBaseColor = (btn.textBlock as TextBlock & { __daemonBaseColor?: string }).__daemonBaseColor ?? baseTextColor;
+        if (textBaseColor) {
+          btn.textBlock.color = textBaseColor;
+        }
+      }
       // Don't cancel the tear — let it finish naturally for 400ms effect
     });
 
@@ -146,10 +163,10 @@ export class DaemonGlitchFx {
       // Intense color flicker sequence
       const seq: Array<[string, string]> = [
         ['#FF003C', 'rgba(255,0,60,0.45)'],
-        ['#FFFFFF', 'rgba(0,240,255,0.25)'],
+        ['#FFFFFF', 'rgba(70,120,255,0.25)'],
         ['#CC00FF', 'rgba(204,0,255,0.30)'],
         ['#FF003C', 'rgba(255,0,60,0.50)'],
-        ['#00F0FF', 'rgba(0,240,255,0.20)'],
+        ['#5AA7FF', 'rgba(70,120,255,0.20)'],
         ['#FFFFFF', 'rgba(0,0,0,0.40)'],
       ];
       const step = Math.max(20, Math.floor((clickDelay || 220) / seq.length));
@@ -165,8 +182,14 @@ export class DaemonGlitchFx {
           fireTear(h, 1.5);
           tearHandle = setTimeout(flicker, step);
         } else {
-          btn.color      = UITheme.colors.borderBright;
-          btn.background = UITheme.colors.bgPanel;
+          btn.color      = (btn as Button & { __daemonBaseColor?: string }).__daemonBaseColor ?? baseColor;
+          btn.background = (btn as Button & { __daemonBaseBackground?: string }).__daemonBaseBackground ?? baseBackground;
+          if (btn.textBlock) {
+            const textBaseColor = (btn.textBlock as TextBlock & { __daemonBaseColor?: string }).__daemonBaseColor ?? baseTextColor;
+            if (textBaseColor) {
+              btn.textBlock.color = textBaseColor;
+            }
+          }
           ghost.alpha    = 0;
           slab.isVisible = false;
           clicking = false;

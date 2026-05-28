@@ -912,6 +912,7 @@ export class DevConsole {
     prevBtn.color = '#00FFAA';
     prevBtn.background = '#1A1A2A';
     prevBtn.thickness = 1;
+    if (prevBtn.textBlock) prevBtn.textBlock.fontFamily = 'Wonder8Bit';
     prevBtn.onPointerUpObservable.add(() => {
       state.roomSelectIndex = (state.roomSelectIndex - 1 + activeRoomIds.length) % activeRoomIds.length;
       if (state.roomSelectLabel) {
@@ -933,6 +934,7 @@ export class DevConsole {
     nextBtn.color = '#00FFAA';
     nextBtn.background = '#1A1A2A';
     nextBtn.thickness = 1;
+    if (nextBtn.textBlock) nextBtn.textBlock.fontFamily = 'Wonder8Bit';
     nextBtn.onPointerUpObservable.add(() => {
       state.roomSelectIndex = (state.roomSelectIndex + 1) % activeRoomIds.length;
       if (state.roomSelectLabel) {
@@ -992,6 +994,7 @@ export class DevConsole {
     tPrevBtn.height = '24px';
     tPrevBtn.color = '#FF00FF';
     tPrevBtn.background = '#1A1A2A';
+    if (tPrevBtn.textBlock) tPrevBtn.textBlock.fontFamily = 'Wonder8Bit';
     tPrevBtn.onPointerUpObservable.add(() => {
       this.triggerSelectIndex = (this.triggerSelectIndex - 1 + this.triggerCategories.length) % this.triggerCategories.length;
       this.updateTriggerLabel();
@@ -1009,6 +1012,7 @@ export class DevConsole {
     tNextBtn.height = '24px';
     tNextBtn.color = '#FF00FF';
     tNextBtn.background = '#1A1A2A';
+    if (tNextBtn.textBlock) tNextBtn.textBlock.fontFamily = 'Wonder8Bit';
     tNextBtn.onPointerUpObservable.add(() => {
       this.triggerSelectIndex = (this.triggerSelectIndex + 1) % this.triggerCategories.length;
       this.updateTriggerLabel();
@@ -1055,6 +1059,7 @@ export class DevConsole {
     prevBtn.color = '#FF00FF';
     prevBtn.background = '#1A1A2A';
     prevBtn.thickness = 1;
+    if (prevBtn.textBlock) prevBtn.textBlock.fontFamily = 'Wonder8Bit';
     prevBtn.onPointerUpObservable.add(() => {
       this.voicelineSelectIndex = (this.voicelineSelectIndex - 1 + this.voicelineIds.length) % this.voicelineIds.length;
       this.updateVoicelineLabel();
@@ -1074,6 +1079,7 @@ export class DevConsole {
     nextBtn.color = '#FF00FF';
     nextBtn.background = '#1A1A2A';
     nextBtn.thickness = 1;
+    if (nextBtn.textBlock) nextBtn.textBlock.fontFamily = 'Wonder8Bit';
     nextBtn.onPointerUpObservable.add(() => {
       this.voicelineSelectIndex = (this.voicelineSelectIndex + 1) % this.voicelineIds.length;
       this.updateVoicelineLabel();

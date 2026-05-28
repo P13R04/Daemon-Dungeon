@@ -261,28 +261,44 @@ export class HighscoresScene {
     this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
-    const backBtn = this.makeTabButton('BACK TO MAIN MENU', () => {
+    const topButtonWidth = `${isMobileLayout ? 290 : 260}px`;
+    const topButtonHeight = `${isMobileLayout ? 82 : 74}px`;
+
+    const backBtn = this.makeTabButton('BACK', () => {
       this.onBackToMenu();
     });
+    backBtn.width = topButtonWidth;
+    backBtn.height = topButtonHeight;
     backBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     backBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     backBtn.left = '32px';
-    backBtn.top = '24px';
+    backBtn.top = '20px';
+    if (backBtn.textBlock) {
+      backBtn.textBlock.fontSize = isMobileLayout ? 25 : 23;
+      backBtn.textBlock.fontFamily = 'Wonder8Bit';
+      backBtn.textBlock.color = '#FFFFFF';
+    }
     mainLayoutContainer.addControl(backBtn);
 
-    if (!import.meta.env.PROD) {
-      const devBtn = this.makeTabButton(this.getDevLabel(), () => {
-        this.codexService.setDevUnlockCodexEntries(!this.codexService.getDevUnlockCodexEntries());
-        devBtn.textBlock!.text = this.getDevLabel();
-        this.populateRunsList();
-        this.refreshRunSelection(true);
-      });
-      devBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-      devBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-      devBtn.left = '-32px';
-      devBtn.top = '24px';
-      mainLayoutContainer.addControl(devBtn);
+    const devBtn = this.makeTabButton(this.getDevLabel(), () => {
+      this.codexService.setDevUnlockCodexEntries(!this.codexService.getDevUnlockCodexEntries());
+      devBtn.textBlock!.text = this.getDevLabel();
+      this.populateRunsList();
+      this.refreshRunSelection(true);
+    });
+    devBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    devBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    devBtn.width = topButtonWidth;
+    devBtn.height = topButtonHeight;
+    devBtn.left = '-32px';
+    devBtn.top = '20px';
+    if (devBtn.textBlock) {
+      devBtn.textBlock.fontSize = isMobileLayout ? 25 : 23;
+      devBtn.textBlock.fontFamily = 'Wonder8Bit';
+      devBtn.textBlock.color = '#FFFFFF';
+      (devBtn.textBlock as any).__daemonBaseColor = '#FFFFFF';
     }
+    mainLayoutContainer.addControl(devBtn);
 
     const mainTitle = UIFactory.createText('hsTitle', 'HIGHSCORES', 60, UITheme.colors.textHighlight);
     mainTitle.fontFamily = 'Wonder8Bit';
@@ -325,7 +341,7 @@ export class HighscoresScene {
     scrollViewer.height = `${Math.round(sidePanelHeight * 0.8)}px`;
     scrollViewer.top = `${Math.round(sidePanelHeight * 0.1)}px`;
     scrollViewer.thickness = 0;
-    scrollViewer.barColor = '#3B685C';
+    scrollViewer.barColor = UITheme.colors.borderBright;
     scrollViewer.barBackground = 'rgba(0,0,0,0.5)';
     this.leftPanel.addControl(scrollViewer);
     this.leftListScroll = scrollViewer;
@@ -362,7 +378,7 @@ export class HighscoresScene {
     mainLayoutContainer.addControl(this.centerCard);
 
     this.centerCardTitle = new TextBlock('centerTitle', 'RUN SUMMARY');
-    this.centerCardTitle.fontFamily = this.terminalFont;
+    this.centerCardTitle.fontFamily = 'Wonder8Bit';
     this.centerCardTitle.fontSize = isMobileLayout ? 36 : 32;
     this.centerCardTitle.color = '#FFFFFF';
     this.centerCardTitle.top = `-${Math.round(centerCardHeight * 0.39)}px`;
@@ -380,7 +396,7 @@ export class HighscoresScene {
     this.centerBonusesContainer.height = `${Math.round(centerCardHeight * 0.5)}px`;
     this.centerBonusesContainer.top = `${Math.round(centerCardHeight * 0.12)}px`;
     this.centerBonusesContainer.thickness = 1;
-    this.centerBonusesContainer.color = '#3B685C';
+    this.centerBonusesContainer.color = UITheme.colors.borderDim;
     this.centerBonusesContainer.background = 'rgba(0,0,0,0.5)';
     this.centerCard.addControl(this.centerBonusesContainer);
 
@@ -405,7 +421,7 @@ export class HighscoresScene {
     this.centerDetailsPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     this.centerDetailsPanel.top = `-${Math.round(layoutHeight * 0.025)}px`;
     this.centerDetailsPanel.thickness = 2;
-    this.centerDetailsPanel.color = '#3B685C';
+    this.centerDetailsPanel.color = UITheme.colors.borderDim;
     this.centerDetailsPanel.background = 'rgba(10, 18, 22, 0.95)';
     this.centerDetailsPanel.cornerRadius = 6;
     this.centerDetailsPanel.isHitTestVisible = false;
@@ -451,7 +467,7 @@ export class HighscoresScene {
     p.width = w + 'px';
     p.height = h + 'px';
     p.thickness = 1;
-    p.color = '#3B685C';
+    p.color = UITheme.colors.borderDim;
     p.background = 'rgba(10, 18, 22, 0.85)';
     return p;
   }
@@ -471,15 +487,16 @@ export class HighscoresScene {
   private makeTabButton(label: string, onClick: () => void): Button {
     const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
     const btn = Button.CreateSimpleButton(`tab_${label}`, label);
-    btn.width = `${isMobileLayout ? 380 : 350}px`;
-    btn.height = `${isMobileLayout ? 82 : 74}px`;
-    btn.color = '#7CFFEA';
+    btn.width = `${isMobileLayout ? 400 : 360}px`;
+    btn.height = `${isMobileLayout ? 84 : 76}px`;
+    btn.color = UITheme.colors.borderBright;
     btn.thickness = 1;
     btn.cornerRadius = 2;
-    btn.background = 'rgba(20, 30, 35, 0.6)';
+    btn.background = UITheme.colors.bgPanel;
     btn.fontFamily = this.terminalFont;
-    btn.fontSize = isMobileLayout ? 25 : 22;
+    btn.fontSize = isMobileLayout ? 26 : 23;
     this.bindGlitchButton(btn, label, onClick);
+    if (btn.textBlock) btn.textBlock.fontFamily = 'Wonder8Bit';
     return btn;
   }
 
@@ -535,8 +552,8 @@ export class HighscoresScene {
     btn.height = `${isMobileLayout ? 64 : 56}px`;
     btn.thickness = 1;
     btn.cornerRadius = 4;
-    btn.color = active ? '#F1FFFC' : '#A3DCCF';
-    btn.background = active ? 'rgba(26,98,89,0.65)' : 'rgba(10,24,34,0.84)';
+    btn.color = active ? '#FFFFFF' : UITheme.colors.textNormal;
+    btn.background = active ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
     btn.isPointerBlocker = true;
     btn.isHitTestVisible = true;
     this.bindGlitchButton(btn, label, onClick);
@@ -617,7 +634,7 @@ export class HighscoresScene {
         box.width = '52px';
         box.height = '52px';
         box.thickness = 1;
-        box.color = '#3B685C';
+        box.color = UITheme.colors.borderDim;
         box.background = 'rgba(10, 18, 22, 0.85)';
         box.isPointerBlocker = true;
         box.isHitTestVisible = true;

@@ -419,6 +419,7 @@ export class ClassSelectScene {
     backBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     backBtn.zIndex = 1300;
     if (backBtn.textBlock) backBtn.textBlock.fontSize = menuButtonFont;
+    if (backBtn.textBlock) backBtn.textBlock.fontFamily = 'Wonder8Bit';
     this.bindGlitchButton(backBtn, 'BACK', () => {
       this.navigateBackToTitle();
     });
@@ -453,6 +454,7 @@ export class ClassSelectScene {
     const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', `${isMobileLayout ? 120 : 108}px`, `${menuButtonH}px`);
     this.bindGlitchButton(leftBtn, '<', () => this.rotateCarousel(1));
     if (leftBtn.textBlock) leftBtn.textBlock.fontSize = menuButtonFont;
+    if (leftBtn.textBlock) leftBtn.textBlock.fontFamily = 'Wonder8Bit';
     navRow.addControl(leftBtn);
 
     const startButton = UIFactory.createTerminalButton('classSelectStart', '[ START ]', `${isMobileLayout ? 250 : 220}px`, `${menuButtonH}px`);
@@ -460,11 +462,13 @@ export class ClassSelectScene {
       this.tryStartSelectedClass();
     });
     if (startButton.textBlock) startButton.textBlock.fontSize = menuButtonFont;
+    if (startButton.textBlock) startButton.textBlock.fontFamily = 'Wonder8Bit';
     navRow.addControl(startButton);
 
     const rightBtn = UIFactory.createTerminalButton('classSelectRight', '>', `${isMobileLayout ? 120 : 108}px`, `${menuButtonH}px`);
     this.bindGlitchButton(rightBtn, '>', () => this.rotateCarousel(-1));
     if (rightBtn.textBlock) rightBtn.textBlock.fontSize = menuButtonFont;
+    if (rightBtn.textBlock) rightBtn.textBlock.fontFamily = 'Wonder8Bit';
     navRow.addControl(rightBtn);
 
     // ── Right-side class info overlay ─────────────────────────────────────────
@@ -472,8 +476,8 @@ export class ClassSelectScene {
     infoOverlay.width = `${sidePanelWidth}px`;
     infoOverlay.height = `${sidePanelHeight}px`;
     infoOverlay.thickness = 1;
-    infoOverlay.color = 'rgba(100,255,230,0.25)';
-    infoOverlay.background = 'rgba(4, 16, 20, 0.85)';
+    infoOverlay.color = UITheme.colors.borderDim;
+    infoOverlay.background = UITheme.colors.bgPanel;
     infoOverlay.cornerRadius = 4;
     infoOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     infoOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -482,14 +486,14 @@ export class ClassSelectScene {
     infoOverlay.zIndex = 100;
     mainLayoutContainer.addControl(infoOverlay);
 
-    const infoLabel = UIFactory.createText('classInfoLabel', '// CLASS DATA', 15, 'rgba(100,255,230,0.5)');
+    const infoLabel = UIFactory.createText('classInfoLabel', '// CLASS DATA', 15, UITheme.colors.textDim);
     infoLabel.top = `-${Math.round(sidePanelHeight * 0.46)}px`;
     infoLabel.left = '20px';
     infoLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoOverlay.addControl(infoLabel);
 
-    const infoText = UIFactory.createText('classSelectInfoText', '', isMobileLayout ? 23 : 21, '#CFFCF3');
+    const infoText = UIFactory.createText('classSelectInfoText', '', isMobileLayout ? 23 : 21, UITheme.colors.textNormal);
     infoText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.textWrapping = true;
@@ -505,8 +509,8 @@ export class ClassSelectScene {
     loreOverlay.width = `${sidePanelWidth}px`;
     loreOverlay.height = `${sidePanelHeight}px`;
     loreOverlay.thickness = 1;
-    loreOverlay.color = 'rgba(100,255,230,0.25)';
-    loreOverlay.background = 'rgba(4, 16, 20, 0.85)';
+    loreOverlay.color = UITheme.colors.borderDim;
+    loreOverlay.background = UITheme.colors.bgPanel;
     loreOverlay.cornerRadius = 4;
     loreOverlay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreOverlay.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -515,14 +519,14 @@ export class ClassSelectScene {
     loreOverlay.zIndex = 100;
     mainLayoutContainer.addControl(loreOverlay);
 
-    const loreLabel = UIFactory.createText('classLoreLabel', '// SYSTEM LORE', 15, 'rgba(100,255,230,0.5)');
+    const loreLabel = UIFactory.createText('classLoreLabel', '// SYSTEM LORE', 15, UITheme.colors.textDim);
     loreLabel.top = `-${Math.round(sidePanelHeight * 0.46)}px`;
     loreLabel.left = '20px';
     loreLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreOverlay.addControl(loreLabel);
 
-    const loreText = UIFactory.createText('classSelectLoreText', '', isMobileLayout ? 23 : 21, '#CFFCF3');
+    const loreText = UIFactory.createText('classSelectLoreText', '', isMobileLayout ? 23 : 21, UITheme.colors.textNormal);
     loreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreText.textWrapping = true;
@@ -554,13 +558,13 @@ export class ClassSelectScene {
 
     const panel = UIFactory.createPanel('classTutorialPromptPanel', 740, 320);
     panel.thickness = 2;
-    panel.color = '#41d7ff';
-    panel.background = 'rgba(4, 18, 24, 0.95)';
+    panel.color = UITheme.colors.borderBright;
+    panel.background = UITheme.colors.bgPanel;
     panel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     panel.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     overlay.addControl(panel);
 
-    const title = UIFactory.createText('classTutorialPromptTitle', 'CLASS QUICK TUTORIAL', 34, '#CFFFFA');
+    const title = UIFactory.createText('classTutorialPromptTitle', 'CLASS QUICK TUTORIAL', 34, UITheme.colors.textHighlight);
     title.width = '94%';
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     title.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
@@ -571,7 +575,7 @@ export class ClassSelectScene {
       'classTutorialPromptBody',
       'Run a short onboarding room before your first run with this class?\nIt explains core class tools in ~1 minute.',
       20,
-      '#B7FFF5'
+      UITheme.colors.textNormal
     );
     body.textWrapping = true;
     body.width = '90%';
@@ -588,6 +592,7 @@ export class ClassSelectScene {
     panel.addControl(buttonRow);
 
     const startTutorialBtn = UIFactory.createTerminalButton('classTutorialPromptStart', 'START QUICK TUTORIAL', `${isMobileLayout ? 360 : 340}px`, `${Math.round(menuButtonH * 0.8)}px`);
+    if (startTutorialBtn.textBlock) startTutorialBtn.textBlock.color = '#FFFFFF';
     this.bindGlitchButton(startTutorialBtn, 'START QUICK TUTORIAL', () => {
       const classId = this.tutorialPromptClassId;
       this.hideTutorialPrompt();
@@ -597,6 +602,7 @@ export class ClassSelectScene {
     buttonRow.addControl(startTutorialBtn);
 
     const skipBtn = UIFactory.createTerminalButton('classTutorialPromptSkip', 'SKIP TO RUN', `${isMobileLayout ? 280 : 260}px`, `${Math.round(menuButtonH * 0.8)}px`);
+    if (skipBtn.textBlock) skipBtn.textBlock.color = '#FFFFFF';
     this.bindGlitchButton(skipBtn, 'SKIP TO RUN', () => {
       const classId = this.tutorialPromptClassId;
       this.hideTutorialPrompt();
@@ -1398,7 +1404,7 @@ export class ClassSelectScene {
       } else {
         this.setInfoTypingTarget(`${selected.label}\n// READY`);
       }
-      this.infoText.color = '#CFFCF3';
+      this.infoText.color = UITheme.colors.textNormal;
       this.infoText.fontSize = this.isMobileLayout ? 22 : 20;
 
       if (lore) {
@@ -1410,29 +1416,37 @@ export class ClassSelectScene {
       } else {
         this.setLoreTypingTarget(`No lore files found for this class.`);
       }
-      this.loreText.color = '#CFFCF3';
+      this.loreText.color = UITheme.colors.textNormal;
       this.loreText.fontSize = this.isMobileLayout ? 22 : 20;
 
       this.startButton.isEnabled = true;
-      this.startButton.background = '#1D3B3A';
-      this.startButton.color = '#FFFFFF';
+      this.startButton.background = UITheme.colors.buttonBg;
+      (this.startButton as any).__daemonBaseBackground = UITheme.colors.buttonBg;
+      this.startButton.color = UITheme.colors.borderBright;
+      (this.startButton as any).__daemonBaseColor = UITheme.colors.borderBright;
       if (this.startButton.textBlock) {
         this.startButton.textBlock.text = '[ START ]';
+        this.startButton.textBlock.color = UITheme.colors.textNormal;
+        (this.startButton.textBlock as any).__daemonBaseColor = UITheme.colors.textNormal;
       }
     } else {
       this.setInfoTypingTarget(`${selected.label}\n// COMING SOON`);
-      this.infoText.color = '#7C9C98';
+      this.infoText.color = UITheme.colors.textDim;
       this.infoText.fontSize = this.isMobileLayout ? 24 : 21;
 
       this.setLoreTypingTarget(`LORE ENCRYPTED`);
-      this.loreText.color = '#7C9C98';
+      this.loreText.color = UITheme.colors.textDim;
       this.loreText.fontSize = this.isMobileLayout ? 24 : 21;
 
       this.startButton.isEnabled = false;
-      this.startButton.background = 'rgba(20,30,35,0.75)';
-      this.startButton.color = '#7C9C98';
+      this.startButton.background = 'rgba(6, 16, 28, 0.6)';
+      (this.startButton as any).__daemonBaseBackground = 'rgba(6, 16, 28, 0.6)';
+      this.startButton.color = UITheme.colors.borderDim;
+      (this.startButton as any).__daemonBaseColor = UITheme.colors.borderDim;
       if (this.startButton.textBlock) {
         this.startButton.textBlock.text = '// LOCKED';
+        this.startButton.textBlock.color = UITheme.colors.textDim;
+        (this.startButton.textBlock as any).__daemonBaseColor = UITheme.colors.textDim;
       }
     }
   }

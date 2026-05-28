@@ -83,8 +83,8 @@ export class SettingsMenuBuilder {
     const idealWidth = gui?.idealWidth || 1920;
     const idealHeight = gui?.idealHeight || 1080;
     this.isMobileLayout = idealWidth <= 960;
-    this.menuButtonHeight = this.isMobileLayout ? 82 : 74;
-    this.menuButtonFontSize = this.isMobileLayout ? 25 : 23;
+    this.menuButtonHeight = this.isMobileLayout ? 88 : 78;
+    this.menuButtonFontSize = this.isMobileLayout ? 27 : 24;
 
     const overlay = new Rectangle('settingsOverlay');
     overlay.width = 1;
@@ -102,9 +102,9 @@ export class SettingsMenuBuilder {
 
     const title = new TextBlock('settingsTitle');
     title.text = 'SETTINGS CONSOLE';
-    title.color = '#7CFFEA';
-    title.fontSize = this.isMobileLayout ? 46 : 40;
-    title.fontFamily = 'Arcade8Bit';
+    title.color = UITheme.colors.textHighlight;
+    title.fontSize = this.isMobileLayout ? 50 : 42;
+    title.fontFamily = 'Wonder8Bit';
     title.top = '-350px';
     windowPanel.addControl(title);
 
@@ -117,12 +117,12 @@ export class SettingsMenuBuilder {
     actionRow.zIndex = 120;
     windowPanel.addControl(actionRow);
 
-    const closeBtn = Button.CreateSimpleButton('settingsCloseButton', 'BACK');
+      const closeBtn = Button.CreateSimpleButton('settingsCloseButton', 'BACK');
     closeBtn.width = `${this.isMobileLayout ? 220 : 200}px`;
     closeBtn.height = `${this.menuButtonHeight}px`;
-    closeBtn.color = '#D2FFF2';
+    closeBtn.color = UITheme.colors.textNormal;
     closeBtn.cornerRadius = 4;
-    closeBtn.background = 'rgba(20,38,45,0.95)';
+      closeBtn.background = UITheme.colors.buttonBg;
     closeBtn.thickness = 1;
     closeBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     closeBtn.left = '0px';
@@ -130,18 +130,19 @@ export class SettingsMenuBuilder {
     closeBtn.isHitTestVisible = true;
     closeBtn.zIndex = 130;
     if (closeBtn.textBlock) closeBtn.textBlock.fontSize = this.menuButtonFontSize;
+    if (closeBtn.textBlock) closeBtn.textBlock.fontFamily = 'Wonder8Bit';
     this.bindButtonAction(closeBtn, () => {
       this.awaitingRebind = null;
       this.onClose();
     });
     actionRow.addControl(closeBtn);
 
-    const resetBtn = Button.CreateSimpleButton('settingsResetButton', 'RESET DEFAULTS');
+      const resetBtn = Button.CreateSimpleButton('settingsResetButton', 'RESET DEFAULTS');
     resetBtn.width = `${this.isMobileLayout ? 300 : 260}px`;
     resetBtn.height = `${this.menuButtonHeight}px`;
-    resetBtn.color = '#C2FFE2';
+    resetBtn.color = UITheme.colors.textNormal;
     resetBtn.cornerRadius = 4;
-    resetBtn.background = 'rgba(22,48,44,0.95)';
+      resetBtn.background = UITheme.colors.buttonBg;
     resetBtn.thickness = 1;
     resetBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     resetBtn.left = '0px';
@@ -149,6 +150,7 @@ export class SettingsMenuBuilder {
     resetBtn.isHitTestVisible = true;
     resetBtn.zIndex = 130;
     if (resetBtn.textBlock) resetBtn.textBlock.fontSize = this.menuButtonFontSize;
+    if (resetBtn.textBlock) resetBtn.textBlock.fontFamily = 'Wonder8Bit';
     this.bindButtonAction(resetBtn, () => {
       this.awaitingRebind = null;
       GameSettingsStore.resetToDefaults();
@@ -293,12 +295,12 @@ export class SettingsMenuBuilder {
     row.height = this.isMobileLayout ? '90px' : '84px';
     row.thickness = 1;
     row.cornerRadius = 4;
-    row.color = '#285148';
-    row.background = 'rgba(8, 19, 24, 0.9)';
+    row.color = UITheme.colors.borderDim;
+    row.background = UITheme.colors.buttonBg;
 
     const label = new TextBlock('accessibilityFilterLabel');
     label.text = 'Color Vision Filter';
-    label.color = '#B9F9E8';
+    label.color = UITheme.colors.textNormal;
     label.fontSize = this.isMobileLayout ? 24 : 22;
     label.fontFamily = 'Arcade8Bit';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -309,9 +311,9 @@ export class SettingsMenuBuilder {
     const button = Button.CreateSimpleButton('accessibilityFilterButton', 'NONE');
     button.width = this.isMobileLayout ? '320px' : '300px';
     button.height = `${this.menuButtonHeight}px`;
-    button.color = '#DAFFF3';
+    button.color = UITheme.colors.textNormal;
     button.cornerRadius = 4;
-    button.background = 'rgba(22,48,44,0.95)';
+      button.background = UITheme.colors.buttonBg;
     button.thickness = 1;
     button.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     button.left = '-16px';
@@ -357,15 +359,19 @@ export class SettingsMenuBuilder {
     const resetProgressBtn = Button.CreateSimpleButton('settingsResetProgressButton', 'RESET PROGRESSION');
     resetProgressBtn.width = `${this.isMobileLayout ? 480 : 420}px`;
     resetProgressBtn.height = `${this.menuButtonHeight}px`;
-    resetProgressBtn.color = '#FFE5E5';
+    resetProgressBtn.color = UITheme.colors.danger;
     resetProgressBtn.cornerRadius = 4;
-    resetProgressBtn.background = 'rgba(72,20,20,0.95)';
+    resetProgressBtn.background = 'rgba(92, 18, 28, 0.96)';
     resetProgressBtn.thickness = 1;
     resetProgressBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     resetProgressBtn.top = '8px';
     resetProgressBtn.isPointerBlocker = true;
     resetProgressBtn.isHitTestVisible = true;
-    if (resetProgressBtn.textBlock) resetProgressBtn.textBlock.fontSize = this.menuButtonFontSize;
+    if (resetProgressBtn.textBlock) {
+      resetProgressBtn.textBlock.fontSize = this.menuButtonFontSize;
+      resetProgressBtn.textBlock.fontFamily = 'Wonder8Bit';
+      resetProgressBtn.textBlock.color = '#FFFFFF';
+    }
     this.bindButtonAction(resetProgressBtn, () => {
       this.awaitingRebind = null;
       this.showResetProgressConfirmOverlay();
@@ -399,7 +405,7 @@ export class SettingsMenuBuilder {
     title.text = 'RESET PROGRESSION';
     title.color = '#FFE5E5';
     title.fontSize = 32;
-    title.fontFamily = 'Arcade8Bit';
+    title.fontFamily = 'Wonder8Bit';
     title.top = '-104px';
     panel.addControl(title);
 
@@ -407,7 +413,7 @@ export class SettingsMenuBuilder {
     body.text = 'This will reset codex, achievements, settings, and tutorial completion.\nThe game will restart as a first launch.';
     body.color = '#FFD0D0';
     body.fontSize = 18;
-    body.fontFamily = 'Arcade8Bit';
+    body.fontFamily = 'Wonder8Bit';
     body.width = '600px';
     body.height = '110px';
     body.textWrapping = true;
@@ -426,7 +432,7 @@ export class SettingsMenuBuilder {
     cancel.width = '220px';
     cancel.height = '48px';
     cancel.color = '#DDFCF3';
-    cancel.background = 'rgba(22,48,44,0.95)';
+    cancel.background = UITheme.colors.buttonBg;
     cancel.thickness = 1;
     cancel.cornerRadius = 4;
     if (cancel.textBlock) cancel.textBlock.fontSize = 18;
@@ -436,11 +442,14 @@ export class SettingsMenuBuilder {
     const confirm = Button.CreateSimpleButton('settingsResetProgressConfirmApply', 'RESET & RESTART');
     confirm.width = '220px';
     confirm.height = '48px';
-    confirm.color = '#FFE5E5';
-    confirm.background = 'rgba(110,28,28,0.98)';
+    confirm.color = UITheme.colors.danger;
+    confirm.background = 'rgba(92, 18, 28, 0.96)';
     confirm.thickness = 1;
     confirm.cornerRadius = 4;
-    if (confirm.textBlock) confirm.textBlock.fontSize = 18;
+    if (confirm.textBlock) {
+      confirm.textBlock.fontSize = 18;
+      confirm.textBlock.color = '#FFFFFF';
+    }
     this.bindButtonAction(confirm, () => {
       this.hideResetProgressConfirmOverlay();
       this.onResetProgress();
@@ -465,13 +474,13 @@ export class SettingsMenuBuilder {
     row.width = this.isMobileLayout ? '96%' : '97%';
     row.height = this.isMobileLayout ? '64px' : '58px';
     row.thickness = 0;
-    row.background = 'rgba(10, 30, 35, 0.6)';
+    row.background = UITheme.colors.buttonBg;
 
     const title = new TextBlock(`sectionHeaderText_${text.replace(/\s+/g, '_')}`);
     title.text = text;
-    title.color = '#7CFFEA';
+    title.color = UITheme.colors.textHighlight;
     title.fontSize = this.isMobileLayout ? 30 : 28;
-    title.fontFamily = 'Arcade8Bit';
+    title.fontFamily = 'Wonder8Bit';
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     title.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     title.paddingLeft = '10px';
@@ -482,7 +491,7 @@ export class SettingsMenuBuilder {
   private makeSectionSubText(text: string): TextBlock {
     const info = new TextBlock(`sectionInfo_${text.replace(/\s+/g, '_').slice(0, 18)}`);
     info.text = text;
-    info.color = '#8EC8BD';
+    info.color = UITheme.colors.textDim;
     info.fontSize = 14;
     info.fontFamily = 'Arcade8Bit';
     info.height = '28px';
@@ -498,12 +507,12 @@ export class SettingsMenuBuilder {
     row.height = this.isMobileLayout ? '94px' : '86px';
     row.thickness = 1;
     row.cornerRadius = 4;
-    row.color = '#285148';
-    row.background = 'rgba(8, 19, 24, 0.9)';
+    row.color = UITheme.colors.borderDim;
+    row.background = UITheme.colors.buttonBg;
 
     const label = new TextBlock(`keybindLabel_${action}`);
     label.text = labelText;
-    label.color = '#B9F9E8';
+    label.color = UITheme.colors.textNormal;
     label.fontSize = this.isMobileLayout ? 24 : 22;
     label.fontFamily = 'Arcade8Bit';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -514,9 +523,9 @@ export class SettingsMenuBuilder {
     const keyButton = Button.CreateSimpleButton(`keybindButton_${action}`, '...');
     keyButton.width = this.isMobileLayout ? '300px' : '280px';
     keyButton.height = `${this.menuButtonHeight}px`;
-    keyButton.color = '#E3FFF7';
+    keyButton.color = UITheme.colors.textNormal;
     keyButton.cornerRadius = 4;
-    keyButton.background = 'rgba(22,48,44,0.95)';
+    keyButton.background = UITheme.colors.buttonBg;
     keyButton.thickness = 1;
     keyButton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     keyButton.left = '-16px';
@@ -545,12 +554,12 @@ export class SettingsMenuBuilder {
     row.height = this.isMobileLayout ? '94px' : '86px';
     row.thickness = 1;
     row.cornerRadius = 4;
-    row.color = '#285148';
-    row.background = 'rgba(8, 19, 24, 0.9)';
+    row.color = UITheme.colors.borderDim;
+    row.background = UITheme.colors.buttonBg;
 
     const titleText = new TextBlock(`toggleTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
-    titleText.color = '#B9F9E8';
+    titleText.color = UITheme.colors.textNormal;
     titleText.fontSize = this.isMobileLayout ? 24 : 22;
     titleText.fontFamily = 'Arcade8Bit';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -562,7 +571,7 @@ export class SettingsMenuBuilder {
     if (details.trim().length > 0) {
       const detailText = new TextBlock(`toggleDetails_${title.replace(/\s+/g, '_')}`);
       detailText.text = details;
-      detailText.color = '#86B9AE';
+      detailText.color = UITheme.colors.textDim;
       detailText.fontSize = this.isMobileLayout ? 15 : 14;
       detailText.fontFamily = 'Arcade8Bit';
       detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -575,7 +584,7 @@ export class SettingsMenuBuilder {
     const checkbox = new Checkbox();
     checkbox.width = this.isMobileLayout ? '40px' : '36px';
     checkbox.height = this.isMobileLayout ? '40px' : '36px';
-    checkbox.color = '#7CFFEA';
+    checkbox.color = UITheme.colors.borderBright;
     checkbox.background = 'rgba(0,0,0,0.5)';
     checkbox.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     checkbox.left = '-28px';
@@ -597,12 +606,12 @@ export class SettingsMenuBuilder {
     row.height = this.isMobileLayout ? '104px' : '96px';
     row.thickness = 1;
     row.cornerRadius = 4;
-    row.color = '#285148';
-    row.background = 'rgba(8, 19, 24, 0.9)';
+    row.color = UITheme.colors.borderDim;
+    row.background = UITheme.colors.buttonBg;
 
     const titleText = new TextBlock(`sliderTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
-    titleText.color = '#B9F9E8';
+    titleText.color = UITheme.colors.textNormal;
     titleText.fontSize = this.isMobileLayout ? 24 : 22;
     titleText.fontFamily = 'Arcade8Bit';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -614,7 +623,7 @@ export class SettingsMenuBuilder {
     if (details.trim().length > 0) {
       const detailText = new TextBlock(`sliderDetails_${title.replace(/\s+/g, '_')}`);
       detailText.text = details;
-      detailText.color = '#86B9AE';
+      detailText.color = UITheme.colors.textDim;
       detailText.fontSize = this.isMobileLayout ? 15 : 14;
       detailText.fontFamily = 'Arcade8Bit';
       detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -626,7 +635,7 @@ export class SettingsMenuBuilder {
 
     const valueText = new TextBlock(`sliderValueText_${title.replace(/\s+/g, '_')}`);
     valueText.text = '';
-    valueText.color = '#7CFFEA';
+    valueText.color = UITheme.colors.textHighlight;
     valueText.fontSize = this.isMobileLayout ? 20 : 18;
     valueText.fontFamily = 'Arcade8Bit';
     valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -641,7 +650,7 @@ export class SettingsMenuBuilder {
     slider.step = 1;
     slider.width = this.isMobileLayout ? '92%' : '94%';
     slider.height = '20px';
-    slider.color = '#7CFFEA';
+    slider.color = UITheme.colors.borderBright;
     slider.background = 'rgba(0,0,0,0.5)';
     slider.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     slider.top = details.trim().length > 0 ? '28px' : '22px';
@@ -657,12 +666,12 @@ export class SettingsMenuBuilder {
     row.height = this.isMobileLayout ? '90px' : '84px';
     row.thickness = 1;
     row.cornerRadius = 4;
-    row.color = '#285148';
-    row.background = 'rgba(8, 19, 24, 0.9)';
+    row.color = UITheme.colors.borderDim;
+    row.background = UITheme.colors.buttonBg;
 
     const label = new TextBlock(`audioLabel_${channel}`);
     label.text = labelText;
-    label.color = '#B9F9E8';
+    label.color = UITheme.colors.textNormal;
     label.fontSize = this.isMobileLayout ? 24 : 22;
     label.fontFamily = 'Arcade8Bit';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -672,7 +681,7 @@ export class SettingsMenuBuilder {
 
     const valueText = new TextBlock(`audioValue_${channel}`);
     valueText.text = '100%';
-    valueText.color = '#7CFFEA';
+    valueText.color = UITheme.colors.textHighlight;
     valueText.fontSize = this.isMobileLayout ? 20 : 18;
     valueText.fontFamily = 'Arcade8Bit';
     valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -686,7 +695,7 @@ export class SettingsMenuBuilder {
     slider.maximum = 100;
     slider.width = this.isMobileLayout ? '62%' : '64%';
     slider.height = '20px';
-    slider.color = '#7CFFEA';
+    slider.color = UITheme.colors.borderBright;
     slider.background = 'rgba(0,0,0,0.5)';
     slider.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     slider.left = '-16px';
@@ -709,12 +718,12 @@ export class SettingsMenuBuilder {
     row.height = this.isMobileLayout ? '94px' : '86px';
     row.thickness = 1;
     row.cornerRadius = 4;
-    row.color = '#285148';
-    row.background = 'rgba(8, 19, 24, 0.9)';
+    row.color = UITheme.colors.borderDim;
+    row.background = UITheme.colors.buttonBg;
 
     const titleText = new TextBlock(`actionTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
-    titleText.color = '#FFD782';
+    titleText.color = '#FFE7B8';
     titleText.fontSize = this.isMobileLayout ? 24 : 22;
     titleText.fontFamily = 'Arcade8Bit';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -726,7 +735,7 @@ export class SettingsMenuBuilder {
     if (details.trim().length > 0) {
       const detailText = new TextBlock(`actionDetails_${title.replace(/\s+/g, '_')}`);
       detailText.text = details;
-      detailText.color = '#86B9AE';
+      detailText.color = UITheme.colors.textDim;
       detailText.fontSize = this.isMobileLayout ? 15 : 14;
       detailText.fontFamily = 'Arcade8Bit';
       detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -739,9 +748,9 @@ export class SettingsMenuBuilder {
     const actionBtn = Button.CreateSimpleButton(`actionBtn_${title.replace(/\s+/g, '_')}`, buttonText);
     actionBtn.width = this.isMobileLayout ? '300px' : '280px';
     actionBtn.height = `${this.menuButtonHeight}px`;
-    actionBtn.color = '#FFD782';
+    actionBtn.color = '#FFE7B8';
     actionBtn.cornerRadius = 4;
-    actionBtn.background = 'rgba(48,40,22,0.95)';
+    actionBtn.background = UITheme.colors.buttonBg;
     actionBtn.thickness = 1;
     actionBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     actionBtn.left = '-16px';
@@ -753,17 +762,18 @@ export class SettingsMenuBuilder {
   }
 
   private bindButtonAction(button: Button, action: () => void): void {
+    const baseBackground = button.background;
     button.onPointerEnterObservable.add(() => {
-      button.background = 'rgba(40,78,74,0.95)';
+      button.background = UITheme.colors.hoverBg;
     });
     button.onPointerOutObservable.add(() => {
-      button.background = 'rgba(22,48,44,0.95)';
+      button.background = baseBackground;
     });
     button.onPointerDownObservable.add(() => {
-      button.background = 'rgba(100,180,160,0.95)';
+      button.background = 'rgba(70, 120, 255, 0.24)';
     });
     button.onPointerUpObservable.add(() => {
-      button.background = 'rgba(40,78,74,0.95)';
+      button.background = UITheme.colors.hoverBg;
       action();
     });
   }
@@ -782,7 +792,7 @@ export class SettingsMenuBuilder {
       } else {
         const key = this.settingsSnapshot.controls.keybindings[action] || 'UNBOUND';
         tb.text = formatInputKeyLabel(key);
-        tb.color = '#E3FFF7';
+        tb.color = UITheme.colors.textNormal;
       }
     }
 

@@ -7,6 +7,7 @@ import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image, S
 import { EventBus, GameEvents } from '../core/EventBus';
 import { SettingsMenuBuilder } from '../ui/SettingsMenuBuilder';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
+import { UITheme } from '../ui/UITheme';
 import { VoicelineConfig, AnimationPhase, getVoiceline } from '../data/voicelines/VoicelineDefinitions';
 import { DAEMON_ANIMATION_PRESETS, normalizeDaemonPresetName } from '../data/voicelines/DaemonAnimationPresets';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
@@ -689,8 +690,8 @@ export class HUDManager {
     const fontFamily = 'Arcade8Bit';
     const idealWidth = this.guiClean.idealWidth || 1920;
     const isCompactHud = idealWidth <= 960;
-    const baseMenuButtonHeight = isCompactHud ? 76 : 70;
-    const baseMenuFontSize = isCompactHud ? 23 : 21;
+    const baseMenuButtonHeight = isCompactHud ? 84 : 76;
+    const baseMenuFontSize = isCompactHud ? 26 : 23;
     const statsPanelWidth = isCompactHud ? 374 : 348;
     const statsPanelHeight = isCompactHud ? 156 : 146;
     const statsLabelFont = isCompactHud ? 24 : 21;
@@ -845,24 +846,54 @@ export class HUDManager {
     }
 
     // Pause Button (Standalone Top Left)
-    const pauseBtn = Button.CreateSimpleButton('pause_btn', '||');
+    const pauseGlyph = '';
+    const pauseBtn = Button.CreateSimpleButton('pause_btn', pauseGlyph);
     pauseBtn.width = `${baseMenuButtonHeight}px`;
     pauseBtn.height = `${baseMenuButtonHeight}px`;
-    pauseBtn.color = '#7CFFEA';
-    pauseBtn.background = 'rgba(10, 30, 35, 0.75)';
-    pauseBtn.thickness = 1;
+    pauseBtn.color = UITheme.colors.textNormal;
+    pauseBtn.background = UITheme.colors.buttonBg;
+    pauseBtn.thickness = 2;
     pauseBtn.left = isCompactHud ? 28 : 24;
     pauseBtn.top = isCompactHud ? 28 : 24;
     pauseBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     pauseBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     pauseBtn.zIndex = 1700;
+    pauseBtn.fontFamily = 'Courier New';
     if (pauseBtn.textBlock) {
-      pauseBtn.textBlock.fontSize = baseMenuFontSize;
-      pauseBtn.textBlock.fontFamily = fontFamily;
+      pauseBtn.textBlock.isVisible = false;
+      pauseBtn.textBlock.text = '';
     }
+
+    const pauseIconLayer = new Rectangle('pause_icon_layer');
+    pauseIconLayer.width = 1;
+    pauseIconLayer.height = 1;
+    pauseIconLayer.thickness = 0;
+    pauseIconLayer.background = 'transparent';
+    pauseIconLayer.isHitTestVisible = false;
+    pauseIconLayer.isPointerBlocker = false;
+    pauseBtn.addControl(pauseIconLayer);
+
+    const makeBar = (name: string, leftOffsetPx: number) => {
+      const bar = new Rectangle(name);
+      bar.width = `${Math.max(10, Math.round(baseMenuButtonHeight * 0.12))}px`;
+      bar.height = `${Math.round(baseMenuButtonHeight * 0.36)}px`;
+      bar.cornerRadius = 2;
+      bar.thickness = 0;
+      bar.background = '#FFFFFF';
+      bar.isHitTestVisible = false;
+      bar.isPointerBlocker = false;
+      bar.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+      bar.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+      bar.left = `${leftOffsetPx}px`;
+      return bar;
+    };
+    const pauseBarGap = Math.max(3, Math.round(baseMenuButtonHeight * 0.035));
+    const pauseBarOffset = Math.max(7, Math.round(baseMenuButtonHeight * 0.1));
+    pauseIconLayer.addControl(makeBar('pause_bar_left', -(pauseBarOffset + pauseBarGap)));
+    pauseIconLayer.addControl(makeBar('pause_bar_right', pauseBarOffset + pauseBarGap));
     DaemonGlitchFx.injectWithOptions(
       pauseBtn,
-      '||',
+      'PAUSE',
       () => this.eventBus.emit(GameEvents.UI_PAUSE_TOGGLE),
       { clickDelayMs: 150, enableHoverGlitch: false }
     );
@@ -965,7 +996,7 @@ export class HUDManager {
     const integrityLabel = new TextBlock('integrity_label');
     integrityLabel.text = 'INTEGRITY';
     integrityLabel.fontSize = isCompactHud ? 24 : 22;
-    integrityLabel.fontFamily = fontFamily;
+    integrityLabel.fontFamily = 'Wonder8Bit';
     integrityLabel.color = '#7CFFEA';
     integrityLabel.width = '300px';
     integrityLabel.height = '28px';
@@ -1465,8 +1496,8 @@ export class HUDManager {
   private createPauseOverlay(): Rectangle {
     const idealWidth = this.guiClean.idealWidth || 1920;
     const isCompactHud = idealWidth <= 960;
-    const baseMenuButtonHeight = isCompactHud ? 76 : 70;
-    const baseMenuFontSize = isCompactHud ? 23 : 21;
+    const baseMenuButtonHeight = isCompactHud ? 84 : 76;
+    const baseMenuFontSize = isCompactHud ? 26 : 23;
 
     const container = new Rectangle('pause_overlay');
     container.width = 1;
@@ -1482,13 +1513,13 @@ export class HUDManager {
     const title = new TextBlock('pause_title');
     title.text = 'SYSTEM PAUSED';
     title.color = '#7CFFEA';
-    title.fontSize = isCompactHud ? 48 : 44;
-    title.fontFamily = 'Arcade8Bit';
+    title.fontSize = isCompactHud ? 52 : 46;
+    title.fontFamily = 'Wonder8Bit';
     title.top = '-180px';
     container.addControl(title);
 
     const buttonPanel = new StackPanel('pause_buttons');
-    buttonPanel.width = `${isCompactHud ? 440 : 380}px`;
+    buttonPanel.width = `${isCompactHud ? 470 : 410}px`;
     buttonPanel.top = '40px';
     buttonPanel.spacing = 16;
     container.addControl(buttonPanel);
@@ -1496,13 +1527,13 @@ export class HUDManager {
     const createButton = (text: string, color: string, onClick: () => void) => {
       const btn = Button.CreateSimpleButton(`pause_btn_${text}`, text);
       btn.height = `${baseMenuButtonHeight}px`;
-      btn.width = `${isCompactHud ? 440 : 380}px`;
+      btn.width = `${isCompactHud ? 470 : 410}px`;
       btn.color = color;
-      btn.background = 'rgba(20, 30, 35, 0.8)';
+      btn.background = UITheme.colors.buttonBg;
       btn.thickness = 1;
       btn.cornerRadius = 4;
       btn.fontSize = baseMenuFontSize;
-      btn.fontFamily = 'Arcade8Bit';
+      btn.fontFamily = 'Wonder8Bit';
       DaemonGlitchFx.injectWithOptions(
         btn,
         text,
@@ -1513,20 +1544,20 @@ export class HUDManager {
       return btn;
     };
 
-    createButton('RESUME', '#B8FFE6', () => {
+    createButton('RESUME', UITheme.colors.textNormal, () => {
       this.eventBus.emit(GameEvents.UI_PAUSE_TOGGLE);
     });
 
-    createButton('OPTIONS', '#9FEFE1', () => {
+    createButton('OPTIONS', UITheme.colors.textNormal, () => {
       this.showSettingsMenu();
     });
 
-    this.pauseSkipButton = createButton('SKIP TUTORIAL', '#9FEFE1', () => {
+    this.pauseSkipButton = createButton('SKIP TUTORIAL', UITheme.colors.textNormal, () => {
       this.eventBus.emit(GameEvents.TUTORIAL_SKIP_REQUESTED);
     });
     this.pauseSkipButton.isVisible = false;
 
-    this.pauseExitButton = createButton('MAIN MENU', '#9FEFE1', () => {
+    this.pauseExitButton = createButton('MAIN MENU', UITheme.colors.textNormal, () => {
       this.eventBus.emit(GameEvents.MAIN_MENU_REQUESTED);
     });
 
@@ -1998,7 +2029,7 @@ export class HUDManager {
       return btn;
     };
 
-    createButton('MAIN MENU', '#9FEFE1', () => {
+    createButton('MAIN MENU', UITheme.colors.textNormal, () => {
       this.hideOverlays();
       this.eventBus.emit(GameEvents.MAIN_MENU_REQUESTED);
     });

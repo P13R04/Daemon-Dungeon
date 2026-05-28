@@ -18,7 +18,7 @@ export class UIFactory {
     btn.thickness = UITheme.shapes.borderThickness;
     btn.cornerRadius = UITheme.shapes.cornerRadius;
     btn.color = UITheme.colors.borderBright;
-    btn.background = UITheme.colors.bgPanel;
+    btn.background = UITheme.colors.buttonBg;
 
     if (btn.textBlock) {
       btn.textBlock.fontFamily = UITheme.fonts.primary;

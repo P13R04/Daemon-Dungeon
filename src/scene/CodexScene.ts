@@ -266,19 +266,21 @@ export class CodexScene {
     this.headerSubtitle.top = `-${Math.round(layoutHeight * 0.37)}px`;
     mainLayoutContainer.addControl(this.headerSubtitle);
 
-    const backBtn = this.makeTopButton('codexBack', 'BACK TO MENU', Control.HORIZONTAL_ALIGNMENT_LEFT, () => this.onBackToMenu());
+    const backBtn = this.makeTopButton('codexBack', 'BACK', Control.HORIZONTAL_ALIGNMENT_LEFT, () => this.onBackToMenu());
     backBtn.left = '24px';
     mainLayoutContainer.addControl(backBtn);
 
-    if (!import.meta.env.PROD) {
-      const devBtn = this.makeTopButton('codexDev', this.getDevLabel(), Control.HORIZONTAL_ALIGNMENT_RIGHT, () => {
-        this.codexService.setDevUnlockCodexEntries(!this.codexService.getDevUnlockCodexEntries());
-        devBtn.textBlock!.text = this.getDevLabel();
-        this.refreshSection(true);
-      });
-      devBtn.left = '-24px';
-      mainLayoutContainer.addControl(devBtn);
+    const devBtn = this.makeTopButton('codexDev', this.getDevLabel(), Control.HORIZONTAL_ALIGNMENT_RIGHT, () => {
+      this.codexService.setDevUnlockCodexEntries(!this.codexService.getDevUnlockCodexEntries());
+      devBtn.textBlock!.text = this.getDevLabel();
+      this.refreshSection(true);
+    });
+    devBtn.left = '-24px';
+    if (devBtn.textBlock) {
+      devBtn.textBlock.color = '#FFFFFF';
+      (devBtn.textBlock as any).__daemonBaseColor = '#FFFFFF';
     }
+    mainLayoutContainer.addControl(devBtn);
 
     const centerFreeWidth = Math.max(
       320,
@@ -408,6 +410,7 @@ export class CodexScene {
     this.centerCard.addControl(this.centerCardArtwork);
 
     this.centerCardTitle = this.makeTerminalText('centerCardTitle', 30, '#C8FFF8');
+    this.centerCardTitle.fontFamily = 'Wonder8Bit';
     this.centerCardTitle.top = `${Math.round(centerCardHeight * 0.17)}px`;
     this.centerCardTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.centerCardTitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
@@ -436,11 +439,13 @@ export class CodexScene {
     const leftNavBtn = UIFactory.createTerminalButton('codexNavLeft', '<', `${Math.max(navButtonWidth, isMobileLayout ? 132 : 118)}px`, `${Math.max(navButtonHeight, menuButtonHeight)}px`);
     this.bindGlitchButton(leftNavBtn, '<', () => this.navigateBy(-1));
     if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontSize = menuButtonFont;
+    if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontFamily = 'Wonder8Bit';
     navRow.addControl(leftNavBtn);
 
     const rightNavBtn = UIFactory.createTerminalButton('codexNavRight', '>', `${Math.max(navButtonWidth, isMobileLayout ? 132 : 118)}px`, `${Math.max(navButtonHeight, menuButtonHeight)}px`);
     this.bindGlitchButton(rightNavBtn, '>', () => this.navigateBy(1));
     if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontSize = menuButtonFont;
+    if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontFamily = 'Wonder8Bit';
     navRow.addControl(rightNavBtn);
 
 
@@ -551,11 +556,14 @@ export class CodexScene {
 
   private makeTopButton(id: string, label: string, alignment: number, onClick: () => void): Button {
     const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
-    const btn = UIFactory.createTerminalButton(id, label, `${isMobileLayout ? 260 : 240}px`, `${isMobileLayout ? 76 : 70}px`);
+    const btn = UIFactory.createTerminalButton(id, label, `${isMobileLayout ? 290 : 260}px`, `${isMobileLayout ? 82 : 74}px`);
     btn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     btn.horizontalAlignment = alignment;
     btn.top = '20px';
-    if (btn.textBlock) btn.textBlock.fontSize = isMobileLayout ? 23 : 21;
+    if (btn.textBlock) {
+      btn.textBlock.fontSize = isMobileLayout ? 25 : 23;
+      btn.textBlock.fontFamily = 'Wonder8Bit';
+    }
     this.bindGlitchButton(btn, label, onClick);
     return btn;
   }
@@ -569,7 +577,10 @@ export class CodexScene {
       `${this.topTabButtonHeight}px`
     );
     this.bindGlitchButton(btn, label, onClick);
-    if (btn.textBlock) btn.textBlock.fontSize = isMobileLayout ? 24 : 21;
+    if (btn.textBlock) {
+      btn.textBlock.fontSize = isMobileLayout ? 24 : 21;
+      btn.textBlock.fontFamily = 'Wonder8Bit';
+    }
     return btn;
   }
 
@@ -579,7 +590,10 @@ export class CodexScene {
     btn.color = active ? UITheme.colors.textHighlight : UITheme.colors.borderBright;
     btn.background = active ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
     this.bindGlitchButton(btn, label, onClick);
-    if (btn.textBlock) btn.textBlock.fontSize = isMobileLayout ? 22 : 19;
+    if (btn.textBlock) {
+      btn.textBlock.fontSize = isMobileLayout ? 22 : 19;
+      btn.textBlock.fontFamily = 'Wonder8Bit';
+    }
     return btn;
   }
 
@@ -724,8 +738,8 @@ export class CodexScene {
       this.leftFilterRow.isVisible = true;
       this.centerCard.isVisible = false;
 
-      this.leftFilterNormalBtn.background = this.bestiaryGroup === 'normal' ? 'rgba(46,249,195,0.35)' : 'rgba(9,27,33,0.82)';
-      this.leftFilterBossBtn.background = this.bestiaryGroup === 'boss' ? 'rgba(46,249,195,0.35)' : 'rgba(9,27,33,0.82)';
+      this.leftFilterNormalBtn.background = this.bestiaryGroup === 'normal' ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
+      this.leftFilterBossBtn.background = this.bestiaryGroup === 'boss' ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
 
       this.populateBestiaryCarousel();
       this.populateBestiaryList();
@@ -788,8 +802,8 @@ export class CodexScene {
     btn.height = `${isMobileLayout ? 64 : 56}px`;
     btn.thickness = 1;
     btn.cornerRadius = 4;
-    btn.color = active ? '#F1FFFC' : '#A3DCCF';
-    btn.background = active ? 'rgba(26,98,89,0.65)' : 'rgba(10,24,34,0.84)';
+    btn.color = active ? '#FFFFFF' : UITheme.colors.textNormal;
+    btn.background = active ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
     btn.isPointerBlocker = true;
     btn.isHitTestVisible = true;
     this.bindGlitchButton(btn, label, onClick);

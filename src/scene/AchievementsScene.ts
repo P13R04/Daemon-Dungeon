@@ -255,29 +255,45 @@ export class AchievementsScene {
     this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
-    const backBtn = this.makeTabButton('BACK TO MAIN MENU', () => {
+    const topButtonWidth = `${isMobileLayout ? 290 : 260}px`;
+    const topButtonHeight = `${isMobileLayout ? 82 : 74}px`;
+
+    const backBtn = this.makeTabButton('BACK', () => {
       this.onBackToMenu();
     });
+    backBtn.width = topButtonWidth;
+    backBtn.height = topButtonHeight;
     backBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     backBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     backBtn.left = '32px';
-    backBtn.top = '24px';
+    backBtn.top = '20px';
+    if (backBtn.textBlock) {
+      backBtn.textBlock.fontSize = isMobileLayout ? 25 : 23;
+      backBtn.textBlock.fontFamily = 'Wonder8Bit';
+      backBtn.textBlock.color = '#FFFFFF';
+    }
     mainLayoutContainer.addControl(backBtn);
 
-    if (!import.meta.env.PROD) {
-      const devBtn = this.makeTabButton(this.getDevLabel(), () => {
-        this.codexService.setDevUnlockCodexEntries(!this.codexService.getDevUnlockCodexEntries());
-        devBtn.textBlock!.text = this.getDevLabel();
-        this.clearLeftList();
-        this.populateAchievementList();
-        this.refreshAchievementSelection(true);
-      });
-      devBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-      devBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-      devBtn.left = '-32px';
-      devBtn.top = '24px';
-      mainLayoutContainer.addControl(devBtn);
+    const devBtn = this.makeTabButton(this.getDevLabel(), () => {
+      this.codexService.setDevUnlockCodexEntries(!this.codexService.getDevUnlockCodexEntries());
+      devBtn.textBlock!.text = this.getDevLabel();
+      this.clearLeftList();
+      this.populateAchievementList();
+      this.refreshAchievementSelection(true);
+    });
+    devBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    devBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    devBtn.width = topButtonWidth;
+    devBtn.height = topButtonHeight;
+    devBtn.left = '-32px';
+    devBtn.top = '20px';
+    if (devBtn.textBlock) {
+      devBtn.textBlock.fontSize = isMobileLayout ? 25 : 23;
+      devBtn.textBlock.fontFamily = 'Wonder8Bit';
+      devBtn.textBlock.color = '#FFFFFF';
+      (devBtn.textBlock as any).__daemonBaseColor = '#FFFFFF';
     }
+    mainLayoutContainer.addControl(devBtn);
 
     const mainTitle = UIFactory.createText('achTitle', 'ACHIEVEMENTS', 60, UITheme.colors.textHighlight);
     mainTitle.fontFamily = 'Wonder8Bit';
@@ -320,7 +336,7 @@ export class AchievementsScene {
     scrollViewer.height = `${Math.round(sidePanelHeight * 0.8)}px`;
     scrollViewer.top = `${Math.round(sidePanelHeight * 0.06)}px`;
     scrollViewer.thickness = 0;
-    scrollViewer.barColor = '#3B685C';
+    scrollViewer.barColor = UITheme.colors.borderBright;
     scrollViewer.barBackground = 'rgba(0,0,0,0.5)';
     this.leftPanel.addControl(scrollViewer);
     this.leftListScroll = scrollViewer;
@@ -360,7 +376,7 @@ export class AchievementsScene {
     artContainer.height = `${artSize}px`;
     artContainer.top = `-${Math.round(centerCardHeight * 0.1)}px`;
     artContainer.thickness = 1;
-    artContainer.color = '#3B685C';
+    artContainer.color = UITheme.colors.borderDim;
     artContainer.background = 'rgba(0,0,0,0.5)';
     this.centerCard.addControl(artContainer);
 
@@ -378,17 +394,23 @@ export class AchievementsScene {
     artContainer.addControl(this.centerCardArtwork);
 
     this.centerCardTitle = new TextBlock('centerTitle', '');
-    this.centerCardTitle.fontFamily = this.terminalFont;
+    this.centerCardTitle.fontFamily = 'Wonder8Bit';
     this.centerCardTitle.fontSize = isMobileLayout ? 36 : 32;
     this.centerCardTitle.color = '#FFFFFF';
-    this.centerCardTitle.top = '174px';
+    this.centerCardTitle.top = '202px';
+    this.centerCardTitle.width = `${Math.round(centerCardWidth * 0.88)}px`;
+    this.centerCardTitle.height = isMobileLayout ? '112px' : '100px';
+    this.centerCardTitle.textWrapping = true;
+    this.centerCardTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.centerCardTitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.centerCardTitle.lineSpacing = '2px';
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = new TextBlock('centerSubtitle', '');
     this.centerCardSubtitle.fontFamily = this.terminalFont;
-    this.centerCardSubtitle.fontSize = isMobileLayout ? 26 : 22;
+    this.centerCardSubtitle.fontSize = isMobileLayout ? 30 : 26;
     this.centerCardSubtitle.color = '#7DFFE8';
-    this.centerCardSubtitle.top = '216px';
+    this.centerCardSubtitle.top = '256px';
     this.centerCard.addControl(this.centerCardSubtitle);
 
     const navButtonWidth = isMobileLayout ? 168 : 156;
@@ -404,11 +426,13 @@ export class AchievementsScene {
 
     const leftNavBtn = UIFactory.createTerminalButton('achNavLeft', '<', `${navButtonWidth}px`, `${navButtonHeight}px`);
     if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontSize = isMobileLayout ? 25 : 22;
+    if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontFamily = 'Wonder8Bit';
     this.bindGlitchButton(leftNavBtn, '<', () => this.navigateBy(-1));
     navRow.addControl(leftNavBtn);
 
     const rightNavBtn = UIFactory.createTerminalButton('achNavRight', '>', `${navButtonWidth}px`, `${navButtonHeight}px`);
     if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontSize = isMobileLayout ? 25 : 22;
+    if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontFamily = 'Wonder8Bit';
     this.bindGlitchButton(rightNavBtn, '>', () => this.navigateBy(1));
     navRow.addControl(rightNavBtn);
   }
@@ -418,7 +442,7 @@ export class AchievementsScene {
     p.width = w + 'px';
     p.height = h + 'px';
     p.thickness = 1;
-    p.color = '#3B685C';
+    p.color = UITheme.colors.borderDim;
     p.background = 'rgba(10, 18, 22, 0.85)';
     return p;
   }
@@ -438,15 +462,19 @@ export class AchievementsScene {
   private makeTabButton(label: string, onClick: () => void): Button {
     const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
     const btn = Button.CreateSimpleButton(`tab_${label}`, label);
-    btn.width = `${isMobileLayout ? 300 : 260}px`;
-    btn.height = `${isMobileLayout ? 82 : 74}px`;
-    btn.color = '#7CFFEA';
+    btn.width = `${isMobileLayout ? 340 : 300}px`;
+    btn.height = `${isMobileLayout ? 84 : 76}px`;
+    btn.color = UITheme.colors.borderBright;
     btn.thickness = 1;
     btn.cornerRadius = 2;
-    btn.background = 'rgba(20, 30, 35, 0.6)';
+    btn.background = UITheme.colors.bgPanel;
     btn.fontFamily = this.terminalFont;
-    btn.fontSize = isMobileLayout ? 25 : 22;
+    btn.fontSize = isMobileLayout ? 26 : 23;
     this.bindGlitchButton(btn, label, onClick);
+    if (btn.textBlock) {
+      btn.textBlock.fontFamily = 'Wonder8Bit';
+      btn.textBlock.color = UITheme.colors.textNormal;
+    }
     return btn;
   }
 
@@ -480,8 +508,8 @@ export class AchievementsScene {
     btn.height = `${isMobileLayout ? 64 : 56}px`;
     btn.thickness = 1;
     btn.cornerRadius = 4;
-    btn.color = active ? '#F1FFFC' : '#A3DCCF';
-    btn.background = active ? 'rgba(26,98,89,0.65)' : 'rgba(10,24,34,0.84)';
+    btn.color = active ? '#FFFFFF' : UITheme.colors.textNormal;
+    btn.background = active ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
     btn.isPointerBlocker = true;
     btn.isHitTestVisible = true;
     this.bindGlitchButton(btn, label, onClick);
