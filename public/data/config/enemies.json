@@ -1,7 +1,7 @@
 {
   "zombie_basic": {
     "name": "Zombie",
-    "description": "Un processus corrompu. Lent mais persistant.",
+    "description": "A corrupted process. Slow but persistent.",
     "baseStats": {
       "hp": 40,
       "damage": 8,
@@ -28,7 +28,7 @@
   },
   "zombie_basic_void": {
     "name": "Zombie (Voidwalker)",
-    "description": "Zombie de test qui peut tomber dans le vide.",
+    "description": "Test zombie variant that can fall into the void.",
     "baseStats": {
       "hp": 42,
       "damage": 8,
@@ -54,7 +54,7 @@
   },
   "dummy_tank": {
     "name": "Dummy",
-    "description": "Cible d'entraînement immobile.",
+    "description": "Static training target.",
     "baseStats": {
       "hp": 300,
       "damage": 0,
@@ -71,7 +71,7 @@
   },
   "tutorial_dummy_tank": {
     "name": "Tutorial Dummy",
-    "description": "Cible d'entraînement de tutoriel (HP réduit).",
+    "description": "Tutorial training target with reduced HP.",
     "baseStats": {
       "hp": 100,
       "damage": 0,
@@ -88,7 +88,7 @@
   },
   "bull": {
     "name": "Bull",
-    "description": "Verrouille sa cible puis charge brutalement.",
+    "description": "Locks its target, then charges brutally.",
     "baseStats": {
       "hp": 90,
       "damage": 14,
@@ -115,7 +115,7 @@
   },
   "pong": {
     "name": "Pong",
-    "description": "Se déplace en ligne droite et rebondit sur les murs.",
+    "description": "Moves in a straight line and bounces off walls.",
     "baseStats": {
       "hp": 55,
       "damage": 10,
@@ -137,7 +137,7 @@
   },
   "jumper": {
     "name": "Jumper",
-    "description": "Verrouille sa cible et effectue un saut rapide.",
+    "description": "Locks its target and performs a fast leap.",
     "baseStats": {
       "hp": 70,
       "damage": 12,
@@ -162,8 +162,8 @@
     }
   },
   "fuyard": {
-    "name": "Fuyard",
-    "description": "Harcèle à distance: s'approche de loin mais fuit quand le joueur est trop proche.",
+    "name": "Skittish",
+    "description": "Ranged harasser: closes in from afar, then flees when you get too close.",
     "baseStats": {
       "hp": 35,
       "damage": 6,
@@ -196,7 +196,7 @@
   },
   "strategist": {
     "name": "Strategist",
-    "description": "Anticipe la trajectoire du joueur.",
+    "description": "Predicts the player's trajectory.",
     "baseStats": {
       "hp": 45,
       "damage": 8,
@@ -223,7 +223,7 @@
   },
   "swarm_coordinator": {
     "name": "Swarm Coordinator",
-    "description": "Orchestre les déplacements de groupe et force l'encerclement.",
+    "description": "Orchestrates swarm movement and forces encirclement.",
     "baseStats": {
       "hp": 72,
       "damage": 8,
@@ -259,7 +259,7 @@
   },
   "prefire_sentinel": {
     "name": "Prefire Sentinel",
-    "description": "Verrouille une trajectoire anticipée puis tire avec délai de préfire.",
+    "description": "Locks a predicted line, then fires after a prefire delay.",
     "baseStats": {
       "hp": 66,
       "damage": 12,
@@ -296,7 +296,7 @@
   },
   "sentinel": {
     "name": "Sentinel",
-    "description": "Tire à distance moyenne.",
+    "description": "Mid-range shooter.",
     "baseStats": {
       "hp": 60,
       "damage": 10,
@@ -328,7 +328,7 @@
   },
   "turret": {
     "name": "Turret",
-    "description": "Tourelle fixe à projectiles.",
+    "description": "Fixed projectile turret.",
     "baseStats": {
       "hp": 80,
       "damage": 12,
@@ -353,7 +353,7 @@
   },
   "healer": {
     "name": "Healer",
-    "description": "Soigne les alliés proches.",
+    "description": "Heals nearby allies.",
     "baseStats": {
       "hp": 60,
       "damage": 0,
@@ -380,7 +380,7 @@
   },
   "artificer": {
     "name": "Artificer",
-    "description": "Tire un projectile qui se divise et explose en zone.",
+    "description": "Launches a projectile that splits and explodes in an area.",
     "baseStats": {
       "hp": 70,
       "damage": 8,
@@ -425,7 +425,7 @@
   },
   "bullet_hell": {
     "name": "Bullet Hell",
-    "description": "Tourelle statique qui tire en cône.",
+    "description": "Static turret that fires in a cone.",
     "baseStats": {
       "hp": 75,
       "damage": 10,
@@ -450,7 +450,7 @@
   },
   "mage_missile": {
     "name": "Missile Mage",
-    "description": "Invoque des missiles kamikazes.",
+    "description": "Summons kamikaze missiles.",
     "baseStats": {
       "hp": 65,
       "damage": 6,
@@ -470,7 +470,7 @@
   },
   "missile": {
     "name": "Missile",
-    "description": "Projectile kamikaze guidé.",
+    "description": "Guided kamikaze projectile.",
     "baseStats": {
       "hp": 10,
       "damage": 12,
@@ -493,7 +493,7 @@
   },
   "bull_boss": {
     "name": "Bull Prime",
-    "description": "Version boss du Bull: plus massif, plus brutal.",
+    "description": "Boss Bull variant: bigger and more brutal.",
     "baseStats": {
       "hp": 340,
       "damage": 28,
@@ -521,7 +521,7 @@
   },
   "jumper_boss": {
     "name": "Skybreaker Jumper",
-    "description": "Jumper boss: saute plus haut et déclenche une onde de choc.",
+    "description": "Boss Jumper: leaps higher and triggers a shockwave.",
     "baseStats": {
       "hp": 280,
       "damage": 24,
@@ -551,7 +551,7 @@
   },
   "necromancer_boss": {
     "name": "Necromancer Sentinel",
-    "description": "Sentinel boss qui invoque des zombies en continu.",
+    "description": "Boss Sentinel that continuously summons zombies.",
     "baseStats": {
       "hp": 320,
       "damage": 18,
@@ -584,7 +584,7 @@
   },
   "spike_strategist_boss": {
     "name": "Tri-Spike Strategist",
-    "description": "Approche le joueur et lance des zones de pics sur un tiers de la salle.",
+    "description": "Closes in and deploys spike zones across one-third of the room.",
     "baseStats": {
       "hp": 360,
       "damage": 16,
@@ -614,7 +614,7 @@
   },
   "laser_pattern_boss": {
     "name": "Pattern Core",
-    "description": "Boss immobile qui lance des rayons rotatifs et des quadrillages inclinés.",
+    "description": "Stationary boss that casts rotating beams and angled grid patterns.",
     "baseStats": {
       "hp": 420,
       "damage": 0,
@@ -641,7 +641,7 @@
   },
   "tutorial_dummy_basic": {
     "name": "Dummy",
-    "description": "Cible d'entraînement immobile.",
+    "description": "Static training target.",
     "baseStats": {
       "hp": 25,
       "damage": 0,
@@ -658,7 +658,7 @@
   },
   "tutorial_dummy_mobile": {
     "name": "Mobile Dummy",
-    "description": "Cible d'entraînement mobile, sans dégâts de contact.",
+    "description": "Mobile training target with no contact damage.",
     "baseStats": {
       "hp": 36,
       "damage": 0,
@@ -676,7 +676,7 @@
   },
   "tutorial_turret": {
     "name": "Turret",
-    "description": "Tourelle d'entraînement à projectiles lents.",
+    "description": "Training turret with slow projectiles.",
     "baseStats": {
       "hp": 150,
       "damage": 5,
@@ -701,7 +701,7 @@
   },
   "tutorial_sentinel": {
     "name": "Sentinel",
-    "description": "Ennemi basique d'entraînement pour le rogue.",
+    "description": "Basic rogue training target.",
     "baseStats": {
       "hp": 80,
       "damage": 5,
@@ -729,7 +729,7 @@
   },
   "zombie_fast": {
     "name": "Fast Zombie",
-    "description": "Processus corrompu avec planification prioritaire, plus rapide.",
+    "description": "Corrupted process with priority scheduling, faster than usual.",
     "baseStats": {
       "hp": 35,
       "damage": 8,
@@ -756,7 +756,7 @@
   },
   "shooter": {
     "name": "Shooter",
-    "description": "Tire à distance moyenne.",
+    "description": "Mid-range shooter.",
     "baseStats": {
       "hp": 55,
       "damage": 9,

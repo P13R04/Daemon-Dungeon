@@ -284,8 +284,12 @@ export class HighscoresScene {
       mainLayoutContainer.addControl(devBtn);
     }
 
-    const mainTitle = UIFactory.createText('hsTitle', 'LOCAL HIGHSCORES DIRECTORY', 60, UITheme.colors.textHighlight);
-    mainTitle.fontFamily = UITheme.fonts.primary;
+    const mainTitle = UIFactory.createText('hsTitle', 'HIGHSCORES', 60, UITheme.colors.textHighlight);
+    mainTitle.fontFamily = 'Wonder8Bit';
+    mainTitle.color = '#EAF9FF';
+    mainTitle.outlineColor = '#081622';
+    mainTitle.outlineWidth = 4;
+    mainTitle.shadowBlur = 0;
     mainTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     mainTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     mainTitle.top = `${Math.round(layoutHeight * 0.05)}px`;

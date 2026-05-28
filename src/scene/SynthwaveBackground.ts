@@ -139,14 +139,14 @@ function createNeutralReflectionCurtain(scene: Scene, layerMask?: number, rotate
   sctx.fillRect(0, 0, texSize, texSize);
 
   for (const p of paths) {
-    drawPath(sctx, p.pts, 7.2, 'rgba(6, 14, 34, 0.98)');
+    drawPath(sctx, p.pts, 7.6, 'rgba(6, 12, 30, 0.99)');
   }
   for (const p of paths) {
     const color =
       p.tone === 'cyan' ? 'rgba(126, 246, 255, 0.86)'
         : p.tone === 'violet' ? 'rgba(174, 160, 255, 0.78)'
           : 'rgba(106, 208, 255, 0.84)';
-    drawPath(sctx, p.pts, 4.0, color);
+    drawPath(sctx, p.pts, 4.6, color);
   }
 
   // Via nodes.
@@ -181,7 +181,7 @@ function createNeutralReflectionCurtain(scene: Scene, layerMask?: number, rotate
   curtainMat.useAlphaFromDiffuseTexture = true;
   curtainMat.transparencyMode = Material.MATERIAL_ALPHABLEND;
   curtainMat.emissiveTexture = texture;
-  curtainMat.emissiveColor = new Color3(0.56, 0.86, 0.99);
+  curtainMat.emissiveColor = new Color3(0.26, 0.4, 0.5);
 
   const createCurtainInstance = (name: string, z: number): void => {
     const curtain = MeshBuilder.CreatePlane(
@@ -229,7 +229,7 @@ function createNeutralReflectionCurtain(scene: Scene, layerMask?: number, rotate
         const phaseShift = (b * p.length * 0.31) % p.length;
         const d = (basePhase + phaseShift) % p.length;
         const pos = pointOnPath(p.pts, d);
-        const glowR = 10 + ((pi + b) % 4) * 1.8;
+        const glowR = 7 + ((pi + b) % 4) * 1.2;
         const coreR = 2.8 + ((pi + b) % 3) * 0.4;
         const g = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, glowR);
         if (p.tone === 'violet') {
@@ -258,11 +258,11 @@ function createNeutralReflectionCurtain(scene: Scene, layerMask?: number, rotate
     }
 
     texture.update(false);
-    const pulseA = 0.9 + (Math.sin(drift * 2.4) * 0.08);
-    const pulseB = 0.9 + (Math.sin((drift * 1.55) + 1.4) * 0.07);
-    curtainMat.alpha = 0.9 * pulseA;
+    const pulseA = 0.93 + (Math.sin(drift * 2.2) * 0.04);
+    const pulseB = 0.93 + (Math.sin((drift * 1.5) + 1.4) * 0.04);
+    curtainMat.alpha = 0.86 * pulseA;
     const e = 0.44 + ((pulseA + pulseB) * 0.25);
-    curtainMat.emissiveColor = new Color3(0.44 + (e * 0.28), 0.72 + (e * 0.3), 0.98);
+    curtainMat.emissiveColor = new Color3(0.18 + (e * 0.18), 0.3 + (e * 0.16), 0.42 + (e * 0.14));
   });
 }
 
@@ -363,7 +363,7 @@ export function createSynthwaveGridBackground(
   fixedLineGradient.addColorStop(1, 'rgba(156, 124, 255, 1)');
 
   perspectiveCtx.strokeStyle = fixedLineGradient;
-  perspectiveCtx.lineWidth = 1.35;
+  perspectiveCtx.lineWidth = 1.9;
   for (let i = 0; i < gridLineCount; i++) {
     const t = i / (gridLineCount - 1);
     const x = Math.round(t * perspectiveTextureSize) + 0.5;
@@ -387,8 +387,8 @@ export function createSynthwaveGridBackground(
   perspectiveCtx.restore();
 
   perspectiveTexture.update(false);
-  perspectiveTexture.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
-  perspectiveTexture.anisotropicFilteringLevel = 8;
+  perspectiveTexture.updateSamplingMode(Texture.NEAREST_SAMPLINGMODE);
+  perspectiveTexture.anisotropicFilteringLevel = 1;
   perspectiveTexture.wrapU = Texture.CLAMP_ADDRESSMODE;
   perspectiveTexture.wrapV = Texture.CLAMP_ADDRESSMODE;
   perspectiveTexture.uScale = 1;
@@ -403,7 +403,7 @@ export function createSynthwaveGridBackground(
   perspectiveMaterial.useAlphaFromDiffuseTexture = true;
   perspectiveMaterial.transparencyMode = Material.MATERIAL_ALPHABLEND;
   perspectiveMaterial.emissiveTexture = perspectiveTexture;
-  perspectiveMaterial.emissiveColor = new Color3(0.78, 0.9, 1.0);
+  perspectiveMaterial.emissiveColor = new Color3(0.42, 0.56, 0.72);
   perspectiveMesh.material = perspectiveMaterial;
 
   const flowTextureSize = 2048;
@@ -419,7 +419,7 @@ export function createSynthwaveGridBackground(
   flowHorizontalGradient.addColorStop(0.5, 'rgba(120, 210, 255, 1)');
   flowHorizontalGradient.addColorStop(0.53, 'rgba(156, 124, 255, 1)');
   flowHorizontalGradient.addColorStop(1, 'rgba(156, 124, 255, 1)');
-  flowCtx.lineWidth = 1.35;
+  flowCtx.lineWidth = 3.0;
   for (let i = 0; i < flowLineCount; i++) {
     const t = i / (flowLineCount - 1);
     const y = Math.round(t * flowTextureSize) + 0.5;
@@ -433,8 +433,8 @@ export function createSynthwaveGridBackground(
   flowCtx.globalAlpha = 1;
 
   flowTexture.update(false);
-  flowTexture.updateSamplingMode(Texture.TRILINEAR_SAMPLINGMODE);
-  flowTexture.anisotropicFilteringLevel = 8;
+  flowTexture.updateSamplingMode(Texture.NEAREST_SAMPLINGMODE);
+  flowTexture.anisotropicFilteringLevel = 1;
   flowTexture.wrapU = Texture.WRAP_ADDRESSMODE;
   flowTexture.wrapV = Texture.WRAP_ADDRESSMODE;
   flowTexture.uScale = 1;
@@ -458,6 +458,8 @@ export function createSynthwaveGridBackground(
   fadeCtx.fillStyle = fadeGradient;
   fadeCtx.fillRect(0, fadeHorizonY, fadeTextureSize, fadeTextureSize - fadeHorizonY);
   fadeTexture.update(false);
+  fadeTexture.updateSamplingMode(Texture.NEAREST_SAMPLINGMODE);
+  fadeTexture.anisotropicFilteringLevel = 1;
   
   fadeTexture.wrapU = Texture.CLAMP_ADDRESSMODE;
   fadeTexture.wrapV = Texture.CLAMP_ADDRESSMODE;
@@ -471,14 +473,16 @@ export function createSynthwaveGridBackground(
   flowMaterial.useAlphaFromDiffuseTexture = false;
   flowMaterial.transparencyMode = Material.MATERIAL_ALPHABLEND;
   flowMaterial.emissiveTexture = flowTexture;
-  flowMaterial.emissiveColor = new Color3(0.78, 0.9, 1.0);
+  flowMaterial.emissiveColor = new Color3(0.46, 0.62, 0.78);
   flowMesh.material = flowMaterial;
 
   let scrollV = 0;
+  const flowTexelStep = 1 / flowTextureSize;
   scene.onBeforeRenderObservable.add(() => {
     const deltaSeconds = scene.getEngine().getDeltaTime() / 1000;
     scrollV -= deltaSeconds * 0.005;
-    flowTexture.vOffset = scrollV;
+    // Snap scrolling to texel increments to avoid sub-pixel blur/jitter.
+    flowTexture.vOffset = Math.round(scrollV / flowTexelStep) * flowTexelStep;
   });
 
   if (mode === 'neutralHub') {

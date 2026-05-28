@@ -247,17 +247,22 @@ export class CodexScene {
 
     this.headerTitle = new TextBlock('codexHeaderTitle');
     this.headerTitle.text = 'NEURAL CODEX';
-    this.headerTitle.fontFamily = this.terminalFont;
-    this.headerTitle.fontSize = 56;
-    this.headerTitle.color = '#7FFFE7';
+    this.headerTitle.fontFamily = 'Wonder8Bit';
+    this.headerTitle.fontSize = 58;
+    this.headerTitle.color = '#EAF9FF';
+    this.headerTitle.outlineColor = '#081622';
+    this.headerTitle.outlineWidth = 4;
+    this.headerTitle.shadowBlur = 0;
     this.headerTitle.top = `-${Math.round(layoutHeight * 0.43)}px`;
     mainLayoutContainer.addControl(this.headerTitle);
 
     this.headerSubtitle = new TextBlock('codexHeaderSubtitle');
-    this.headerSubtitle.text = '> DATABASE TERMINAL';
-    this.headerSubtitle.fontFamily = this.terminalFont;
+    this.headerSubtitle.text = '';
+    this.headerSubtitle.fontFamily = 'Arcade8Bit';
     this.headerSubtitle.fontSize = 18;
-    this.headerSubtitle.color = '#8FDCCF';
+    this.headerSubtitle.color = '#CFFCF3';
+    this.headerSubtitle.outlineColor = '#041018';
+    this.headerSubtitle.outlineWidth = 2;
     this.headerSubtitle.top = `-${Math.round(layoutHeight * 0.37)}px`;
     mainLayoutContainer.addControl(this.headerSubtitle);
 
@@ -389,6 +394,9 @@ export class CodexScene {
 
     this.centerCardIcon = this.makeTerminalText('centerCardIcon', 80, '#8CFFF0');
     this.centerCardIcon.top = `-${Math.round(centerCardHeight * 0.21)}px`;
+    this.centerCardIcon.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.centerCardIcon.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.centerCardIcon.left = '0px';
     this.centerCard.addControl(this.centerCardIcon);
 
     this.centerCardArtwork = new Image('centerCardArtwork');
@@ -401,10 +409,16 @@ export class CodexScene {
 
     this.centerCardTitle = this.makeTerminalText('centerCardTitle', 30, '#C8FFF8');
     this.centerCardTitle.top = `${Math.round(centerCardHeight * 0.17)}px`;
+    this.centerCardTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.centerCardTitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.centerCardTitle.left = '0px';
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = this.makeTerminalText('centerCardSubtitle', 18, '#8FDACF');
     this.centerCardSubtitle.top = `${Math.round(centerCardHeight * 0.29)}px`;
+    this.centerCardSubtitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.centerCardSubtitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    this.centerCardSubtitle.left = '0px';
     this.centerCard.addControl(this.centerCardSubtitle);
 
 
@@ -1218,6 +1232,7 @@ export class CodexScene {
 
     // Leave centerCardIcon visible so it serves as a background fallback if the image is transparent
     this.centerCardIcon.isVisible = true;
+    this.centerCardIcon.text = '';
     this.centerCardArtwork.isVisible = true;
     const cachedImg = getCachedHudAsset(`bonuses/${bonus.id}.png`);
     if (cachedImg) {

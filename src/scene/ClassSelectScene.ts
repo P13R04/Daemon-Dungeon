@@ -425,6 +425,11 @@ export class ClassSelectScene {
     mainLayoutContainer.addControl(backBtn);
 
     const title = UIFactory.createText('classSelectTitle', 'SELECT CLASS', 60, UITheme.colors.textHighlight);
+    title.fontFamily = 'Wonder8Bit';
+    title.color = '#EAF9FF';
+    title.outlineColor = '#081622';
+    title.outlineWidth = 4;
+    title.shadowBlur = 0;
     title.top = `-${Math.round(layoutHeight * 0.44)}px`;
     title.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     mainLayoutContainer.addControl(title);

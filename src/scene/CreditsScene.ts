@@ -16,6 +16,7 @@ type CreditsLine = {
   color?: string;
   typingSpeed?: number;
   hold?: number;
+  monospaced?: boolean;
   popup?: {
     text: string;
     emotion: string;
@@ -29,6 +30,13 @@ type CreditsLine = {
 type ConsoleLineControl = {
   block: TextBlock;
   y: number;
+};
+
+type PopupRequest = {
+  text: string;
+  emotion: string;
+  preset: VoicePresetName;
+  duration: number;
 };
 
 export class CreditsScene {
@@ -61,6 +69,7 @@ export class CreditsScene {
   private typingAccumulator = 0;
   private interLineTimer = 0;
   private pendingStartLine = true;
+  private pendingLineStartBlink = 0;
   private lineSpacing = 30;
   private readonly consoleTopPadding = 14;
   private spawnLineY = this.consoleTopPadding;
@@ -82,6 +91,12 @@ export class CreditsScene {
   private popupAnimTimer = 0;
   private popupYHidden = -260;
   private popupYShown = 18;
+  private readonly popupQueue: PopupRequest[] = [];
+  private sceneClock = 0;
+  private popupSequenceStarted = false;
+  private nextPopupAllowedAt = 0;
+  private readonly popupGapAfterVoiceSeconds = 4.0;
+  private activePopupVoiceId = 0;
 
   private titleAnimTimer = 0;
   private titleFrameIndex = 0;
@@ -91,6 +106,9 @@ export class CreditsScene {
   private activeLineAnimatedFrameTimer = 0;
   private activeLineAnimatedFrameIndex = 0;
   private activeLineAnimatedFinished = false;
+  private cursorBlinkTimer = 0;
+  private cursorVisible = true;
+  private readonly cursorChar = '_';
 
   private readonly updateObserver: ReturnType<Scene['onBeforeRenderObservable']['add']>;
   private readonly pointerObserver: ReturnType<Scene['onPointerObservable']['add']>;
@@ -151,8 +169,8 @@ export class CreditsScene {
     this.titleRight.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleContainer.addControl(this.titleRight);
 
-    const subtitle = new TextBlock('creditsSubtitle', 'SYSTEM READY // CREDITS CONSOLE');
-    subtitle.color = '#E0B4FF';
+    const subtitle = new TextBlock('creditsSubtitle', 'SYSTEM CORE // CREDITS CHANNEL');
+    subtitle.color = '#9EEBFF';
     subtitle.fontFamily = 'Arcade8Bit';
     subtitle.fontSize = 19;
     subtitle.top = '-240px';
@@ -163,31 +181,49 @@ export class CreditsScene {
 
     this.consoleBody = new Rectangle('creditsConsoleBody');
     this.consoleBody.width = '92%';
-    this.consoleBody.height = '68%';
-    this.consoleBody.top = '90px';
+    this.consoleBody.height = '70%';
+    this.consoleBody.top = '84px';
     this.consoleBody.cornerRadius = 0;
     this.consoleBody.thickness = 2;
-    this.consoleBody.color = '#4EFFC8';
-    this.consoleBody.background = '#020706EE';
+    this.consoleBody.color = '#1f3f57';
+    this.consoleBody.background = '#060f1be8';
     this.consoleBody.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.consoleBody.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     root.addControl(this.consoleBody);
 
-    const consoleHeader = new TextBlock('creditsConsoleHeader', 'daemon_console --follow --credits --noisy=false');
-    consoleHeader.height = '34px';
-    consoleHeader.top = '-8px';
-    consoleHeader.color = '#B7A0FF';
-    consoleHeader.fontFamily = 'Arcade8Bit';
-    consoleHeader.fontSize = 15;
-    this.consoleBody.addControl(consoleHeader);
+    const consoleHeaderLeft = new TextBlock('creditsConsoleHeaderLeft', 'CREDITS CONSOLE');
+    consoleHeaderLeft.height = '40px';
+    consoleHeaderLeft.top = '10px';
+    consoleHeaderLeft.color = '#9EEBFF';
+    consoleHeaderLeft.fontFamily = 'Arcade8Bit';
+    consoleHeaderLeft.fontSize = 22;
+    consoleHeaderLeft.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    consoleHeaderLeft.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    consoleHeaderLeft.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    consoleHeaderLeft.width = '100%';
+    consoleHeaderLeft.paddingLeft = '3%';
+    this.consoleBody.addControl(consoleHeaderLeft);
+
+    const consoleHeaderRight = new TextBlock('creditsConsoleHeaderRight', 'system_core://credits --archive --tone=bitter-sweet');
+    consoleHeaderRight.height = '40px';
+    consoleHeaderRight.top = '10px';
+    consoleHeaderRight.color = '#8ccbf0';
+    consoleHeaderRight.fontFamily = 'Arcade8Bit';
+    consoleHeaderRight.fontSize = 18;
+    consoleHeaderRight.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    consoleHeaderRight.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    consoleHeaderRight.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    consoleHeaderRight.width = '100%';
+    consoleHeaderRight.paddingRight = '3%';
+    this.consoleBody.addControl(consoleHeaderRight);
 
     this.consoleViewport = new Rectangle('creditsConsoleViewport');
     this.consoleViewport.width = '94%';
-    this.consoleViewport.height = '82%';
-    this.consoleViewport.top = '16px';
+    this.consoleViewport.height = '78%';
+    this.consoleViewport.top = '40px';
     this.consoleViewport.thickness = 0;
     this.consoleViewport.clipChildren = true;
-    this.consoleViewport.background = '#010403CC';
+    this.consoleViewport.background = '#030a14d0';
     this.consoleViewport.cornerRadius = 0;
     this.consoleBody.addControl(this.consoleViewport);
 
@@ -203,7 +239,7 @@ export class CreditsScene {
       fade.width = 1;
       fade.height = `${layer.h}px`;
       fade.thickness = 0;
-      fade.background = '#020706';
+      fade.background = '#030a14';
       fade.alpha = layer.a;
       fade.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
       fade.top = `${fadeOffset}px`;
@@ -215,7 +251,7 @@ export class CreditsScene {
     fadeBottom.width = 1;
     fadeBottom.height = '20px';
     fadeBottom.thickness = 0;
-    fadeBottom.background = '#020706';
+    fadeBottom.background = '#030a14';
     fadeBottom.alpha = 0.95;
     fadeBottom.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     this.consoleViewport.addControl(fadeBottom);
@@ -275,18 +311,18 @@ export class CreditsScene {
     this.popupText.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.popupBubble.addControl(this.popupText);
 
-    const backButton = Button.CreateSimpleButton('creditsBackButton', 'BACK');
-    backButton.width = '188px';
-    backButton.height = '58px';
-    backButton.cornerRadius = 12;
-    backButton.color = '#F9E8FF';
-    backButton.background = '#3C0E59';
+    const backButton = Button.CreateSimpleButton('creditsBackButton', 'BACK TO MAIN MENU');
+    backButton.width = '330px';
+    backButton.height = '62px';
+    backButton.cornerRadius = 8;
+    backButton.color = '#9ef7ff';
+    backButton.background = 'rgba(10, 30, 38, 0.94)';
     backButton.thickness = 2;
-    backButton.fontSize = 22;
-    backButton.fontFamily = 'Orbitron, Cinzel, serif';
+    backButton.fontSize = 30;
+    backButton.fontFamily = 'Arcade8Bit';
     backButton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    backButton.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    backButton.bottom = '18px';
+    backButton.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    backButton.top = '84%';
     backButton.onPointerClickObservable.add(() => {
       playUiSelectClick(0.8);
       this.onBack();
@@ -322,103 +358,184 @@ export class CreditsScene {
 
   private buildCreditsLines(): CreditsLine[] {
     return [
-      { text: '> boot credits://session.qldl', color: '#D9BCFF', typingSpeed: 58, hold: 0.35 },
-      { text: '> loading daemon log stream... [OK]', color: '#D9BCFF', typingSpeed: 58, hold: 0.25 },
-      { text: '> mounting gratitude volume...', color: '#B9FFDA', typingSpeed: 54, hold: 0.2 },
+      { text: '> boot credits://session.qldl', color: '#BFD8FF', typingSpeed: 60, hold: 0.22 },
+      { text: '> mounting archive volume... [OK]', color: '#9ACBFF', typingSpeed: 58, hold: 0.16 },
+      { text: '> loading production logs... [OK]', color: '#9ACBFF', typingSpeed: 58, hold: 0.16 },
       {
-        text: '> [####................] 22%',
-        color: '#8CF6D2',
-        typingSpeed: 60,
-        hold: 1.0,
+        text: '> credits_stream=[###.................] 014%',
+        color: '#8EE8FF',
+        typingSpeed: 62,
+        hold: 0.95,
         animatedFrames: [
-          '> [####................] 22%',
-          '> [########............] 41%',
-          '> [############........] 63%',
-          '> [################....] 84%',
-          '> [####################] 100%',
+          '> credits_stream=[###.................] 014%',
+          '> credits_stream=[######..............] 028%',
+          '> credits_stream=[##########..........] 046%',
+          '> credits_stream=[##############......] 068%',
+          '> credits_stream=[##################..] 090%',
+          '> credits_stream=[####################] 100%',
         ],
-        animatedFrameInterval: 0.17,
+        animatedFrameInterval: 0.13,
       },
       {
-        text: '> stream channel open',
-        color: '#B6E7FF',
+        text: '> channel open // daemon observation enabled',
+        color: '#A9F2DD',
         popup: {
-          text: 'You wanted receipts. Fine. I will allow this sentimentality.',
+          text: 'You wanted credits. Fine. I will allow controlled nostalgia.',
           emotion: 'superieur',
+          preset: 'daemon_normal',
+          duration: 3.2,
+        },
+      },
+      { text: '> context: three humans entered an unstable simulation', color: '#D8C1FF', hold: 0.12 },
+      { text: '> result: they shipped anyway', color: '#D8C1FF', hold: 0.12 },
+      { text: '', hold: 0.1 },
+      { text: 'TEAM :: QLDL', color: '#F0CCFF', typingSpeed: 50, hold: 0.1 },
+      { text: '  Pierre "P13R04" Constantin', color: '#F1DEFF', hold: 0.06 },
+      { text: '  Baptiste "Toste13f" Giacchero', color: '#F1DEFF', hold: 0.06 },
+      { text: '  Vlad "Rolling2k" Vasiliev', color: '#F1DEFF', hold: 0.08 },
+      { text: '  // collective alias: Team QLDL', color: '#D8C1FF', hold: 0.12 },
+      { text: '', hold: 0.1 },
+      { text: 'SPECIAL THANKS :: Michel Buffa', color: '#FFE2FC', hold: 0.2 },
+      {
+        text: '> parsing commit archaeology...',
+        color: '#CFB0FF',
+        popup: {
+          text: 'Three humans. One haunted codebase. Still no rollback.',
+          emotion: 'rire',
+          preset: 'daemon_normal',
+          duration: 3.1,
+        },
+      },
+      {
+        text: '> daemon.note :: gratitude packet detected',
+        color: '#A5E8FF',
+        popup: {
+          text: 'Yes, this is me saying thank you. Do not get used to it.',
+          emotion: 'bored',
+          preset: 'daemon_normal',
+          duration: 3.0,
+        },
+      },
+      { text: 'core systems delivered:', color: '#D7BEFF' },
+      { text: ' - class kits: wizard_installer / firewall / glitch', color: '#E8D8FF' },
+      { text: ' - procedural sectors, boss rooms, runtime traps', color: '#E8D8FF' },
+      { text: ' - daemon director AI and reactive voice taunts', color: '#E8D8FF' },
+      { text: ' - codex, achievements, progression and replay variants', color: '#E8D8FF' },
+      { text: '', hold: 0.1 },
+      {
+        text: '> daemon.audit :: module load quality acceptable',
+        color: '#A5E8FF',
+        popup: {
+          text: 'Against all odds, your architecture stayed coherent. Mostly.',
+          emotion: 'superieur',
+          preset: 'daemon_normal',
+          duration: 3.0,
+        },
+      },
+      { text: 'incident report:', color: '#FFBBE5' },
+      { text: ' - build survived forbidden commits and heroic bug hunts', color: '#FFD8F2' },
+      { text: ' - at least one optimization happened at 03:17 AM', color: '#FFD8F2' },
+      { text: ' - several crashes were promoted to features', color: '#FFD8F2' },
+      { text: ' - quality assurance included panic, coffee, and faith', color: '#FFD8F2' },
+      { text: '', hold: 0.1 },
+      {
+        text: '> hidden_reference.inject("All your base are belong to us")',
+        color: '#ff7ea7',
+        hold: 0.18,
+      },
+      { text: '> easter_egg.status=[DELIGHTFULLY_UNNECESSARY]', color: '#D8C1FF', hold: 0.16 },
+      { text: '> sidequest.log :: cat.class still classified', color: '#D8C1FF', hold: 0.12 },
+      { text: '', hold: 0.1 },
+      {
+        text: '> daemon note pending...',
+        color: '#A5E8FF',
+        popup: {
+          text: 'I expected surrender. You kept adapting. Annoying. Impressive.',
+          emotion: 'bored',
           preset: 'daemon_normal',
           duration: 3.4,
         },
       },
-      { text: '', hold: 0.15 },
-      { text: 'TEAM :: QLDL', color: '#F4CCFF', typingSpeed: 48 },
-      { text: ' - Pierre "P13R04" Constantin', color: '#EEDBFF' },
-      { text: ' - Baptiste "Toste13f" Giacchero', color: '#EEDBFF' },
-      { text: ' - Vlad "Rolling2k" Vasiliev', color: '#EEDBFF' },
-      { text: '', hold: 0.2 },
-      { text: 'SPECIAL THANKS :: Michel Buffa', color: '#FFE5FA' },
-      { text: '', hold: 0.25 },
+      { text: '> archiving test-subject milestones...', color: '#A5E8FF', typingSpeed: 62, hold: 0.12 },
+      { text: '> no input required. this stream is deterministic.', color: '#A5E8FF', typingSpeed: 60, hold: 0.16 },
+      { text: '', hold: 0.1 },
       {
-        text: '> rendering commit trail...',
-        color: '#CDA8FF',
+        text: '> daemon.mood :: suspiciously sentimental',
+        color: '#A5E8FF',
         popup: {
-          text: 'Three humans, one unstable simulation, zero fear of production.',
-          emotion: 'rire',
+          text: "Do not misunderstand. This is not kindness. It's calibrated respect.",
+          emotion: 'bored',
           preset: 'daemon_normal',
-          duration: 3.6,
+          duration: 3.2,
         },
       },
-      { text: 'build modules:', color: '#CDA8FF' },
-      { text: ' - combat loops, classes, stance tech', color: '#DCC2FF' },
-      { text: ' - procedural rooms and transitions', color: '#DCC2FF' },
-      { text: ' - daemon voicelines, shaders, UI distortion', color: '#DCC2FF' },
-      { text: ' - achievements, codex, progression rituals', color: '#DCC2FF' },
-      { text: '', hold: 0.25 },
-      { text: 'anomalies detected:', color: '#FFBFE8' },
-      { text: ' - at least 1,472 reckless over-optimizations', color: '#FFD8F0' },
-      { text: ' - a suspicious amount of pink glow in production', color: '#FFD8F0' },
-      { text: ' - 0 regrets logged by Team QLDL', color: '#FFD8F0' },
-      { text: '', hold: 0.25 },
+      { text: 'THANKS STREAM // live registry:', color: '#FFE7FA', hold: 0.12 },
+      { text: ' - everyone who tested unstable versions and still came back', color: '#F3DBFF', hold: 0.06 },
+      { text: ' - everyone who reported bugs with terrifying precision', color: '#F3DBFF', hold: 0.06 },
+      { text: ' - everyone who shared clips, theories, and weird clears', color: '#F3DBFF', hold: 0.06 },
+      { text: ' - everyone who kept pushing through failed runs', color: '#F3DBFF', hold: 0.06 },
+      { text: ' - everyone who turned feedback into momentum', color: '#F3DBFF', hold: 0.08 },
+      { text: ' - everyone who failed, retried, and got better anyway', color: '#F3DBFF', hold: 0.08 },
+      { text: ' - and you', color: '#FFFFFF', typingSpeed: 42, hold: 0.52 },
       {
-        text: '> optional protocol pending...',
-        color: '#9FE7FF',
+        text: '> daemon.observation :: perseverance signal detected',
+        color: '#A5E8FF',
         popup: {
-          text: 'No interaction required. Keep watching.',
-          emotion: 'goofy',
+          text: 'You kept rerunning impossible rooms and called it progress. Correct.',
+          emotion: 'superieur',
           preset: 'daemon_normal',
-          duration: 2.8,
+          duration: 3.0,
         },
       },
-      { text: '> protocol acknowledged :: observer mode', color: '#B8FFE6', typingSpeed: 62, hold: 0.2 },
-      { text: '> no keyboard input required. this is intentional.', color: '#9FE7FF', typingSpeed: 56, hold: 0.35 },
-      { text: '', hold: 0.25 },
-      { text: 'THANKS STREAM (placeholder, to be expanded):', color: '#FFE7FA' },
-      { text: ' - friends who tested cursed builds at 2AM', color: '#F3DBFF' },
-      { text: ' - players sending clips, bugs, and chaos', color: '#F3DBFF' },
-      { text: ' - everyone sharing feedback without mercy', color: '#F3DBFF' },
-      { text: ' - everyone who survived the daemon commentary', color: '#F3DBFF' },
-      { text: ' - and you', color: '#FFFFFF', typingSpeed: 40, hold: 0.8 },
       {
         text: '> credits stream complete',
-        color: '#C5AEFF',
-        popup: {
-          text: 'Archive complete. Leave before I start being kind.',
-          emotion: 'blase',
-          preset: 'daemon_normal',
-          duration: 2.8,
-        },
+        color: '#CFB5FF',
+        hold: 0.85,
       },
-      { text: '> end_of_stream', color: '#C5AEFF', typingSpeed: 64, hold: 999 },
+      { text: '> flushing sentiment buffer... [OK]', color: '#C7B0F2', hold: 0.45 },
+      { text: '> sealing log archive... [OK]', color: '#C7B0F2', hold: 0.45 },
+      { text: '> publishing final status packet...', color: '#C7B0F2', hold: 0.55 },
+      {
+        text: '> final_daemon_note: "I almost felt something. Almost."',
+        color: '#FFB5CD',
+        popup: {
+          text: "I almost believed in hope for a second. Don't make this weird. You passed my tests. Barely. Keep going, little anomaly.",
+          emotion: 'bored',
+          preset: 'daemon_normal',
+          duration: 4.4,
+        },
+        hold: 1.0,
+      },
+      {
+        text: '> end_of_stream // return when your persistence compiles',
+        color: '#CFB5FF',
+        typingSpeed: 64,
+        hold: 999,
+      },
     ];
   }
 
   private update(deltaSeconds: number): void {
+    this.sceneClock += deltaSeconds;
     this.updateTitleAnimation(deltaSeconds);
     this.updateConsoleFlow(deltaSeconds);
     this.updatePopup(deltaSeconds);
+    this.processPopupQueue();
   }
 
   private updateConsoleFlow(deltaSeconds: number): void {
+    this.cursorBlinkTimer += deltaSeconds;
+    if (this.cursorBlinkTimer >= 0.42) {
+      this.cursorBlinkTimer = 0;
+      this.cursorVisible = !this.cursorVisible;
+    }
+
     if (this.pendingStartLine) {
+      if (this.pendingLineStartBlink > 0 && this.currentLineBlock) {
+        this.pendingLineStartBlink -= deltaSeconds;
+        this.renderCurrentLine('');
+        return;
+      }
       this.startNextLine();
       this.pendingStartLine = false;
       return;
@@ -438,8 +555,11 @@ export class CreditsScene {
       if (nextChars > 0) {
         this.typingAccumulator -= nextChars;
         this.currentLineTyped = Math.min(this.currentLineText.length, this.currentLineTyped + nextChars);
-        this.currentLineBlock.text = this.currentLineText.slice(0, this.currentLineTyped);
+        this.renderCurrentLine(this.currentLineText.slice(0, this.currentLineTyped));
         this.daemonTypewriterSynth.triggerForTypedChar();
+      }
+      if (nextChars <= 0) {
+        this.renderCurrentLine(this.currentLineText.slice(0, this.currentLineTyped));
       }
       return;
     }
@@ -453,15 +573,25 @@ export class CreditsScene {
         } else {
           this.activeLineAnimatedFinished = true;
         }
-        this.currentLineBlock.text = this.activeLineAnimatedFrames[this.activeLineAnimatedFrameIndex];
+        this.renderCurrentLine(this.activeLineAnimatedFrames[this.activeLineAnimatedFrameIndex]);
       }
+    } else {
+      this.renderCurrentLine(this.currentLineText);
     }
 
     this.currentLineHold -= deltaSeconds;
     if (this.currentLineHold > 0) return;
 
+    if (this.currentLineBlock) {
+      if (this.activeLineAnimatedFrames && this.activeLineAnimatedFrames.length > 1) {
+        this.currentLineBlock.text = this.activeLineAnimatedFrames[this.activeLineAnimatedFrames.length - 1];
+      } else {
+        this.currentLineBlock.text = this.currentLineText;
+      }
+    }
     this.currentLineBlock = null;
-    this.interLineTimer = 0.12;
+    this.interLineTimer = 0.34;
+    this.pendingLineStartBlink = 0.18;
   }
 
   private startNextLine(): void {
@@ -502,9 +632,11 @@ export class CreditsScene {
     this.currentLineBlock = block;
     this.currentLineText = line.text;
     this.currentLineTyped = 0;
-    this.currentLineTypingSpeed = line.typingSpeed ?? 50;
-    this.currentLineHold = line.hold ?? 0.4;
+    this.currentLineTypingSpeed = line.typingSpeed ?? 42;
+    this.currentLineHold = line.hold ?? 0.55;
     this.typingAccumulator = 0;
+    this.cursorVisible = true;
+    this.cursorBlinkTimer = 0;
     this.activeLineAnimatedFrames = line.animatedFrames ?? null;
     this.activeLineAnimatedFrameInterval = line.animatedFrameInterval ?? 0.15;
     this.activeLineAnimatedFrameTimer = 0;
@@ -553,6 +685,16 @@ export class CreditsScene {
   }
 
   private showPopup(text: string, emotion: string, preset: VoicePresetName, duration: number): void {
+    if (this.popupVisible || this.popupAnimatingIn || this.popupAnimatingOut) {
+      this.popupQueue.push({ text, emotion, preset, duration });
+      return;
+    }
+    if (this.popupSequenceStarted && this.sceneClock < this.nextPopupAllowedAt) {
+      this.popupQueue.push({ text, emotion, preset, duration });
+      return;
+    }
+    this.popupSequenceStarted = true;
+
     this.popupText.text = '';
     this.popupTypingText = text;
     this.popupTypingIndex = 0;
@@ -574,7 +716,8 @@ export class CreditsScene {
     this.popupFrameTimer = 0;
     this.setPopupAvatarFrame(this.popupFrameList[0]);
 
-    void this.speakPopup(text, preset);
+    const voiceId = ++this.activePopupVoiceId;
+    void this.speakPopup(text, preset, voiceId);
   }
 
   private updatePopup(deltaSeconds: number): void {
@@ -625,8 +768,26 @@ export class CreditsScene {
         this.popupAnimatingOut = false;
         this.popupVisible = false;
         this.popupHost.isVisible = false;
+        if (this.nextPopupAllowedAt <= this.sceneClock) {
+          this.nextPopupAllowedAt = this.sceneClock + this.popupGapAfterVoiceSeconds;
+        }
       }
     }
+  }
+
+  private processPopupQueue(): void {
+    if (this.popupVisible || this.popupAnimatingIn || this.popupAnimatingOut) return;
+    if (this.popupQueue.length === 0) return;
+    if (this.sceneClock < this.nextPopupAllowedAt) return;
+    const queued = this.popupQueue.shift();
+    if (!queued) return;
+    this.showPopup(queued.text, queued.emotion, queued.preset, queued.duration);
+  }
+
+  private renderCurrentLine(baseText: string): void {
+    if (!this.currentLineBlock) return;
+    const cursor = this.cursorVisible ? this.cursorChar : ' ';
+    this.currentLineBlock.text = `${baseText}${cursor}`;
   }
 
   private updateTitleAnimation(deltaSeconds: number): void {
@@ -659,7 +820,7 @@ export class CreditsScene {
     }
   }
 
-  private async speakPopup(text: string, preset: VoicePresetName): Promise<void> {
+  private async speakPopup(text: string, preset: VoicePresetName, voiceId: number): Promise<void> {
     const audioContext = this.getAudioContext();
     if (!audioContext) return;
     try {
@@ -677,6 +838,9 @@ export class CreditsScene {
       source.start(0);
       this.voiceSources.add(source);
       source.onended = () => {
+        if (voiceId === this.activePopupVoiceId) {
+          this.nextPopupAllowedAt = this.sceneClock + this.popupGapAfterVoiceSeconds;
+        }
         this.voiceSources.delete(source);
         try {
           source.disconnect();
@@ -686,6 +850,9 @@ export class CreditsScene {
         }
       };
     } catch (error) {
+      if (voiceId === this.activePopupVoiceId) {
+        this.nextPopupAllowedAt = this.sceneClock + this.popupGapAfterVoiceSeconds;
+      }
       console.warn('[CreditsScene] Popup voice synthesis failed:', error);
     }
   }
