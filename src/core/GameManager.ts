@@ -46,6 +46,7 @@ import type { RoomConfig as LoadedRoomConfig } from '../types/config';
 import { ClassSelectScene } from '../scene/ClassSelectScene';
 import { MainMenuScene } from '../scene/MainMenuScene';
 import { BootSequenceScene } from '../scene/BootSequenceScene';
+import { DaemonTakeoverIntroScene } from '../scene/DaemonTakeoverIntroScene';
 import { AchievementDefinition, CodexService } from '../services/CodexService';
 import { getMergedAchievementDefinitions } from '../data/achievements/loadAchievementDefinitions';
 import { GameSettings, GameSettingsStore } from '../settings/GameSettings';
@@ -100,6 +101,7 @@ export class GameManager {
   private postProcessManager!: PostProcessManager;
   private tileFloorManager!: TileFloorManager;
   private bootScene?: BootSequenceScene;
+  private takeoverIntroScene?: DaemonTakeoverIntroScene;
   private mainMenuScene?: MainMenuScene;
   private classSelectScene?: ClassSelectScene;
   private codexScene?: FrontendSceneHandle;
@@ -423,8 +425,18 @@ export class GameManager {
     // Setup event listeners
     this.setupEventListeners();
 
-    if (BootSequenceScene.shouldPlay()) {
-      await this.openBootSequenceScene();
+    const introMode = this.configLoader.getGameplayConfig()?.intro?.mode ?? 'takeover';
+    const mageTutorialCompleted = this.codexService.hasCompletedTutorialForClass('mage');
+    if (introMode === 'off') {
+      await this.openMainMenuScene();
+    } else if (introMode === 'legacy') {
+      if (BootSequenceScene.shouldPlay()) {
+        await this.openBootSequenceScene();
+      } else {
+        await this.openMainMenuScene();
+      }
+    } else if (!mageTutorialCompleted) {
+      await this.openTakeoverIntroScene();
     } else {
       await this.openMainMenuScene();
     }
@@ -523,7 +535,29 @@ export class GameManager {
     this.scene = this.bootScene.getScene();
   }
 
+  private async openTakeoverIntroScene(): Promise<void> {
+    this.takeoverIntroScene = new DaemonTakeoverIntroScene(this.engine, () => {
+      if (this.takeoverIntroScene) {
+        this.takeoverIntroScene.dispose();
+        this.takeoverIntroScene = undefined;
+      }
+      // Keep first-launch flow active until mage tutorial is fully completed/skipped.
+      // This prevents refreshes during first tutorial from dropping users into menu.
+      const mageTutorialCompleted = this.codexService.hasCompletedTutorialForClass('mage');
+      if (!mageTutorialCompleted) {
+        this.eventCoordinator.emitTutorialStartRequested('mage');
+      } else {
+        void this.openMainMenuScene();
+      }
+    });
+    this.scene = this.takeoverIntroScene.getScene();
+  }
+
   private disposeFrontendScenes(): void {
+    if (this.takeoverIntroScene) {
+      this.takeoverIntroScene.dispose();
+      this.takeoverIntroScene = undefined;
+    }
     if (this.bootScene) {
       this.bootScene.dispose();
       this.bootScene = undefined;
@@ -833,7 +867,8 @@ export class GameManager {
     this.frontendMusicMode = null;
     this.audioManager = new AudioManager(this.scene);
     void this.musicManager.loadTrack('bgm', 'music/bgm.mp3').then(() => {
-      if (this.gameState === 'playing' || this.gameState === 'bonus' || this.gameState === 'roomclear') {
+      if (this.isTutorialRun || this.gameState === 'playing' || this.gameState === 'bonus' || this.gameState === 'roomclear') {
+        // Tutorial runs should start the gameplay music immediately after scene load.
         this.musicManager?.playTrack('bgm', 1.5);
       }
     });

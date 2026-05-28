@@ -209,6 +209,10 @@ export interface EnemyConfigEntry {
 export type EnemiesConfig = Record<string, EnemyConfigEntry>;
 
 export interface GameplayConfig {
+  intro?: {
+    mode?: 'takeover' | 'legacy' | 'off';
+    timingProfile?: 'short' | 'default' | 'extended';
+  };
   ui?: {
     showEnemyHealthBars: boolean;
     showDamageNumbers: boolean;

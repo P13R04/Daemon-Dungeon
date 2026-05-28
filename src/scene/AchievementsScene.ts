@@ -9,6 +9,7 @@ import {
 import { AdvancedDynamicTexture, Button, Control, Rectangle, ScrollViewer, StackPanel, TextBlock, Image } from '@babylonjs/gui';
 import { buildHudAssetUrl, preloadHudAsset, getCachedHudAsset } from '../systems/hud/HudAssetPaths';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
+import { playUiSelectClick } from '../audio/UiSelectClick';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { PostProcessManager, PostProcessingConfig } from './PostProcess';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
@@ -399,12 +400,12 @@ export class AchievementsScene {
 
     const leftNavBtn = UIFactory.createTerminalButton('achNavLeft', '<', `${navButtonWidth}px`, `${navButtonHeight}px`);
     if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontSize = isMobileLayout ? 25 : 22;
-    leftNavBtn.onPointerClickObservable.add(() => this.navigateBy(-1));
+    this.bindGlitchButton(leftNavBtn, '<', () => this.navigateBy(-1));
     navRow.addControl(leftNavBtn);
 
     const rightNavBtn = UIFactory.createTerminalButton('achNavRight', '>', `${navButtonWidth}px`, `${navButtonHeight}px`);
     if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontSize = isMobileLayout ? 25 : 22;
-    rightNavBtn.onPointerClickObservable.add(() => this.navigateBy(1));
+    this.bindGlitchButton(rightNavBtn, '>', () => this.navigateBy(1));
     navRow.addControl(rightNavBtn);
   }
 
@@ -441,7 +442,7 @@ export class AchievementsScene {
     btn.background = 'rgba(20, 30, 35, 0.6)';
     btn.fontFamily = this.terminalFont;
     btn.fontSize = isMobileLayout ? 25 : 22;
-    btn.onPointerUpObservable.add(onClick);
+    this.bindGlitchButton(btn, label, onClick);
     return btn;
   }
 
@@ -479,7 +480,7 @@ export class AchievementsScene {
     btn.background = active ? 'rgba(26,98,89,0.65)' : 'rgba(10,24,34,0.84)';
     btn.isPointerBlocker = true;
     btn.isHitTestVisible = true;
-    btn.onPointerClickObservable.add(onClick);
+    this.bindGlitchButton(btn, label, onClick);
     if (btn.textBlock) {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
@@ -654,5 +655,19 @@ export class AchievementsScene {
 
   private getDevLabel(): string {
     return this.codexService.getDevUnlockCodexEntries() ? 'DEV UNLOCK: ON' : 'DEV UNLOCK: OFF';
+  }
+
+  private playUiClickSound(): void {
+    playUiSelectClick(0.8);
+  }
+
+  private bindGlitchButton(button: Button, label: string, onAction: () => void): void {
+    button.isPointerBlocker = true;
+    button.isHitTestVisible = true;
+    button.hoverCursor = 'pointer';
+    DaemonGlitchFx.injectWithOptions(button, label, () => {
+      this.playUiClickSound();
+      onAction();
+    }, { clickDelayMs: 170, enableHoverGlitch: false });
   }
 }

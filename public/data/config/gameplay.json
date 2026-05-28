@@ -1,4 +1,8 @@
 {
+  "intro": {
+    "mode": "takeover",
+    "timingProfile": "extended"
+  },
   "gameplayConfig": {
     "tileSize": 1.0,
     "gravity": 0,

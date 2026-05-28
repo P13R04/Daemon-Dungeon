@@ -31,6 +31,7 @@ import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { createMenuMatrixBackground } from './MenuMatrixBackground';
 import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 import { AudioManager } from '../audio/AudioManager';
+import { playUiSelectClick } from '../audio/UiSelectClick';
 import { DAEMON_FOUR_FRAME_PRESET_NAMES, getDaemonAnimationPreset } from '../data/voicelines/DaemonAnimationPresets';
 
 type AudioChannel = keyof AudioSettings;
@@ -905,7 +906,6 @@ export class MainMenuScene {
     const topOffsets = [-3, -2, -1, 0, 1, 2, 3].map((mult) => Math.round(mult * buttonStep));
 
     const playBtn = this.makeActionButton('menuPlay', 'START RUN', topOffsets[0], () => {
-      this.playUISound('sfx_ui_start_game', 0.9);
       this.hidePanels();
       this.onPlayRequested();
     });
@@ -913,7 +913,6 @@ export class MainMenuScene {
     this.menuBeatTargets.push(playBtn);
 
     const tutorialBtn = this.makeActionButton('menuTutorial', 'TUTORIAL', topOffsets[1], () => {
-      this.playUISound('sfx_ui_select1', 0.82);
       this.hidePanels();
       this.onTutorialRequested();
     });
@@ -921,7 +920,6 @@ export class MainMenuScene {
     this.menuBeatTargets.push(tutorialBtn);
 
     const codexBtn = this.makeActionButton('menuCodex', 'CODEX', topOffsets[2], () => {
-      this.playUISound('sfx_ui_select1', 0.82);
       this.hidePanels();
       this.onCodexRequested();
     });
@@ -929,7 +927,6 @@ export class MainMenuScene {
     this.menuBeatTargets.push(codexBtn);
 
     const achievementsBtn = this.makeActionButton('menuAchievements', 'ACHIEVEMENTS', topOffsets[3], () => {
-      this.playUISound('sfx_ui_select1', 0.82);
       this.hidePanels();
       this.eventBus.emit(GameEvents.ACHIEVEMENTS_OPEN_REQUESTED);
     });
@@ -937,7 +934,6 @@ export class MainMenuScene {
     this.menuBeatTargets.push(achievementsBtn);
 
     const highscoresBtn = this.makeActionButton('menuHighscores', 'HIGHSCORES', topOffsets[4], () => {
-      this.playUISound('sfx_ui_select1', 0.82);
       this.hidePanels();
       this.eventBus.emit(GameEvents.HIGHSCORES_OPEN_REQUESTED);
     });
@@ -945,14 +941,12 @@ export class MainMenuScene {
     this.menuBeatTargets.push(highscoresBtn);
 
     const settingsBtn = this.makeActionButton('menuSettings', 'SETTINGS', topOffsets[5], () => {
-      this.playUISound('sfx_ui_select1', 0.82);
       this.openSettingsOverlay();
     });
     panel.addControl(settingsBtn);
     this.menuBeatTargets.push(settingsBtn);
 
     const creditsBtn = this.makeActionButton('menuCredits', 'CREDITS', topOffsets[6], () => {
-      this.playUISound('sfx_ui_select1', 0.82);
       this.hidePanels();
       this.eventBus.emit(GameEvents.CREDITS_OPEN_REQUESTED);
     });
@@ -1862,9 +1856,11 @@ export class MainMenuScene {
     button.isPointerBlocker = true;
     button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
-    button.onPointerEnterObservable.add(() => this.playUISound('sfx_ui_deselect', 0.42));
     // Click glitch only (no hover glitch).
-    DaemonGlitchFx.injectWithOptions(button, label, onClick, { clickDelayMs: 220, enableHoverGlitch: false });
+    DaemonGlitchFx.injectWithOptions(button, label, () => {
+      playUiSelectClick(0.82);
+      window.setTimeout(() => onClick(), 36);
+    }, { clickDelayMs: 240, enableHoverGlitch: false });
     return button;
   }
 
@@ -1872,12 +1868,11 @@ export class MainMenuScene {
     button.isPointerBlocker = true;
     button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
-    button.onPointerEnterObservable.add(() => this.playUISound('sfx_ui_deselect', 0.36));
     const label = button.textBlock?.text ?? button.name ?? 'ACTION';
     DaemonGlitchFx.injectWithOptions(button, label, () => {
-      this.playUISound('sfx_ui_select1', 0.8);
-      onAction();
-    }, { clickDelayMs: 170, enableHoverGlitch: false });
+      playUiSelectClick(0.8);
+      window.setTimeout(() => onAction(), 28);
+    }, { clickDelayMs: 190, enableHoverGlitch: false });
   }
 
   private rotateDaemonAvatarPreset(): void {

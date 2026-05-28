@@ -7,6 +7,7 @@ import { createMenuMatrixBackground } from './MenuMatrixBackground';
 import { UI_LAYER } from '../ui/uiLayers';
 import { applyResponsiveGuiScaling } from '../ui/GuiScaling';
 import { buildHudAssetUrl } from '../systems/hud/HudAssetPaths';
+import { playUiSelectClick } from '../audio/UiSelectClick';
 
 type VoicePresetName = keyof typeof VOICE_PRESETS;
 
@@ -286,7 +287,10 @@ export class CreditsScene {
     backButton.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     backButton.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     backButton.bottom = '18px';
-    backButton.onPointerClickObservable.add(() => this.onBack());
+    backButton.onPointerClickObservable.add(() => {
+      playUiSelectClick(0.8);
+      this.onBack();
+    });
     root.addControl(backButton);
 
     this.lines = this.buildCreditsLines();

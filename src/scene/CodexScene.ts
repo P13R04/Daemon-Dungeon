@@ -20,6 +20,7 @@ import {
 import { AdvancedDynamicTexture, Button, Control, Rectangle, ScrollViewer, StackPanel, TextBlock, Image } from '@babylonjs/gui';
 import { buildHudAssetUrl, preloadHudAsset, getCachedHudAsset } from '../systems/hud/HudAssetPaths';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
+import { playUiSelectClick } from '../audio/UiSelectClick';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { PostProcessManager, PostProcessingConfig } from './PostProcess';
 import { getHudAssetBaseUrl } from '../systems/hud/HudAssetPaths';
@@ -419,12 +420,12 @@ export class CodexScene {
     mainLayoutContainer.addControl(navRow);
 
     const leftNavBtn = UIFactory.createTerminalButton('codexNavLeft', '<', `${Math.max(navButtonWidth, isMobileLayout ? 132 : 118)}px`, `${Math.max(navButtonHeight, menuButtonHeight)}px`);
-    DaemonGlitchFx.inject(leftNavBtn, '<', () => this.navigateBy(-1), 0);
+    this.bindGlitchButton(leftNavBtn, '<', () => this.navigateBy(-1));
     if (leftNavBtn.textBlock) leftNavBtn.textBlock.fontSize = menuButtonFont;
     navRow.addControl(leftNavBtn);
 
     const rightNavBtn = UIFactory.createTerminalButton('codexNavRight', '>', `${Math.max(navButtonWidth, isMobileLayout ? 132 : 118)}px`, `${Math.max(navButtonHeight, menuButtonHeight)}px`);
-    DaemonGlitchFx.inject(rightNavBtn, '>', () => this.navigateBy(1), 0);
+    this.bindGlitchButton(rightNavBtn, '>', () => this.navigateBy(1));
     if (rightNavBtn.textBlock) rightNavBtn.textBlock.fontSize = menuButtonFont;
     navRow.addControl(rightNavBtn);
 
@@ -541,7 +542,7 @@ export class CodexScene {
     btn.horizontalAlignment = alignment;
     btn.top = '20px';
     if (btn.textBlock) btn.textBlock.fontSize = isMobileLayout ? 23 : 21;
-    btn.onPointerClickObservable.add(onClick);
+    this.bindGlitchButton(btn, label, onClick);
     return btn;
   }
 
@@ -553,7 +554,7 @@ export class CodexScene {
       `${this.topTabButtonWidth}px`,
       `${this.topTabButtonHeight}px`
     );
-    DaemonGlitchFx.inject(btn, label, onClick, 0);
+    this.bindGlitchButton(btn, label, onClick);
     if (btn.textBlock) btn.textBlock.fontSize = isMobileLayout ? 24 : 21;
     return btn;
   }
@@ -563,7 +564,7 @@ export class CodexScene {
     const btn = UIFactory.createTerminalButton(`bestiary_filter_${label}`, label, `${isMobileLayout ? 258 : 244}px`, `${isMobileLayout ? 64 : 56}px`);
     btn.color = active ? UITheme.colors.textHighlight : UITheme.colors.borderBright;
     btn.background = active ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
-    btn.onPointerClickObservable.add(onClick);
+    this.bindGlitchButton(btn, label, onClick);
     if (btn.textBlock) btn.textBlock.fontSize = isMobileLayout ? 22 : 19;
     return btn;
   }
@@ -645,6 +646,20 @@ export class CodexScene {
 
   private playBeep(): void {
     this.synthBeep.triggerForTypedChar();
+  }
+
+  private playUiClickSound(): void {
+    playUiSelectClick(0.8);
+  }
+
+  private bindGlitchButton(button: Button, label: string, onAction: () => void): void {
+    button.isPointerBlocker = true;
+    button.isHitTestVisible = true;
+    button.hoverCursor = 'pointer';
+    DaemonGlitchFx.injectWithOptions(button, label, () => {
+      this.playUiClickSound();
+      onAction();
+    }, { clickDelayMs: 170, enableHoverGlitch: false });
   }
 
   private buildEnemyEntries(): void {
@@ -763,7 +778,7 @@ export class CodexScene {
     btn.background = active ? 'rgba(26,98,89,0.65)' : 'rgba(10,24,34,0.84)';
     btn.isPointerBlocker = true;
     btn.isHitTestVisible = true;
-    btn.onPointerClickObservable.add(onClick);
+    this.bindGlitchButton(btn, label, onClick);
     if (btn.textBlock) {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';

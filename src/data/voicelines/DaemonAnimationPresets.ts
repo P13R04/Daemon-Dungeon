@@ -38,10 +38,12 @@ export const DAEMON_ANIMATION_PRESETS: Record<string, string[]> = {
 
 const PRESET_ALIASES: Record<string, string> = {
   blase: 'blase',
+  bored: 'bored',
   censure: 'censure',
   choque: 'choque',
   enerve: 'enerve',
   superieur: 'superieur',
+  surprise: 'surpris',
 };
 
 export function normalizeDaemonPresetName(name: string): string {

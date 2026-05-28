@@ -30,8 +30,10 @@ import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { GameSettingsStore } from '../settings/GameSettings';
 import { UIFactory } from '../ui/UIFactory';
 import { UITheme } from '../ui/UITheme';
+import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { applyResponsiveGuiScaling, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
+import { playUiSelectClick } from '../audio/UiSelectClick';
 
 interface ClassCarouselItem {
   id: 'mage' | 'firewall' | 'rogue' | 'cat';
@@ -141,6 +143,7 @@ export class ClassSelectScene {
   private cursorVisible: boolean = true;
   private readonly typewriterSynth: SciFiTypewriterSynth = new SciFiTypewriterSynth(SCI_FI_TYPEWRITER_PRESETS.oldschool_fast);
   private typewriterUnlockHandler: (() => void) | null = null;
+  private glitchFx!: DaemonGlitchFx;
 
   constructor(
     private engine: Engine,
@@ -178,6 +181,7 @@ export class ClassSelectScene {
     this.postProcessManager.setupPipeline(this.camera, this.postProcessConfig);
 
     this.createEnvironment();
+    this.glitchFx = new DaemonGlitchFx();
     this.setupTypewriterAudioUnlock();
     this.loadRogueSelectionSound();
     this.applyAudioSettingsFromStore();
@@ -294,6 +298,7 @@ export class ClassSelectScene {
       this.scene.onPointerObservable.remove(this.pointerObserver);
       this.pointerObserver = undefined;
     }
+    this.glitchFx.dispose();
     this.devConsole?.dispose();
     for (const ps of this.tankThrusterParticles) {
       ps.stop();
@@ -414,7 +419,7 @@ export class ClassSelectScene {
     backBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     backBtn.zIndex = 1300;
     if (backBtn.textBlock) backBtn.textBlock.fontSize = menuButtonFont;
-    backBtn.onPointerClickObservable.add(() => {
+    this.bindGlitchButton(backBtn, 'BACK', () => {
       this.navigateBackToTitle();
     });
     mainLayoutContainer.addControl(backBtn);
@@ -441,19 +446,19 @@ export class ClassSelectScene {
     navPanel.addControl(navRow);
 
     const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', `${isMobileLayout ? 120 : 108}px`, `${menuButtonH}px`);
-    leftBtn.onPointerClickObservable.add(() => this.rotateCarousel(1));
+    this.bindGlitchButton(leftBtn, '<', () => this.rotateCarousel(1));
     if (leftBtn.textBlock) leftBtn.textBlock.fontSize = menuButtonFont;
     navRow.addControl(leftBtn);
 
     const startButton = UIFactory.createTerminalButton('classSelectStart', '[ START ]', `${isMobileLayout ? 250 : 220}px`, `${menuButtonH}px`);
-    startButton.onPointerClickObservable.add(() => {
+    this.bindGlitchButton(startButton, '[ START ]', () => {
       this.tryStartSelectedClass();
     });
     if (startButton.textBlock) startButton.textBlock.fontSize = menuButtonFont;
     navRow.addControl(startButton);
 
     const rightBtn = UIFactory.createTerminalButton('classSelectRight', '>', `${isMobileLayout ? 120 : 108}px`, `${menuButtonH}px`);
-    rightBtn.onPointerClickObservable.add(() => this.rotateCarousel(-1));
+    this.bindGlitchButton(rightBtn, '>', () => this.rotateCarousel(-1));
     if (rightBtn.textBlock) rightBtn.textBlock.fontSize = menuButtonFont;
     navRow.addControl(rightBtn);
 
@@ -578,7 +583,7 @@ export class ClassSelectScene {
     panel.addControl(buttonRow);
 
     const startTutorialBtn = UIFactory.createTerminalButton('classTutorialPromptStart', 'START QUICK TUTORIAL', `${isMobileLayout ? 360 : 340}px`, `${Math.round(menuButtonH * 0.8)}px`);
-    startTutorialBtn.onPointerClickObservable.add(() => {
+    this.bindGlitchButton(startTutorialBtn, 'START QUICK TUTORIAL', () => {
       const classId = this.tutorialPromptClassId;
       this.hideTutorialPrompt();
       if (!classId) return;
@@ -587,7 +592,7 @@ export class ClassSelectScene {
     buttonRow.addControl(startTutorialBtn);
 
     const skipBtn = UIFactory.createTerminalButton('classTutorialPromptSkip', 'SKIP TO RUN', `${isMobileLayout ? 280 : 260}px`, `${Math.round(menuButtonH * 0.8)}px`);
-    skipBtn.onPointerClickObservable.add(() => {
+    this.bindGlitchButton(skipBtn, 'SKIP TO RUN', () => {
       const classId = this.tutorialPromptClassId;
       this.hideTutorialPrompt();
       if (!classId) return;
@@ -1738,5 +1743,19 @@ export class ClassSelectScene {
     take001.play(false);
     take001.goToFrame(1);
     take001.pause();
+  }
+
+  private playUiClickSound(): void {
+    playUiSelectClick(0.8);
+  }
+
+  private bindGlitchButton(button: Button, label: string, onAction: () => void): void {
+    button.isPointerBlocker = true;
+    button.isHitTestVisible = true;
+    button.hoverCursor = 'pointer';
+    DaemonGlitchFx.injectWithOptions(button, label, () => {
+      this.playUiClickSound();
+      onAction();
+    }, { clickDelayMs: 170, enableHoverGlitch: false });
   }
 }

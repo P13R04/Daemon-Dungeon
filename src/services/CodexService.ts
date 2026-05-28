@@ -64,6 +64,7 @@ interface CodexSnapshot {
     classHighestRoom: Record<string, number>;
     uniqueBonusesSelectedLifetime: string[];
     runHistory: RunRecord[];
+    introTakeoverCompleted: boolean;
   };
   catalog?: {
     runEnemyTypes: string[];
@@ -108,6 +109,7 @@ export class CodexService {
     classHighestRoom: {},
     uniqueBonusesSelectedLifetime: [],
     runHistory: [],
+    introTakeoverCompleted: false,
   };
   private catalogState: { runEnemyTypes: string[] } = {
     runEnemyTypes: [],
@@ -260,6 +262,7 @@ export class CodexService {
       classHighestRoom: {},
       uniqueBonusesSelectedLifetime: [],
       runHistory: [],
+      introTakeoverCompleted: false,
     };
 
     this.achievementState.clear();
@@ -547,6 +550,16 @@ export class CodexService {
     return this.stats.tutorialCompletedByClass.includes(classKey);
   }
 
+  recordIntroTakeoverCompleted(): void {
+    if (this.stats.introTakeoverCompleted) return;
+    this.stats.introTakeoverCompleted = true;
+    this.saveLocalSnapshot();
+  }
+
+  hasCompletedIntroTakeover(): boolean {
+    return !!this.stats.introTakeoverCompleted;
+  }
+
   private bumpAchievement(id: string, delta: number): void {
     const definition = this.achievementDefinitions.get(id);
     if (!definition) return;
@@ -733,6 +746,7 @@ export class CodexService {
       if (!Array.isArray(this.stats.runHistory)) {
         this.stats.runHistory = [];
       }
+      this.stats.introTakeoverCompleted = !!this.stats.introTakeoverCompleted;
       if (!Array.isArray(this.catalogState.runEnemyTypes)) {
         this.catalogState.runEnemyTypes = [];
       }

@@ -1689,6 +1689,10 @@ export class HUDManager {
     if (this.settingsMenuBuilder) this.settingsMenuBuilder.refreshSettingsUi();
   }
 
+  private emitUiClickSound(): void {
+    this.eventBus.emit(GameEvents.UI_SOUND_SELECT);
+  }
+
   private createOverlay(titleText: string, buttonText: string, onClick: () => void): Rectangle {
     const container = new Rectangle(`${titleText}_overlay`);
     container.width = 1;
@@ -1716,7 +1720,10 @@ export class HUDManager {
       btn.cornerRadius = 6;
       btn.background = '#2A2A2A';
       btn.thickness = 2;
-      btn.onPointerUpObservable.add(() => onClick());
+      btn.onPointerUpObservable.add(() => {
+        this.emitUiClickSound();
+        onClick();
+      });
       container.addControl(btn);
     }
 
@@ -1984,7 +1991,10 @@ export class HUDManager {
       btn.fontSize = 22;
       btn.fontFamily = fontFamily;
       btn.paddingTop = '10px';
-      btn.onPointerUpObservable.add(() => onClick());
+      btn.onPointerUpObservable.add(() => {
+        this.emitUiClickSound();
+        onClick();
+      });
       buttonPanel.addControl(btn);
       return btn;
     };
@@ -4324,6 +4334,7 @@ export class HUDManager {
         showCardHover();
       });
       btn.onPointerUpObservable.add(() => {
+        this.emitUiClickSound();
         this.hideBonusHoverPopup();
       });
     }
@@ -4368,6 +4379,7 @@ export class HUDManager {
       showRerollHover();
     });
     rerollButton.onPointerUpObservable.add(() => {
+      this.emitUiClickSound();
       this.hideBonusHoverPopup();
     });
 
@@ -4409,6 +4421,7 @@ export class HUDManager {
       showFullHealHover();
     });
     fullHealButton.onPointerUpObservable.add(() => {
+      this.emitUiClickSound();
       this.hideBonusHoverPopup();
     });
   }
@@ -4506,6 +4519,7 @@ export class HUDManager {
       rerollButton.color = '#FFFFFF';
       rerollButton.fontFamily = 'Arcade8Bit';
       rerollButton.onPointerUpObservable.add(() => {
+        this.emitUiClickSound();
         this.eventBus.emit(GameEvents.BONUS_REROLL_REQUESTED, { cost: this.bonusCurrentRerollCost });
       });
       dynamicRoot.addControl(rerollButton);
@@ -4522,6 +4536,7 @@ export class HUDManager {
       fullHealButton.color = '#FFFFFF';
       fullHealButton.fontFamily = 'Arcade8Bit';
       fullHealButton.onPointerUpObservable.add(() => {
+        this.emitUiClickSound();
         this.eventBus.emit(GameEvents.SHOP_PURCHASE_REQUESTED, {
           itemId: 'full_heal',
           cost: this.bonusCurrentFullHealCost,
@@ -4649,6 +4664,7 @@ export class HUDManager {
     const btn = Button.CreateSimpleButton(`bonus_${poolKey}`, '');
     btn.cornerRadius = 14;
     btn.onPointerUpObservable.add(() => {
+      this.emitUiClickSound();
       const index = this.bonusButtons.indexOf(btn);
       const state = index >= 0 ? this.bonusCardClickState[index] : null;
       if (!state) return;
@@ -5473,6 +5489,7 @@ export class HUDManager {
       this.inputManager!.setJoystickAimActive(true);
     });
     attackBtn.onPointerUpObservable.add(() => {
+      this.emitUiClickSound();
       this.inputManager!.setJoystickAimActive(false);
       this.mobileAttackHoldBlocked = false;
     });
@@ -5498,6 +5515,7 @@ export class HUDManager {
       ultBtn.background = 'rgba(255, 255, 0, 0.4)';
     });
     ultBtn.onPointerUpObservable.add(() => {
+      this.emitUiClickSound();
       this.inputManager!.setMobileUltPressed(false);
       ultBtn.background = 'rgba(35, 35, 10, 0.75)';
     });
