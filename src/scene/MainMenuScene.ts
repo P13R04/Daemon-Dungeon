@@ -182,9 +182,7 @@ export class MainMenuScene {
     updateScale();
 
     this.createMainButtons();
-    if (this.settingsBuilder) {
-      // Re-create settings overlay if layout changes
-    }
+    this.glitchFx = new DaemonGlitchFx();
     this.createAchievementToast();
 
     this.unsubscribeAchievementToast = this.eventBus.on(GameEvents.ACHIEVEMENT_UNLOCKED, (data?: { name?: string; achievementId?: string; description?: string }) => {
@@ -254,7 +252,9 @@ export class MainMenuScene {
       this.scene.onBeforeRenderObservable.remove(this.menuBeatObserver);
       this.menuBeatObserver = null;
     }
-    this.glitchFx.dispose();
+    if (this.glitchFx) {
+      this.glitchFx.dispose();
+    }
     this.audioManager?.stopAllSounds();
     this.audioManager?.dispose();
     this.audioManager = null;
@@ -1241,20 +1241,19 @@ export class MainMenuScene {
   }
 
 
-  private createSettingsOverlay(): void {
-    import('../ui/SettingsMenuBuilder').then(({ SettingsMenuBuilder }) => {
-      if (!this.settingsBuilder) {
-        this.settingsBuilder = new SettingsMenuBuilder(
-          () => this.closeSettingsOverlay(),
-          () => this.codexService.resetProgress(),
-          () => {} // benchmark not fully available from main menu
-        );
-      }
-      if (this.settingsOverlay) {
-        this.settingsOverlay.dispose();
-      }
-      this.settingsOverlay = this.settingsBuilder.createSettingsOverlay(this.gui);
-    });
+  private async createSettingsOverlay(): Promise<void> {
+    const { SettingsMenuBuilder } = await import('../ui/SettingsMenuBuilder');
+    if (!this.settingsBuilder) {
+      this.settingsBuilder = new SettingsMenuBuilder(
+        () => this.closeSettingsOverlay(),
+        () => this.codexService.resetProgress(),
+        () => {} // benchmark not fully available from main menu
+      );
+    }
+    if (this.settingsOverlay) {
+      this.settingsOverlay.dispose();
+    }
+    this.settingsOverlay = this.settingsBuilder.createSettingsOverlay(this.gui);
   }
   
   private makeActionButton(id: string, label: string, top: number, onClick: () => void): Button {
@@ -1295,9 +1294,9 @@ export class MainMenuScene {
     this.daemonAvatarFrameTime = 0;
   }
 
-  private openSettingsOverlay(): void {
+  private async openSettingsOverlay(): Promise<void> {
     if (!this.settingsOverlay) {
-      this.createSettingsOverlay();
+      await this.createSettingsOverlay();
     }
     if (this.settingsOverlay) {
       this.settingsOverlay.isVisible = true;
