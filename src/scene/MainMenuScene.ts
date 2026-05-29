@@ -102,7 +102,6 @@ export class MainMenuScene {
   private audioValueTexts: Partial<Record<AudioChannel, TextBlock>> = {};
   private keyboardOnlyCheckbox: Checkbox | null = null;
   private autoAimCheckbox: Checkbox | null = null;
-  private awaitingRebind: KeybindingAction | null = null;
   private readonly eventBus: EventBus = EventBus.getInstance();
   private audioManager: AudioManager | null = null;
   private achievementToast: Rectangle | null = null;
@@ -131,31 +130,6 @@ export class MainMenuScene {
   private unsubscribeAchievementToast: (() => void) | null = null;
   private achievementIconPlaceholder: Rectangle | null = null;
   private achievementToastArtwork: Image | null = null;
-
-  private readonly keyCaptureHandler = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') {
-      if (this.awaitingRebind) {
-        this.awaitingRebind = null;
-        this.refreshSettingsUi();
-      } else if (this.settingsOverlay?.isVisible) {
-        this.closeSettingsOverlay();
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-
-    if (!this.awaitingRebind) return;
-
-    const key = normalizeInputKey(event.key);
-    if (!key) return;
-
-    GameSettingsStore.setKeybinding(this.awaitingRebind, key);
-    this.awaitingRebind = null;
-    this.refreshSettingsUi();
-    event.preventDefault();
-    event.stopPropagation();
-  };
 
   constructor(
     private engine: Engine,
@@ -212,7 +186,6 @@ export class MainMenuScene {
       // Re-create settings overlay if layout changes
     }
     this.createAchievementToast();
-    this.refreshSettingsUi();
 
     this.unsubscribeAchievementToast = this.eventBus.on(GameEvents.ACHIEVEMENT_UNLOCKED, (data?: { name?: string; achievementId?: string; description?: string }) => {
       const id = data?.achievementId || 'unknown';
@@ -240,10 +213,7 @@ export class MainMenuScene {
 
     this.unsubscribeSettings = GameSettingsStore.subscribe((settings) => {
       this.settingsSnapshot = settings;
-      this.refreshSettingsUi();
     });
-
-    window.addEventListener('keydown', this.keyCaptureHandler, true);
   }
 
   getScene(): Scene {
@@ -284,7 +254,6 @@ export class MainMenuScene {
       this.scene.onBeforeRenderObservable.remove(this.menuBeatObserver);
       this.menuBeatObserver = null;
     }
-    window.removeEventListener('keydown', this.keyCaptureHandler, true);
     this.glitchFx.dispose();
     this.audioManager?.stopAllSounds();
     this.audioManager?.dispose();
