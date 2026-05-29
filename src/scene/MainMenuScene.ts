@@ -1246,7 +1246,7 @@ export class MainMenuScene {
     if (!this.settingsBuilder) {
       this.settingsBuilder = new SettingsMenuBuilder(
         () => this.closeSettingsOverlay(),
-        () => this.codexService.resetProgress(),
+        () => this.eventBus.emit(GameEvents.CODEX_PROGRESS_RESET_REQUESTED),
         () => {} // benchmark not fully available from main menu
       );
     }

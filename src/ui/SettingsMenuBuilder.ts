@@ -408,7 +408,7 @@ export class SettingsMenuBuilder {
     body.text = 'This will reset codex, achievements, settings, and tutorial completion.\nThe game will restart as a first launch.';
     body.color = '#FFD0D0';
     body.fontSize = scaleBase(18);
-    body.fontFamily = 'Wonder8Bit';
+    body.fontFamily = UITheme.fonts.primary;
     body.width = '600px';
     body.height = '110px';
     body.textWrapping = true;
