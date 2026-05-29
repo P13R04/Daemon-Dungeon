@@ -1,0 +1,60 @@
+{
+  "id": "room_39_maze_of_the_sniper",
+  "name": "Sniper Maze",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.#######.###.#",
+    "#.#.......#...#",
+    "#.#.#####.#.#.#",
+    "#.#.#...#.#.#.#",
+    "#.#.#.#.#.#.#.#",
+    "#...#.#...#.#.#",
+    "#.###.#####.###",
+    "#.............#",
+    "#.###########.#",
+    "#.............#",
+    "#..P.......P..#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 3,
+      "y": 3,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 11,
+      "y": 3,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 5.9,
+      "y": 9,
+      "enemyType": "healer"
+    },
+    {
+      "x": 2.2,
+      "y": 9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 9.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 9,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 6.9,
+      "y": 5,
+      "enemyType": "sentinel"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

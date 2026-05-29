@@ -20,16 +20,6 @@
   ],
   "spawnPoints": [
     {
-      "x": 4,
-      "y": 5,
-      "enemyType": "jumper"
-    },
-    {
-      "x": 10,
-      "y": 5,
-      "enemyType": "jumper"
-    },
-    {
       "x": 6.9,
       "y": 9.1,
       "enemyType": "strategist"
@@ -47,7 +37,42 @@
     {
       "x": 6.9,
       "y": 3,
-      "enemyType": "healer"
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 4.9,
+      "y": 5.2,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 4.1,
+      "y": 5.1,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 9,
+      "y": 4.9,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 9.9,
+      "y": 5.1,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 6,
+      "y": 10.1,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 6.8,
+      "y": 10.1,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 7.8,
+      "y": 10.1,
+      "enemyType": "fuyard"
     }
   ],
   "friendlySpawnPoints": [],

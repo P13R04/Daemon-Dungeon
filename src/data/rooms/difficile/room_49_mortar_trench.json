@@ -1,0 +1,65 @@
+{
+  "id": "room_49_mortar_trench",
+  "name": "Mortar Trench",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#..^^^^^^^^^..#",
+    "#..^^^^^^^^^..#",
+    "#..^^^^^^^^^..#",
+    "#.............#",
+    "#...##...##...#",
+    "#.............#",
+    "#.PP.......PP.#",
+    "#.PP.......PP.#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 5,
+      "y": 5,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 9,
+      "y": 5,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 4.1,
+      "y": 7,
+      "enemyType": "healer"
+    },
+    {
+      "x": 10,
+      "y": 7,
+      "enemyType": "healer"
+    },
+    {
+      "x": 7,
+      "y": 8.9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 4.9,
+      "enemyType": "sentinel"
+    },
+    {
+      "x": 7,
+      "y": 3,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 7,
+      "y": 4,
+      "enemyType": "sentinel"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

@@ -1,0 +1,115 @@
+{
+  "id": "room_bounce_chamber",
+  "name": "Bounce Chamber",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..#.......#..#",
+    "#......^......#",
+    "#..#.......#..#",
+    "#......^......#",
+    "#..#.......#..#",
+    "#......^......#",
+    "#..#.......#..#",
+    "#......^......#",
+    "#..#.......#..#",
+    "#......^......#",
+    "#..P.......P..#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 3,
+      "y": 3,
+      "enemyType": "sentinel"
+    },
+    {
+      "x": 11,
+      "y": 3,
+      "enemyType": "sentinel"
+    },
+    {
+      "x": 7,
+      "y": 5,
+      "enemyType": "pong"
+    },
+    {
+      "x": 7,
+      "y": 2,
+      "enemyType": "healer"
+    },
+    {
+      "x": 3,
+      "y": 9,
+      "enemyType": "pong"
+    },
+    {
+      "x": 11,
+      "y": 9,
+      "enemyType": "pong"
+    },
+    {
+      "x": 11,
+      "y": 5.1,
+      "enemyType": "sentinel"
+    },
+    {
+      "x": 3,
+      "y": 5,
+      "enemyType": "sentinel"
+    },
+    {
+      "x": 3,
+      "y": 7,
+      "enemyType": "sentinel"
+    },
+    {
+      "x": 11,
+      "y": 7.1,
+      "enemyType": "sentinel"
+    },
+    {
+      "x": 11,
+      "y": 11,
+      "enemyType": "pong"
+    },
+    {
+      "x": 3,
+      "y": 11.1,
+      "enemyType": "pong"
+    },
+    {
+      "x": 7,
+      "y": 3.8,
+      "enemyType": "pong"
+    },
+    {
+      "x": 6.9,
+      "y": 6,
+      "enemyType": "pong"
+    },
+    {
+      "x": 6,
+      "y": 5,
+      "enemyType": "pong"
+    },
+    {
+      "x": 8,
+      "y": 5,
+      "enemyType": "pong"
+    },
+    {
+      "x": 4.9,
+      "y": 7,
+      "enemyType": "pong"
+    },
+    {
+      "x": 9,
+      "y": 7,
+      "enemyType": "pong"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

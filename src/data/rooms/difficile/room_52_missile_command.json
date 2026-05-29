@@ -1,0 +1,80 @@
+{
+  "id": "room_52_missile_command",
+  "name": "Missile Command",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#....VV.VV....#",
+    "#....V...V....#",
+    "#....VV.VV....#",
+    "#.............#",
+    "#..##.###.##..#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 2,
+      "y": 3,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 4,
+      "y": 3,
+      "enemyType": "healer"
+    },
+    {
+      "x": 10.2,
+      "y": 3,
+      "enemyType": "healer"
+    },
+    {
+      "x": 7,
+      "y": 7,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 8,
+      "y": 3,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 5.9,
+      "y": 3.1,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 11.9,
+      "y": 3,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 3.2,
+      "y": 7.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 10.8,
+      "y": 6.9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 5.1,
+      "y": 5,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 9,
+      "y": 5,
+      "enemyType": "zombie_basic"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

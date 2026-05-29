@@ -20,21 +20,6 @@
   ],
   "spawnPoints": [
     {
-      "x": 4,
-      "y": 4,
-      "enemyType": "healer"
-    },
-    {
-      "x": 10,
-      "y": 4,
-      "enemyType": "healer"
-    },
-    {
-      "x": 8,
-      "y": 6,
-      "enemyType": "bull"
-    },
-    {
       "x": 10,
       "y": 9.2,
       "enemyType": "strategist"
@@ -45,9 +30,19 @@
       "enemyType": "strategist"
     },
     {
-      "x": 6,
-      "y": 6,
-      "enemyType": "bull"
+      "x": 4,
+      "y": 4,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 10,
+      "y": 4,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 6.9,
+      "y": 2.1,
+      "enemyType": "mage_missile"
     }
   ],
   "friendlySpawnPoints": [],

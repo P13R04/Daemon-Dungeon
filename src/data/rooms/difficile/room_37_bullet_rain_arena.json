@@ -1,0 +1,55 @@
+{
+  "id": "room_37_bullet_rain_arena",
+  "name": "Bullet Rain Arena",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..#.......#..#",
+    "#.............#",
+    "#...VVV.VVV...#",
+    "#...V.....V...#",
+    "#...VVV.VVV...#",
+    "#.............#",
+    "#..PPP...PPP..#",
+    "#..PPP...PPP..#",
+    "#.............#",
+    "#....^^#^^....#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 3,
+      "y": 3,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 11,
+      "y": 3,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 7,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 4,
+      "y": 10,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 10,
+      "y": 10,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 6.8,
+      "y": 7.1,
+      "enemyType": "jumper"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

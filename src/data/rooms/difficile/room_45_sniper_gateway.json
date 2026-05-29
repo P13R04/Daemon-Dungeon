@@ -1,0 +1,85 @@
+{
+  "id": "room_45_sniper_gateway",
+  "name": "Sniper Gateway",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..VVV.^.VVV..#",
+    "#..V...^...V..#",
+    "#..V..^^^..V..#",
+    "#..^^^^^^^^^..#",
+    "#..V..^^^..V..#",
+    "#..V.......V..#",
+    "#..VVV...VVV..#",
+    "#.............#",
+    "#..#.......#..#",
+    "#....#####....#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 4,
+      "y": 3,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 10,
+      "y": 3,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 7,
+      "y": 7,
+      "enemyType": "healer"
+    },
+    {
+      "x": 2,
+      "y": 10,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 10,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 10,
+      "enemyType": "bull"
+    },
+    {
+      "x": 3,
+      "y": 9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 10.9,
+      "y": 9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 5.9,
+      "y": 2.1,
+      "enemyType": "shooter"
+    },
+    {
+      "x": 8,
+      "y": 1.9,
+      "enemyType": "shooter"
+    },
+    {
+      "x": 8.9,
+      "y": 3,
+      "enemyType": "shooter"
+    },
+    {
+      "x": 4.9,
+      "y": 3.1,
+      "enemyType": "shooter"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

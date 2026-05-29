@@ -1,0 +1,150 @@
+{
+  "id": "room_54_swarms",
+  "name": "AI Swarms",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#....#####....#",
+    "#.............#",
+    "#..##.....##..#",
+    "#.............#",
+    "#..#.......#..#",
+    "#..#..VVV..#..#",
+    "#..#.......#..#",
+    "#.............#",
+    "#..##.....##..#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 3,
+      "y": 3,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 11,
+      "y": 3,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 7,
+      "y": 4,
+      "enemyType": "healer"
+    },
+    {
+      "x": 3,
+      "y": 9,
+      "enemyType": "pong"
+    },
+    {
+      "x": 11,
+      "y": 9,
+      "enemyType": "pong"
+    },
+    {
+      "x": 7,
+      "y": 11,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 2.9,
+      "y": 5.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 11,
+      "y": 5.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 4,
+      "y": 7,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 10,
+      "y": 7.2,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 4,
+      "y": 5.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 9.9,
+      "y": 4.9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 5,
+      "y": 3,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 9,
+      "y": 3,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 5,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 8,
+      "y": 3.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 6,
+      "y": 3,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 3.9,
+      "y": 3.1,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 10.1,
+      "y": 3,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 6.9,
+      "y": 3.1,
+      "enemyType": "swarm_coordinator"
+    },
+    {
+      "x": 9.1,
+      "y": 10,
+      "enemyType": "pong"
+    },
+    {
+      "x": 4.9,
+      "y": 10,
+      "enemyType": "pong"
+    },
+    {
+      "x": 6,
+      "y": 8.1,
+      "enemyType": "pong"
+    },
+    {
+      "x": 7,
+      "y": 8.1,
+      "enemyType": "pong"
+    },
+    {
+      "x": 8,
+      "y": 8.1,
+      "enemyType": "pong"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

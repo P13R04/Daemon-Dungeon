@@ -1,0 +1,60 @@
+{
+  "id": "room_38_acid_trench",
+  "name": "Acid Trench",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..PPPP.PPPP..#",
+    "#..P.......P..#",
+    "#..P..VVV..P..#",
+    "#..P..V.V..P..#",
+    "#..P..VVV..P..#",
+    "#..P.......P..#",
+    "#..PPPP.PPPP..#",
+    "#.............#",
+    "#..#.......#..#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 5,
+      "y": 5,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 9,
+      "y": 5,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 7,
+      "y": 3,
+      "enemyType": "healer"
+    },
+    {
+      "x": 2,
+      "y": 11.1,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 12,
+      "y": 11.1,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 6.9,
+      "y": 7.1,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 6.9,
+      "y": 5,
+      "enemyType": "zombie_basic_void"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

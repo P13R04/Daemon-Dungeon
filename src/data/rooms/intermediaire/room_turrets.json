@@ -25,14 +25,14 @@
       "enemyType": "turret"
     },
     {
-      "x": 6.9,
-      "y": 3,
-      "enemyType": "turret"
-    },
-    {
       "x": 11,
       "y": 3.1,
       "enemyType": "turret"
+    },
+    {
+      "x": 7,
+      "y": 3,
+      "enemyType": "mage_missile"
     }
   ],
   "friendlySpawnPoints": [],

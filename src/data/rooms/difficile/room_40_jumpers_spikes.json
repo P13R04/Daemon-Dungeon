@@ -1,0 +1,90 @@
+{
+  "id": "room_40_jumpers_spikes",
+  "name": "Jumpers and Spikes",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..VVVV.VVVV..#",
+    "#..V.......V..#",
+    "#..V..^^^..V..#",
+    "#..V..^^^..V..#",
+    "#..V..^^^..V..#",
+    "#..V.......V..#",
+    "#..VV.###.VV..#",
+    "#.............#",
+    "#..P.......P..#",
+    "#.............#",
+    "#...#######...#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 5,
+      "y": 5,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 9,
+      "y": 5,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 7,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 3,
+      "y": 9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 11,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 7,
+      "y": 3.1,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 3.9,
+      "y": 3,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 10,
+      "y": 3.1,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 13,
+      "y": 2.1,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 0.8,
+      "y": 1.9,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 2.1,
+      "y": 2.1,
+      "enemyType": "healer"
+    },
+    {
+      "x": 12.1,
+      "y": 2,
+      "enemyType": "healer"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

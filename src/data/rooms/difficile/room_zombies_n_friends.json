@@ -1,0 +1,85 @@
+{
+  "id": "room_zombies_n_friends",
+  "name": "Zombies n Friends",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.....###.....#",
+    "#......#......#",
+    "#......#......#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 2,
+      "y": 7.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 3.1,
+      "y": 4.9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 4.9,
+      "y": 3.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 9,
+      "y": 3.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 2,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 10.9,
+      "y": 5,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 7,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 8,
+      "y": 7.1,
+      "enemyType": "turret"
+    },
+    {
+      "x": 6,
+      "y": 7.1,
+      "enemyType": "turret"
+    },
+    {
+      "x": 7,
+      "y": 5.1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 8,
+      "y": 5.1,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 5.9,
+      "y": 5.1,
+      "enemyType": "jumper"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

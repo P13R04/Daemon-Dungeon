@@ -1,0 +1,80 @@
+{
+  "id": "room_42_stampede_fire",
+  "name": "Stampede and Fire",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..#P^P#P^P#..#",
+    "#.............#",
+    "#..VVVV.VVVV..#",
+    "#..V.......V..#",
+    "#.#V..^^^..V#.#",
+    "#.#V..^.^..V#.#",
+    "#.#V..^^^..V#.#",
+    "#..V.......V..#",
+    "#..VVVV.VVVV..#",
+    "#.............#",
+    "#.#.........#.#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 7,
+      "y": 5,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 1,
+      "y": 6.1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 13,
+      "y": 6,
+      "enemyType": "bull"
+    },
+    {
+      "x": 5,
+      "y": 6,
+      "enemyType": "healer"
+    },
+    {
+      "x": 9.1,
+      "y": 6,
+      "enemyType": "healer"
+    },
+    {
+      "x": 7,
+      "y": 9.2,
+      "enemyType": "bull"
+    },
+    {
+      "x": 4,
+      "y": 7.1,
+      "enemyType": "turret"
+    },
+    {
+      "x": 10,
+      "y": 7,
+      "enemyType": "turret"
+    },
+    {
+      "x": 4.9,
+      "y": 8,
+      "enemyType": "bull"
+    },
+    {
+      "x": 9.1,
+      "y": 8,
+      "enemyType": "bull"
+    },
+    {
+      "x": 7,
+      "y": 7.1,
+      "enemyType": "bull"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

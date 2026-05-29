@@ -20,19 +20,19 @@
   ],
   "spawnPoints": [
     {
-      "x": 7,
-      "y": 3,
-      "enemyType": "shooter"
-    },
-    {
-      "x": 2.8,
-      "y": 4.1,
+      "x": 2.9,
+      "y": 4.2,
       "enemyType": "shooter"
     },
     {
       "x": 10.9,
       "y": 4.1,
       "enemyType": "shooter"
+    },
+    {
+      "x": 7,
+      "y": 2.2,
+      "enemyType": "prefire_sentinel"
     }
   ],
   "friendlySpawnPoints": [],

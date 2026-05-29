@@ -1,0 +1,60 @@
+{
+  "id": "room_36_prefire_fortress",
+  "name": "Prefire Fortress",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..VVVV.VVVV..#",
+    "#..V.......V..#",
+    "#......^......#",
+    "#..V.......V..#",
+    "#..VVVV.VVVV..#",
+    "#.............#",
+    "#.^P^.....^P^.#",
+    "#.............#",
+    "#...#######...#",
+    "#.............#",
+    "#....P...P....#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 5,
+      "y": 4,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 9,
+      "y": 4,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 7,
+      "y": 3,
+      "enemyType": "healer"
+    },
+    {
+      "x": 3,
+      "y": 9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 9,
+      "enemyType": "bull"
+    },
+    {
+      "x": 6.9,
+      "y": 6,
+      "enemyType": "jumper"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

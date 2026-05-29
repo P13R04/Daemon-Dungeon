@@ -1,0 +1,75 @@
+{
+  "id": "room_46_gauntlet_of_fire",
+  "name": "Gauntlet of Fire",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..#..#..#..#.#",
+    "#.............#",
+    "#..P..P..P..P.#",
+    "#..P..P..P..P.#",
+    "#..P..P..P..P.#",
+    "#..P..P..P..P.#",
+    "#..P..P..P..P.#",
+    "#..P..P..P..P.#",
+    "#..P..P..P..P.#",
+    "#.............#",
+    "#..#..#..#..#.#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 3,
+      "y": 5,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 6,
+      "y": 5,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 12.1,
+      "y": 5,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 3,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 9,
+      "y": 10.9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 3.9,
+      "enemyType": "healer"
+    },
+    {
+      "x": 8,
+      "y": 4,
+      "enemyType": "healer"
+    },
+    {
+      "x": 5.9,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 11.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 9,
+      "y": 5.1,
+      "enemyType": "bullet_hell"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

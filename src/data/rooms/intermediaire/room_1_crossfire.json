@@ -31,13 +31,13 @@
     },
     {
       "x": 7,
-      "y": 7,
-      "enemyType": "healer"
+      "y": 3,
+      "enemyType": "bull"
     },
     {
       "x": 7,
-      "y": 3,
-      "enemyType": "bull"
+      "y": 2.1,
+      "enemyType": "prefire_sentinel"
     }
   ],
   "friendlySpawnPoints": [],

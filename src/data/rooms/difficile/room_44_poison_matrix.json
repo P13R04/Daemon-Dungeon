@@ -1,0 +1,65 @@
+{
+  "id": "room_44_poison_matrix",
+  "name": "Poison Matrix",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..P.P.P.P.P..#",
+    "#..P.P.P.P.P..#",
+    "#..P.P.P.P.P..#",
+    "#..P.P.P.P.P..#",
+    "#..P.P.P.P.P..#",
+    "#..P.P.P.P.P..#",
+    "#..P.P.P.P.P..#",
+    "#.............#",
+    "#..#.......#..#",
+    "#.............#",
+    "#....P...P....#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 3,
+      "y": 3,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 11,
+      "y": 3,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 7,
+      "y": 7.1,
+      "enemyType": "healer"
+    },
+    {
+      "x": 3.8,
+      "y": 9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 10,
+      "y": 9.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 4.8,
+      "y": 3.1,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 6.8,
+      "y": 3.1,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 9,
+      "y": 3.1,
+      "enemyType": "mage_missile"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

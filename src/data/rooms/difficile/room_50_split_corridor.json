@@ -1,0 +1,95 @@
+{
+  "id": "room_50_split_corridor",
+  "name": "Split Corridor",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#..VV..#..VV..#",
+    "#..VV..#..VV..#",
+    "#......#......#",
+    "#......#......#",
+    "#......#......#",
+    "#..PP..#..PP..#",
+    "#..PP..#..PP..#",
+    "#......#......#",
+    "#...#######...#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 5.1,
+      "y": 2,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 4,
+      "y": 9.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 5,
+      "y": 7.9,
+      "enemyType": "healer"
+    },
+    {
+      "x": 8,
+      "y": 7.9,
+      "enemyType": "healer"
+    },
+    {
+      "x": 6,
+      "y": 10,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 9,
+      "y": 2.1,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 8,
+      "y": 10,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 10,
+      "y": 9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 1.9,
+      "y": 7,
+      "enemyType": "bull"
+    },
+    {
+      "x": 12,
+      "y": 7,
+      "enemyType": "bull"
+    },
+    {
+      "x": 13,
+      "y": 8.1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 1,
+      "y": 8,
+      "enemyType": "bull"
+    },
+    {
+      "x": 1.9,
+      "y": 2.1,
+      "enemyType": "turret"
+    },
+    {
+      "x": 12,
+      "y": 2.1,
+      "enemyType": "turret"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

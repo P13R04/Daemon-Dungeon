@@ -1,0 +1,70 @@
+{
+  "id": "room_41_bullet_sentry_crossroad",
+  "name": "Sentry Crossroad",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#....VV.VV....#",
+    "#....#...#....#",
+    "#.............#",
+    "#..V.......V..#",
+    "#......#......#",
+    "#..V.......V..#",
+    "#.............#",
+    "#....#...#....#",
+    "#....VV.VV....#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 3,
+      "y": 4,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 11,
+      "y": 4,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 7,
+      "y": 1.9,
+      "enemyType": "healer"
+    },
+    {
+      "x": 2,
+      "y": 6,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 12,
+      "y": 6,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 7,
+      "y": 3,
+      "enemyType": "turret"
+    },
+    {
+      "x": 7,
+      "y": 6.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 5,
+      "y": 9.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 9,
+      "y": 9.1,
+      "enemyType": "zombie_basic"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

@@ -1,0 +1,85 @@
+{
+  "id": "room_48_skirmish_ring",
+  "name": "Skirmish Ring",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#....V...V....#",
+    "#...VV...VV...#",
+    "#...V.....V...#",
+    "#.....###.....#",
+    "#...V..#..V...#",
+    "#...VV...VV...#",
+    "#....V...V....#",
+    "#.............#",
+    "#.^.##...##.^.#",
+    "#.^.........^.#",
+    "#.^^^^...^^^^.#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 7,
+      "y": 9,
+      "enemyType": "healer"
+    },
+    {
+      "x": 2,
+      "y": 5,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 12,
+      "y": 5,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 7,
+      "y": 10.1,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 10,
+      "y": 9.1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 4,
+      "y": 9,
+      "enemyType": "bull"
+    },
+    {
+      "x": 10.1,
+      "y": 2.1,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 4,
+      "y": 2.1,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 2,
+      "y": 3.1,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 12,
+      "y": 3.1,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 5.9,
+      "y": 4.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 8,
+      "y": 4.1,
+      "enemyType": "zombie_fast"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}
