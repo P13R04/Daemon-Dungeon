@@ -682,9 +682,9 @@ export class DaemonTakeoverIntroScene {
     const baseScale = BASE_TEXT_SCALE;
 
     const aspect = idealW / Math.max(1, idealH);
-    this.lineHeight = Math.round((mobile ? 32 : 30) * baseScale);
-    this.topPadding = Math.round((mobile ? 18 : 14) * baseScale);
-    const charW = (mobile ? 12.8 : 11.2) * baseScale;
+    this.lineHeight = Math.round(30 * baseScale);
+    this.topPadding = Math.round(14 * baseScale);
+    const charW = 11.2 * baseScale;
 
     this.panel.height = aspect > 2.0 ? '88%' : '86%';
 
@@ -733,27 +733,27 @@ export class DaemonTakeoverIntroScene {
     }
     if (this.prebootButton) {
       this.prebootButton.height = `${Math.round((mobile ? 104 : 94) * baseScale)}px`;
-      this.prebootButton.fontSize = Math.round((mobile ? 58 : 50) * baseScale);
+      this.prebootButton.fontSize = Math.round(50 * baseScale);
       this.prebootButton.width = mobile ? '80%' : '66%';
     }
     if (this.prebootTitle) {
-      this.prebootTitle.fontSize = Math.round((mobile ? 31 : 29) * baseScale);
+      this.prebootTitle.fontSize = Math.round(29 * baseScale);
       this.prebootTitle.top = `${Math.round(-92 * baseScale)}px`;
     }
     if (this.prebootSubtitle) {
-      this.prebootSubtitle.fontSize = Math.round((mobile ? 24 : 22) * baseScale);
+      this.prebootSubtitle.fontSize = Math.round(22 * baseScale);
       this.prebootSubtitle.left = `${Math.round(26 * baseScale)}px`;
       this.prebootSubtitle.top = `${Math.round(-8 * baseScale)}px`;
       this.prebootSubtitle.height = `${Math.round(140 * baseScale)}px`;
     }
     if (this.prebootHint) {
-      this.prebootHint.fontSize = Math.round((mobile ? 20 : 18) * baseScale);
+      this.prebootHint.fontSize = Math.round(18 * baseScale);
       this.prebootHint.top = `${Math.round(155 * baseScale)}px`;
     }
-    this.headerText.fontSize = Math.round((mobile ? 22 : 20) * baseScale);
-    this.phaseLabel.fontSize = Math.round((mobile ? 19 : 17) * baseScale);
-    this.footerLoaderLabel.fontSize = Math.round((mobile ? 20 : 17) * baseScale);
-    this.skipHint.fontSize = Math.round((mobile ? 24 : 20) * baseScale);
+    this.headerText.fontSize = Math.round(20 * baseScale);
+    this.phaseLabel.fontSize = Math.round(17 * baseScale);
+    this.footerLoaderLabel.fontSize = Math.round(17 * baseScale);
+    this.skipHint.fontSize = Math.round(20 * baseScale);
     this.skipHint.top = '34px';
     this.skipHint.width = mobile ? '440px' : '400px';
     this.skipHint.left = '0px';

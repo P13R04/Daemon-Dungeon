@@ -410,9 +410,9 @@ export class ClassSelectScene {
     this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
-    const menuButtonH = isMobileLayout ? 76 : 70;
-    const menuButtonFont = isMobileLayout ? 23 : 21;
-    const backBtn = UIFactory.createTerminalButton('classSelectBackTopLeft', 'BACK', `${isMobileLayout ? 170 : 144}px`, `${menuButtonH}px`);
+    const menuButtonH = 70;
+    const menuButtonFont = 21;
+    const backBtn = UIFactory.createTerminalButton('classSelectBackTopLeft', 'BACK', `${144}px`, `${menuButtonH}px`);
     backBtn.left = '20px';
     backBtn.top = '20px';
     backBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -448,16 +448,16 @@ export class ClassSelectScene {
     navRow.width = `${Math.round(layoutWidth * (isMobileLayout ? 0.285 : 0.255))}px`;
     navRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     navRow.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
-    navRow.spacing = isMobileLayout ? 10 : 8;
+    navRow.spacing = 8;
     navPanel.addControl(navRow);
 
-    const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', `${isMobileLayout ? 120 : 108}px`, `${menuButtonH}px`);
+    const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', `${108}px`, `${menuButtonH}px`);
     this.bindGlitchButton(leftBtn, '<', () => this.rotateCarousel(1), { silent: true });
     if (leftBtn.textBlock) leftBtn.textBlock.fontSize = menuButtonFont;
     if (leftBtn.textBlock) leftBtn.textBlock.fontFamily = 'Wonder8Bit';
     navRow.addControl(leftBtn);
 
-    const startButton = UIFactory.createTerminalButton('classSelectStart', '[ START ]', `${isMobileLayout ? 250 : 220}px`, `${menuButtonH}px`);
+    const startButton = UIFactory.createTerminalButton('classSelectStart', '[ START ]', `${220}px`, `${menuButtonH}px`);
     this.bindGlitchButton(startButton, '[ START ]', () => {
       this.tryStartSelectedClass();
     });
@@ -465,7 +465,7 @@ export class ClassSelectScene {
     if (startButton.textBlock) startButton.textBlock.fontFamily = 'Wonder8Bit';
     navRow.addControl(startButton);
 
-    const rightBtn = UIFactory.createTerminalButton('classSelectRight', '>', `${isMobileLayout ? 120 : 108}px`, `${menuButtonH}px`);
+    const rightBtn = UIFactory.createTerminalButton('classSelectRight', '>', `${108}px`, `${menuButtonH}px`);
     this.bindGlitchButton(rightBtn, '>', () => this.rotateCarousel(-1), { silent: true });
     if (rightBtn.textBlock) rightBtn.textBlock.fontSize = menuButtonFont;
     if (rightBtn.textBlock) rightBtn.textBlock.fontFamily = 'Wonder8Bit';
@@ -493,7 +493,7 @@ export class ClassSelectScene {
     infoLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoOverlay.addControl(infoLabel);
 
-    const infoText = UIFactory.createText('classSelectInfoText', '', Math.round((isMobileLayout ? 23 : 21) * BASE_TEXT_SCALE), UITheme.colors.textNormal);
+    const infoText = UIFactory.createText('classSelectInfoText', '', Math.round((21) * BASE_TEXT_SCALE), UITheme.colors.textNormal);
     infoText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.textWrapping = true;
@@ -526,7 +526,7 @@ export class ClassSelectScene {
     loreLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreOverlay.addControl(loreLabel);
 
-    const loreText = UIFactory.createText('classSelectLoreText', '', Math.round((isMobileLayout ? 23 : 21) * BASE_TEXT_SCALE), UITheme.colors.textNormal);
+    const loreText = UIFactory.createText('classSelectLoreText', '', Math.round((21) * BASE_TEXT_SCALE), UITheme.colors.textNormal);
     loreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreText.textWrapping = true;
@@ -545,7 +545,7 @@ export class ClassSelectScene {
   private createTutorialPromptOverlay(parent: Rectangle): void {
     const idealWidth = this.gui.idealWidth || DESIGN_WIDTH;
     const isMobileLayout = idealWidth <= 960;
-    const menuButtonH = isMobileLayout ? 76 : 70;
+    const menuButtonH = 70;
 
     const overlay = new Rectangle('classTutorialPromptOverlay');
     overlay.width = 1;
@@ -573,13 +573,13 @@ export class ClassSelectScene {
 
     const body = UIFactory.createText(
       'classTutorialPromptBody',
-      'Run a short onboarding room before your first run with this class?\nIt explains core class tools in ~1 minute.',
+      'Run a short onboarding room before your first run with this class?\nIt explains core class tools in ~1 minute.\n\n(Tutorials are always re-playable from the main menu.)',
       20,
       UITheme.colors.textNormal
     );
     body.textWrapping = true;
     body.width = '90%';
-    body.height = '100px';
+    body.height = '140px';
     body.top = '-22px';
     panel.addControl(body);
 
@@ -591,7 +591,7 @@ export class ClassSelectScene {
     buttonRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     panel.addControl(buttonRow);
 
-    const startTutorialBtn = UIFactory.createTerminalButton('classTutorialPromptStart', 'START QUICK TUTORIAL', `${isMobileLayout ? 360 : 340}px`, `${Math.round(menuButtonH * 0.8)}px`);
+    const startTutorialBtn = UIFactory.createTerminalButton('classTutorialPromptStart', 'START QUICK TUTORIAL', `${340}px`, `${Math.round(menuButtonH * 0.8)}px`);
     if (startTutorialBtn.textBlock) startTutorialBtn.textBlock.color = '#FFFFFF';
     this.bindGlitchButton(startTutorialBtn, 'START QUICK TUTORIAL', () => {
       const classId = this.tutorialPromptClassId;
@@ -601,7 +601,7 @@ export class ClassSelectScene {
     });
     buttonRow.addControl(startTutorialBtn);
 
-    const skipBtn = UIFactory.createTerminalButton('classTutorialPromptSkip', 'SKIP TO RUN', `${isMobileLayout ? 280 : 260}px`, `${Math.round(menuButtonH * 0.8)}px`);
+    const skipBtn = UIFactory.createTerminalButton('classTutorialPromptSkip', 'SKIP TO RUN', `${260}px`, `${Math.round(menuButtonH * 0.8)}px`);
     if (skipBtn.textBlock) skipBtn.textBlock.color = '#FFFFFF';
     this.bindGlitchButton(skipBtn, 'SKIP TO RUN', () => {
       const classId = this.tutorialPromptClassId;
@@ -1403,7 +1403,7 @@ export class ClassSelectScene {
         this.setInfoTypingTarget(`${selected.label}\n// READY\n`);
       }
       this.infoText.color = UITheme.colors.textNormal;
-      this.infoText.fontSize = Math.round((this.isMobileLayout ? 20 : 18) * BASE_TEXT_SCALE);
+      this.infoText.fontSize = Math.round(18 * BASE_TEXT_SCALE);
 
       if (lore) {
         const loreText =
@@ -1415,7 +1415,7 @@ export class ClassSelectScene {
         this.setLoreTypingTarget(`No lore files found for this class.\n`);
       }
       this.loreText.color = UITheme.colors.textNormal;
-      this.loreText.fontSize = Math.round((this.isMobileLayout ? 22 : 20) * BASE_TEXT_SCALE);
+      this.loreText.fontSize = Math.round(20 * BASE_TEXT_SCALE);
 
       this.startButton.isEnabled = true;
       this.startButton.background = UITheme.colors.buttonBg;
@@ -1430,11 +1430,11 @@ export class ClassSelectScene {
     } else {
       this.setInfoTypingTarget(`${selected.label}\n// COMING SOON\n`);
       this.infoText.color = UITheme.colors.textDim;
-      this.infoText.fontSize = Math.round((this.isMobileLayout ? 24 : 21) * BASE_TEXT_SCALE);
+      this.infoText.fontSize = Math.round(21 * BASE_TEXT_SCALE);
 
       this.setLoreTypingTarget(`LORE ENCRYPTED\n`);
       this.loreText.color = UITheme.colors.textDim;
-      this.loreText.fontSize = Math.round((this.isMobileLayout ? 24 : 21) * BASE_TEXT_SCALE);
+      this.loreText.fontSize = Math.round(21 * BASE_TEXT_SCALE);
 
       this.startButton.isEnabled = false;
       this.startButton.background = 'rgba(6, 16, 28, 0.6)';

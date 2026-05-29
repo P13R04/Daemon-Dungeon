@@ -572,7 +572,8 @@ export class GameTutorialManager {
         this.clearIndicator();
         this.phaseState.playerDamagedTauntDone = false;
         if (this.classId === 'firewall') {
-          this.daemonSay("Now stance. Hold shield, deflect a shot, and bounce it back to the turret.", "superieur", 4.6);
+          const btnTxt = this.isMobileTutorialMode() ? 'the STANCE button' : 'RIGHT CLICK';
+          this.daemonSay(`Now stance. Hold ${btnTxt} to shield, deflect a shot, and bounce it back to the turret.`, "superieur", 5.2);
           this.deferUntilDaemonFinished(() => {
             if (!this.isActive || this.currentPhase !== 'class_stance_wave') return;
             this.spawnEnemyAtMap('tutorial_turret', 7.0, 3.8, { hpMultiplier: 0.1 });
@@ -580,7 +581,8 @@ export class GameTutorialManager {
           }, 80);
         } else {
           this.spawnEnemyAtMap('tutorial_dummy_mobile', 7.0, 6.2);
-          this.daemonSay("Stance turns you invisible. Stay outside detection range and the patroller loses you.", "happy", 4.4);
+          const btnTxt = this.isMobileTutorialMode() ? 'STANCE button' : 'RIGHT CLICK';
+          this.daemonSay(`Hold ${btnTxt} to turn invisible. Stay outside detection range and the patroller loses you.`, "happy", 5.0);
           this.pointToMap(7.0, 6.2);
           const watchStealth = () => {
             if (!this.isActive || this.currentPhase !== 'class_stance_wave') return;
@@ -1013,6 +1015,7 @@ export class GameTutorialManager {
       GameSettingsStore.setKeybinding('moveLeft', 'a');
       GameSettingsStore.setKeybinding('moveDown', 's');
       GameSettingsStore.setKeybinding('moveRight', 'd');
+      GameSettingsStore.setKeybinding('shoot', 'q');
       this.movementChoicePopupCompleted = true;
       this.disposePromptGui();
       this.triggerPhase('movement_door');

@@ -314,14 +314,14 @@ export class InputManager {
     if (this.mobileMode) {
       return slot === 1 ? this.joystickAimActive : this.mobileStancePressed;
     }
-    return slot === 1 ? this.isActionHeld('shoot') : this.isActionHeld('posture');
+    return slot === 1 ? (this.isActionHeld('shoot') || this.mouseClick) : (this.isActionHeld('posture') || this.rightMouseClick);
   }
 
   isAttackSlotPressedThisFrame(slot: 1 | 2): boolean {
     if (this.mobileMode) {
       return slot === 1 ? this.joystickAimPressedThisFrame : this.mobileStancePressed;
     }
-    return slot === 1 ? this.isActionPressedThisFrame('shoot') : this.isActionPressedThisFrame('posture');
+    return slot === 1 ? (this.isActionPressedThisFrame('shoot') || this.mouseClickThisFrame) : (this.isActionPressedThisFrame('posture') || this.rightMouseClickThisFrame);
   }
 
   setAttackSlotBindings(bindings: Partial<Record<1 | 2, string[]>>): void {
