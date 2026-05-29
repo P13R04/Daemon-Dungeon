@@ -29,7 +29,7 @@ import { ClassSelectDevConsole } from './ClassSelectDevConsole';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { GameSettingsStore } from '../settings/GameSettings';
 import { UIFactory } from '../ui/UIFactory';
-import { UITheme } from '../ui/UITheme';
+import { BASE_TEXT_SCALE, UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { applyResponsiveGuiScaling, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
@@ -486,14 +486,14 @@ export class ClassSelectScene {
     infoOverlay.zIndex = 100;
     mainLayoutContainer.addControl(infoOverlay);
 
-    const infoLabel = UIFactory.createText('classInfoLabel', '// CLASS DATA', 15, UITheme.colors.textDim);
+    const infoLabel = UIFactory.createText('classInfoLabel', '// CLASS DATA', Math.round(15 * BASE_TEXT_SCALE), UITheme.colors.textDim);
     infoLabel.top = `-${Math.round(sidePanelHeight * 0.46)}px`;
     infoLabel.left = '20px';
     infoLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoOverlay.addControl(infoLabel);
 
-    const infoText = UIFactory.createText('classSelectInfoText', '', isMobileLayout ? 23 : 21, UITheme.colors.textNormal);
+    const infoText = UIFactory.createText('classSelectInfoText', '', Math.round((isMobileLayout ? 23 : 21) * BASE_TEXT_SCALE), UITheme.colors.textNormal);
     infoText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     infoText.textWrapping = true;
@@ -519,14 +519,14 @@ export class ClassSelectScene {
     loreOverlay.zIndex = 100;
     mainLayoutContainer.addControl(loreOverlay);
 
-    const loreLabel = UIFactory.createText('classLoreLabel', '// SYSTEM LORE', 15, UITheme.colors.textDim);
+    const loreLabel = UIFactory.createText('classLoreLabel', '// SYSTEM LORE', Math.round(15 * BASE_TEXT_SCALE), UITheme.colors.textDim);
     loreLabel.top = `-${Math.round(sidePanelHeight * 0.46)}px`;
     loreLabel.left = '20px';
     loreLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreOverlay.addControl(loreLabel);
 
-    const loreText = UIFactory.createText('classSelectLoreText', '', isMobileLayout ? 23 : 21, UITheme.colors.textNormal);
+    const loreText = UIFactory.createText('classSelectLoreText', '', Math.round((isMobileLayout ? 23 : 21) * BASE_TEXT_SCALE), UITheme.colors.textNormal);
     loreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     loreText.textWrapping = true;
@@ -1405,7 +1405,7 @@ export class ClassSelectScene {
         this.setInfoTypingTarget(`${selected.label}\n// READY`);
       }
       this.infoText.color = UITheme.colors.textNormal;
-      this.infoText.fontSize = this.isMobileLayout ? 22 : 20;
+      this.infoText.fontSize = Math.round((this.isMobileLayout ? 22 : 20) * BASE_TEXT_SCALE);
 
       if (lore) {
         const loreText =
@@ -1417,7 +1417,7 @@ export class ClassSelectScene {
         this.setLoreTypingTarget(`No lore files found for this class.`);
       }
       this.loreText.color = UITheme.colors.textNormal;
-      this.loreText.fontSize = this.isMobileLayout ? 22 : 20;
+      this.loreText.fontSize = Math.round((this.isMobileLayout ? 22 : 20) * BASE_TEXT_SCALE);
 
       this.startButton.isEnabled = true;
       this.startButton.background = UITheme.colors.buttonBg;
@@ -1432,11 +1432,11 @@ export class ClassSelectScene {
     } else {
       this.setInfoTypingTarget(`${selected.label}\n// COMING SOON`);
       this.infoText.color = UITheme.colors.textDim;
-      this.infoText.fontSize = this.isMobileLayout ? 24 : 21;
+      this.infoText.fontSize = Math.round((this.isMobileLayout ? 24 : 21) * BASE_TEXT_SCALE);
 
       this.setLoreTypingTarget(`LORE ENCRYPTED`);
       this.loreText.color = UITheme.colors.textDim;
-      this.loreText.fontSize = this.isMobileLayout ? 24 : 21;
+      this.loreText.fontSize = Math.round((this.isMobileLayout ? 24 : 21) * BASE_TEXT_SCALE);
 
       this.startButton.isEnabled = false;
       this.startButton.background = 'rgba(6, 16, 28, 0.6)';

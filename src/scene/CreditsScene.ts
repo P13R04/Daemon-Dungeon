@@ -6,6 +6,7 @@ import { DAEMON_ANIMATION_PRESETS, normalizeDaemonPresetName } from '../data/voi
 import { createMenuMatrixBackground } from './MenuMatrixBackground';
 import { UI_LAYER } from '../ui/uiLayers';
 import { applyResponsiveGuiScaling } from '../ui/GuiScaling';
+import { BASE_TEXT_SCALE } from '../ui/UITheme';
 import { buildHudAssetUrl } from '../systems/hud/HudAssetPaths';
 import { playUiSelectClick } from '../audio/UiSelectClick';
 
@@ -70,8 +71,8 @@ export class CreditsScene {
   private interLineTimer = 0;
   private pendingStartLine = true;
   private pendingLineStartBlink = 0;
-  private lineSpacing = 30;
-  private readonly consoleTopPadding = 14;
+  private lineSpacing = Math.round(30 * BASE_TEXT_SCALE);
+  private readonly consoleTopPadding = Math.round(14 * BASE_TEXT_SCALE);
   private spawnLineY = this.consoleTopPadding;
   private maxVisibleLines = 14;
   private consoleFilled = false;
@@ -172,9 +173,9 @@ export class CreditsScene {
     const subtitle = new TextBlock('creditsSubtitle', 'SYSTEM CORE // CREDITS CHANNEL');
     subtitle.color = '#9EEBFF';
     subtitle.fontFamily = 'Arcade8Bit';
-    subtitle.fontSize = 19;
+    subtitle.fontSize = Math.round(19 * BASE_TEXT_SCALE);
     subtitle.top = '-240px';
-    subtitle.height = '34px';
+    subtitle.height = `${Math.round(34 * BASE_TEXT_SCALE)}px`;
     subtitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     subtitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     root.addControl(subtitle);
@@ -192,11 +193,11 @@ export class CreditsScene {
     root.addControl(this.consoleBody);
 
     const consoleHeaderLeft = new TextBlock('creditsConsoleHeaderLeft', 'CREDITS CONSOLE');
-    consoleHeaderLeft.height = '40px';
+    consoleHeaderLeft.height = `${Math.round(40 * BASE_TEXT_SCALE)}px`;
     consoleHeaderLeft.top = '10px';
     consoleHeaderLeft.color = '#9EEBFF';
     consoleHeaderLeft.fontFamily = 'Arcade8Bit';
-    consoleHeaderLeft.fontSize = 22;
+    consoleHeaderLeft.fontSize = Math.round(22 * BASE_TEXT_SCALE);
     consoleHeaderLeft.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     consoleHeaderLeft.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     consoleHeaderLeft.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -205,11 +206,11 @@ export class CreditsScene {
     this.consoleBody.addControl(consoleHeaderLeft);
 
     const consoleHeaderRight = new TextBlock('creditsConsoleHeaderRight', 'system_core://credits --archive --tone=bitter-sweet');
-    consoleHeaderRight.height = '40px';
+    consoleHeaderRight.height = `${Math.round(40 * BASE_TEXT_SCALE)}px`;
     consoleHeaderRight.top = '10px';
     consoleHeaderRight.color = '#8ccbf0';
     consoleHeaderRight.fontFamily = 'Arcade8Bit';
-    consoleHeaderRight.fontSize = 18;
+    consoleHeaderRight.fontSize = Math.round(18 * BASE_TEXT_SCALE);
     consoleHeaderRight.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     consoleHeaderRight.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     consoleHeaderRight.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -301,7 +302,7 @@ export class CreditsScene {
     this.popupText.resizeToFit = false;
     this.popupText.color = '#FFD1DA';
     this.popupText.fontFamily = 'Arcade8Bit';
-    this.popupText.fontSize = 24;
+    this.popupText.fontSize = Math.round(24 * BASE_TEXT_SCALE);
     this.popupText.height = '180px';
     this.popupText.textWrapping = true;
     this.popupText.lineSpacing = '0px';
@@ -616,7 +617,7 @@ export class CreditsScene {
     block.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     block.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     block.fontFamily = 'Arcade8Bit';
-    block.fontSize = 22;
+    block.fontSize = Math.round(22 * BASE_TEXT_SCALE);
     block.color = line.color ?? '#E9E1FF';
     block.alpha = 1;
     this.consoleViewport.addControl(block);
@@ -667,9 +668,9 @@ export class CreditsScene {
 
   private computePopupFontSize(): number {
     const idealWidth = this.gui.idealWidth || 1280;
-    if (idealWidth < 900) return 24;
-    if (idealWidth < 1280) return 25;
-    return 27;
+    if (idealWidth < 900) return Math.round(24 * BASE_TEXT_SCALE);
+    if (idealWidth < 1280) return Math.round(25 * BASE_TEXT_SCALE);
+    return Math.round(27 * BASE_TEXT_SCALE);
   }
 
   private computePopupTextLeft(): number {

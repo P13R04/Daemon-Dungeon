@@ -1,3 +1,5 @@
+export const BASE_TEXT_SCALE = 1.3;
+
 export const UITheme = {
   colors: {
     bgVoid: 'rgba(4, 8, 15, 0.95)',
@@ -26,8 +28,8 @@ export const UITheme = {
     primary: 'Consolas, monospace',
     titleSize: 38,
     headerSize: 22,
-    normalSize: 17,
-    smallSize: 14,
+    normalSize: Math.round(17 * BASE_TEXT_SCALE),
+    smallSize: Math.round(14 * BASE_TEXT_SCALE),
   },
   
   shapes: {

@@ -1,7 +1,9 @@
-import { Scene, Engine, FreeCamera, Vector3, Color4 } from '@babylonjs/core';
+import { Scene, Engine, FreeCamera, ArcRotateCamera, Vector3, Color4 } from '@babylonjs/core';
 import { AdvancedDynamicTexture, Rectangle, TextBlock, Control, Image, Button } from '@babylonjs/gui';
 import { applyResponsiveGuiScaling, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
-import { UI_LAYER } from '../ui/uiLayers';
+import { BASE_TEXT_SCALE } from '../ui/UITheme';
+import { UI_LAYER, SCENE_LAYER } from '../ui/uiLayers';
+import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { buildHudAssetUrl } from '../systems/hud/HudAssetPaths';
 import { DAEMON_ANIMATION_PRESETS, normalizeDaemonPresetName } from '../data/voicelines/DaemonAnimationPresets';
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
@@ -170,8 +172,14 @@ export class DaemonTakeoverIntroScene {
   private skipHoldBarFill!: Rectangle;
   private fadeOverlay!: Rectangle;
   private prebootOverlay!: Rectangle;
+  private prebootPanel!: Rectangle;
+  private prebootTitle!: TextBlock;
+  private prebootSubtitle!: TextBlock;
   private prebootHint!: TextBlock;
   private prebootButton: Button | null = null;
+  private prebootPulse!: Rectangle;
+  private prebootScanline!: Rectangle;
+  private prebootAnimTime = 0;
 
   private popupHost!: Rectangle;
   private popupBubble!: Rectangle;
@@ -210,7 +218,7 @@ export class DaemonTakeoverIntroScene {
   private currentTypingLine: ConsoleLine | null = null;
   private cursorLine!: TextBlock;
 
-  private maxVisibleLines = 23;
+  private maxVisibleLines = 18;
   private lineHeight = 26;
   private topPadding = 10;
   private maxCharsPerConsoleLine = 80;
@@ -218,6 +226,7 @@ export class DaemonTakeoverIntroScene {
   private bootProgress = 0;
   private bootProgressLabel = 'Boot sequence';
   private loaderMilestones: number[] = [];
+  private bg!: Rectangle;
   private loaderMilestoneIndex = 0;
   private loaderMilestoneTimer = 0;
   private activeConsoleLoader: {
@@ -259,10 +268,18 @@ export class DaemonTakeoverIntroScene {
     this.scene = new Scene(engine);
     this.scene.clearColor = new Color4(0.01, 0.02, 0.04, 1);
 
-    const camera = new FreeCamera('takeoverIntroCamera', new Vector3(0, 0, -10), this.scene);
-    camera.setTarget(Vector3.Zero());
-    camera.layerMask = UI_LAYER;
-    this.scene.activeCamera = camera;
+    const sceneCamera = new ArcRotateCamera('takeoverSceneCamera', -Math.PI / 2, 1.30, 14.5, new Vector3(0, 1.3, 0), this.scene);
+    sceneCamera.layerMask = SCENE_LAYER;
+    
+    const uiCamera = new FreeCamera('takeoverIntroCamera', new Vector3(0, 0, -10), this.scene);
+    uiCamera.setTarget(Vector3.Zero());
+    uiCamera.layerMask = UI_LAYER;
+    (uiCamera as FreeCamera & { clear: boolean }).clear = false;
+    
+    this.scene.activeCameras = [sceneCamera, uiCamera];
+    this.scene.activeCamera = sceneCamera;
+
+    createSynthwaveGridBackground(this.scene, SCENE_LAYER, true, 'hacker');
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('TakeoverIntroUI', true, this.scene);
     applyResponsiveGuiScaling(this.gui, this.scene.getEngine());
@@ -307,12 +324,13 @@ export class DaemonTakeoverIntroScene {
   }
 
   private buildUi(): void {
-    const bg = new Rectangle('takeover_bg');
-    bg.width = 1;
-    bg.height = 1;
-    bg.thickness = 0;
-    bg.background = COLORS.bg;
-    this.gui.addControl(bg);
+    this.bg = new Rectangle('takeover_bg');
+    this.bg.width = 1;
+    this.bg.height = 1;
+    this.bg.thickness = 0;
+    this.bg.background = COLORS.bg;
+    this.bg.isVisible = false; // Hidden during preboot
+    this.gui.addControl(this.bg);
 
     this.panel = new Rectangle('takeover_panel');
     this.panel.width = '90%';
@@ -321,7 +339,7 @@ export class DaemonTakeoverIntroScene {
     this.panel.color = COLORS.panelBorder;
     this.panel.background = COLORS.panel;
     this.panel.cornerRadius = 4;
-    bg.addControl(this.panel);
+    this.bg.addControl(this.panel);
 
     const header = new Rectangle('takeover_header');
     header.width = 1;
@@ -335,7 +353,7 @@ export class DaemonTakeoverIntroScene {
     this.headerText.text = 'SYSTEM CORE // CONTROL CHANNEL';
     this.headerText.color = COLORS.line;
     this.headerText.fontFamily = 'Lucida Console, Courier New, monospace';
-    this.headerText.fontSize = 18;
+    this.headerText.fontSize = Math.round(18 * BASE_TEXT_SCALE);
     this.headerText.paddingLeft = '14px';
     this.headerText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     header.addControl(this.headerText);
@@ -344,7 +362,7 @@ export class DaemonTakeoverIntroScene {
     this.phaseLabel.text = 'SYSTEM MODE // STABLE';
     this.phaseLabel.color = '#89d7ff';
     this.phaseLabel.fontFamily = 'Lucida Console, Courier New, monospace';
-    this.phaseLabel.fontSize = 16;
+    this.phaseLabel.fontSize = Math.round(16 * BASE_TEXT_SCALE);
     this.phaseLabel.paddingRight = '14px';
     this.phaseLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     header.addControl(this.phaseLabel);
@@ -391,7 +409,7 @@ export class DaemonTakeoverIntroScene {
     this.footerLoaderLabel = new TextBlock('takeover_loader_label');
     this.footerLoaderLabel.text = 'Boot sequence... 0%';
     this.footerLoaderLabel.color = COLORS.line;
-    this.footerLoaderLabel.fontSize = 15;
+    this.footerLoaderLabel.fontSize = Math.round(15 * BASE_TEXT_SCALE);
     this.footerLoaderLabel.fontFamily = 'Lucida Console, Courier New, monospace';
     this.footerLoaderLabel.paddingTop = '34px';
     this.footerLoaderLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -400,7 +418,7 @@ export class DaemonTakeoverIntroScene {
     this.skipHint = new TextBlock('takeover_skip_hint');
     this.skipHint.text = 'HOLD TO SKIP';
     this.skipHint.color = '#476a80';
-    this.skipHint.fontSize = 14;
+    this.skipHint.fontSize = Math.round(14 * BASE_TEXT_SCALE);
     this.skipHint.fontFamily = 'Lucida Console, Courier New, monospace';
     this.skipHint.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.skipHint.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -477,7 +495,7 @@ export class DaemonTakeoverIntroScene {
     this.popupText.resizeToFit = false;
     this.popupText.color = '#FFD1DA';
     this.popupText.fontFamily = 'Consolas';
-    this.popupText.fontSize = 24;
+    this.popupText.fontSize = Math.round(24 * BASE_TEXT_SCALE);
     this.popupText.height = '180px';
     this.popupText.lineSpacing = '0px';
     this.popupText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -519,49 +537,74 @@ export class DaemonTakeoverIntroScene {
     this.prebootOverlay.width = '100%';
     this.prebootOverlay.height = '100%';
     this.prebootOverlay.thickness = 0;
-    this.prebootOverlay.background = '#05080f';
+    this.prebootOverlay.background = 'transparent';
     this.prebootOverlay.zIndex = 3700;
     this.gui.addControl(this.prebootOverlay);
 
-    const prebootPanel = new Rectangle('takeover_preboot_panel');
-    prebootPanel.width = '560px';
-    prebootPanel.height = '320px';
-    prebootPanel.thickness = 2;
-    prebootPanel.color = '#5d879f';
-    prebootPanel.background = 'rgba(6,14,26,0.92)';
-    this.prebootOverlay.addControl(prebootPanel);
+    const prebootBackdrop = new Rectangle('takeover_preboot_backdrop');
+    prebootBackdrop.width = '100%';
+    prebootBackdrop.height = '100%';
+    prebootBackdrop.thickness = 0;
+    prebootBackdrop.background = '#04070e';
+    this.prebootOverlay.addControl(prebootBackdrop);
 
-    const title = new TextBlock('takeover_preboot_title');
-    title.text = 'SYSTEM CORE BOOT MANAGER';
-    title.color = '#9fe8ff';
-    title.fontFamily = 'Lucida Console, Courier New, monospace';
-    title.fontSize = 34;
-    title.top = '-92px';
-    prebootPanel.addControl(title);
+    this.prebootPulse = new Rectangle('takeover_preboot_pulse');
+    this.prebootPulse.width = '100%';
+    this.prebootPulse.height = '100%';
+    this.prebootPulse.thickness = 0;
+    this.prebootPulse.background = '#0b1a2c';
+    this.prebootPulse.alpha = 0.06;
+    this.prebootOverlay.addControl(this.prebootPulse);
 
-    const subtitle = new TextBlock('takeover_preboot_sub');
-    subtitle.text = '> host profile: local user\n> kernel profile: stable\n> press BOOT SYSTEM or any key to initialize';
-    subtitle.color = '#8cc9df';
-    subtitle.fontFamily = 'Lucida Console, Courier New, monospace';
-    subtitle.fontSize = 22;
-    subtitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    subtitle.left = '26px';
-    subtitle.top = '-8px';
-    subtitle.width = '90%';
-    subtitle.height = '140px';
-    subtitle.textWrapping = true;
-    prebootPanel.addControl(subtitle);
+    this.prebootScanline = new Rectangle('takeover_preboot_scanline');
+    this.prebootScanline.width = '100%';
+    this.prebootScanline.height = '140px';
+    this.prebootScanline.thickness = 0;
+    this.prebootScanline.background = 'rgba(86, 174, 224, 0.08)';
+    this.prebootScanline.alpha = 0.1;
+    this.prebootScanline.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.prebootScanline.top = '-220px';
+    this.prebootOverlay.addControl(this.prebootScanline);
+
+    this.prebootPanel = new Rectangle('takeover_preboot_panel');
+    this.prebootPanel.width = '560px';
+    this.prebootPanel.height = '420px';
+    this.prebootPanel.thickness = 2;
+    this.prebootPanel.color = '#5d879f';
+    this.prebootPanel.background = 'rgba(6,14,26,0.92)';
+    this.prebootOverlay.addControl(this.prebootPanel);
+
+    this.prebootTitle = new TextBlock('takeover_preboot_title');
+    this.prebootTitle.text = 'SYSTEM CORE BOOT MANAGER';
+    this.prebootTitle.color = '#9fe8ff';
+    this.prebootTitle.fontFamily = 'Lucida Console, Courier New, monospace';
+    this.prebootTitle.fontSize = Math.round(34 * BASE_TEXT_SCALE);
+    this.prebootTitle.top = '-92px';
+    this.prebootPanel.addControl(this.prebootTitle);
+
+    this.prebootSubtitle = new TextBlock('takeover_preboot_sub');
+    this.prebootSubtitle.text = '> host profile: local user\n> kernel profile: stable\n> press BOOT SYSTEM or any key to initialize';
+    this.prebootSubtitle.color = '#8cc9df';
+    this.prebootSubtitle.fontFamily = 'Lucida Console, Courier New, monospace';
+    this.prebootSubtitle.fontSize = Math.round(22 * BASE_TEXT_SCALE);
+    this.prebootSubtitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.prebootSubtitle.left = '26px';
+    this.prebootSubtitle.top = '-28px';
+    this.prebootSubtitle.width = '90%';
+    this.prebootSubtitle.height = '140px';
+    this.prebootSubtitle.textWrapping = true;
+    this.prebootPanel.addControl(this.prebootSubtitle);
 
     const bootButton = Button.CreateSimpleButton('takeover_preboot_btn', 'BOOT SYSTEM');
     bootButton.width = '62%';
     bootButton.height = '82px';
-    bootButton.top = '88px';
+    bootButton.top = '120px';
     bootButton.thickness = 2;
     bootButton.cornerRadius = 4;
     bootButton.color = '#9fe8ff';
     bootButton.background = 'rgba(15, 60, 84, 0.6)';
     bootButton.fontFamily = 'Lucida Console, Courier New, monospace';
-    bootButton.fontSize = 32;
+    bootButton.fontSize = Math.round(32 * BASE_TEXT_SCALE);
     bootButton.isPointerBlocker = true;
     bootButton.hoverCursor = 'pointer';
     bootButton.onPointerEnterObservable.add(() => {
@@ -585,10 +628,10 @@ export class DaemonTakeoverIntroScene {
       bootButton.scaleY = 1.03;
     });
     this.prebootButton = bootButton;
-    prebootPanel.addControl(bootButton);
+    this.prebootPanel.addControl(bootButton);
 
     // Fallback to guarantee progression even if a device/browser misses button click semantics.
-    prebootPanel.onPointerDownObservable.add((evt) => {
+    this.prebootPanel.onPointerDownObservable.add((evt) => {
       const targetName = (evt?.pickInfo?.pickedMesh as any)?.name ?? '';
       if (!targetName || targetName.includes('takeover_preboot')) {
         this.queueIntroBootStart();
@@ -599,24 +642,25 @@ export class DaemonTakeoverIntroScene {
     this.prebootHint.text = 'Awaiting operator input...';
     this.prebootHint.color = '#6aa2bc';
     this.prebootHint.fontFamily = 'Lucida Console, Courier New, monospace';
-    this.prebootHint.fontSize = 18;
-    this.prebootHint.top = '140px';
-    prebootPanel.addControl(this.prebootHint);
+    this.prebootHint.fontSize = Math.round(18 * BASE_TEXT_SCALE);
+    this.prebootHint.top = '280px';
+    this.prebootPanel.addControl(this.prebootHint);
 
     this.prebootOverlay.isPointerBlocker = true;
-    prebootPanel.isPointerBlocker = true;
+    this.prebootPanel.isPointerBlocker = true;
   }
 
   private queueIntroBootStart(): void {
-    if (this.introStarted || this.pendingIntroStart) return;
+    if (this.pendingIntroStart || this.introStarted) return;
     this.pendingIntroStart = true;
-    this.pendingIntroStartTimer = 0.20;
-    playUiSelectClick(0.9);
-    if (this.prebootButton) {
-      this.prebootButton.scaleX = 0.95;
-      this.prebootButton.scaleY = 0.95;
-      this.prebootButton.background = 'rgba(42, 106, 136, 0.88)';
-    }
+    this.pendingIntroStartTimer = 0.8;
+    this.prebootButton.isVisible = false;
+    this.prebootHint.isVisible = false;
+    this.prebootPulse.isVisible = false;
+    this.prebootScanline.isVisible = false;
+    this.prebootPanel.isVisible = false;
+    this.bg.isVisible = true; // Show takeover terminal bg
+    playUiSelectClick();
   }
 
   private startIntroSequence(): void {
@@ -635,19 +679,20 @@ export class DaemonTakeoverIntroScene {
     const idealW = this.gui.idealWidth || DESIGN_WIDTH;
     const idealH = this.gui.idealHeight || DESIGN_HEIGHT;
     const mobile = idealW <= 960;
+    const baseScale = BASE_TEXT_SCALE;
 
     const aspect = idealW / Math.max(1, idealH);
-    this.lineHeight = mobile ? 32 : 30;
-    this.topPadding = mobile ? 18 : 14;
-    const charW = mobile ? 12.8 : 11.2;
+    this.lineHeight = Math.round((mobile ? 32 : 30) * baseScale);
+    this.topPadding = Math.round((mobile ? 18 : 14) * baseScale);
+    const charW = (mobile ? 12.8 : 11.2) * baseScale;
 
     this.panel.height = aspect > 2.0 ? '88%' : '86%';
 
     const panelH = Math.max(320, this.panel.heightInPixels || (idealH * (aspect > 2.0 ? 0.88 : 0.86)));
-    const headerPx = 52;
+    const headerPx = Math.round(52 * baseScale);
     const consoleTopPx = headerPx + 6;
     this.consoleViewport.top = `${consoleTopPx}px`;
-    const footerPx = 96;
+    const footerPx = Math.round(96 * baseScale);
     const availableConsoleH = Math.max(220, Math.floor(panelH - consoleTopPx - footerPx - 18));
     const desiredConsoleH = this.topPadding + this.maxVisibleLines * this.lineHeight + 12;
     if (desiredConsoleH > availableConsoleH) {
@@ -675,35 +720,45 @@ export class DaemonTakeoverIntroScene {
     this.popupText.left = mobile ? 184 : 208;
     this.popupText.width = mobile ? '63%' : '530px';
     this.popupText.height = mobile ? '170px' : '180px';
-    this.popupText.fontSize = mobile ? 24 : 24;
-    if (this.prebootOverlay) {
-      const panel = this.prebootOverlay.children?.[0] as Rectangle | undefined;
-      if (panel) {
-        panel.width = mobile ? '94%' : '560px';
-        panel.height = mobile ? '360px' : '320px';
-      }
-      const btn = this.prebootOverlay.getDescendants(false).find((d) => d.name === 'takeover_preboot_btn') as Button | undefined;
-      if (btn) {
-        btn.height = mobile ? '94px' : '82px';
-        btn.fontSize = mobile ? 36 : 32;
-        btn.width = mobile ? '74%' : '62%';
-      }
-      const title = this.prebootOverlay.getDescendants(false).find((d) => d.name === 'takeover_preboot_title') as TextBlock | undefined;
-      if (title) title.fontSize = mobile ? 36 : 34;
-      const sub = this.prebootOverlay.getDescendants(false).find((d) => d.name === 'takeover_preboot_sub') as TextBlock | undefined;
-      if (sub) sub.fontSize = mobile ? 24 : 22;
-      const hint = this.prebootOverlay.getDescendants(false).find((d) => d.name === 'takeover_preboot_hint') as TextBlock | undefined;
-      if (hint) hint.fontSize = mobile ? 20 : 18;
+    this.popupText.fontSize = Math.round(24 * baseScale);
+    if (this.prebootPanel) {
+      const panelWidth = mobile
+        ? Math.round(idealW * 0.92)
+        : Math.max(520, Math.round(idealW * 0.58));
+      const panelHeight = mobile
+        ? Math.round(idealH * 0.5)
+        : Math.max(320, Math.round(idealH * 0.42));
+      this.prebootPanel.width = `${panelWidth}px`;
+      this.prebootPanel.height = `${panelHeight}px`;
     }
-    this.headerText.fontSize = mobile ? 22 : 20;
-    this.phaseLabel.fontSize = mobile ? 19 : 17;
-    this.footerLoaderLabel.fontSize = mobile ? 20 : 17;
-    this.skipHint.fontSize = mobile ? 24 : 20;
+    if (this.prebootButton) {
+      this.prebootButton.height = `${Math.round((mobile ? 94 : 82) * baseScale)}px`;
+      this.prebootButton.fontSize = Math.round((mobile ? 36 : 32) * baseScale);
+      this.prebootButton.width = mobile ? '76%' : '62%';
+    }
+    if (this.prebootTitle) {
+      this.prebootTitle.fontSize = Math.round((mobile ? 36 : 34) * baseScale);
+      this.prebootTitle.top = `${Math.round(-92 * baseScale)}px`;
+    }
+    if (this.prebootSubtitle) {
+      this.prebootSubtitle.fontSize = Math.round((mobile ? 24 : 22) * baseScale);
+      this.prebootSubtitle.left = `${Math.round(26 * baseScale)}px`;
+      this.prebootSubtitle.top = `${Math.round(-8 * baseScale)}px`;
+      this.prebootSubtitle.height = `${Math.round(140 * baseScale)}px`;
+    }
+    if (this.prebootHint) {
+      this.prebootHint.fontSize = Math.round((mobile ? 20 : 18) * baseScale);
+      this.prebootHint.top = `${Math.round(140 * baseScale)}px`;
+    }
+    this.headerText.fontSize = Math.round((mobile ? 22 : 20) * baseScale);
+    this.phaseLabel.fontSize = Math.round((mobile ? 19 : 17) * baseScale);
+    this.footerLoaderLabel.fontSize = Math.round((mobile ? 20 : 17) * baseScale);
+    this.skipHint.fontSize = Math.round((mobile ? 24 : 20) * baseScale);
     this.skipHint.top = '34px';
     this.skipHint.width = mobile ? '440px' : '400px';
     this.skipHint.left = '0px';
     this.skipHoldBarBg.width = mobile ? '440px' : '400px';
-    this.skipHoldBarBg.height = mobile ? '26px' : '22px';
+    this.skipHoldBarBg.height = `${Math.round((mobile ? 26 : 22) * baseScale)}px`;
     this.skipHoldBarBg.top = '34px';
   }
 
@@ -770,6 +825,18 @@ export class DaemonTakeoverIntroScene {
     if (!this.introStarted) {
       const blink = Math.sin(performance.now() * 0.004) > 0 ? 'Awaiting operator input...' : 'Awaiting operator input.._';
       this.prebootHint.text = blink;
+      this.prebootAnimTime += dt;
+      const idealH = this.gui.idealHeight || DESIGN_HEIGHT;
+      if (this.prebootPulse) {
+        this.prebootPulse.alpha = 0.05 + Math.sin(this.prebootAnimTime * 0.6) * 0.03;
+      }
+      if (this.prebootScanline) {
+        const travel = Math.max(160, idealH * 0.6);
+        const baseTop = -travel * 0.5;
+        const y = baseTop + (Math.sin(this.prebootAnimTime * 0.35) * 0.5 + 0.5) * travel;
+        this.prebootScanline.top = `${Math.round(y)}px`;
+        this.prebootScanline.alpha = 0.06 + Math.sin(this.prebootAnimTime * 0.9) * 0.04;
+      }
       if (this.pendingIntroStart) {
         this.pendingIntroStartTimer -= dt;
         if (this.pendingIntroStartTimer <= 0) {
@@ -920,7 +987,7 @@ export class DaemonTakeoverIntroScene {
     block.text = typing ? '' : text;
     block.color = color;
     block.fontFamily = 'Lucida Console, Courier New, monospace';
-    block.fontSize = this.gui.idealWidth && this.gui.idealWidth <= 960 ? 24 : 22;
+    block.fontSize = Math.round((this.gui.idealWidth && this.gui.idealWidth <= 960 ? 24 : 22) * BASE_TEXT_SCALE);
     block.height = `${this.lineHeight}px`;
     block.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     block.textWrapping = false;
@@ -1074,7 +1141,7 @@ export class DaemonTakeoverIntroScene {
       continuation.text = '';
       continuation.color = this.currentTypingLine.color;
       continuation.fontFamily = 'Lucida Console, Courier New, monospace';
-      continuation.fontSize = this.gui.idealWidth && this.gui.idealWidth <= 960 ? 24 : 22;
+      continuation.fontSize = Math.round((this.gui.idealWidth && this.gui.idealWidth <= 960 ? 24 : 22) * BASE_TEXT_SCALE);
       continuation.height = `${this.lineHeight}px`;
       continuation.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       continuation.textWrapping = false;
@@ -1294,7 +1361,7 @@ export class DaemonTakeoverIntroScene {
     block.text = `${label.toLowerCase().replace(/\s+/g, '_')}=[..........] 0%`;
     block.color = COLORS.dim;
     block.fontFamily = 'Lucida Console, Courier New, monospace';
-    block.fontSize = this.gui.idealWidth && this.gui.idealWidth <= 960 ? 24 : 22;
+    block.fontSize = Math.round((this.gui.idealWidth && this.gui.idealWidth <= 960 ? 24 : 22) * BASE_TEXT_SCALE);
     block.height = `${this.lineHeight}px`;
     block.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     block.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;

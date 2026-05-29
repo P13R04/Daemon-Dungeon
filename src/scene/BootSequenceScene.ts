@@ -13,7 +13,7 @@
  *   "Buffa initialized" — tribute to Professor Buffa  (line 7)
  */
 
-import { Scene, Engine, FreeCamera, Vector3, Color4 } from '@babylonjs/core';
+import { Scene, Engine, FreeCamera, ArcRotateCamera, Vector3, Color4 } from '@babylonjs/core';
 import {
   AdvancedDynamicTexture,
   Rectangle,
@@ -24,6 +24,9 @@ import {
 import { SCI_FI_TYPEWRITER_PRESETS, SciFiTypewriterSynth } from '../audio/SciFiTypewriterSynth';
 import { UI_LAYER } from '../ui/uiLayers';
 import { applyResponsiveGuiScaling, DESIGN_WIDTH, DESIGN_HEIGHT } from '../ui/GuiScaling';
+import { BASE_TEXT_SCALE } from '../ui/UITheme';
+import { SCENE_LAYER } from '../ui/uiLayers';
+import { createSynthwaveGridBackground } from './SynthwaveBackground';
 
 // ─── Public config ────────────────────────────────────────────────────────────
 
@@ -214,10 +217,18 @@ export class BootSequenceScene {
 
     this._setupAudioUnlock();
 
+    const sceneCamera = new ArcRotateCamera('bootSceneCam', -Math.PI / 2, 1.30, 14.5, new Vector3(0, 1.3, 0), this.scene);
+    sceneCamera.layerMask = SCENE_LAYER;
+
     this.camera = new FreeCamera('bootCam', new Vector3(0, 0, -10), this.scene);
     this.camera.setTarget(Vector3.Zero());
     this.camera.layerMask = UI_LAYER;
-    this.scene.activeCamera = this.camera;
+    (this.camera as FreeCamera & { clear: boolean }).clear = false;
+
+    this.scene.activeCameras = [sceneCamera, this.camera];
+    this.scene.activeCamera = sceneCamera;
+
+    createSynthwaveGridBackground(this.scene, SCENE_LAYER, true, 'hacker');
 
     this.gui = AdvancedDynamicTexture.CreateFullscreenUI('BootUI', true, this.scene);
     applyResponsiveGuiScaling(this.gui, this.scene.getEngine());
@@ -252,11 +263,12 @@ export class BootSequenceScene {
   // ─── UI construction ────────────────────────────────────────────────────────
 
   private _buildUI(): void {
+    const baseScale = BASE_TEXT_SCALE;
     // Full-screen background
     const bg = new Rectangle('bootBg');
     bg.width  = '100%';
     bg.height = '100%';
-    bg.background = '#080C10';
+    bg.background = 'transparent';
     bg.thickness  = 0;
     this.gui.addControl(bg);
 
@@ -264,7 +276,7 @@ export class BootSequenceScene {
     const panel = new Rectangle('bootPanel');
     panel.width      = '88%';
     panel.height     = '84%';
-    panel.background = '#040810';
+    panel.background = 'rgba(4, 8, 16, 0.92)';
     panel.thickness  = 1;
     panel.color      = '#1A3A30';
     panel.cornerRadius = 3;
@@ -274,7 +286,7 @@ export class BootSequenceScene {
     // ── Header bar ──────────────────────────────────────────────────────────
     const hdr = new Rectangle('bootHdr');
     hdr.width      = '100%';
-    hdr.height     = '48px';
+    hdr.height     = `${Math.round(48 * baseScale)}px`;
     hdr.background = '#061210';
     hdr.thickness  = 0;
     hdr.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -292,10 +304,10 @@ export class BootSequenceScene {
     const hdrTxt = new TextBlock('bootHdrTxt');
     hdrTxt.text       = 'DAEMON_OS  [TERMINAL]   PID:0×D43M  UID:root   KERNEL:2.6.1-daemon';
     hdrTxt.color      = '#1E5C50';
-    hdrTxt.fontSize   = 16;
+    hdrTxt.fontSize   = Math.round(16 * baseScale);
     hdrTxt.fontFamily = 'Arcade8Bit';
     hdrTxt.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    hdrTxt.paddingLeft = '16px';
+    hdrTxt.paddingLeft = `${Math.round(16 * baseScale)}px`;
     hdr.addControl(hdrTxt);
     this._headerText = hdrTxt;
 
@@ -306,16 +318,16 @@ export class BootSequenceScene {
     this._logPanel.width                   = '96%';
     this._logPanel.verticalAlignment       = Control.VERTICAL_ALIGNMENT_TOP;
     this._logPanel.horizontalAlignment     = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this._logPanel.top                     = '64px';
-    this._logPanel.paddingLeft             = '24px';
+    this._logPanel.top                     = `${Math.round(64 * baseScale)}px`;
+    this._logPanel.paddingLeft             = `${Math.round(24 * baseScale)}px`;
     panel.addControl(this._logPanel);
 
     // Blinking cursor (always last child of logPanel)
     this._cursor = new TextBlock('bootCursor');
     this._cursor.text       = '_';
     this._cursor.color      = '#2EF9C3';
-    this._cursor.fontSize   = 20;
-    this._cursor.height     = '32px';
+    this._cursor.fontSize   = Math.round(20 * baseScale);
+    this._cursor.height     = `${Math.round(32 * baseScale)}px`;
     this._cursor.fontFamily = 'Arcade8Bit';
     this._cursor.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this._logPanel.addControl(this._cursor);
@@ -323,17 +335,17 @@ export class BootSequenceScene {
     // ── Footer ──────────────────────────────────────────────────────────────
     const footer = new Rectangle('bootFooter');
     footer.width      = '96%';
-    footer.height     = '80px';
+    footer.height     = `${Math.round(80 * baseScale)}px`;
     footer.background = '#040810';
     footer.thickness  = 0;
     footer.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    footer.paddingBottom     = '15px';
+    footer.paddingBottom     = `${Math.round(15 * baseScale)}px`;
     panel.addControl(footer);
 
     // Progress bar track
     const barBg = new Rectangle('bootBarBg');
     barBg.width      = '100%';
-    barBg.height     = '20px';
+    barBg.height     = `${Math.round(20 * baseScale)}px`;
     barBg.background = '#0A1A14';
     barBg.thickness  = 1;
     barBg.color      = '#1E5C50';
@@ -353,11 +365,11 @@ export class BootSequenceScene {
     this._progressLabel = new TextBlock('bootBarLabel');
     this._progressLabel.text       = 'LOADING...  0%';
     this._progressLabel.color      = '#2EF9C3';
-    this._progressLabel.fontSize   = 15;
+    this._progressLabel.fontSize   = Math.round(15 * baseScale);
     this._progressLabel.fontFamily = 'Arcade8Bit';
     this._progressLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this._progressLabel.verticalAlignment       = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    this._progressLabel.paddingBottom           = '4px';
+    this._progressLabel.paddingBottom           = `${Math.round(4 * baseScale)}px`;
     footer.addControl(this._progressLabel);
 
     // Skip hint
@@ -365,11 +377,11 @@ export class BootSequenceScene {
       const skipHint = new TextBlock('bootSkipHint');
       skipHint.text       = '[ SPACE ] or [ CLICK ] to skip';
       skipHint.color      = '#1E4030';
-      skipHint.fontSize   = 15;
+      skipHint.fontSize   = Math.round(15 * baseScale);
       skipHint.fontFamily = 'Arcade8Bit';
       skipHint.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
       skipHint.verticalAlignment       = Control.VERTICAL_ALIGNMENT_BOTTOM;
-      skipHint.paddingBottom           = '4px';
+      skipHint.paddingBottom           = `${Math.round(4 * baseScale)}px`;
       footer.addControl(skipHint);
 
       // Click anywhere to skip
@@ -631,11 +643,12 @@ export class BootSequenceScene {
   // ─── Add a log line to the panel ─────────────────────────────────────────────
 
   private _addLine(text: string, color: string, speed: number): void {
+    const baseScale = BASE_TEXT_SCALE;
     const block = new TextBlock();
     block.text        = (speed <= 0 || text === '') ? text : '';
     block.color       = color;
-    block.fontSize    = 20;
-    block.height      = '32px';
+    block.fontSize    = Math.round(20 * baseScale);
+    block.height      = `${Math.round(32 * baseScale)}px`;
     block.fontFamily  = 'Arcade8Bit';
     block.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     block.textWrapping = false;

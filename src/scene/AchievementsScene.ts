@@ -14,7 +14,7 @@ import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
 import { PostProcessManager, PostProcessingConfig } from './PostProcess';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { UIFactory } from '../ui/UIFactory';
-import { UITheme } from '../ui/UITheme';
+import { BASE_TEXT_SCALE, UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { AchievementProgress, CodexService } from '../services/CodexService';
 import { applyResponsiveGuiScaling, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
@@ -316,7 +316,7 @@ export class AchievementsScene {
     mainLayoutContainer.addControl(this.leftPanel);
 
     this.leftTitle = this.makeTerminalText('leftTitle', 24, '#7DFFE8');
-    this.leftTitle.top = `-${Math.round(sidePanelHeight * 0.44)}px`;
+    this.leftTitle.top = `-${Math.round(sidePanelHeight * 0.42)}px`;
     this.leftTitle.width = `${sideInnerWidth}px`;
     this.leftTitle.height = '30px';
     this.leftTitle.isHitTestVisible = false;
@@ -324,7 +324,7 @@ export class AchievementsScene {
     this.leftPanel.addControl(this.leftTitle);
 
     this.leftDescription = this.makeTerminalText('leftDesc', 18, '#CFFCF3');
-    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.37)}px`;
+    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.33)}px`;
     this.leftDescription.width = `${sideInnerWidth}px`;
     this.leftDescription.height = `${Math.round(sidePanelHeight * 0.07)}px`;
     this.leftDescription.isHitTestVisible = false;
@@ -334,7 +334,7 @@ export class AchievementsScene {
     const scrollViewer = UIFactory.createScrollViewer('leftListScroll');
     scrollViewer.width = `${sideInnerWidth}px`;
     scrollViewer.height = `${Math.round(sidePanelHeight * 0.8)}px`;
-    scrollViewer.top = `${Math.round(sidePanelHeight * 0.06)}px`;
+    scrollViewer.top = `${Math.round(sidePanelHeight * 0.12)}px`;
     scrollViewer.thickness = 0;
     scrollViewer.barColor = UITheme.colors.borderBright;
     scrollViewer.barBackground = 'rgba(0,0,0,0.5)';
@@ -408,7 +408,7 @@ export class AchievementsScene {
 
     this.centerCardSubtitle = new TextBlock('centerSubtitle', '');
     this.centerCardSubtitle.fontFamily = this.terminalFont;
-    this.centerCardSubtitle.fontSize = isMobileLayout ? 30 : 26;
+    this.centerCardSubtitle.fontSize = Math.round((isMobileLayout ? 30 : 26) * BASE_TEXT_SCALE);
     this.centerCardSubtitle.color = '#7DFFE8';
     this.centerCardSubtitle.top = '256px';
     this.centerCard.addControl(this.centerCardSubtitle);
@@ -450,7 +450,7 @@ export class AchievementsScene {
   private makeTerminalText(id: string, size: number, color: string): TextBlock {
     const t = new TextBlock(id, '');
     t.fontFamily = this.terminalFont;
-    t.fontSize = Math.round(size * 1.12);
+    t.fontSize = Math.round(size * 1.12 * BASE_TEXT_SCALE);
     t.color = color;
     t.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     t.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -517,7 +517,7 @@ export class AchievementsScene {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
       btn.textBlock.fontFamily = 'Arcade8Bit';
-      btn.textBlock.fontSize = isMobileLayout ? 22 : 19;
+      btn.textBlock.fontSize = Math.round((isMobileLayout ? 22 : 19) * BASE_TEXT_SCALE);
     }
     return btn;
   }

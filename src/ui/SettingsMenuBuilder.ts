@@ -16,7 +16,7 @@ import {
   KeybindingAction, formatInputKeyLabel,
   normalizeInputKey,
 } from '../settings/GameSettings';
-import { UITheme } from './UITheme';
+import { BASE_TEXT_SCALE, UITheme } from './UITheme';
 import { UIFactory } from './UIFactory';
 
 type AudioChannel = keyof AudioSettings;
@@ -32,6 +32,8 @@ const ACTION_LABELS: Array<{ action: KeybindingAction; label: string }> = [
 ];
 
 const FILTER_OPTIONS: ColorVisionFilter[] = ['none', 'protanopia', 'deuteranopia', 'tritanopia', 'highContrast'];
+
+const scaleBase = (value: number): number => Math.round(value * BASE_TEXT_SCALE);
 
 export class SettingsMenuBuilder {
   private settingsOverlay: Rectangle | null = null;
@@ -405,7 +407,7 @@ export class SettingsMenuBuilder {
     const body = new TextBlock('settingsResetProgressConfirmBody');
     body.text = 'This will reset codex, achievements, settings, and tutorial completion.\nThe game will restart as a first launch.';
     body.color = '#FFD0D0';
-    body.fontSize = 18;
+    body.fontSize = scaleBase(18);
     body.fontFamily = 'Wonder8Bit';
     body.width = '600px';
     body.height = '110px';
@@ -428,7 +430,7 @@ export class SettingsMenuBuilder {
     cancel.background = UITheme.colors.buttonBg;
     cancel.thickness = 1;
     cancel.cornerRadius = 4;
-    if (cancel.textBlock) cancel.textBlock.fontSize = 18;
+    if (cancel.textBlock) cancel.textBlock.fontSize = scaleBase(18);
     this.bindButtonAction(cancel, () => this.hideResetProgressConfirmOverlay());
     buttons.addControl(cancel);
 
@@ -440,7 +442,7 @@ export class SettingsMenuBuilder {
     confirm.thickness = 1;
     confirm.cornerRadius = 4;
     if (confirm.textBlock) {
-      confirm.textBlock.fontSize = 18;
+      confirm.textBlock.fontSize = scaleBase(18);
       confirm.textBlock.color = '#FFFFFF';
     }
     this.bindButtonAction(confirm, () => {
@@ -485,9 +487,9 @@ export class SettingsMenuBuilder {
     const info = new TextBlock(`sectionInfo_${text.replace(/\s+/g, '_').slice(0, 18)}`);
     info.text = text;
     info.color = UITheme.colors.textDim;
-    info.fontSize = 14;
+    info.fontSize = scaleBase(14);
     info.fontFamily = 'Arcade8Bit';
-    info.height = '28px';
+    info.height = `${scaleBase(28)}px`;
     info.width = '1100px';
     info.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     info.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -506,7 +508,7 @@ export class SettingsMenuBuilder {
     const label = new TextBlock(`keybindLabel_${action}`);
     label.text = labelText;
     label.color = UITheme.colors.textNormal;
-    label.fontSize = this.isMobileLayout ? 24 : 22;
+    label.fontSize = scaleBase(this.isMobileLayout ? 24 : 22);
     label.fontFamily = 'Arcade8Bit';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -553,7 +555,7 @@ export class SettingsMenuBuilder {
     const titleText = new TextBlock(`toggleTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
     titleText.color = UITheme.colors.textNormal;
-    titleText.fontSize = this.isMobileLayout ? 24 : 22;
+    titleText.fontSize = scaleBase(this.isMobileLayout ? 24 : 22);
     titleText.fontFamily = 'Arcade8Bit';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -565,7 +567,7 @@ export class SettingsMenuBuilder {
       const detailText = new TextBlock(`toggleDetails_${title.replace(/\s+/g, '_')}`);
       detailText.text = details;
       detailText.color = UITheme.colors.textDim;
-      detailText.fontSize = this.isMobileLayout ? 15 : 14;
+      detailText.fontSize = scaleBase(this.isMobileLayout ? 15 : 14);
       detailText.fontFamily = 'Arcade8Bit';
       detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -605,7 +607,7 @@ export class SettingsMenuBuilder {
     const titleText = new TextBlock(`sliderTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
     titleText.color = UITheme.colors.textNormal;
-    titleText.fontSize = this.isMobileLayout ? 24 : 22;
+    titleText.fontSize = scaleBase(this.isMobileLayout ? 24 : 22);
     titleText.fontFamily = 'Arcade8Bit';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -617,7 +619,7 @@ export class SettingsMenuBuilder {
       const detailText = new TextBlock(`sliderDetails_${title.replace(/\s+/g, '_')}`);
       detailText.text = details;
       detailText.color = UITheme.colors.textDim;
-      detailText.fontSize = this.isMobileLayout ? 15 : 14;
+      detailText.fontSize = scaleBase(this.isMobileLayout ? 15 : 14);
       detailText.fontFamily = 'Arcade8Bit';
       detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -629,7 +631,7 @@ export class SettingsMenuBuilder {
     const valueText = new TextBlock(`sliderValueText_${title.replace(/\s+/g, '_')}`);
     valueText.text = '';
     valueText.color = UITheme.colors.textHighlight;
-    valueText.fontSize = this.isMobileLayout ? 20 : 18;
+    valueText.fontSize = scaleBase(this.isMobileLayout ? 20 : 18);
     valueText.fontFamily = 'Arcade8Bit';
     valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -665,7 +667,7 @@ export class SettingsMenuBuilder {
     const label = new TextBlock(`audioLabel_${channel}`);
     label.text = labelText;
     label.color = UITheme.colors.textNormal;
-    label.fontSize = this.isMobileLayout ? 24 : 22;
+    label.fontSize = scaleBase(this.isMobileLayout ? 24 : 22);
     label.fontFamily = 'Arcade8Bit';
     label.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     label.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -675,7 +677,7 @@ export class SettingsMenuBuilder {
     const valueText = new TextBlock(`audioValue_${channel}`);
     valueText.text = '100%';
     valueText.color = UITheme.colors.textHighlight;
-    valueText.fontSize = this.isMobileLayout ? 20 : 18;
+    valueText.fontSize = scaleBase(this.isMobileLayout ? 20 : 18);
     valueText.fontFamily = 'Arcade8Bit';
     valueText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     valueText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
@@ -717,7 +719,7 @@ export class SettingsMenuBuilder {
     const titleText = new TextBlock(`actionTitle_${title.replace(/\s+/g, '_')}`);
     titleText.text = title;
     titleText.color = '#FFE7B8';
-    titleText.fontSize = this.isMobileLayout ? 24 : 22;
+    titleText.fontSize = scaleBase(this.isMobileLayout ? 24 : 22);
     titleText.fontFamily = 'Arcade8Bit';
     titleText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     titleText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -729,7 +731,7 @@ export class SettingsMenuBuilder {
       const detailText = new TextBlock(`actionDetails_${title.replace(/\s+/g, '_')}`);
       detailText.text = details;
       detailText.color = UITheme.colors.textDim;
-      detailText.fontSize = this.isMobileLayout ? 15 : 14;
+      detailText.fontSize = scaleBase(this.isMobileLayout ? 15 : 14);
       detailText.fontFamily = 'Arcade8Bit';
       detailText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       detailText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;

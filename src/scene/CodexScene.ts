@@ -27,7 +27,7 @@ import { getHudAssetBaseUrl } from '../systems/hud/HudAssetPaths';
 import { createSynthwaveGridBackground } from './SynthwaveBackground';
 import { BONUS_CODEX_ENTRIES, BonusCodexEntry } from '../data/codex/bonuses';
 import { UIFactory } from '../ui/UIFactory';
-import { UITheme } from '../ui/UITheme';
+import { BASE_TEXT_SCALE, UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { CodexService } from '../services/CodexService';
 import type { EnemyConfigEntry } from '../types/config';
@@ -259,7 +259,7 @@ export class CodexScene {
     this.headerSubtitle = new TextBlock('codexHeaderSubtitle');
     this.headerSubtitle.text = '';
     this.headerSubtitle.fontFamily = 'Arcade8Bit';
-    this.headerSubtitle.fontSize = 18;
+    this.headerSubtitle.fontSize = Math.round(18 * BASE_TEXT_SCALE);
     this.headerSubtitle.color = '#CFFCF3';
     this.headerSubtitle.outlineColor = '#041018';
     this.headerSubtitle.outlineWidth = 2;
@@ -603,7 +603,7 @@ export class CodexScene {
   }
 
   private makeTerminalText(id: string, size: number, color: string): TextBlock {
-    return UIFactory.createText(id, '', Math.round(size * 1.12), color);
+    return UIFactory.createText(id, '', Math.round(size * 1.12 * BASE_TEXT_SCALE), color);
   }
 
   private setTerminalText(block: TextBlock, text: string, speed = 220, showCursor = true): void {
@@ -810,7 +810,7 @@ export class CodexScene {
     if (btn.textBlock) {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
-      btn.textBlock.fontSize = isMobileLayout ? 22 : 19;
+      btn.textBlock.fontSize = Math.round((isMobileLayout ? 22 : 19) * BASE_TEXT_SCALE);
     }
     return btn;
   }

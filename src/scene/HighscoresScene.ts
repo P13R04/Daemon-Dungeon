@@ -320,16 +320,16 @@ export class HighscoresScene {
     this.leftPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.leftPanel);
 
-    this.leftTitle = this.makeTerminalText('leftTitle', 24, '#7DFFE8');
-    this.leftTitle.top = `-${Math.round(sidePanelHeight * 0.44)}px`;
+    this.leftTitle = this.makeTerminalText('leftTitle', 31, '#7DFFE8');
+    this.leftTitle.top = `-${Math.round(sidePanelHeight * 0.42)}px`;
     this.leftTitle.width = `${sideInnerWidth}px`;
     this.leftTitle.height = '30px';
     this.leftTitle.isHitTestVisible = false;
     this.leftTitle.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftTitle);
 
-    this.leftDescription = this.makeTerminalText('leftDesc', 18, '#CFFCF3');
-    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.37)}px`;
+    this.leftDescription = this.makeTerminalText('leftDesc', 23, '#CFFCF3');
+    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.33)}px`;
     this.leftDescription.width = `${sideInnerWidth}px`;
     this.leftDescription.height = `${Math.round(sidePanelHeight * 0.07)}px`;
     this.leftDescription.isHitTestVisible = false;
@@ -339,7 +339,7 @@ export class HighscoresScene {
     const scrollViewer = UIFactory.createScrollViewer('leftListScroll');
     scrollViewer.width = `${sideInnerWidth}px`;
     scrollViewer.height = `${Math.round(sidePanelHeight * 0.8)}px`;
-    scrollViewer.top = `${Math.round(sidePanelHeight * 0.1)}px`;
+    scrollViewer.top = `${Math.round(sidePanelHeight * 0.15)}px`;
     scrollViewer.thickness = 0;
     scrollViewer.barColor = UITheme.colors.borderBright;
     scrollViewer.barBackground = 'rgba(0,0,0,0.5)';
@@ -359,13 +359,13 @@ export class HighscoresScene {
     this.rightPanel.top = `${panelTop}px`;
     mainLayoutContainer.addControl(this.rightPanel);
 
-    this.rightTitle = this.makeTerminalText('rightTitle', 26, '#7DFFE8');
+    this.rightTitle = this.makeTerminalText('rightTitle', 34, '#7DFFE8');
     this.rightTitle.top = `-${Math.round(sidePanelHeight * 0.44)}px`;
     this.rightTitle.width = `${sideInnerWidth}px`;
     this.rightTitle.height = `${Math.round(sidePanelHeight * 0.09)}px`;
     this.rightPanel.addControl(this.rightTitle);
 
-    this.rightBody = this.makeTerminalText('rightBody', 20, '#CFFCF3');
+    this.rightBody = this.makeTerminalText('rightBody', 26, '#CFFCF3');
     this.rightBody.top = `${Math.round(sidePanelHeight * 0.05)}px`;
     this.rightBody.width = `${sideInnerWidth}px`;
     this.rightBody.height = `${Math.round(sidePanelHeight * 0.8)}px`;
@@ -379,14 +379,14 @@ export class HighscoresScene {
 
     this.centerCardTitle = new TextBlock('centerTitle', 'RUN SUMMARY');
     this.centerCardTitle.fontFamily = 'Wonder8Bit';
-    this.centerCardTitle.fontSize = isMobileLayout ? 36 : 32;
+    this.centerCardTitle.fontSize = isMobileLayout ? 46 : 41;
     this.centerCardTitle.color = '#FFFFFF';
     this.centerCardTitle.top = `-${Math.round(centerCardHeight * 0.39)}px`;
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = new TextBlock('centerSubtitle', '');
     this.centerCardSubtitle.fontFamily = this.terminalFont;
-    this.centerCardSubtitle.fontSize = isMobileLayout ? 26 : 22;
+    this.centerCardSubtitle.fontSize = isMobileLayout ? 33 : 28;
     this.centerCardSubtitle.color = '#7DFFE8';
     this.centerCardSubtitle.top = `-${Math.round(centerCardHeight * 0.28)}px`;
     this.centerCard.addControl(this.centerCardSubtitle);
@@ -402,7 +402,7 @@ export class HighscoresScene {
 
     this.centerBonusLabel = new TextBlock('bonusLabel', 'EQUIPPED BONUSES');
     this.centerBonusLabel.fontFamily = this.terminalFont;
-    this.centerBonusLabel.fontSize = isMobileLayout ? 22 : 19;
+    this.centerBonusLabel.fontSize = isMobileLayout ? 28 : 24;
     this.centerBonusLabel.color = '#7CFFEA';
     this.centerBonusLabel.top = `-${Math.round(centerCardHeight * 0.19)}px`;
     this.centerBonusesContainer.addControl(this.centerBonusLabel);
@@ -446,7 +446,7 @@ export class HighscoresScene {
 
     this.centerDetailsTitle = new TextBlock('centerDetailsTitle', '> SYSTEM METRICS');
     this.centerDetailsTitle.fontFamily = this.terminalFont;
-    this.centerDetailsTitle.fontSize = isMobileLayout ? 24 : 21;
+    this.centerDetailsTitle.fontSize = isMobileLayout ? 31 : 27;
     this.centerDetailsTitle.color = '#7CFFEA';
     this.centerDetailsTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.centerDetailsTitle.height = '28px';
@@ -454,7 +454,7 @@ export class HighscoresScene {
 
     this.centerDetailsDesc = new TextBlock('centerDetailsDesc', 'Hover a module to analyze database metadata.');
     this.centerDetailsDesc.fontFamily = this.terminalFont;
-    this.centerDetailsDesc.fontSize = isMobileLayout ? 21 : 19;
+    this.centerDetailsDesc.fontSize = isMobileLayout ? 27 : 24;
     this.centerDetailsDesc.color = '#647D7D';
     this.centerDetailsDesc.textWrapping = true;
     this.centerDetailsDesc.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -631,8 +631,8 @@ export class HighscoresScene {
         }
 
         const box = new Rectangle(`hs_bonus_box_${bonus.id}`);
-        box.width = '52px';
-        box.height = '52px';
+        box.width = '64px';
+        box.height = '64px';
         box.thickness = 1;
         box.color = UITheme.colors.borderDim;
         box.background = 'rgba(10, 18, 22, 0.85)';
@@ -641,8 +641,8 @@ export class HighscoresScene {
         box.hoverCursor = 'pointer';
 
         const img = new Image(`hs_bonus_img_${bonus.id}`, buildHudAssetUrl(`bonuses/${bonus.id}.png`));
-        img.width = '38px';
-        img.height = '38px';
+        img.width = '48px';
+        img.height = '48px';
         img.isHitTestVisible = false;
         box.addControl(img);
 
@@ -661,7 +661,7 @@ export class HighscoresScene {
 
           const badgeText = new TextBlock(`hs_bonus_badge_text_${bonus.id}`, `x${bonus.stacks}`);
           badgeText.fontFamily = this.terminalFont;
-          badgeText.fontSize = 12;
+          badgeText.fontSize = 15;
           badgeText.color = '#FFFFFF';
           badgeText.isHitTestVisible = false;
           badge.addControl(badgeText);
