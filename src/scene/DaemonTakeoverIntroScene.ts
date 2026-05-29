@@ -578,7 +578,7 @@ export class DaemonTakeoverIntroScene {
     this.prebootTitle.text = 'SYSTEM CORE BOOT MANAGER';
     this.prebootTitle.color = '#9fe8ff';
     this.prebootTitle.fontFamily = 'Wonder8Bit';
-    this.prebootTitle.fontSize = Math.round(42 * BASE_TEXT_SCALE);
+    this.prebootTitle.fontSize = Math.round(29 * BASE_TEXT_SCALE);
     this.prebootTitle.top = '-92px';
     this.prebootPanel.addControl(this.prebootTitle);
 
@@ -604,7 +604,7 @@ export class DaemonTakeoverIntroScene {
     bootButton.color = '#9fe8ff';
     bootButton.background = 'rgba(15, 60, 84, 0.6)';
     bootButton.fontFamily = 'Wonder8Bit';
-    bootButton.fontSize = Math.round(42 * BASE_TEXT_SCALE);
+    bootButton.fontSize = Math.round(50 * BASE_TEXT_SCALE);
     bootButton.isPointerBlocker = true;
     bootButton.hoverCursor = 'pointer';
     bootButton.onPointerEnterObservable.add(() => {
@@ -733,11 +733,11 @@ export class DaemonTakeoverIntroScene {
     }
     if (this.prebootButton) {
       this.prebootButton.height = `${Math.round((mobile ? 104 : 94) * baseScale)}px`;
-      this.prebootButton.fontSize = Math.round((mobile ? 48 : 42) * baseScale);
+      this.prebootButton.fontSize = Math.round((mobile ? 58 : 50) * baseScale);
       this.prebootButton.width = mobile ? '80%' : '66%';
     }
     if (this.prebootTitle) {
-      this.prebootTitle.fontSize = Math.round((mobile ? 44 : 42) * baseScale);
+      this.prebootTitle.fontSize = Math.round((mobile ? 31 : 29) * baseScale);
       this.prebootTitle.top = `${Math.round(-92 * baseScale)}px`;
     }
     if (this.prebootSubtitle) {
