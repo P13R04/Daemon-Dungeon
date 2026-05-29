@@ -5406,7 +5406,7 @@ export class HUDManager {
     const joystickCenterX = leftMargin + joystickSize / 2;
     const joystickCenterY = idealHeight - Math.max(0, bottomSafe - joystickLowerOffset) - joystickSize / 2;
 
-    const getIdealPointerCoords = (pointerX: number, pointerY: number, result: Vector2): void => {
+    const getIdealPointerCoords = (clientX: number, clientY: number, result: Vector2): void => {
       const engine = this.scene.getEngine();
       const canvas = engine.getRenderingCanvas();
       if (!canvas) return;
@@ -5415,9 +5415,8 @@ export class HUDManager {
       const sx = canvas.width  / (rect.width  || 1);
       const sy = canvas.height / (rect.height || 1);
       
-      // pointerX/Y are already relative to canvas, in CSS pixels.
-      const renderX = pointerX * sx;
-      const renderY = pointerY * sy;
+      const renderX = (clientX - rect.left) * sx;
+      const renderY = (clientY - rect.top)  * sy;
 
       const idealW = this.guiClean.idealWidth || 1920;
       const idealH = this.guiClean.idealHeight || 1080;
@@ -5431,8 +5430,8 @@ export class HUDManager {
       result.y = (renderY - offsetY) / guiScale;
     };
 
-    const toJoystickLocal = (pointerX: number, pointerY: number, result: Vector2): void => {
-      getIdealPointerCoords(pointerX, pointerY, result);
+    const toJoystickLocal = (clientX: number, clientY: number, result: Vector2): void => {
+      getIdealPointerCoords(clientX, clientY, result);
       result.x -= joystickCenterX;
       result.y -= joystickCenterY;
     };
@@ -5475,9 +5474,9 @@ export class HUDManager {
     this.resetMobileJoystick = resetLeftJoystick;
 
     const joystickHalfSize = joystickSize / 2;
-    const isInsideJoystick = (pointerX: number, pointerY: number): boolean => {
+    const isInsideJoystick = (clientX: number, clientY: number): boolean => {
       const coords = new Vector2();
-      getIdealPointerCoords(pointerX, pointerY, coords);
+      getIdealPointerCoords(clientX, clientY, coords);
       const dx = coords.x - joystickCenterX;
       const dy = coords.y - joystickCenterY;
       return Math.abs(dx) <= joystickHalfSize && Math.abs(dy) <= joystickHalfSize;
@@ -5494,19 +5493,36 @@ export class HUDManager {
 
       const pid = (event as any).pointerId ?? (event as any).identifier ?? 0;
 
+      let cx = (event as any).clientX;
+      let cy = (event as any).clientY;
+      if (cx === undefined && (event as any).touches) {
+        const touches = (event as any).touches;
+        for (let i = 0; i < touches.length; i++) {
+          if (touches[i].identifier === pid || touches.length === 1) {
+            cx = touches[i].clientX;
+            cy = touches[i].clientY;
+            break;
+          }
+        }
+      }
+      if (cx === undefined) {
+        cx = this.scene.pointerX;
+        cy = this.scene.pointerY;
+      }
+
       switch (pointerInfo.type) {
         case PointerEventTypes.POINTERDOWN:
-          if (!isDraggingLeft && isInsideJoystick(this.scene.pointerX, this.scene.pointerY)) {
+          if (!isDraggingLeft && isInsideJoystick(cx, cy)) {
             isDraggingLeft = true;
             leftPointerId  = pid;
-            toJoystickLocal(this.scene.pointerX, this.scene.pointerY, jsLocal);
+            toJoystickLocal(cx, cy, jsLocal);
             applyJoystickInput(jsLocal.x, jsLocal.y);
           }
           break;
 
         case PointerEventTypes.POINTERMOVE:
           if (isDraggingLeft && pid === leftPointerId) {
-            toJoystickLocal(this.scene.pointerX, this.scene.pointerY, jsLocal);
+            toJoystickLocal(cx, cy, jsLocal);
             applyJoystickInput(jsLocal.x, jsLocal.y);
           }
           break;

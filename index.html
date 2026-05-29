@@ -18,12 +18,16 @@
             box-sizing: border-box;
         }
 
-        body {
+        body, html {
             width: 100vw;
             height: 100vh;
             overflow: hidden;
             background: #000;
             font-family: 'Courier New', monospace;
+            touch-action: none;
+            overscroll-behavior: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         #renderCanvas {
