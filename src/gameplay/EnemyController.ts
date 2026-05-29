@@ -947,7 +947,7 @@ export class EnemyController {
     let desired = Vector3.Zero();
     if (distance < this.artificerMinRange) {
       desired = toPlayer.scale(-1);
-    } else if (distance > this.artificerMaxRange) {
+    } else if (distance > this.artificerMaxRange || (roomManager && this.pathBlockedWithRadius(this.position, playerPosition, roomManager, 0.1))) {
       desired = roomManager ? this.computePathDirection(playerPosition, roomManager, deltaTime) : toPlayer;
     }
 
@@ -1318,7 +1318,7 @@ export class EnemyController {
 
       desired = desired.scale(1.0).add(this.fuyardChaosDirection.scale(this.fuyardChaosJitter));
     } else {
-      if (distance > this.kiteMaxRange) {
+      if (distance > this.kiteMaxRange || (roomManager && this.pathBlockedWithRadius(this.position, playerPosition, roomManager, 0.1))) {
         desired = roomManager ? this.computePathDirection(playerPosition, roomManager, deltaTime) : toPlayer;
       } else {
         const radialSign = distance < this.kiteMinRange ? -1 : 0.2;
@@ -1473,7 +1473,7 @@ export class EnemyController {
     let desired = Vector3.Zero();
     if (distance < this.rangedMinRange) {
       desired = toPlayer.scale(-1);
-    } else if (distance > this.rangedMaxRange) {
+    } else if (distance > this.rangedMaxRange || (roomManager && this.pathBlockedWithRadius(this.position, playerPosition, roomManager, 0.1))) {
       desired = roomManager ? this.computePathDirection(playerPosition, roomManager, deltaTime) : toPlayer;
     } else if (toPlayer.lengthSquared() > 0.0001) {
       desired = this.rotate2D(toPlayer.normalize(), this.orbitSign * Math.PI * 0.5).scale(0.24);
@@ -1557,7 +1557,7 @@ export class EnemyController {
       let desired = Vector3.Zero();
       if (distance < this.rangedMinRange) {
         desired = toPlayer.scale(-1);
-      } else if (distance > this.rangedMaxRange) {
+      } else if (distance > this.rangedMaxRange || (roomManager && this.pathBlockedWithRadius(this.position, playerPosition, roomManager, 0.1))) {
         desired = roomManager ? this.computePathDirection(playerPosition, roomManager, deltaTime) : toPlayer;
       }
 

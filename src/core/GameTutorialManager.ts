@@ -65,7 +65,7 @@ export class GameTutorialManager {
   private indicatorPathWorld: Vector3[] | null = null;
   private indicatorPathSegmentIndex: number = 0;
   private indicatorPathProgress: number = 0;
-  private readonly indicatorPathSpeed: number = 6.24;
+  private readonly indicatorPathSpeed: number = 7.5;
   private indicatorPathLoop: boolean = true;
   private indicatorPathStickToDoorOnEnd: boolean = false;
   private indicatorPathCompleted: boolean = false;
