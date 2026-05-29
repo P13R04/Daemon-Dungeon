@@ -1181,9 +1181,9 @@ export class CodexScene {
     const selected = this.bestiaryItems[this.selectedBestiaryIndex];
     if (!selected) {
       if (resetTyping) {
-        this.setTerminalText(this.leftTitle, '> BESTIARY');
+        this.setTerminalText(this.leftTitle, '> BESTIARY', 220, false);
         this.setTerminalText(this.leftDescription, '> No entries available in this category.');
-        this.setTerminalText(this.rightTitle, 'NO ENTRY');
+        this.setTerminalText(this.rightTitle, 'NO ENTRY', 220, false);
         this.setTerminalText(this.rightBody, '> No data loaded.');
       }
       return;
@@ -1197,7 +1197,7 @@ export class CodexScene {
     this.setTerminalText(this.leftDescription, leftDesc, 220, false);
 
     if (!selected.isUnlocked) {
-      this.setTerminalText(this.rightTitle, '[LOCKED ENTITY]');
+      this.setTerminalText(this.rightTitle, '[LOCKED ENTITY]', 220, false);
       this.setTerminalText(this.rightBody, '> Status: encrypted\n> Unlock by encountering this enemy in a run.');
       return;
     }
@@ -1226,7 +1226,7 @@ export class CodexScene {
     const bonus = BONUS_CODEX_ENTRIES[this.selectedBonusIndex];
     if (!bonus) {
       if (resetTyping) {
-        this.setTerminalText(this.rightTitle, 'NO BONUS');
+        this.setTerminalText(this.rightTitle, 'NO BONUS', 220, false);
         this.setTerminalText(this.rightBody, '> No bonus registered.');
       }
       return;
@@ -1239,7 +1239,7 @@ export class CodexScene {
       this.centerCardIcon.text = '?';
       this.centerCardTitle.text = 'LOCKED';
       this.centerCardSubtitle.text = 'Undiscovered bonus';
-      this.setTerminalText(this.rightTitle, '[LOCKED BONUS]');
+      this.setTerminalText(this.rightTitle, '[LOCKED BONUS]', 220, false);
       this.setTerminalText(this.rightBody, '> Unlock this bonus by obtaining it in a run.');
       return;
     }
