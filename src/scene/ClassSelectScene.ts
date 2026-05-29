@@ -1397,22 +1397,22 @@ export class ClassSelectScene {
           `• PRIMARY\n  ${data.atk}\n\n` +
           `• STANCE\n  ${data.stance}\n\n` +
           `• SECONDARY\n  ${data.secondary}\n\n` +
-          `• ULTIMATE\n  ${data.ult}`;
+          `• ULTIMATE\n  ${data.ult}\n`;
         this.setInfoTypingTarget(infoText);
       } else {
-        this.setInfoTypingTarget(`${selected.label}\n// READY`);
+        this.setInfoTypingTarget(`${selected.label}\n// READY\n`);
       }
       this.infoText.color = UITheme.colors.textNormal;
-      this.infoText.fontSize = Math.round((this.isMobileLayout ? 22 : 20) * BASE_TEXT_SCALE);
+      this.infoText.fontSize = Math.round((this.isMobileLayout ? 19 : 17) * BASE_TEXT_SCALE);
 
       if (lore) {
         const loreText =
           `USER LORE\n` +
           `────────────────\n` +
-          `${lore}`;
+          `${lore}\n`;
         this.setLoreTypingTarget(loreText);
       } else {
-        this.setLoreTypingTarget(`No lore files found for this class.`);
+        this.setLoreTypingTarget(`No lore files found for this class.\n`);
       }
       this.loreText.color = UITheme.colors.textNormal;
       this.loreText.fontSize = Math.round((this.isMobileLayout ? 22 : 20) * BASE_TEXT_SCALE);
@@ -1428,11 +1428,11 @@ export class ClassSelectScene {
         (this.startButton.textBlock as any).__daemonBaseColor = UITheme.colors.textNormal;
       }
     } else {
-      this.setInfoTypingTarget(`${selected.label}\n// COMING SOON`);
+      this.setInfoTypingTarget(`${selected.label}\n// COMING SOON\n`);
       this.infoText.color = UITheme.colors.textDim;
       this.infoText.fontSize = Math.round((this.isMobileLayout ? 24 : 21) * BASE_TEXT_SCALE);
 
-      this.setLoreTypingTarget(`LORE ENCRYPTED`);
+      this.setLoreTypingTarget(`LORE ENCRYPTED\n`);
       this.loreText.color = UITheme.colors.textDim;
       this.loreText.fontSize = Math.round((this.isMobileLayout ? 24 : 21) * BASE_TEXT_SCALE);
 

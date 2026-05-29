@@ -331,7 +331,7 @@ export class HighscoresScene {
     this.leftDescription = this.makeTerminalText('leftDesc', 23, '#CFFCF3');
     this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.33)}px`;
     this.leftDescription.width = `${sideInnerWidth}px`;
-    this.leftDescription.height = `${Math.round(sidePanelHeight * 0.07)}px`;
+    this.leftDescription.height = '60px';
     this.leftDescription.isHitTestVisible = false;
     this.leftDescription.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftDescription);
@@ -590,7 +590,7 @@ export class HighscoresScene {
     if (this.runs.length === 0) {
       if (resetTyping) {
         this.setTerminalText(this.rightTitle, 'NO DATA');
-        this.setTerminalText(this.rightBody, '> No highscores available.\n> Complete runs to store performance files.');
+        this.setTerminalText(this.rightBody, '> No highscores available.\n> Complete runs to store performance files.\n');
         this.centerCardSubtitle.text = 'No Active Logs';
       }
       return;
@@ -721,7 +721,7 @@ export class HighscoresScene {
       `> Status: SAVED RECORD`;
 
     this.setTerminalText(this.rightTitle, `RUN RECORD #${this.selectedRunIndex + 1}`, 240, false);
-    this.setTerminalText(this.rightBody, body, 280, true);
+    this.setTerminalText(this.rightBody, body + '\n', 280, true);
   }
 
   private setTerminalText(block: TextBlock, text: string, speedBase: number = 300, clearExisting: boolean = true): void {
