@@ -547,7 +547,7 @@ export class AchievementsScene {
     const achievement = achievements[this.selectedAchievementIndex];
     if (!achievement) {
       if (resetTyping) {
-        this.setTerminalText(this.rightTitle, 'NO ACHIEVEMENT');
+        this.setTerminalText(this.rightTitle, 'NO ACHIEVEMENT', 220, false);
         this.setTerminalText(this.rightBody, '> No achievement loaded.\n');
       }
       return;

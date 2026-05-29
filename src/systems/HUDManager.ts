@@ -5410,9 +5410,11 @@ export class HUDManager {
       const engine = this.scene.getEngine();
       const canvas = engine.getRenderingCanvas();
       if (!canvas) return;
+      
       const rect = canvas.getBoundingClientRect();
       const sx = canvas.width  / (rect.width  || 1);
       const sy = canvas.height / (rect.height || 1);
+      
       const renderX = (clientX - rect.left) * sx;
       const renderY = (clientY - rect.top)  * sy;
 
@@ -5489,21 +5491,38 @@ export class HUDManager {
       // Ignore if mobile controls are hidden (e.g. desktop mode)
       if (!this.inputManager || !this.inputManager.isMobileMode()) return;
 
-      const pid = (event as any).pointerId ?? 0;
+      const pid = (event as any).pointerId ?? (event as any).identifier ?? 0;
+
+      let cx = (event as any).clientX;
+      let cy = (event as any).clientY;
+      if (cx === undefined && (event as any).touches) {
+        const touches = (event as any).touches;
+        for (let i = 0; i < touches.length; i++) {
+          if (touches[i].identifier === pid || touches.length === 1) {
+            cx = touches[i].clientX;
+            cy = touches[i].clientY;
+            break;
+          }
+        }
+      }
+      if (cx === undefined) {
+        cx = this.scene.pointerX;
+        cy = this.scene.pointerY;
+      }
 
       switch (pointerInfo.type) {
         case PointerEventTypes.POINTERDOWN:
-          if (!isDraggingLeft && isInsideJoystick(event.clientX, event.clientY)) {
+          if (!isDraggingLeft && isInsideJoystick(cx, cy)) {
             isDraggingLeft = true;
             leftPointerId  = pid;
-            toJoystickLocal(event.clientX, event.clientY, jsLocal);
+            toJoystickLocal(cx, cy, jsLocal);
             applyJoystickInput(jsLocal.x, jsLocal.y);
           }
           break;
 
         case PointerEventTypes.POINTERMOVE:
           if (isDraggingLeft && pid === leftPointerId) {
-            toJoystickLocal(event.clientX, event.clientY, jsLocal);
+            toJoystickLocal(cx, cy, jsLocal);
             applyJoystickInput(jsLocal.x, jsLocal.y);
           }
           break;
