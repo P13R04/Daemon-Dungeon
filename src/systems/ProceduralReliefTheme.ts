@@ -576,6 +576,43 @@ export class ProceduralReliefTheme {
     this.sceneCaches.clear();
   }
 
+  public static garbageCollectMaterials(scene: Scene): void {
+    const cache = this.sceneCaches.get(scene.uid);
+    if (!cache) return;
+
+    const activeMaterials = new Set<any>();
+    for (const mesh of scene.meshes) {
+      if (mesh.material) {
+        activeMaterials.add(mesh.material);
+        // Also add submaterials if it's a MultiMaterial
+        if ((mesh.material as any).subMaterials) {
+          for (const sub of (mesh.material as any).subMaterials) {
+            if (sub) activeMaterials.add(sub);
+          }
+        }
+      }
+    }
+
+    for (const [key, mat] of cache.floorMats.entries()) {
+      if (!activeMaterials.has(mat)) {
+        mat.dispose(false, true);
+        cache.floorMats.delete(key);
+      }
+    }
+    for (const [key, mat] of cache.wallFaceMats.entries()) {
+      if (!activeMaterials.has(mat)) {
+        mat.dispose(false, true);
+        cache.wallFaceMats.delete(key);
+      }
+    }
+    for (const [key, mat] of cache.poisonMats.entries()) {
+      if (!activeMaterials.has(mat)) {
+        mat.dispose(false, true);
+        cache.poisonMats.delete(key);
+      }
+    }
+  }
+
   private static getSceneCache(scene: Scene): SceneCache {
     let cache = this.sceneCaches.get(scene.uid);
     if (cache) return cache;

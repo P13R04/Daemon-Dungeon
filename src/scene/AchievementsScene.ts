@@ -316,15 +316,17 @@ export class AchievementsScene {
     mainLayoutContainer.addControl(this.leftPanel);
 
     this.leftTitle = this.makeTerminalText('leftTitle', 24, '#7DFFE8');
-    this.leftTitle.top = `-${Math.round(sidePanelHeight * 0.42)}px`;
+    this.leftTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.leftTitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.leftTitle.top = `${Math.round(sidePanelHeight * 0.08)}px`;
     this.leftTitle.width = `${sideInnerWidth}px`;
     this.leftTitle.resizeToFit = true;
-    this.leftTitle.isHitTestVisible = false;
-    this.leftTitle.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftTitle);
 
     this.leftDescription = this.makeTerminalText('leftDesc', 18, '#CFFCF3');
-    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.33)}px`;
+    this.leftDescription.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.leftDescription.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.leftDescription.top = `${Math.round(sidePanelHeight * 0.17)}px`;
     this.leftDescription.width = `${sideInnerWidth}px`;
     this.leftDescription.resizeToFit = true;
     this.leftDescription.isHitTestVisible = false;
@@ -355,12 +357,16 @@ export class AchievementsScene {
     mainLayoutContainer.addControl(this.rightPanel);
 
     this.rightTitle = this.makeTerminalText('rightTitle', 26, '#7DFFE8');
-    this.rightTitle.top = `-${Math.round(sidePanelHeight * 0.44)}px`;
+    this.rightTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.rightTitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.rightTitle.top = `${Math.round(sidePanelHeight * 0.06)}px`;
     this.rightTitle.resizeToFit = true;
     this.rightPanel.addControl(this.rightTitle);
 
     this.rightBody = this.makeTerminalText('rightBody', 20, '#CFFCF3');
-    this.rightBody.top = `${Math.round(sidePanelHeight * 0.05)}px`;
+    this.rightBody.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.rightBody.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.rightBody.top = `${Math.round(sidePanelHeight * 0.55)}px`;
     this.rightBody.height = `${Math.round(sidePanelHeight * 0.8)}px`;
     this.rightPanel.addControl(this.rightBody);
 
@@ -453,6 +459,7 @@ export class AchievementsScene {
     t.fontSize = Math.round(size * 1.12 * BASE_TEXT_SCALE);
     t.color = color;
     t.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    t.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     t.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     t.left = '20px';
     t.textWrapping = true;
@@ -623,14 +630,13 @@ export class AchievementsScene {
       const line = this.terminalLines[i];
 
       if (line.index >= line.fullText.length) {
-        const cursorChar = line.fullText.endsWith('\n') ? ' ' : '\u00A0';
-        line.block.text = line.fullText + (this.cursorVisible && line.showCursor ? '_' : cursorChar);
+        line.block.text = line.fullText + (this.cursorVisible && line.showCursor ? ' _' : '  ');
         continue;
       }
 
       if (line.pauseMs > 0) {
         line.pauseMs -= dt;
-        line.block.text = line.typed + (this.cursorVisible ? '_' : '\u00A0');
+        line.block.text = line.typed + (this.cursorVisible ? ' _' : '  ');
         continue;
       }
 
@@ -677,7 +683,7 @@ export class AchievementsScene {
           this.synthBeep.triggerForTypedChar();
         }
 
-        line.block.text = line.typed + (this.cursorVisible ? '_' : '\u00A0');
+        line.block.text = line.typed + (this.cursorVisible ? ' _' : '  ');
       }
     }
   }

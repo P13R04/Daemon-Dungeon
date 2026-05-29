@@ -158,12 +158,16 @@ export class GameCombatActionManager {
     for (const enemy of enemies) {
       const toEnemy = enemy.getPosition().subtract(sweep.origin);
       toEnemy.y = 0;
-      const distance = toEnemy.length();
-      if (distance <= 0.0001 || distance > sweep.range) continue;
+      if (toEnemy.lengthSquared() <= 0.0001) continue;
 
-      const dot = Vector3.Dot(dir, toEnemy.normalize());
-      const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
-      if (angle > maxAngle * 0.5) continue;
+      const forwardDistance = Vector3.Dot(toEnemy, dir);
+      if (forwardDistance < 0 || forwardDistance > sweep.range) continue;
+
+      const right = new Vector3(-dir.z, 0, dir.x);
+      const lateralDistance = Math.abs(Vector3.Dot(toEnemy, right));
+      const halfWidth = sweep.range * Math.sin(maxAngle * 0.5);
+
+      if (lateralDistance > halfWidth) continue;
 
       enemy.takeDamage(sweep.damage);
       this.playerController.onPlayerDealtDamage(sweep.damage);

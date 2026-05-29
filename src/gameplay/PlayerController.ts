@@ -2662,7 +2662,7 @@ export class PlayerController {
   }
 
   applyMageMultishotArcBonus(): void {
-    this.mageArcMultishotStacks = Math.min(BONUS_TUNING.mage.multishotArcMaxProjectiles - 1, this.mageArcMultishotStacks + 1);
+    this.mageArcMultishotStacks = Math.min(Math.floor((BONUS_TUNING.mage.multishotArcMaxProjectiles - 1) / 2), this.mageArcMultishotStacks + 1);
   }
 
   applyMageDualBurstBonus(): void {
@@ -2913,7 +2913,7 @@ export class PlayerController {
       return [baseDirection.clone()];
     }
 
-    const projectileCount = Math.min(BONUS_TUNING.mage.multishotArcMaxProjectiles, 1 + this.mageArcMultishotStacks);
+    const projectileCount = Math.min(BONUS_TUNING.mage.multishotArcMaxProjectiles, 1 + (this.mageArcMultishotStacks * 2));
     const spreadDeg = BONUS_TUNING.mage.multishotArcSpreadBaseDeg + (this.mageArcMultishotStacks * BONUS_TUNING.mage.multishotArcSpreadPerStackDeg);
     const spreadRad = (spreadDeg * Math.PI) / 180;
 

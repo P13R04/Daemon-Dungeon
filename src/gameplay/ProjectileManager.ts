@@ -445,8 +445,8 @@ export class ProjectileManager {
   private disposeProjectileParticleEffect(projectile: Projectile): void {
     const particles = this.projectileParticleEffects.get(projectile);
     if (!particles) return;
+    particles.disposeOnStop = true;
     particles.stop();
-    particles.dispose(false);
     this.projectileParticleEffects.delete(projectile);
   }
 

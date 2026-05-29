@@ -3488,12 +3488,16 @@ export class GameManager {
 
     // Shift heavy inter-room prep work into bonus phase (UI-open) instead of
     // doing it right before opening the menu in gameplay state.
+    // Defer slightly so the UI can animate in smoothly without stuttering!
     const nextIndex = (this.currentRoomIndex + 1) % this.roomOrder.length;
-    this.beginInterRoomPreload(nextIndex);
+    setTimeout(() => {
+      this.beginInterRoomPreload(nextIndex);
+    }, 600);
   }
 
   private async startRoomTransitionSequence(nextIndex: number): Promise<void> {
     if (!this.gameplayInitialized) return;
+    this.hudManager.setBonusLoadingState(true);
     await this.waitForInterRoomPreload(nextIndex);
     if (!this.gameplayInitialized) return;
     const sequenceId = ++this.transitionSequenceId;

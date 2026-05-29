@@ -254,6 +254,8 @@ export class RoomManager {
       this.hazardZones = [];
       this.obstacleBounds = [];
     }
+
+    ProceduralReliefTheme.garbageCollectMaterials(this.scene);
   }
 
   getCurrentRoomOrigin(): Vector3 {

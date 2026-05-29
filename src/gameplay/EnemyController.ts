@@ -947,8 +947,8 @@ export class EnemyController {
     let desired = Vector3.Zero();
     if (distance < this.artificerMinRange) {
       desired = toPlayer.scale(-1);
-    } else if (distance > this.artificerMaxRange) {
-      desired = toPlayer;
+    } else if (distance > this.artificerMaxRange || (roomManager && this.pathBlockedWithRadius(this.position, playerPosition, roomManager, 0.1))) {
+      desired = roomManager ? this.computePathDirection(playerPosition, roomManager, deltaTime) : toPlayer;
     }
 
     if (desired.lengthSquared() > 0.0001) {
@@ -1318,8 +1318,8 @@ export class EnemyController {
 
       desired = desired.scale(1.0).add(this.fuyardChaosDirection.scale(this.fuyardChaosJitter));
     } else {
-      if (distance > this.kiteMaxRange) {
-        desired = toPlayer;
+      if (distance > this.kiteMaxRange || (roomManager && this.pathBlockedWithRadius(this.position, playerPosition, roomManager, 0.1))) {
+        desired = roomManager ? this.computePathDirection(playerPosition, roomManager, deltaTime) : toPlayer;
       } else {
         const radialSign = distance < this.kiteMinRange ? -1 : 0.2;
         const radial = toPlayer.lengthSquared() > 0.0001 ? toPlayer.normalize().scale(radialSign) : Vector3.Zero();
@@ -1473,8 +1473,8 @@ export class EnemyController {
     let desired = Vector3.Zero();
     if (distance < this.rangedMinRange) {
       desired = toPlayer.scale(-1);
-    } else if (distance > this.rangedMaxRange) {
-      desired = toPlayer;
+    } else if (distance > this.rangedMaxRange || (roomManager && this.pathBlockedWithRadius(this.position, playerPosition, roomManager, 0.1))) {
+      desired = roomManager ? this.computePathDirection(playerPosition, roomManager, deltaTime) : toPlayer;
     } else if (toPlayer.lengthSquared() > 0.0001) {
       desired = this.rotate2D(toPlayer.normalize(), this.orbitSign * Math.PI * 0.5).scale(0.24);
     }
@@ -1557,8 +1557,8 @@ export class EnemyController {
       let desired = Vector3.Zero();
       if (distance < this.rangedMinRange) {
         desired = toPlayer.scale(-1);
-      } else if (distance > this.rangedMaxRange) {
-        desired = toPlayer;
+      } else if (distance > this.rangedMaxRange || (roomManager && this.pathBlockedWithRadius(this.position, playerPosition, roomManager, 0.1))) {
+        desired = roomManager ? this.computePathDirection(playerPosition, roomManager, deltaTime) : toPlayer;
       }
 
       if (desired.lengthSquared() > 0.0001) {
@@ -1721,7 +1721,7 @@ export class EnemyController {
     spawnPos.y += 1.0;
     
     const target = playerPosition.add(playerVelocity.scale(this.leadTime));
-    target.y = 0.1;
+    target.y = spawnPos.y;
     const dir = target.subtract(spawnPos);
     if (dir.lengthSquared() <= 0.0001) return;
 

@@ -309,6 +309,10 @@ export class DaemonVoiceSynth {
     const finalBuffer = this.mixLayers(renderedLayers, glitchMap);
     const result: SynthesisResult = { buffer: finalBuffer, duration: finalBuffer.duration, glitchTimestamps };
     this.synthesisCache.set(cacheKey, result);
+    if (this.synthesisCache.size > 20) {
+      const firstKey = this.synthesisCache.keys().next().value;
+      if (firstKey) this.synthesisCache.delete(firstKey);
+    }
     return result;
   }
 
