@@ -577,8 +577,8 @@ export class DaemonTakeoverIntroScene {
     this.prebootTitle = new TextBlock('takeover_preboot_title');
     this.prebootTitle.text = 'SYSTEM CORE BOOT MANAGER';
     this.prebootTitle.color = '#9fe8ff';
-    this.prebootTitle.fontFamily = 'Lucida Console, Courier New, monospace';
-    this.prebootTitle.fontSize = Math.round(34 * BASE_TEXT_SCALE);
+    this.prebootTitle.fontFamily = 'Wonder8Bit';
+    this.prebootTitle.fontSize = Math.round(42 * BASE_TEXT_SCALE);
     this.prebootTitle.top = '-92px';
     this.prebootPanel.addControl(this.prebootTitle);
 
@@ -603,8 +603,8 @@ export class DaemonTakeoverIntroScene {
     bootButton.cornerRadius = 4;
     bootButton.color = '#9fe8ff';
     bootButton.background = 'rgba(15, 60, 84, 0.6)';
-    bootButton.fontFamily = 'Lucida Console, Courier New, monospace';
-    bootButton.fontSize = Math.round(32 * BASE_TEXT_SCALE);
+    bootButton.fontFamily = 'Wonder8Bit';
+    bootButton.fontSize = Math.round(42 * BASE_TEXT_SCALE);
     bootButton.isPointerBlocker = true;
     bootButton.hoverCursor = 'pointer';
     bootButton.onPointerEnterObservable.add(() => {
@@ -733,11 +733,11 @@ export class DaemonTakeoverIntroScene {
     }
     if (this.prebootButton) {
       this.prebootButton.height = `${Math.round((mobile ? 104 : 94) * baseScale)}px`;
-      this.prebootButton.fontSize = Math.round((mobile ? 44 : 38) * baseScale);
-      this.prebootButton.width = mobile ? '76%' : '62%';
+      this.prebootButton.fontSize = Math.round((mobile ? 48 : 42) * baseScale);
+      this.prebootButton.width = mobile ? '80%' : '66%';
     }
     if (this.prebootTitle) {
-      this.prebootTitle.fontSize = Math.round((mobile ? 36 : 34) * baseScale);
+      this.prebootTitle.fontSize = Math.round((mobile ? 44 : 42) * baseScale);
       this.prebootTitle.top = `${Math.round(-92 * baseScale)}px`;
     }
     if (this.prebootSubtitle) {
@@ -748,7 +748,7 @@ export class DaemonTakeoverIntroScene {
     }
     if (this.prebootHint) {
       this.prebootHint.fontSize = Math.round((mobile ? 20 : 18) * baseScale);
-      this.prebootHint.top = `${Math.round(170 * baseScale)}px`;
+      this.prebootHint.top = `${Math.round(155 * baseScale)}px`;
     }
     this.headerText.fontSize = Math.round((mobile ? 22 : 20) * baseScale);
     this.phaseLabel.fontSize = Math.round((mobile ? 19 : 17) * baseScale);
