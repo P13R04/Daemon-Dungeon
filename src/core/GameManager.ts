@@ -3230,13 +3230,13 @@ export class GameManager {
 
       switch (floorIndex) {
         case 0:
-          pFacile = 0.8; pInter = 0.2;
+          pFacile = 1.0;
           break;
         case 1:
-          pFacile = 0.2; pInter = 0.6; pHard = 0.2;
+          pFacile = 0.8; pInter = 0.2;
           break;
         case 2:
-          pInter = 0.3; pHard = 0.5; pExtreme = 0.2;
+          pFacile = 0.2; pInter = 0.6; pHard = 0.2;
           break;
         case 3:
           pHard = 0.5; pExtreme = 0.5;

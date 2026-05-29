@@ -1,18 +1,18 @@
 {
-  "id": "room_reverse_galaga",
-  "name": "reverse_galaga",
+  "id": "room_where_are_they",
+  "name": "where_are_they",
   "layout": [
     "###############",
     "#.............#",
     "#.............#",
+    "#...#.#.#.#...#",
+    "#..#...#...#..#",
     "#.............#",
     "#.............#",
     "#.............#",
-    "#...#..#..#...#",
     "#.............#",
+    "#..#..#..#..#.#",
     "#.............#",
-    "#.............#",
-    "#.##.##.##.##.#",
     "#.............#",
     "#.............#",
     "#.............#",
@@ -20,19 +20,19 @@
   ],
   "spawnPoints": [
     {
-      "x": 7.1,
-      "y": 3,
-      "enemyType": "shooter"
+      "x": 3,
+      "y": 3.1,
+      "enemyType": "zombie_basic"
     },
     {
-      "x": 11.9,
+      "x": 7,
       "y": 3,
-      "enemyType": "shooter"
+      "enemyType": "zombie_basic"
     },
     {
-      "x": 2.1,
+      "x": 11,
       "y": 3,
-      "enemyType": "shooter"
+      "enemyType": "zombie_basic"
     }
   ],
   "friendlySpawnPoints": [],
