@@ -318,7 +318,7 @@ export class AchievementsScene {
     this.leftTitle = this.makeTerminalText('leftTitle', 24, '#7DFFE8');
     this.leftTitle.top = `-${Math.round(sidePanelHeight * 0.42)}px`;
     this.leftTitle.width = `${sideInnerWidth}px`;
-    this.leftTitle.height = '50px';
+    this.leftTitle.resizeToFit = true;
     this.leftTitle.isHitTestVisible = false;
     this.leftTitle.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftTitle);
@@ -326,7 +326,7 @@ export class AchievementsScene {
     this.leftDescription = this.makeTerminalText('leftDesc', 18, '#CFFCF3');
     this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.33)}px`;
     this.leftDescription.width = `${sideInnerWidth}px`;
-    this.leftDescription.height = '60px';
+    this.leftDescription.resizeToFit = true;
     this.leftDescription.isHitTestVisible = false;
     this.leftDescription.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftDescription);
@@ -356,7 +356,7 @@ export class AchievementsScene {
 
     this.rightTitle = this.makeTerminalText('rightTitle', 26, '#7DFFE8');
     this.rightTitle.top = `-${Math.round(sidePanelHeight * 0.44)}px`;
-    this.rightTitle.height = '60px';
+    this.rightTitle.resizeToFit = true;
     this.rightPanel.addControl(this.rightTitle);
 
     this.rightBody = this.makeTerminalText('rightBody', 20, '#CFFCF3');
@@ -623,11 +623,8 @@ export class AchievementsScene {
       const line = this.terminalLines[i];
 
       if (line.index >= line.fullText.length) {
-        if (!line.fullText.endsWith('\n')) {
-          line.block.text = line.fullText + (this.cursorVisible && line.showCursor ? '_' : ' ');
-        } else {
-          line.block.text = line.fullText;
-        }
+        const cursorChar = line.fullText.endsWith('\n') ? ' ' : '\u00A0';
+        line.block.text = line.fullText + (this.cursorVisible && line.showCursor ? '_' : cursorChar);
         continue;
       }
 

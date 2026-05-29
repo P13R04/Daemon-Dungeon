@@ -501,7 +501,7 @@ export class ClassSelectScene {
     infoText.left = '20px';
     infoText.top = '25px';
     infoText.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    infoText.height = `${Math.round(sidePanelHeight - 60)}px`;
+    infoText.resizeToFit = true;
     infoOverlay.addControl(infoText);
 
     // ── Left-side class lore overlay (symmetric) ──────────────────────────────
@@ -534,7 +534,7 @@ export class ClassSelectScene {
     loreText.left = '20px';
     loreText.top = '25px';
     loreText.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    loreText.height = `${Math.round(sidePanelHeight - 60)}px`;
+    loreText.resizeToFit = true;
     loreOverlay.addControl(loreText);
 
     this.createTutorialPromptOverlay(mainLayoutContainer);
@@ -1403,7 +1403,7 @@ export class ClassSelectScene {
         this.setInfoTypingTarget(`${selected.label}\n// READY\n`);
       }
       this.infoText.color = UITheme.colors.textNormal;
-      this.infoText.fontSize = Math.round((this.isMobileLayout ? 19 : 17) * BASE_TEXT_SCALE);
+      this.infoText.fontSize = Math.round((this.isMobileLayout ? 21 : 19) * BASE_TEXT_SCALE);
 
       if (lore) {
         const loreText =
@@ -1468,7 +1468,7 @@ export class ClassSelectScene {
   private updateClassSelectTypewriter(deltaTime: number): void {
     const dtRaw = Math.max(0, deltaTime);
     const dt = dtRaw > 1 ? dtRaw / 1000 : dtRaw;
-    const cursor = this.cursorVisible ? '\u00A0_' : '\u00A0\u00A0';
+    const cursor = this.cursorVisible ? '_' : ' ';
     if (this.infoTypeIndex < this.infoTargetText.length) {
       this.infoTypeAccumulator += dt * this.infoTypeCharsPerSecond;
       const advance = Math.floor(this.infoTypeAccumulator);
