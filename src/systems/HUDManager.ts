@@ -3,7 +3,7 @@
  */
 
 import { Scene, Engine, Vector3, Vector2, TransformNode, AbstractMesh, Sound, PointerEventTypes } from '@babylonjs/core';
-import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image, StackPanel, Checkbox, Ellipse } from '@babylonjs/gui';
+import { AdvancedDynamicTexture, Control, Rectangle, TextBlock, Button, Image, StackPanel, Checkbox, Ellipse, ScrollViewer } from '@babylonjs/gui';
 import { EventBus, GameEvents } from '../core/EventBus';
 import { SettingsMenuBuilder } from '../ui/SettingsMenuBuilder';
 import { SCENE_LAYER, UI_LAYER } from '../ui/uiLayers';
@@ -155,6 +155,7 @@ export class HUDManager {
   private voicelineVolumeMultiplier: number = GameSettingsStore.getEffectiveVolume('voice');
   private unsubscribeSettings: (() => void) | null = null;
   private daemonAudioUnlockHandler: (() => void) | null = null;
+  private crashSequenceTimeout: any = null;
   private daemonTypingIndex: number = 0;
   private daemonTypingTimer: number = 0;
   private daemonTypingSpeed: number = 65;
@@ -1848,7 +1849,8 @@ export class HUDManager {
 
     // Upgrades container
     const numRows = Math.ceil((stats.bonuses ? stats.bonuses.length : 0) / 7) || 1;
-    const bonusContainerHeight = 80 + numRows * 82;
+    const maxDisplayedRows = Math.min(3, numRows);
+    const bonusContainerHeight = 80 + maxDisplayedRows * 82;
 
     const bonusContainer = new Rectangle('go_bonuses');
     bonusContainer.width = '820px';
@@ -1866,12 +1868,20 @@ export class HUDManager {
     bonusLabel.top = `${-(bonusContainerHeight / 2) + 25}px`;
     bonusContainer.addControl(bonusLabel);
 
+    const scrollViewer = new ScrollViewer('go_bonus_scroll');
+    scrollViewer.width = 1;
+    scrollViewer.height = `${bonusContainerHeight - 40}px`;
+    scrollViewer.thickness = 0;
+    scrollViewer.top = '25px';
+    scrollViewer.barColor = '#7CFFEA';
+    scrollViewer.barSize = 10;
+    bonusContainer.addControl(scrollViewer);
+
     const bonusStackRows = new StackPanel('go_bonus_stack_rows');
     bonusStackRows.isVertical = true;
     bonusStackRows.spacing = 14;
     bonusStackRows.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    bonusStackRows.top = '24px';
-    bonusContainer.addControl(bonusStackRows);
+    scrollViewer.addControl(bonusStackRows);
 
     // Detached Details Panel for Tooltips at the bottom center of the screen
     const goDetailsPanel = new Rectangle('go_details_panel');
@@ -3375,11 +3385,13 @@ export class HUDManager {
     }
   }
 
-  /** Schedule a crash+reboot sequence at a random point during the voiceline */
   private scheduleCrashSequence(audioDuration: number, recoveryEmotion: string): void {
+    if (this.crashSequenceTimeout) clearTimeout(this.crashSequenceTimeout);
+    
     // Crash happens 40-70% through the voiceline
     const crashDelay = audioDuration * (0.4 + Math.random() * 0.3);
-    setTimeout(() => {
+    this.crashSequenceTimeout = setTimeout(() => {
+      this.crashSequenceTimeout = null;
       if (!this.daemonVisible) return;
       // Stop voice audio abruptly
       this.stopAllVoicelineAudio();
@@ -3580,6 +3592,10 @@ export class HUDManager {
   }
 
   private stopAllVoicelineAudio(): void {
+    if (this.crashSequenceTimeout) {
+      clearTimeout(this.crashSequenceTimeout);
+      this.crashSequenceTimeout = null;
+    }
     if (this.activeVoicelineAudios.size === 0) return;
     
     this.activeVoicelineAudios.forEach(sound => {

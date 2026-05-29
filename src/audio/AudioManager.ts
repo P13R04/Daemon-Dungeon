@@ -170,6 +170,7 @@ export class AudioManager {
         }
         try {
           clonedBeep.onEndedObservable.removeCallback(onEnd);
+          clonedBeep.dispose();
         } catch (e) {
           // ignore
         }

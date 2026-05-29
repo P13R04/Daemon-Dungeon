@@ -576,6 +576,26 @@ export class ProceduralReliefTheme {
     this.sceneCaches.clear();
   }
 
+  public static cleanupDisposedMaterials(): void {
+    for (const cache of this.sceneCaches.values()) {
+      for (const [key, mat] of cache.floorMats.entries()) {
+        if (mat.isDisposed()) {
+          cache.floorMats.delete(key);
+        }
+      }
+      for (const [key, mat] of cache.wallFaceMats.entries()) {
+        if (mat.isDisposed()) {
+          cache.wallFaceMats.delete(key);
+        }
+      }
+      for (const mat of Array.from(cache.poisonMats.values())) {
+        if (mat.isDisposed()) {
+          cache.poisonMats.delete(mat);
+        }
+      }
+    }
+  }
+
   private static getSceneCache(scene: Scene): SceneCache {
     let cache = this.sceneCaches.get(scene.uid);
     if (cache) return cache;
