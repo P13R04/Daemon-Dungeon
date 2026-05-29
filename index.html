@@ -44,7 +44,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #BFFFE2;
+            color: #E0E7FF;
         }
 
         #loading::before {
@@ -52,31 +52,31 @@
             position: absolute;
             inset: 0;
             background:
-                radial-gradient(circle at 20% 20%, rgba(45, 82, 70, 0.25), transparent 45%),
-                radial-gradient(circle at 80% 65%, rgba(39, 65, 55, 0.22), transparent 48%),
-                linear-gradient(180deg, rgba(2, 12, 10, 0.98), rgba(0, 0, 0, 0.99));
+                radial-gradient(circle at 20% 20%, rgba(10, 20, 80, 0.4), transparent 50%),
+                radial-gradient(circle at 80% 65%, rgba(0, 30, 100, 0.35), transparent 50%),
+                linear-gradient(180deg, rgba(2, 4, 12, 0.99), rgba(0, 0, 0, 1));
         }
 
         #loadingPanel {
             position: relative;
             width: min(620px, 92vw);
             padding: 28px 26px 24px;
-            border: 1px solid rgba(115, 206, 171, 0.5);
-            box-shadow: 0 0 30px rgba(0, 255, 170, 0.14), inset 0 0 24px rgba(18, 67, 54, 0.45);
-            background: rgba(6, 20, 17, 0.85);
-            backdrop-filter: blur(2px);
+            border: 1px solid rgba(0, 229, 255, 0.6);
+            box-shadow: 0 0 35px rgba(0, 229, 255, 0.15), inset 0 0 40px rgba(0, 150, 255, 0.2);
+            background: rgba(3, 3, 7, 0.92);
+            backdrop-filter: blur(4px);
             text-align: left;
         }
 
         #loadingTitle {
-            color: #DAFFE9;
+            color: #00E5FF;
             font-size: 20px;
             letter-spacing: 0.12em;
             margin-bottom: 8px;
         }
 
         #loadingLabel {
-            color: #8DE8C4;
+            color: #FF143C;
             font-size: 14px;
             letter-spacing: 0.06em;
             margin-bottom: 12px;
@@ -86,22 +86,22 @@
         #loadingBarTrack {
             width: 100%;
             height: 12px;
-            border: 1px solid rgba(120, 214, 180, 0.45);
-            background: rgba(8, 31, 26, 0.8);
+            border: 1px solid rgba(100, 30, 150, 0.4);
+            background: rgba(5, 5, 15, 0.9);
             overflow: hidden;
         }
 
         #loadingBarFill {
             width: 0%;
             height: 100%;
-            background: linear-gradient(90deg, #4de7b0, #7bffd0);
-            box-shadow: 0 0 18px rgba(96, 255, 196, 0.5);
+            background: linear-gradient(90deg, #9D00FF, #00E5FF);
+            box-shadow: 0 0 20px rgba(0, 229, 255, 0.5);
             transition: width 160ms linear;
         }
 
         #loadingProgress {
             margin-top: 10px;
-            color: #D6FFF0;
+            color: #E0E7FF;
             font-size: 13px;
             letter-spacing: 0.12em;
             text-align: right;

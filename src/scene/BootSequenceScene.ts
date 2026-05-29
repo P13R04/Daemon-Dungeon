@@ -51,12 +51,12 @@ interface BootLine {
 }
 
 // Palette
-const C_HDR    = '#7CFFEA'; // teal — headers / daemon reveal
-const C_OK     = '#00FF88'; // green — normal boot lines
-const C_DIM    = '#1A4A40'; // muted — decorative separator
-const C_WARN   = '#FFD700'; // yellow — warnings
-const C_ERR    = '#FF8C00'; // orange — errors
-const C_CRIT   = '#FF3300'; // red — critical / glitch
+const C_HDR    = '#00FFFF'; // cyan — headers
+const C_OK     = '#A0B0FF'; // light blue — normal boot lines
+const C_DIM    = '#4B2A7D'; // muted purple — decorative separator
+const C_WARN   = '#00FFFF'; // cyan — warnings
+const C_ERR    = '#FF3366'; // red/pink — errors
+const C_CRIT   = '#FF0033'; // red — critical / glitch
 const C_DAEMON = '#CC00FF'; // magenta — daemon voice
 
 // Glitch helper: insert U+0338 (combining long solidus overlay) after each char
@@ -276,9 +276,9 @@ export class BootSequenceScene {
     const panel = new Rectangle('bootPanel');
     panel.width      = '88%';
     panel.height     = '84%';
-    panel.background = 'rgba(4, 8, 16, 0.92)';
+    panel.background = 'rgba(2, 4, 12, 0.95)';
     panel.thickness  = 1;
-    panel.color      = '#1A3A30';
+    panel.color      = '#00E5FF';
     panel.cornerRadius = 3;
     bg.addControl(panel);
     this._mainPanel = panel;
@@ -287,7 +287,7 @@ export class BootSequenceScene {
     const hdr = new Rectangle('bootHdr');
     hdr.width      = '100%';
     hdr.height     = `${Math.round(48 * baseScale)}px`;
-    hdr.background = '#061210';
+    hdr.background = '#0A0612';
     hdr.thickness  = 0;
     hdr.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     panel.addControl(hdr);
@@ -295,7 +295,7 @@ export class BootSequenceScene {
     const hdrLine = new Rectangle('bootHdrLine');
     hdrLine.width      = '100%';
     hdrLine.height     = '1px';
-    hdrLine.background = '#1A3A30';
+    hdrLine.background = '#00E5FF';
     hdrLine.thickness  = 0;
     hdrLine.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     hdr.addControl(hdrLine);
@@ -303,7 +303,7 @@ export class BootSequenceScene {
 
     const hdrTxt = new TextBlock('bootHdrTxt');
     hdrTxt.text       = 'DAEMON_OS  [TERMINAL]   PID:0×D43M  UID:root   KERNEL:2.6.1-daemon';
-    hdrTxt.color      = '#1E5C50';
+    hdrTxt.color      = '#FF143C';
     hdrTxt.fontSize   = Math.round(16 * baseScale);
     hdrTxt.fontFamily = 'Arcade8Bit';
     hdrTxt.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -325,7 +325,7 @@ export class BootSequenceScene {
     // Blinking cursor (always last child of logPanel)
     this._cursor = new TextBlock('bootCursor');
     this._cursor.text       = '_';
-    this._cursor.color      = '#2EF9C3';
+    this._cursor.color      = '#00FFFF';
     this._cursor.fontSize   = Math.round(20 * baseScale);
     this._cursor.height     = `${Math.round(32 * baseScale)}px`;
     this._cursor.fontFamily = 'Arcade8Bit';
@@ -336,7 +336,7 @@ export class BootSequenceScene {
     const footer = new Rectangle('bootFooter');
     footer.width      = '96%';
     footer.height     = `${Math.round(80 * baseScale)}px`;
-    footer.background = '#040810';
+    footer.background = '#020104';
     footer.thickness  = 0;
     footer.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
     footer.paddingBottom     = `${Math.round(15 * baseScale)}px`;
@@ -346,9 +346,9 @@ export class BootSequenceScene {
     const barBg = new Rectangle('bootBarBg');
     barBg.width      = '100%';
     barBg.height     = `${Math.round(20 * baseScale)}px`;
-    barBg.background = '#0A1A14';
+    barBg.background = '#1A0E2A';
     barBg.thickness  = 1;
-    barBg.color      = '#1E5C50';
+    barBg.color      = '#3D2A68';
     barBg.verticalAlignment   = Control.VERTICAL_ALIGNMENT_TOP;
     footer.addControl(barBg);
 
@@ -356,7 +356,7 @@ export class BootSequenceScene {
     this._progressFill = new Rectangle('bootBarFill');
     this._progressFill.width       = '0%';
     this._progressFill.height      = '100%';
-    this._progressFill.background  = '#2EF9C3';
+    this._progressFill.background  = '#00FFFF';
     this._progressFill.thickness   = 0;
     this._progressFill.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     barBg.addControl(this._progressFill);
@@ -364,7 +364,7 @@ export class BootSequenceScene {
     // Progress label
     this._progressLabel = new TextBlock('bootBarLabel');
     this._progressLabel.text       = 'LOADING...  0%';
-    this._progressLabel.color      = '#2EF9C3';
+    this._progressLabel.color      = '#00FFFF';
     this._progressLabel.fontSize   = Math.round(15 * baseScale);
     this._progressLabel.fontFamily = 'Arcade8Bit';
     this._progressLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -603,8 +603,8 @@ export class BootSequenceScene {
       return;
     }
 
-    this._progressFill.background = '#2EF9C3';
-    this._progressLabel.color = '#2EF9C3';
+    this._progressFill.background = '#00FFFF';
+    this._progressLabel.color = '#00FFFF';
     this._progressLabel.text = `LOADING...  ${Math.floor(this._progressValue)}%`;
   }
 

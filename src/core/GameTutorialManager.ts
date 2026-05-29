@@ -348,7 +348,7 @@ export class GameTutorialManager {
           this.daemonSay(
             this.isMobileTutorialMode()
               ? "Start with your basic attack: use the ATTACK button to cast bolts."
-              : "Start with your basic attack: left click or your attack button to cast bolts.",
+              : `Start with your basic attack: left click or ${GameSettingsStore.get().controls.keybindings.shoot === 'q' ? 'Q' : 'your attack button'} to cast bolts.`,
             "happy",
             3.8
           );
@@ -572,7 +572,7 @@ export class GameTutorialManager {
         this.clearIndicator();
         this.phaseState.playerDamagedTauntDone = false;
         if (this.classId === 'firewall') {
-          const btnTxt = this.isMobileTutorialMode() ? 'the STANCE button' : 'RIGHT CLICK';
+          const btnTxt = this.isMobileTutorialMode() ? 'the STANCE button' : 'RIGHT CLICK or your STANCE key';
           this.daemonSay(`Now stance. Hold ${btnTxt} to shield, deflect a shot, and bounce it back to the turret.`, "superieur", 5.2);
           this.deferUntilDaemonFinished(() => {
             if (!this.isActive || this.currentPhase !== 'class_stance_wave') return;
@@ -581,7 +581,7 @@ export class GameTutorialManager {
           }, 80);
         } else {
           this.spawnEnemyAtMap('tutorial_dummy_mobile', 7.0, 6.2);
-          const btnTxt = this.isMobileTutorialMode() ? 'STANCE button' : 'RIGHT CLICK';
+          const btnTxt = this.isMobileTutorialMode() ? 'STANCE button' : 'RIGHT CLICK or your STANCE key';
           this.daemonSay(`Hold ${btnTxt} to turn invisible. Stay outside detection range and the patroller loses you.`, "happy", 5.0);
           this.pointToMap(7.0, 6.2);
           const watchStealth = () => {

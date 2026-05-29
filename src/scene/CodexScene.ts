@@ -317,16 +317,21 @@ export class CodexScene {
     mainLayoutContainer.addControl(this.leftPanel);
 
     this.leftTitle = this.makeTerminalText('leftTitle', 24, '#7DFFE8');
-    this.leftTitle.top = `-${Math.round(sidePanelHeight * 0.45)}px`;
+    this.leftTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.leftTitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.leftTitle.top = `${Math.round(sidePanelHeight * 0.08)}px`;
     this.leftTitle.width = `${sideInnerWidth}px`;
+    this.leftTitle.height = "60px";
     this.leftTitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.addControl(this.leftTitle);
 
     this.leftDescription = this.makeTerminalText('leftDescription', 18, '#9EE6DB');
-    this.leftDescription.top = `-${Math.round(sidePanelHeight * 0.34)}px`;
+    this.leftDescription.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.leftDescription.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.leftDescription.top = `${Math.round(sidePanelHeight * 0.17)}px`;
     this.leftDescription.width = `${sideInnerWidth}px`;
-    this.leftDescription.height = `${Math.round(sidePanelHeight * 0.18)}px`;
+    this.leftDescription.height = "120px";
     this.leftDescription.textWrapping = true;
     this.leftDescription.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.addControl(this.leftDescription);
@@ -375,13 +380,18 @@ export class CodexScene {
     mainLayoutContainer.addControl(this.rightPanel);
 
     this.rightTitle = this.makeTerminalText('rightTitle', 40, '#7EFFE7');
-    this.rightTitle.top = `-${Math.round(sidePanelHeight * 0.4)}px`;
+    this.rightTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.rightTitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.rightTitle.top = `${Math.round(sidePanelHeight * 0.08)}px`;
     this.rightTitle.width = `${sideInnerWidth}px`;
+    this.rightTitle.height = "100px";
     this.rightTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.rightPanel.addControl(this.rightTitle);
 
     this.rightBody = this.makeTerminalText('rightBody', 20, '#A7EFE2');
-    this.rightBody.top = '18px';
+    this.rightBody.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.rightBody.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.rightBody.top = `${Math.round(sidePanelHeight * 0.2)}px`;
     this.rightBody.width = `${sideInnerWidth}px`;
     this.rightBody.height = `${Math.round(sidePanelHeight * 0.71)}px`;
     this.rightBody.textWrapping = true;
@@ -603,7 +613,10 @@ export class CodexScene {
   }
 
   private makeTerminalText(id: string, size: number, color: string): TextBlock {
-    return UIFactory.createText(id, '', Math.round(size * 1.12 * BASE_TEXT_SCALE), color);
+    const tb = UIFactory.createText(id, '', Math.round(size * 1.12 * BASE_TEXT_SCALE), color);
+    tb.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    tb.left = '30px';
+    return tb;
   }
 
   private setTerminalText(block: TextBlock, text: string, speed = 220, showCursor = true): void {
@@ -667,7 +680,7 @@ export class CodexScene {
         }
       }
 
-      const cursor = line.showCursor ? (this.cursorVisible ? '\u00A0_' : '\u00A0\u00A0') : '';
+      const cursor = line.showCursor ? (this.cursorVisible ? ' _' : '  ') : '';
       line.block.text = `${line.typed}${cursor}`;
     }
   }
@@ -1183,7 +1196,7 @@ export class CodexScene {
       if (resetTyping) {
         this.setTerminalText(this.leftTitle, '> BESTIARY', 220, false);
         this.setTerminalText(this.leftDescription, '> No entries available in this category.');
-        this.setTerminalText(this.rightTitle, 'NO ENTRY', 220, false);
+        this.setTerminalText(this.rightTitle, 'NO ENTRY');
         this.setTerminalText(this.rightBody, '> No data loaded.');
       }
       return;
@@ -1193,8 +1206,8 @@ export class CodexScene {
       ? '> Bosses are high-threat entities\n> capable of ending a run on their own.'
       : '> Enemies are daemon-aligned\n> execution units testing your resilience.';
 
-    this.setTerminalText(this.leftTitle, this.bestiaryGroup === 'boss' ? '> BESTIARY // BOSSES' : '> BESTIARY // ENEMIES', 220, false);
-    this.setTerminalText(this.leftDescription, leftDesc, 220, false);
+    this.setTerminalText(this.leftTitle, this.bestiaryGroup === 'boss' ? '> BESTIARY // BOSSES' : '> BESTIARY // ENEMIES');
+    this.setTerminalText(this.leftDescription, leftDesc);
 
     if (!selected.isUnlocked) {
       this.setTerminalText(this.rightTitle, '[LOCKED ENTITY]', 220, false);
@@ -1213,20 +1226,20 @@ export class CodexScene {
       `Attack Speed: ${e.attackSpeed > 0 ? e.attackSpeed.toFixed(2) + '/s' : 'N/A'}\n\n` +
       `> Runtime\nBehavior ID: ${e.behavior}\nEnemy ID: ${e.id}`;
 
-    this.setTerminalText(this.rightTitle, e.name, 240, false);
+    this.setTerminalText(this.rightTitle, e.name, 240);
     this.setTerminalText(this.rightBody, body, 280, true);
   }
 
   private refreshBonusSelection(resetTyping: boolean): void {
     this.populateBonusList();
 
-    this.setTerminalText(this.leftTitle, '> BONUS DATABASE', 220, false);
-    this.setTerminalText(this.leftDescription, '> Select a bonus to inspect effects,\n> category tags and synergy notes.', 220, false);
+    this.setTerminalText(this.leftTitle, '> BESTIARY // BONUSES', 0);
+    this.setTerminalText(this.leftDescription, '> Select a bonus to inspect effects,\n> category tags and synergy notes.', 0);
 
     const bonus = BONUS_CODEX_ENTRIES[this.selectedBonusIndex];
     if (!bonus) {
       if (resetTyping) {
-        this.setTerminalText(this.rightTitle, 'NO BONUS', 220, false);
+        this.setTerminalText(this.rightTitle, 'NO BONUS', 0, true);
         this.setTerminalText(this.rightBody, '> No bonus registered.');
       }
       return;
@@ -1265,7 +1278,7 @@ export class CodexScene {
       `> Categories\n${bonus.categories.join(', ')}\n\n` +
       `> ID\n${bonus.id}`;
 
-    this.setTerminalText(this.rightTitle, bonus.name, 240, false);
+    this.setTerminalText(this.rightTitle, bonus.name, 240);
     this.setTerminalText(this.rightBody, body, 280, true);
   }
 
