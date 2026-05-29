@@ -318,7 +318,7 @@ export class AchievementsScene {
     this.leftTitle = this.makeTerminalText('leftTitle', 24, '#7DFFE8');
     this.leftTitle.top = `-${Math.round(sidePanelHeight * 0.42)}px`;
     this.leftTitle.width = `${sideInnerWidth}px`;
-    this.leftTitle.height = '30px';
+    this.leftTitle.height = '50px';
     this.leftTitle.isHitTestVisible = false;
     this.leftTitle.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftTitle);
@@ -356,7 +356,7 @@ export class AchievementsScene {
 
     this.rightTitle = this.makeTerminalText('rightTitle', 26, '#7DFFE8');
     this.rightTitle.top = `-${Math.round(sidePanelHeight * 0.44)}px`;
-    this.rightTitle.height = `${Math.round(sidePanelHeight * 0.09)}px`;
+    this.rightTitle.height = '60px';
     this.rightPanel.addControl(this.rightTitle);
 
     this.rightBody = this.makeTerminalText('rightBody', 20, '#CFFCF3');
@@ -633,7 +633,7 @@ export class AchievementsScene {
 
       if (line.pauseMs > 0) {
         line.pauseMs -= dt;
-        line.block.text = line.typed + (this.cursorVisible ? '_' : ' ');
+        line.block.text = line.typed + (this.cursorVisible ? '_' : '\u00A0');
         continue;
       }
 
@@ -680,7 +680,7 @@ export class AchievementsScene {
           this.synthBeep.triggerForTypedChar();
         }
 
-        line.block.text = line.typed + (this.cursorVisible ? '_' : ' ');
+        line.block.text = line.typed + (this.cursorVisible ? '_' : '\u00A0');
       }
     }
   }

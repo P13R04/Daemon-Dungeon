@@ -323,7 +323,7 @@ export class HighscoresScene {
     this.leftTitle = this.makeTerminalText('leftTitle', 31, '#7DFFE8');
     this.leftTitle.top = `-${Math.round(sidePanelHeight * 0.42)}px`;
     this.leftTitle.width = `${sideInnerWidth}px`;
-    this.leftTitle.height = '30px';
+    this.leftTitle.height = '50px';
     this.leftTitle.isHitTestVisible = false;
     this.leftTitle.isPointerBlocker = false;
     this.leftPanel.addControl(this.leftTitle);
@@ -339,7 +339,7 @@ export class HighscoresScene {
     const scrollViewer = UIFactory.createScrollViewer('leftListScroll');
     scrollViewer.width = `${sideInnerWidth}px`;
     scrollViewer.height = `${Math.round(sidePanelHeight * 0.8)}px`;
-    scrollViewer.top = `${Math.round(sidePanelHeight * 0.15)}px`;
+    scrollViewer.top = `${Math.round(sidePanelHeight * 0.20)}px`;
     scrollViewer.thickness = 0;
     scrollViewer.barColor = UITheme.colors.borderBright;
     scrollViewer.barBackground = 'rgba(0,0,0,0.5)';
@@ -362,7 +362,7 @@ export class HighscoresScene {
     this.rightTitle = this.makeTerminalText('rightTitle', 34, '#7DFFE8');
     this.rightTitle.top = `-${Math.round(sidePanelHeight * 0.44)}px`;
     this.rightTitle.width = `${sideInnerWidth}px`;
-    this.rightTitle.height = `${Math.round(sidePanelHeight * 0.09)}px`;
+    this.rightTitle.height = '60px';
     this.rightPanel.addControl(this.rightTitle);
 
     this.rightBody = this.makeTerminalText('rightBody', 26, '#CFFCF3');
@@ -772,7 +772,7 @@ export class HighscoresScene {
 
       if (line.pauseMs > 0) {
         line.pauseMs -= dt;
-        line.block.text = line.typed + (this.cursorVisible ? '_' : ' ');
+        line.block.text = line.typed + (this.cursorVisible ? '_' : '\u00A0');
         continue;
       }
 
@@ -819,7 +819,7 @@ export class HighscoresScene {
           this.synthBeep.triggerForTypedChar();
         }
 
-        line.block.text = line.typed + (this.cursorVisible ? '_' : ' ');
+        line.block.text = line.typed + (this.cursorVisible ? '_' : '\u00A0');
       }
     }
   }

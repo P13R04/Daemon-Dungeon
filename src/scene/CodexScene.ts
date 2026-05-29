@@ -667,7 +667,7 @@ export class CodexScene {
         }
       }
 
-      const cursor = line.showCursor ? (this.cursorVisible ? ' _' : '  ') : '';
+      const cursor = line.showCursor ? (this.cursorVisible ? '\u00A0_' : '\u00A0\u00A0') : '';
       line.block.text = `${line.typed}${cursor}`;
     }
   }

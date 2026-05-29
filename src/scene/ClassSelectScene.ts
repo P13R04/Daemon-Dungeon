@@ -1393,9 +1393,7 @@ export class ClassSelectScene {
         const infoText =
           `${selected.label}\n` +
           `────────────────\n` +
-          `PLAYSTYLE: ${data.style}\n` +
-          `CORE: HP ${data.hp}   SPD ${data.spd}\n` +
-          `${data.summary}\n\n` +
+          `${data.style}\n\n` +
           `• PRIMARY\n  ${data.atk}\n\n` +
           `• STANCE\n  ${data.stance}\n\n` +
           `• SECONDARY\n  ${data.secondary}\n\n` +
@@ -1470,7 +1468,7 @@ export class ClassSelectScene {
   private updateClassSelectTypewriter(deltaTime: number): void {
     const dtRaw = Math.max(0, deltaTime);
     const dt = dtRaw > 1 ? dtRaw / 1000 : dtRaw;
-    const cursor = this.cursorVisible ? ' _' : '  ';
+    const cursor = this.cursorVisible ? '\u00A0_' : '\u00A0\u00A0';
     if (this.infoTypeIndex < this.infoTargetText.length) {
       this.infoTypeAccumulator += dt * this.infoTypeCharsPerSecond;
       const advance = Math.floor(this.infoTypeAccumulator);

@@ -1052,7 +1052,7 @@ export class DaemonTakeoverIntroScene {
       this.cursorBlinkTimerMs = 0;
       this.cursorVisible = !this.cursorVisible;
     }
-    const cursor = this.cursorVisible ? ' _' : '  ';
+    const cursor = this.cursorVisible ? '\u00A0_' : '\u00A0\u00A0';
 
     if (!this.currentTypingLine) {
       const next = this.consoleLines.find((l) => l.typing && l.index < l.text.length);
