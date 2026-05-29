@@ -20,7 +20,7 @@ export const BONUS_TUNING = {
     stanceEfficiencyMultiplierCap: 1.6,
   },
   mage: {
-    multishotArcMaxProjectiles: 4,
+    multishotArcMaxProjectiles: 7,
     multishotArcSpreadBaseDeg: 10,
     multishotArcSpreadPerStackDeg: 7,
     multishotDamageMultiplier: 0.88,

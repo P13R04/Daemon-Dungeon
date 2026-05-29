@@ -50,7 +50,6 @@ export class BonusSystemManager {
   private readonly selectedChoiceIds: Set<string> = new Set();
   private freePicksRemaining: number = 0;
   private paidRarePurchased: boolean = false;
-  private readonly bonusRerollCost: number = BONUS_TUNING.selection.rerollCost;
   private forcedChoices: string[] | null = null;
   private forcedRareChoice: string | null = null;
   private tutorialShopScriptStep: 'inactive' | 'paid_only' | 'await_free_reveal' | 'free_only' = 'inactive';
@@ -212,7 +211,7 @@ export class BonusSystemManager {
       return;
     }
 
-    const requestedCost = Number.isFinite(cost) ? Math.max(0, Math.floor(cost)) : this.bonusRerollCost;
+    const requestedCost = Number.isFinite(cost) ? Math.max(0, Math.floor(cost)) : this.getBonusRerollCost();
     if (!this.callbacks.trySpendCurrency(requestedCost)) {
       this.callbacks.onInsufficientShopFunds?.();
       if (this.callbacks.onTutorialShopInteraction) {
@@ -281,13 +280,17 @@ export class BonusSystemManager {
     return 1 + this.getMetaDoublePickExtraPicks(roomIndex);
   }
 
+  private getBonusRerollCost(): number {
+    return Math.max(1, Math.floor(BONUS_TUNING.selection.rerollCost * this.getShopDiscountMultiplier()));
+  }
+
   private getPaidRareCost(): number {
-    const cost = this.bonusRerollCost * BONUS_TUNING.selection.paidRareCostRerollMultiplier;
+    const cost = this.getBonusRerollCost() * BONUS_TUNING.selection.paidRareCostRerollMultiplier;
     return Math.max(1, Math.floor(cost));
   }
 
   private getFullHealCost(): number {
-    const cost = this.bonusRerollCost * BONUS_TUNING.selection.fullHealCostRerollMultiplier;
+    const cost = this.getBonusRerollCost() * BONUS_TUNING.selection.fullHealCostRerollMultiplier;
     return Math.max(1, Math.floor(cost));
   }
 
@@ -358,7 +361,7 @@ export class BonusSystemManager {
     this.callbacks.showBonusChoices(
       (this.tutorialShopScriptStep === 'paid_only' || this.tutorialShopScriptStep === 'await_free_reveal') ? [] : this.currentBonusChoices,
       this.callbacks.getCurrency(),
-      this.bonusRerollCost,
+      this.getBonusRerollCost(),
       {
         freePicksRemaining: this.freePicksRemaining,
         paidRareChoice: this.tutorialShopScriptStep === 'free_only' ? null : this.currentPaidRareChoice,
