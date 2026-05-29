@@ -1,0 +1,50 @@
+{
+  "id": "room_6_double_corridor",
+  "name": "Double Corridor",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..VVVVVVVVV..#",
+    "#.............#",
+    "#..#########..#",
+    "#.............#",
+    "#..VVVVVVVVV..#",
+    "#.............#",
+    "#..#########..#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 7,
+      "y": 9,
+      "enemyType": "bull"
+    },
+    {
+      "x": 5,
+      "y": 3,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 8.8,
+      "y": 2.9,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 2,
+      "y": 5,
+      "enemyType": "strategist"
+    },
+    {
+      "x": 12.1,
+      "y": 5.1,
+      "enemyType": "strategist"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

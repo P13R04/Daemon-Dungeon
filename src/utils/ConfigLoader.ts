@@ -16,6 +16,7 @@ export class ConfigLoader {
   private difficileRoomsConfig: RoomsConfig | null = null;
   private extremeRoomsConfig: RoomsConfig | null = null;
   private bossRoomsConfig: RoomsConfig | null = null;
+  private aiRoomsConfig: RoomsConfig | null = null;
 
   private constructor() {}
 
@@ -52,6 +53,11 @@ export class ConfigLoader {
         string,
         { default?: RoomConfig } | RoomConfig
       >;
+      // Eager glob load for dynamically generated AI rooms
+      const aiRoomModules = import.meta.glob('../data/rooms/ai_rooms/room_*.json', { eager: true }) as Record<
+        string,
+        { default?: RoomConfig } | RoomConfig
+      >;
       const legacyRootRoomModules = import.meta.glob('../data/rooms/room_*.json', { eager: true }) as Record<
         string,
         { default?: RoomConfig } | RoomConfig
@@ -66,6 +72,7 @@ export class ConfigLoader {
       const loadedDifficileRooms = this.normalizeRoomModules(difficileRoomModules);
       const loadedExtremeRooms = this.normalizeRoomModules(extremeRoomModules);
       const loadedBossRooms = this.normalizeRoomModules(bossRoomModules);
+      const loadedAiRooms = this.normalizeRoomModules(aiRoomModules);
       const loadedLegacyRootRooms = this.normalizeRoomModules(legacyRootRoomModules);
       const loadedLegacyOldTestRooms = this.normalizeRoomModules(legacyOldTestRoomModules);
 
@@ -74,6 +81,7 @@ export class ConfigLoader {
       this.difficileRoomsConfig = loadedDifficileRooms;
       this.extremeRoomsConfig = loadedExtremeRooms;
       this.bossRoomsConfig = loadedBossRooms;
+      this.aiRoomsConfig = loadedAiRooms;
 
       const combinedRooms = [
         ...loadedFacileRooms,
@@ -81,6 +89,7 @@ export class ConfigLoader {
         ...loadedDifficileRooms,
         ...loadedExtremeRooms,
         ...loadedBossRooms,
+        ...loadedAiRooms,
         ...loadedLegacyRootRooms,
         ...loadedLegacyOldTestRooms,
       ].sort((a, b) => a.id.localeCompare(b.id));
@@ -172,6 +181,10 @@ export class ConfigLoader {
 
   getBossRoomsConfig(): RoomsConfig | null {
     return this.bossRoomsConfig;
+  }
+
+  getAiRoomsConfig(): RoomsConfig | null {
+    return this.aiRoomsConfig;
   }
 
   updatePlayerConfig(config: PlayerConfig): void {

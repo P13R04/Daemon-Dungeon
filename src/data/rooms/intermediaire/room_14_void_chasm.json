@@ -1,0 +1,50 @@
+{
+  "id": "room_14_void_chasm",
+  "name": "Void Chasm",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.............#",
+    "#..VVVVVVVVV..#",
+    "#..V.......V..#",
+    "#..V.......V..#",
+    "#..VVV...VVV..#",
+    "#.............#",
+    "#.............#",
+    "#..VVV...VVV..#",
+    "#..V.......V..#",
+    "#..V.......V..#",
+    "#..VVV...VVV..#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 4,
+      "y": 11.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 10,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 6.9,
+      "y": 4,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 9.9,
+      "y": 3.9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 4.1,
+      "y": 4.1,
+      "enemyType": "zombie_fast"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

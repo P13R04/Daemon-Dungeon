@@ -1,0 +1,55 @@
+{
+  "id": "room_10_bull_stampede",
+  "name": "Bull Stampede",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#...V.....V...#",
+    "#...V.....V...#",
+    "#...V.....V...#",
+    "#...V.....V...#",
+    "#...V.....V...#",
+    "#...V.....V...#",
+    "#...V.....V...#",
+    "#...V.....V...#",
+    "#.............#",
+    "#...#######...#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 2,
+      "y": 3,
+      "enemyType": "bull"
+    },
+    {
+      "x": 12,
+      "y": 3,
+      "enemyType": "bull"
+    },
+    {
+      "x": 7,
+      "y": 2,
+      "enemyType": "healer"
+    },
+    {
+      "x": 5,
+      "y": 3,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 7,
+      "y": 3,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 8.9,
+      "y": 2.9,
+      "enemyType": "zombie_basic"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

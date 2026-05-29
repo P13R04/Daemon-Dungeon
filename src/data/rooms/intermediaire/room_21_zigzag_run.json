@@ -1,0 +1,80 @@
+{
+  "id": "room_21_zigzag_run",
+  "name": "Zigzag Run",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..^^^^^^^^...#",
+    "#.........^...#",
+    "#...^^^^^^^...#",
+    "#...^.........#",
+    "#...^^^^^^^...#",
+    "#.........^...#",
+    "#..^^^^^^^^...#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 12,
+      "y": 2.2,
+      "enemyType": "pong"
+    },
+    {
+      "x": 12,
+      "y": 9.1,
+      "enemyType": "pong"
+    },
+    {
+      "x": 2.1,
+      "y": 9.1,
+      "enemyType": "pong"
+    },
+    {
+      "x": 1.9,
+      "y": 1.9,
+      "enemyType": "pong"
+    },
+    {
+      "x": 9,
+      "y": 7.1,
+      "enemyType": "shooter"
+    },
+    {
+      "x": 5,
+      "y": 5,
+      "enemyType": "sentinel"
+    },
+    {
+      "x": 9.2,
+      "y": 2.8,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 4.1,
+      "y": 3,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 3.9,
+      "y": 7,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 11.2,
+      "y": 7.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 11.1,
+      "y": 3,
+      "enemyType": "zombie_basic"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

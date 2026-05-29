@@ -738,11 +738,13 @@ export class DevConsole {
     const difficileRooms = this.configLoader.getDifficileRoomsConfig() ?? [];
     const extremeRooms = this.configLoader.getExtremeRoomsConfig() ?? [];
     const bossRooms = this.configLoader.getBossRoomsConfig() ?? [];
+    const aiRooms = this.configLoader.getAiRoomsConfig() ?? [];
 
     this.createRoomTestingSubsection(parent, '═══ FACILE ═══', facileRooms, 'LOAD FACILE ROOM', 'room_test_dummies', 'facileRooms');
     this.createRoomTestingSubsection(parent, '═══ INTERMEDIAIRE ═══', intermediaireRooms, 'LOAD INTERMEDIAIRE ROOM', 'room_boss_jumper', 'intermediaireRooms');
     this.createRoomTestingSubsection(parent, '═══ DIFFICILE ═══', difficileRooms, 'LOAD DIFFICILE ROOM', 'room_bull_void', 'difficileRooms');
     this.createRoomTestingSubsection(parent, '═══ EXTREME ═══', extremeRooms, 'LOAD EXTREME ROOM', 'room_missile_poison', 'extremeRooms');
+    this.createRoomTestingSubsection(parent, '═══ AI ROOMS ═══', aiRooms, 'LOAD AI ROOM', 'room_ai_1_crossfire', 'aiRooms');
     const getBossRoomId = this.createRoomTestingSubsection(parent, '═══ BOSS ═══', bossRooms, 'LOAD BOSS ROOM', 'room_boss_jumper', 'bossRooms');
 
     // Add tile controls

@@ -3046,10 +3046,10 @@ export class EnemyController {
   }
 
   getRadius(): number {
-    if (this.behavior === 'bull_boss') {
+    if (this.typeId === 'bull_boss' || this.behavior === 'bull_boss') {
       return 2.2;
     } else if (this.behavior === 'bull') {
-      return 1.0;
+      return 0.45;
     }
     return 0.35;
   }
@@ -4128,7 +4128,7 @@ export class EnemyController {
       EnemyController.markBullVisualHierarchy(root, this.id);
 
       root.position = Vector3.Zero();
-      root.rotation = new Vector3(0, Math.PI / 2, 0);
+      root.rotation = new Vector3(0, -Math.PI / 2, 0);
       root.scaling = new Vector3(this.bullModelScale, this.bullModelScale, this.bullModelScale);
       root.parent = this.mesh;
 
