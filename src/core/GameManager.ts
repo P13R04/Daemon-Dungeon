@@ -30,8 +30,8 @@ import { EnemyLaserPatternSubsystem } from '../gameplay/enemy/EnemyLaserPatternS
 import { RoomManager } from '../systems/RoomManager';
 import { ProjectileManager } from '../gameplay/ProjectileManager';
 import { UltimateManager } from '../gameplay/UltimateManager';
-import { HUDManager } from '../systems/HUDManager';
-import { DevConsole } from '../systems/DevConsole';
+import type { HUDManager } from '../systems/HUDManager';
+import type { DevConsole } from '../systems/DevConsole';
 import { PostProcessManager } from '../scene/PostProcess';
 import { TileFloorManager } from '../systems/TileFloorManager';
 import { RoomLayoutParser, RoomLayout, TileMappingLayout } from '../systems/RoomLayoutParser';
@@ -44,7 +44,7 @@ import { GameEventCoordinator } from '../systems/GameEventCoordinator';
 import { UltimateSystemManager } from '../systems/UltimateSystemManager';
 import type { RoomConfig as LoadedRoomConfig } from '../types/config';
 import { ClassSelectScene } from '../scene/ClassSelectScene';
-import { MainMenuScene } from '../scene/MainMenuScene';
+import type { MainMenuScene } from '../scene/MainMenuScene';
 import { BootSequenceScene } from '../scene/BootSequenceScene';
 import { DaemonTakeoverIntroScene } from '../scene/DaemonTakeoverIntroScene';
 import { AchievementDefinition, CodexService } from '../services/CodexService';
@@ -65,7 +65,7 @@ import { WallOcclusionManager } from '../systems/WallOcclusionManager';
 import { MusicManager } from '../audio/MusicManager';
 import { AudioManager } from '../audio/AudioManager';
 import { DaemonVoiceSynth } from '../audio/DaemonVoiceSynth';
-import { DaemonVoicelineManager } from './DaemonVoicelineManager';
+import type { DaemonVoicelineManager } from './DaemonVoicelineManager';
 
 
 type TextureRenderMode = 'classic' | 'proceduralRelief';
@@ -598,6 +598,7 @@ export class GameManager {
     }
 
     this.disposeFrontendScenes();
+    const { MainMenuScene } = await import('../scene/MainMenuScene');
     this.mainMenuScene = new MainMenuScene(this.engine, () => {
       void this.openClassSelectScene(false);
     }, () => {
@@ -794,7 +795,9 @@ export class GameManager {
     this.combatActionManager = null;
     this.playerVoidRecoveryManager?.dispose?.();
     this.playerVoidRecoveryManager = null;
+    this.economyFlowManager?.dispose?.();
     this.economyFlowManager = null;
+    this.roomStreamingManager?.dispose?.();
     this.roomStreamingManager = null;
     this.worldCollisionHazardManager?.dispose?.();
     this.worldCollisionHazardManager = null;
@@ -814,6 +817,15 @@ export class GameManager {
     if (this.wallOcclusionManager) { this.wallOcclusionManager.dispose(); this.wallOcclusionManager = null; }
     if (this.musicManager) { this.musicManager.dispose(); this.musicManager = null; }
     if (this.audioManager) { this.audioManager.dispose(); this.audioManager = null; }
+
+    this.transitionFogPlanes.forEach(p => p.dispose());
+    this.transitionFogPlanes = [];
+    this.transitionFogMaterials.forEach(m => m.dispose());
+    this.transitionFogMaterials = [];
+    this.transitionFogTopPlanes.forEach(p => p.dispose());
+    this.transitionFogTopPlanes = [];
+    this.transitionFogTopMaterials.forEach(m => m.dispose());
+    this.transitionFogTopMaterials = [];
 
     if (this.scene && this.scene !== this.mainMenuScene?.getScene() && this.scene !== this.classSelectScene?.getScene()) {
       this.scene.dispose();
@@ -860,6 +872,7 @@ export class GameManager {
     this.inputManager = new InputManager(this.canvas, this.scene);
     this.projectileManager = new ProjectileManager(this.scene);
     this.ultimateManager = new UltimateManager(this.scene);
+    const { HUDManager } = await import('../systems/HUDManager');
     this.hudManager = new HUDManager(this.scene);
     this.hudManager.setInputManager(this.inputManager);
     this.hudManager.setPauseTutorialMode(this.isTutorialRun, this.selectedClassId);
@@ -885,11 +898,11 @@ export class GameManager {
     }
     this.roomManager.setFloorRenderingEnabled(!this.tilesEnabled);
     this.tileFloorManager.setRenderProfile(this.getRenderProfileForRoom(''));
-    this.updateDevConsoleVisibility();
+    void this.updateDevConsoleVisibility();
     
     // Subscribe to settings changes for dev mode
     GameSettingsStore.subscribe((settings) => {
-      this.updateDevConsoleVisibility();
+      void this.updateDevConsoleVisibility();
       
       // Update other settings that might have changed
       if (this.enemySpawner) {
@@ -951,6 +964,7 @@ export class GameManager {
       (reason) => this.eventCoordinator.emitPlayerDied(reason),
     );
     
+    const { DaemonVoicelineManager } = await import('./DaemonVoicelineManager');
     this.daemonVoicelineManager = new DaemonVoicelineManager(this.eventBus, () => this.runEconomy.getCurrency());
     this.daemonVoicelineManager.setPlayerClass(this.selectedClassId === 'cat' ? 'rogue' : this.selectedClassId as any);
     this.daemonVoicelineManager.setOnVoicelineSelected((vl, forceCrash) => {
@@ -5153,11 +5167,12 @@ export class GameManager {
   }
 
 
-  private updateDevConsoleVisibility(): void {
+  private async updateDevConsoleVisibility(): Promise<void> {
     const settings = GameSettingsStore.get();
     const shouldBeVisible = settings.accessibility.devModeEnabled;
 
     if (shouldBeVisible && !this.devConsole) {
+      const { DevConsole } = await import('../systems/DevConsole');
       this.devConsole = new DevConsole(this.scene, this);
       if (this.playerController) {
         this.devConsole.setPlayer(this.playerController);

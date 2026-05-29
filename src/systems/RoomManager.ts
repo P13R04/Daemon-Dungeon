@@ -191,28 +191,10 @@ export class RoomManager {
       return true;
     });
 
-    const shouldDisposeMaterial = (mat: any): boolean => {
-      if (!mat) return false;
-      const name = mat.name || "";
-      // Do NOT dispose of statically cached procedural theme materials shared across rooms!
-      if (
-        name.startsWith('f_mat_') ||
-        name.startsWith('s_mat_') ||
-        name.startsWith('w_mat_') ||
-        name === 'vp_floor_shared_mat' ||
-        name === 'vp_wall_shared_mat' ||
-        name.startsWith('poison_') ||
-        name.startsWith('relief_wall_core_')
-      ) {
-        return false;
-      }
-      return true;
-    };
-
     const meshes = this.roomMeshes.get(instanceKey);
     if (meshes) {
       meshes.forEach((mesh) => {
-        if (mesh.material && shouldDisposeMaterial(mesh.material)) {
+        if (mesh.material && this.shouldDisposeMaterial(mesh.material)) {
           if (typeof (mesh.material as any).dispose === 'function') {
             (mesh.material as any).dispose(false, true);
           }
@@ -226,7 +208,7 @@ export class RoomManager {
     if (roots) {
       roots.forEach((root) => {
         root.getChildMeshes(false).forEach(childMesh => {
-          if (childMesh.material && shouldDisposeMaterial(childMesh.material)) {
+          if (childMesh.material && this.shouldDisposeMaterial(childMesh.material)) {
             if (typeof (childMesh.material as any).dispose === 'function') {
               (childMesh.material as any).dispose(false, true);
             }
@@ -1155,11 +1137,27 @@ export class RoomManager {
       this.disposePhysicsForInstance(key);
     }
     for (const meshes of this.roomMeshes.values()) {
-      meshes.forEach(mesh => mesh.dispose());
+      meshes.forEach((mesh) => {
+        if (mesh.material && this.shouldDisposeMaterial(mesh.material)) {
+          if (typeof (mesh.material as any).dispose === 'function') {
+            (mesh.material as any).dispose(false, true);
+          }
+        }
+        mesh.dispose();
+      });
     }
     this.roomMeshes.clear();
     for (const roots of this.roomReliefRoots.values()) {
-      roots.forEach((root) => root.dispose(false, false));
+      roots.forEach((root) => {
+        root.getChildMeshes(false).forEach(childMesh => {
+          if (childMesh.material && this.shouldDisposeMaterial(childMesh.material)) {
+            if (typeof (childMesh.material as any).dispose === 'function') {
+              (childMesh.material as any).dispose(false, true);
+            }
+          }
+        });
+        root.dispose(false, false);
+      });
     }
     this.roomReliefRoots.clear();
     this.roomOrigins.clear();
@@ -1175,6 +1173,23 @@ export class RoomManager {
     this.mobileHazardsByRoom.clear();
     this.themedMaterials.forEach((material) => material.dispose());
     this.themedMaterials = [];
+  }
+
+  private shouldDisposeMaterial(mat: any): boolean {
+    if (!mat) return false;
+    const name = mat.name || "";
+    if (
+      name.startsWith('f_mat_') ||
+      name.startsWith('s_mat_') ||
+      name.startsWith('w_mat_') ||
+      name === 'vp_floor_shared_mat' ||
+      name === 'vp_wall_shared_mat' ||
+      name.startsWith('poison_') ||
+      name.startsWith('relief_wall_core_')
+    ) {
+      return false;
+    }
+    return true;
   }
 
   private getCrateBounds(crate: PushableCrate): { minX: number; maxX: number; minZ: number; maxZ: number } {

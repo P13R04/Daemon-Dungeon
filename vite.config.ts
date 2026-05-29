@@ -30,6 +30,8 @@ export default defineConfig({
           if (id.includes('/src/scene/CreditsScene') || id.includes('/src/scene/CodexScene') || id.includes('/src/scene/AchievementsScene') || id.includes('/src/scene/HighscoresScene')) {
             return 'scene-secondary';
           }
+          if (id.includes('/src/systems/DevConsole')) return 'tools-devconsole';
+          if (id.includes('/src/systems/HUDManager') || id.includes('/src/core/DaemonVoicelineManager') || id.includes('/src/ui/SettingsMenuBuilder')) return 'gameplay-core';
           if (id.includes('/src/tools/')) return 'tools';
           return undefined;
         },
