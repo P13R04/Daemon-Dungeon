@@ -545,7 +545,7 @@ export class DaemonTakeoverIntroScene {
     prebootBackdrop.width = '100%';
     prebootBackdrop.height = '100%';
     prebootBackdrop.thickness = 0;
-    prebootBackdrop.background = '#04070e';
+    prebootBackdrop.background = 'rgba(4, 7, 14, 0.65)';
     this.prebootOverlay.addControl(prebootBackdrop);
 
     this.prebootPulse = new Rectangle('takeover_preboot_pulse');
@@ -732,8 +732,8 @@ export class DaemonTakeoverIntroScene {
       this.prebootPanel.height = `${panelHeight}px`;
     }
     if (this.prebootButton) {
-      this.prebootButton.height = `${Math.round((mobile ? 94 : 82) * baseScale)}px`;
-      this.prebootButton.fontSize = Math.round((mobile ? 36 : 32) * baseScale);
+      this.prebootButton.height = `${Math.round((mobile ? 104 : 94) * baseScale)}px`;
+      this.prebootButton.fontSize = Math.round((mobile ? 44 : 38) * baseScale);
       this.prebootButton.width = mobile ? '76%' : '62%';
     }
     if (this.prebootTitle) {
@@ -748,7 +748,7 @@ export class DaemonTakeoverIntroScene {
     }
     if (this.prebootHint) {
       this.prebootHint.fontSize = Math.round((mobile ? 20 : 18) * baseScale);
-      this.prebootHint.top = `${Math.round(140 * baseScale)}px`;
+      this.prebootHint.top = `${Math.round(170 * baseScale)}px`;
     }
     this.headerText.fontSize = Math.round((mobile ? 22 : 20) * baseScale);
     this.phaseLabel.fontSize = Math.round((mobile ? 19 : 17) * baseScale);
