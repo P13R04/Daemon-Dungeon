@@ -1287,6 +1287,37 @@ export class MainMenuScene {
       this.settingsOverlay = this.settingsBuilder.createSettingsOverlay(this.gui);
     });
   }
+  
+  private makeActionButton(id: string, label: string, top: number, onClick: () => void): Button {
+    const button = UIFactory.createTerminalButton(id, label, `${this.menuButtonWidth}px`, `${this.menuButtonHeight}px`);
+    button.top = `${top}px`;
+    if (button.textBlock) {
+      button.textBlock.fontSize = this.menuButtonFontSize;
+      button.textBlock.fontFamily = 'Wonder8Bit';
+    }
+    button.zIndex = 50;
+    button.isPointerBlocker = true;
+    button.isHitTestVisible = true;
+    button.hoverCursor = 'pointer';
+    // Click glitch only (no hover glitch).
+    DaemonGlitchFx.injectWithOptions(button, label, () => {
+      playUiSelectClick(0.82);
+      window.setTimeout(() => onClick(), 36);
+    }, { clickDelayMs: 240, enableHoverGlitch: false, hoverBackground: UITheme.colors.hoverBg });
+    return button;
+  }
+
+  private bindButtonAction(button: Button, onAction: () => void): void {
+    button.isPointerBlocker = true;
+    button.isHitTestVisible = true;
+    button.hoverCursor = 'pointer';
+    const label = button.textBlock?.text ?? button.name ?? 'ACTION';
+    DaemonGlitchFx.injectWithOptions(button, label, () => {
+      playUiSelectClick(0.8);
+      window.setTimeout(() => onAction(), 28);
+    }, { clickDelayMs: 190, enableHoverGlitch: false });
+  }
+
   private rotateDaemonAvatarPreset(): void {
     const candidates = DAEMON_FOUR_FRAME_PRESET_NAMES.filter((n) => n !== this.daemonAvatarPresetName);
     if (candidates.length <= 0) return;
