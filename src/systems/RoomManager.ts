@@ -196,8 +196,12 @@ export class RoomManager {
       const name = mat.name || "";
       // Do NOT dispose of statically cached procedural theme materials shared across rooms!
       if (
+        name.startsWith('f_mat_') ||
+        name.startsWith('s_mat_') ||
+        name.startsWith('w_mat_') ||
         name === 'vp_floor_shared_mat' ||
         name === 'vp_wall_shared_mat' ||
+        name.startsWith('poison_') ||
         name.startsWith('relief_wall_core_')
       ) {
         return false;
@@ -251,7 +255,7 @@ export class RoomManager {
       this.obstacleBounds = [];
     }
 
-    ProceduralReliefTheme.cleanupDisposedMaterials();
+    ProceduralReliefTheme.garbageCollectMaterials(this.scene);
   }
 
   getCurrentRoomOrigin(): Vector3 {

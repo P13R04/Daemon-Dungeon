@@ -799,6 +799,10 @@ export class TileSystem {
     if (mat && typeof (mat as any).dispose === 'function') {
       const name = mat.name || "";
       if (
+        !name.startsWith('f_mat_') &&
+        !name.startsWith('s_mat_') &&
+        !name.startsWith('w_mat_') &&
+        !name.startsWith('poison_') &&
         !name.startsWith('relief_wall_core_') &&
         !name.startsWith('tile_shared_mat_') &&
         name !== 'spike_shared_mat'
@@ -815,6 +819,10 @@ export class TileSystem {
     for (const material of this.poisonShaderMaterials) {
       const name = material.name || "";
       if (
+        !name.startsWith('f_mat_') &&
+        !name.startsWith('s_mat_') &&
+        !name.startsWith('w_mat_') &&
+        !name.startsWith('poison_') &&
         !name.startsWith('relief_wall_core_')
       ) {
         material.dispose(false, true);

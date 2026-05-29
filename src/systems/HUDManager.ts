@@ -4104,6 +4104,23 @@ export class HUDManager {
     this.setHudVisible(false);
   }
 
+  setBonusLoadingState(state: boolean): void {
+    if (this.bonusSubtitle) {
+      if (state) {
+        this.bonusSubtitle.text = 'PREPARING SECTOR...';
+        this.bonusSubtitle.color = '#7CFFEA';
+      } else {
+        this.bonusSubtitle.color = '#B7C0CD';
+      }
+    }
+    // Optionally disable bonus buttons if loading
+    for (const card of this.bonusCardPool.values()) {
+      if (card.button.isVisible) {
+        card.button.isEnabled = !state;
+      }
+    }
+  }
+
   showBonusChoices(
     choices: HudBonusChoice[],
     currency: number,
