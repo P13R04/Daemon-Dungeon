@@ -1,0 +1,150 @@
+{
+  "id": "room_extreme_09_deadly_cross",
+  "name": "Deadly Void Cross",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..VVV...VVV..#",
+    "#..VVV...VVV..#",
+    "#..VVV...VVV..#",
+    "#.............#",
+    "#..###...###..#",
+    "#......P......#",
+    "#..###...###..#",
+    "#.............#",
+    "#..VVV...VVV..#",
+    "#..VVV...VVV..#",
+    "#..VVV...VVV..#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 2,
+      "y": 2,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 12,
+      "y": 2,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 2,
+      "y": 12,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 12,
+      "y": 12,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 7,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 7,
+      "y": 1,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 2,
+      "y": 5,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 5,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 1,
+      "y": 2,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 13,
+      "y": 2,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 1,
+      "y": 12,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 13,
+      "y": 12,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 6,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 8,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 6,
+      "y": 1,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 8,
+      "y": 1,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 7,
+      "y": 2,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 3,
+      "y": 5,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 5,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 4,
+      "y": 5,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 10,
+      "y": 5,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 9,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 2,
+      "y": 9.1,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 11.9,
+      "y": 7,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 1.9,
+      "y": 7,
+      "enemyType": "jumper"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

@@ -1,0 +1,180 @@
+{
+  "id": "room_extreme_10_jumper_hell",
+  "name": "Jumper Spike Bed",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..^^^^^^^^^..#",
+    "#..^.......^..#",
+    "#..^..###..^..#",
+    "#..^..#.#..^..#",
+    "#..^..#.#..^..#",
+    "#..^.......^..#",
+    "#..^^^^^^^^^..#",
+    "#.............#",
+    "#....PPPPP....#",
+    "#...#######...#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 3,
+      "y": 11,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 11,
+      "y": 11.1,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 7,
+      "y": 7.1,
+      "enemyType": "healer"
+    },
+    {
+      "x": 3,
+      "y": 3,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 3,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 3.1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 7,
+      "y": 9,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 5,
+      "y": 6,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 9,
+      "y": 6,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 7,
+      "y": 6,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 5,
+      "y": 4,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 9,
+      "y": 4,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 4,
+      "y": 3,
+      "enemyType": "healer"
+    },
+    {
+      "x": 10,
+      "y": 3,
+      "enemyType": "healer"
+    },
+    {
+      "x": 2,
+      "y": 3,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 3,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 4,
+      "y": 7,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 10,
+      "y": 7,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 2,
+      "y": 7,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 7,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 5,
+      "y": 9,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 9,
+      "y": 9,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 6,
+      "y": 1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 8,
+      "y": 1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 12.8,
+      "y": 1.1,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 0.9,
+      "y": 1,
+      "enemyType": "mage_missile"
+    },
+    {
+      "x": 7,
+      "y": 1.1,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 13,
+      "y": 4.9,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 0.9,
+      "y": 4.9,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 2.1,
+      "y": 11.9,
+      "enemyType": "bull"
+    },
+    {
+      "x": 11.8,
+      "y": 12.1,
+      "enemyType": "bull"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

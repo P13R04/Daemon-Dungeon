@@ -1,0 +1,155 @@
+{
+  "id": "room_extreme_13_apocalyptic_void",
+  "name": "Apocalyptic Void Bridge",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#VVV.......VVV#",
+    "#VVV.......VVV#",
+    "#VVV.^^^^^.VVV#",
+    "#VVV.^...^.VVV#",
+    "#VVV.^.#.^.VVV#",
+    "#VVV.^...^.VVV#",
+    "#VVV.^^^^^.VVV#",
+    "#VVV.......VVV#",
+    "#VVV..###..VVV#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 7,
+      "y": 5,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 7,
+      "y": 3,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 5,
+      "y": 5,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 9,
+      "y": 5,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 7,
+      "y": 7,
+      "enemyType": "healer"
+    },
+    {
+      "x": 2,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 6,
+      "y": 5,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 8,
+      "y": 5,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 5,
+      "y": 3,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 9,
+      "y": 3,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 6,
+      "y": 3,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 8,
+      "y": 3,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 6,
+      "y": 7,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 8,
+      "y": 7,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 6,
+      "y": 9,
+      "enemyType": "healer"
+    },
+    {
+      "x": 8,
+      "y": 9,
+      "enemyType": "healer"
+    },
+    {
+      "x": 1,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 13,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 3,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 4,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 10,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 6,
+      "y": 1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 8,
+      "y": 1,
+      "enemyType": "bull"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

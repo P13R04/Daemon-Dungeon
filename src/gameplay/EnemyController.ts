@@ -850,6 +850,7 @@ export class EnemyController {
     let target: EnemyController | null = null;
     let bestDist = Number.POSITIVE_INFINITY;
 
+    // 1. First find the closest active ally who has lost HP
     for (const ally of allEnemies) {
       if (ally === this || !ally.isActive()) continue;
       const hp = ally.getHealth();
@@ -857,6 +858,32 @@ export class EnemyController {
         const dist = Vector3.Distance(this.position, ally.getPosition());
         if (dist < bestDist) {
           bestDist = dist;
+          target = ally;
+        }
+      }
+    }
+
+    // 2. If no ally has lost HP, find the closest active non-healer/non-missile ally to follow
+    if (!target) {
+      let bestFollowDist = Number.POSITIVE_INFINITY;
+      for (const ally of allEnemies) {
+        if (ally === this || !ally.isActive() || ally.getBehavior() === 'healer' || ally.getBehavior() === 'missile') continue;
+        const dist = Vector3.Distance(this.position, ally.getPosition());
+        if (dist < bestFollowDist) {
+          bestFollowDist = dist;
+          target = ally;
+        }
+      }
+    }
+
+    // 3. If still no target (only healers/missiles are left), find the closest active ally as fallback
+    if (!target) {
+      let bestFollowDist = Number.POSITIVE_INFINITY;
+      for (const ally of allEnemies) {
+        if (ally === this || !ally.isActive()) continue;
+        const dist = Vector3.Distance(this.position, ally.getPosition());
+        if (dist < bestFollowDist) {
+          bestFollowDist = dist;
           target = ally;
         }
       }
@@ -883,39 +910,49 @@ export class EnemyController {
         this.velocity = desired.scale(this.speed);
       } else {
         this.velocity = Vector3.Zero();
-        this.healerTimer -= deltaTime;
-        if (this.healerTimer <= 0) {
-          target.heal(this.healerAmount);
-          this.eventBus.emit(GameEvents.ENEMY_HEALER_HEAL_CAST, {
-            casterId: this.id,
-            casterType: this.typeId,
-            casterPosition: this.position.clone(),
-            targetId: target.getId(),
-            targetPosition: target.getPosition().clone(),
-            amount: this.healerAmount,
-          });
-          this.healerTimer = this.healerCooldown;
-          
-          // Heal ray
-          const distToTarget = target.getPosition().subtract(this.position).length();
-          const healRay = MeshBuilder.CreateCylinder(`heal_ray_${this.id}_${Date.now()}`, {
-            height: distToTarget,
-            diameter: 0.2
-          }, this.scene);
-          healRay.position = this.position.add(target.getPosition()).scale(0.5);
-          healRay.position.y += 1.0; // Crystal height
-          healRay.lookAt(target.getPosition().add(new Vector3(0, 1.0, 0)));
-          healRay.rotate(new Vector3(1, 0, 0), Math.PI / 2);
-          
-          const mat = new StandardMaterial(`heal_ray_mat_${this.id}`, this.scene);
-          mat.emissiveColor = new Color3(1.0, 1.0, 0.2);
-          mat.diffuseColor = new Color3(0, 0, 0);
-          mat.alpha = 0.8;
-          healRay.material = mat;
-          healRay.isPickable = false;
-          VisualPlaceholder.applyAutoDispose(healRay);
-          
-          this.ephemeralVisuals.push({ mesh: healRay, timer: 0.3, duration: 0.3 });
+        
+        // Only trigger healing if the target actually needs it (has lost HP)
+        const targetHp = target.getHealth();
+        if (targetHp && targetHp.getCurrentHP() < targetHp.getMaxHP()) {
+          this.healerTimer -= deltaTime;
+          if (this.healerTimer <= 0) {
+            target.heal(this.healerAmount);
+            this.eventBus.emit(GameEvents.ENEMY_HEALER_HEAL_CAST, {
+              casterId: this.id,
+              casterType: this.typeId,
+              casterPosition: this.position.clone(),
+              targetId: target.getId(),
+              targetPosition: target.getPosition().clone(),
+              amount: this.healerAmount,
+            });
+            this.healerTimer = this.healerCooldown;
+            
+            // Heal ray
+            const distToTarget = target.getPosition().subtract(this.position).length();
+            const healRay = MeshBuilder.CreateCylinder(`heal_ray_${this.id}_${Date.now()}`, {
+              height: distToTarget,
+              diameter: 0.2
+            }, this.scene);
+            healRay.position = this.position.add(target.getPosition()).scale(0.5);
+            healRay.position.y += 1.0; // Crystal height
+            healRay.lookAt(target.getPosition().add(new Vector3(0, 1.0, 0)));
+            healRay.rotate(new Vector3(1, 0, 0), Math.PI / 2);
+            
+            const mat = new StandardMaterial(`heal_ray_mat_${this.id}`, this.scene);
+            mat.emissiveColor = new Color3(1.0, 1.0, 0.2);
+            mat.diffuseColor = new Color3(0, 0, 0);
+            mat.alpha = 0.8;
+            healRay.material = mat;
+            healRay.isPickable = false;
+            VisualPlaceholder.applyAutoDispose(healRay);
+            
+            this.ephemeralVisuals.push({ mesh: healRay, timer: 0.3, duration: 0.3 });
+          }
+        } else {
+          // If the target is healthy, just keep the timer ready
+          if (this.healerTimer > 0) {
+            this.healerTimer -= deltaTime;
+          }
         }
       }
     }

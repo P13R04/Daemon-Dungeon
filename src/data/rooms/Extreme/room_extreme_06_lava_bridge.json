@@ -1,0 +1,145 @@
+{
+  "id": "room_extreme_06_lava_bridge",
+  "name": "Lava Bridge",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..VVVV.VVVV..#",
+    "#..V.......V..#",
+    "#..V.^^^^^.V..#",
+    "#..V.^...^.V..#",
+    "#..V.^.#.^.V..#",
+    "#..V.^...^.V..#",
+    "#..V.^^^^^.V..#",
+    "#..V.......V..#",
+    "#..VVVV.VVVV..#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 7,
+      "y": 5,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 5,
+      "y": 5,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 9,
+      "y": 5,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 7,
+      "y": 3,
+      "enemyType": "healer"
+    },
+    {
+      "x": 4,
+      "y": 9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 10,
+      "y": 9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 11,
+      "enemyType": "bull"
+    },
+    {
+      "x": 6,
+      "y": 4,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 8,
+      "y": 4,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 5,
+      "y": 7,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 9,
+      "y": 7,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 6,
+      "y": 8,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 8,
+      "y": 8,
+      "enemyType": "healer"
+    },
+    {
+      "x": 7,
+      "y": 9,
+      "enemyType": "healer"
+    },
+    {
+      "x": 2,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 3,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 4,
+      "y": 13,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 10,
+      "y": 13,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 3,
+      "y": 1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 11,
+      "y": 1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 2,
+      "y": 9,
+      "enemyType": "bull"
+    },
+    {
+      "x": 12,
+      "y": 9,
+      "enemyType": "bull"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

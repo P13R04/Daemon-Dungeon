@@ -715,6 +715,13 @@ function render() {
     marker.style.top = `${top}px`;
     marker.style.backgroundColor = enemyType ? enemyType.color : "#FFFF00";
     marker.title = `${enemyType ? enemyType.name : enemy.enemyType} (${enemy.x.toFixed(2)}, ${enemy.z.toFixed(2)})`;
+    
+    // Add custom hover tooltip
+    const tooltip = document.createElement("span");
+    tooltip.className = "tooltip-text";
+    tooltip.textContent = enemyType ? enemyType.name : enemy.enemyType;
+    marker.appendChild(tooltip);
+
     gridEl.appendChild(marker);
   });
 
@@ -730,6 +737,13 @@ function render() {
     marker.style.backgroundColor = friendlyType ? friendlyType.color : "#00FFFF";
     marker.style.outline = "2px solid #000";
     marker.title = `${friendlyType ? friendlyType.name : friendly.friendlyType} (${friendly.x.toFixed(2)}, ${friendly.z.toFixed(2)})`;
+    
+    // Add custom hover tooltip
+    const tooltip = document.createElement("span");
+    tooltip.className = "tooltip-text";
+    tooltip.textContent = friendlyType ? friendlyType.name : friendly.friendlyType;
+    marker.appendChild(tooltip);
+
     gridEl.appendChild(marker);
   });
 
@@ -1364,12 +1378,20 @@ gridEl.addEventListener("mousedown", (event) => {
   }
 
   const cell = event.target.closest(".cell");
-  if (!cell) return;
+  let cellX, cellY;
+  if (cell) {
+    cellX = Number(cell.dataset.x);
+    cellY = Number(cell.dataset.y);
+  } else {
+    const { x, z } = gridPositionFromMouseEvent(event);
+    cellX = Math.round(x);
+    cellY = Math.round(z);
+  }
 
-  const x = Number(cell.dataset.x);
-  const y = Number(cell.dataset.y);
-  isPainting = true;
-  paintCell(x, y);
+  if (grid.inBounds(cellX, cellY)) {
+    isPainting = true;
+    paintCell(cellX, cellY);
+  }
 });
 
 gridEl.addEventListener("mousemove", (event) => {
@@ -1393,8 +1415,19 @@ gridEl.addEventListener("mousemove", (event) => {
 
   if (!isPainting || enemyMode || friendlyMode) return;
   const cell = event.target.closest(".cell");
-  if (!cell) return;
-  paintCell(Number(cell.dataset.x), Number(cell.dataset.y));
+  let cellX, cellY;
+  if (cell) {
+    cellX = Number(cell.dataset.x);
+    cellY = Number(cell.dataset.y);
+  } else {
+    const { x, z } = gridPositionFromMouseEvent(event);
+    cellX = Math.round(x);
+    cellY = Math.round(z);
+  }
+
+  if (grid.inBounds(cellX, cellY)) {
+    paintCell(cellX, cellY);
+  }
 });
 
 window.addEventListener("mouseup", () => {

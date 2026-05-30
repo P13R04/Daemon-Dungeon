@@ -53,7 +53,7 @@ export class ConfigLoader {
         string,
         { default?: RoomConfig } | RoomConfig
       >;
-      // Eager glob load for dynamically generated AI rooms (updated with difficile rooms)
+      // Eager glob load for dynamically generated AI rooms (updated with difficile rooms and extreme horde rooms)
       const aiRoomModules = import.meta.glob('../data/rooms/ai_rooms/room_*.json', { eager: true }) as Record<
         string,
         { default?: RoomConfig } | RoomConfig

@@ -4,17 +4,17 @@
   "layout": [
     "###############",
     "#VVVVV...VVVVV#",
-    "#V.........VVV#",
-    "#V.VVVVVVV..VV#",
-    "#V.V....VVV..V#",
-    "#V.V.VV.VVVV.V#",
+    "#VVV.......VVV#",
+    "#VV..VVVV...VV#",
+    "#V........#..V#",
+    "#V.V.#V...VV.V#",
     "#V.V.V...VVV.V#",
-    "#V.V.VV.VV#V.V#",
-    "#V.V.VVVV..V.V#",
-    "#V.V..V....V.V#",
-    "#V.VV...VV.V.V#",
-    "#V..VVVVVV.V.V#",
-    "#VV......V...V#",
+    "#V.V.VV..V#V.V#",
+    "#V.V.VVV...V.V#",
+    "#V.V.#V....V.V#",
+    "#V.V....VV.V.V#",
+    "#V...VVVV..V.V#",
+    "#VV..........V#",
     "#VVVVV...VVVVV#",
     "###############"
   ],
@@ -43,6 +43,16 @@
       "x": 7,
       "y": 6,
       "enemyType": "turret"
+    },
+    {
+      "x": 8.1,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 7,
+      "y": 4,
+      "enemyType": "healer"
     }
   ],
   "friendlySpawnPoints": [],

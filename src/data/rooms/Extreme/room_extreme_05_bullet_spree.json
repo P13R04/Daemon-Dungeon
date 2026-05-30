@@ -1,0 +1,125 @@
+{
+  "id": "room_extreme_05_bullet_spree",
+  "name": "Bullet Spree Pit",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..VVVV.VVVV..#",
+    "#..V.......V..#",
+    "#..V..^^^..V..#",
+    "#.....^.^.....#",
+    "#..V..^^^..V..#",
+    "#..V.......V..#",
+    "#..VVV...VVV..#",
+    "#.............#",
+    "#..#.#.#.#.#..#",
+    "#.............#",
+    "#....^^.^^....#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 7,
+      "y": 5,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 7,
+      "y": 3,
+      "enemyType": "healer"
+    },
+    {
+      "x": 4,
+      "y": 3,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 10,
+      "y": 3,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 2,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 4,
+      "y": 7,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 10,
+      "y": 7,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 7,
+      "y": 7,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 5,
+      "y": 3,
+      "enemyType": "healer"
+    },
+    {
+      "x": 9,
+      "y": 3,
+      "enemyType": "healer"
+    },
+    {
+      "x": 5,
+      "y": 7,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 9,
+      "y": 7,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 1,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 13,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 3,
+      "y": 13,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 13,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 12,
+      "y": 1,
+      "enemyType": "bull"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

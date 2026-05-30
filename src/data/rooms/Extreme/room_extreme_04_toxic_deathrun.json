@@ -1,0 +1,135 @@
+{
+  "id": "room_extreme_04_toxic_deathrun",
+  "name": "Toxic Deathrun",
+  "layout": [
+    "###############",
+    "#.......#.....#",
+    "#.#####.#.###.#",
+    "#.#...#.#.#...#",
+    "#.#.P.#.#.#.P.#",
+    "#.#.P.#...#.P.#",
+    "#.#.PPPPPPP.P.#",
+    "#.#.........#.#",
+    "#.###########.#",
+    "#......^......#",
+    "#....^^^^^....#",
+    "#...^^^^^^^...#",
+    "#....^^^^^....#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 4,
+      "y": 3,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 3,
+      "y": 4,
+      "enemyType": "healer"
+    },
+    {
+      "x": 11,
+      "y": 4,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 1,
+      "y": 4,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 13,
+      "y": 4,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 5,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 12,
+      "y": 1,
+      "enemyType": "fuyard"
+    },
+    {
+      "x": 3,
+      "y": 1,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 11,
+      "y": 1,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 5,
+      "y": 3,
+      "enemyType": "healer"
+    },
+    {
+      "x": 9,
+      "y": 3,
+      "enemyType": "healer"
+    },
+    {
+      "x": 3,
+      "y": 5,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 5,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 5,
+      "y": 5,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 9,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 7,
+      "y": 7,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 3,
+      "y": 7,
+      "enemyType": "bull"
+    },
+    {
+      "x": 11,
+      "y": 7,
+      "enemyType": "bull"
+    },
+    {
+      "x": 3,
+      "y": 13,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 13,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 5,
+      "y": 13,
+      "enemyType": "fuyard"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

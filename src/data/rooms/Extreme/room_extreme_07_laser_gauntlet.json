@@ -1,0 +1,135 @@
+{
+  "id": "room_extreme_07_laser_gauntlet",
+  "name": "Laser Gauntlet",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..###...###..#",
+    "#..#P#...#P#..#",
+    "#..#.#...#.#..#",
+    "#.............#",
+    "#....#####....#",
+    "#....#...#....#",
+    "#....##.##....#",
+    "#.............#",
+    "#..#.#...#.#..#",
+    "#..#P#...#P#..#",
+    "#..###...###..#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 2,
+      "y": 5,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 12,
+      "y": 5,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 7,
+      "y": 7,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 7,
+      "y": 2,
+      "enemyType": "healer"
+    },
+    {
+      "x": 3,
+      "y": 9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 9.1,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 2,
+      "y": 1,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 12,
+      "y": 1,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 4,
+      "y": 3,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 10,
+      "y": 3,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 5,
+      "y": 5,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 9,
+      "y": 5,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 3,
+      "y": 7,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 11,
+      "y": 7,
+      "enemyType": "prefire_sentinel"
+    },
+    {
+      "x": 5,
+      "y": 9,
+      "enemyType": "healer"
+    },
+    {
+      "x": 9,
+      "y": 9,
+      "enemyType": "healer"
+    },
+    {
+      "x": 2,
+      "y": 13,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 13,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 4,
+      "y": 13,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 10,
+      "y": 13,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 10,
+      "enemyType": "zombie_fast"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

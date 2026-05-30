@@ -1,0 +1,180 @@
+{
+  "id": "room_extreme_08_swarm_panic",
+  "name": "Swarm Hazard Panic",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..P...^...P..#",
+    "#..P...^...P..#",
+    "#..PP.^^^.PP..#",
+    "#.............#",
+    "#..VVV...VVV..#",
+    "#..V.......V..#",
+    "#..VVV...VVV..#",
+    "#.............#",
+    "#..PP.^^^.PP..#",
+    "#..P...^...P..#",
+    "#..P.......P..#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 7,
+      "y": 5,
+      "enemyType": "swarm_coordinator"
+    },
+    {
+      "x": 5,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 9,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 3,
+      "y": 3,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 3,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 3,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 11,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 7,
+      "y": 1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 6,
+      "y": 5,
+      "enemyType": "swarm_coordinator"
+    },
+    {
+      "x": 8,
+      "y": 5,
+      "enemyType": "swarm_coordinator"
+    },
+    {
+      "x": 4,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 10,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 2,
+      "y": 2,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 2,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 4,
+      "y": 2,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 10,
+      "y": 2,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 2,
+      "y": 12,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 12,
+      "y": 12,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 4,
+      "y": 12,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 10,
+      "y": 12,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 3,
+      "y": 5,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 5,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 5,
+      "y": 9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 9,
+      "y": 9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 6,
+      "y": 9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 8,
+      "y": 9,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 2,
+      "y": 5,
+      "enemyType": "bull"
+    },
+    {
+      "x": 12,
+      "y": 5,
+      "enemyType": "bull"
+    },
+    {
+      "x": 5.9,
+      "y": 7,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 6.9,
+      "y": 6.9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 8,
+      "y": 7,
+      "enemyType": "zombie_fast"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

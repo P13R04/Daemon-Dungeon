@@ -63,36 +63,6 @@
       "x": 7,
       "y": 7,
       "enemyType": "healer"
-    },
-    {
-      "x": 8.9,
-      "y": 3.1,
-      "enemyType": "zombie_fast"
-    },
-    {
-      "x": 4.9,
-      "y": 3,
-      "enemyType": "zombie_fast"
-    },
-    {
-      "x": 3,
-      "y": 5.1,
-      "enemyType": "zombie_fast"
-    },
-    {
-      "x": 11,
-      "y": 5.2,
-      "enemyType": "zombie_fast"
-    },
-    {
-      "x": 11.1,
-      "y": 7,
-      "enemyType": "zombie_fast"
-    },
-    {
-      "x": 3,
-      "y": 7.1,
-      "enemyType": "zombie_fast"
     }
   ],
   "friendlySpawnPoints": [],

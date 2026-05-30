@@ -1,0 +1,115 @@
+{
+  "id": "room_extreme_12_artificer_minefield",
+  "name": "Artificer Minefield",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#..P.^.P.^.P..#",
+    "#..^.P.^.P.^..#",
+    "#..P.^.P.^.P..#",
+    "#.............#",
+    "#..VVV...VVV..#",
+    "#..V.......V..#",
+    "#..VVV...VVV..#",
+    "#.............#",
+    "#..P.^.P.^.P..#",
+    "#..^.P.^.P.^..#",
+    "#..P.^...^.P..#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 10,
+      "y": 3,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 7,
+      "y": 3,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 7,
+      "y": 7,
+      "enemyType": "healer"
+    },
+    {
+      "x": 6,
+      "y": 9.1,
+      "enemyType": "bull"
+    },
+    {
+      "x": 3,
+      "y": 3,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 5,
+      "y": 3,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 6,
+      "y": 3,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 12,
+      "y": 3.1,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 8,
+      "y": 3,
+      "enemyType": "artificer"
+    },
+    {
+      "x": 4,
+      "y": 7,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 10,
+      "y": 7,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 5,
+      "y": 7,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 9,
+      "y": 7,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 6,
+      "y": 7,
+      "enemyType": "healer"
+    },
+    {
+      "x": 8,
+      "y": 7,
+      "enemyType": "healer"
+    },
+    {
+      "x": 5.9,
+      "y": 10.1,
+      "enemyType": "healer"
+    },
+    {
+      "x": 8,
+      "y": 10.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 8,
+      "y": 9,
+      "enemyType": "bull"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}
