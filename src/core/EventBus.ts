@@ -125,6 +125,7 @@ export const GameEvents = {
   ATTACK_PERFORMED: 'combat:attackPerformed',
   PROJECTILE_SPAWNED: 'combat:projectileSpawned',
   PROJECTILE_HIT: 'combat:projectileHit',
+  ABILITY_STATE_CHANGED: 'combat:abilityStateChanged',
   
   // Narrative events
   DAEMON_TAUNT: 'daemon:taunt',

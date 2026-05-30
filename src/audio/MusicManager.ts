@@ -159,7 +159,7 @@ export class MusicManager {
    */
   sampleBeatPulse(deltaSeconds: number): number {
     if (!this.analyserNode || !this.analyserData || !this.currentTrack?.isPlaying) return 0;
-    this.analyserNode.getByteFrequencyData(this.analyserData);
+    this.analyserNode.getByteFrequencyData(this.analyserData as any);
     const data = this.analyserData;
     const count = data.length;
     if (count < 8) return 0;

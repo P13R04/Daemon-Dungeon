@@ -1474,6 +1474,7 @@ export class PlayerController {
         this.tankShieldBashDirection = bashDir;
         this.lockAttackFacing(bashDir, Math.max(0.35, this.tankShieldBashDuration + 0.2));
         this.tankShieldBashRemaining = this.tankShieldBashDuration;
+        this.eventBus.emit(GameEvents.ATTACK_PERFORMED, { attacker: 'player', type: 'tank_launch_dash' });
         this.tankComboSecondSwingPending = false;
         this.tankShieldBashCooldownTimer = this.tankShieldBashCooldown;
         this.tankStanceResource = Math.max(0, this.tankStanceResource - this.tankShieldBashCost);
@@ -1537,11 +1538,11 @@ export class PlayerController {
       
       // Right Click (or slot 2) to HOLD stance (Stealth)
       if (!this.rogueStealthLockUntilRightRelease && slot2Held && this.rogueStealthResource >= this.rogueStealthActivationThreshold) {
-        this.rogueStealthActive = true;
+        this.setRogueStealthActive(true);
       } else if (!this.rogueStealthLockUntilRightRelease && slot2Held && this.rogueStealthResource < this.rogueStealthActivationThreshold) {
         this.emitSecondaryBlockedFeedback(this.rogueStealthActivationThreshold, this.rogueStealthResource, 'stance');
       } else if (!slot2Held) {
-        this.rogueStealthActive = false;
+        this.setRogueStealthActive(false);
       }
 
       // Left Click: Primary Attack (Strike) or Secondary Attack (Dash) under stance
@@ -1576,9 +1577,10 @@ export class PlayerController {
         this.rogueDashRemaining = actualDistance / this.rogueDashSpeed;
         this.rogueDashCooldownTimer = this.rogueDashCooldown;
         this.rogueStealthResource = Math.max(0, this.rogueStealthResource - this.rogueDashCost);
+        this.eventBus.emit(GameEvents.ATTACK_PERFORMED, { attacker: 'player', type: 'stance_dash' });
         this.rogueOpeningStrikeReady = true;
         this.rogueOpeningStrikeTimer = this.rogueOpeningStrikeWindow;
-        this.rogueStealthActive = false;
+        this.setRogueStealthActive(false);
         this.rogueStealthLockUntilRightRelease = true;
         this.animationController.playAnimation(
           AnimationState.DASH,
@@ -2171,10 +2173,15 @@ export class PlayerController {
       window.setTimeout(() => particles.dispose(false), 340);
     }, 90);
   }
+  private setSecondaryActive(active: boolean): void {
+    if (this.secondaryActive === active) return;
+    this.secondaryActive = active;
+    this.eventBus.emit(GameEvents.ABILITY_STATE_CHANGED, { ability: 'mage_zone', state: active ? 'start' : 'end' });
+  }
 
   private updateSecondaryStance(deltaTime: number): void {
     if (this.classId !== 'mage') {
-      this.secondaryActive = false;
+      this.setSecondaryActive(false);
       this.stopMageSecondaryZoneParticles();
       if (this.secondaryZoneMesh) this.secondaryZoneMesh.isVisible = false;
       return;
@@ -2184,7 +2191,7 @@ export class PlayerController {
     const rightHeld = this.inputSlot2Held;
 
     if (!this.gameplayActive) {
-      this.secondaryActive = false;
+      this.setSecondaryActive(false);
       this.secondaryLockUntilRightRelease = false;
     }
 
@@ -2194,14 +2201,14 @@ export class PlayerController {
 
     if (!this.secondaryLockUntilRightRelease && rightHeld) {
       if (!this.secondaryActive && this.secondaryResource >= this.secondaryActivationThreshold) {
-        this.secondaryActive = true;
+        this.setSecondaryActive(true);
       } else if (!this.secondaryActive && this.secondaryResource < this.secondaryActivationThreshold) {
         this.emitSecondaryBlockedFeedback(this.secondaryActivationThreshold, this.secondaryResource, 'stance');
       }
     }
 
     if (!rightHeld) {
-      this.secondaryActive = false;
+      this.setSecondaryActive(false);
     }
 
     if (this.secondaryActive) {
@@ -2209,7 +2216,7 @@ export class PlayerController {
       if (leftClicked && this.secondaryResource >= this.secondaryBurstCost) {
         this.triggerSecondaryBurst();
         this.secondaryResource = Math.max(0, this.secondaryResource - this.secondaryBurstCost);
-        this.secondaryActive = false;
+        this.setSecondaryActive(false);
         this.secondaryLockUntilRightRelease = true;
       } else if (leftClicked && this.secondaryResource < this.secondaryBurstCost) {
         this.emitSecondaryBlockedFeedback(this.secondaryBurstCost, this.secondaryResource, 'secondary');
@@ -2218,7 +2225,7 @@ export class PlayerController {
         this.secondaryResource = Math.max(0, this.secondaryResource - (this.secondaryDrainPerSecond / efficiency) * deltaTime);
         if (this.secondaryResource <= 0) {
           this.secondaryResource = 0;
-          this.secondaryActive = false;
+          this.setSecondaryActive(false);
         }
       }
     } else {
@@ -2294,12 +2301,18 @@ export class PlayerController {
     }
   }
 
+  private setRogueStealthActive(active: boolean): void {
+    if (this.rogueStealthActive === active) return;
+    this.rogueStealthActive = active;
+    this.eventBus.emit(GameEvents.ABILITY_STATE_CHANGED, { ability: 'stealth', state: active ? 'start' : 'end' });
+  }
+
   private updateRogueStealth(deltaTime: number): void {
     const wasStealthActive = this.rogueStealthActive;
     const rightHeld = this.inputSlot2Held;
 
     if (!this.gameplayActive) {
-      this.rogueStealthActive = false;
+      this.setRogueStealthActive(false);
       this.rogueStealthLockUntilRightRelease = false;
     }
 
@@ -2309,19 +2322,19 @@ export class PlayerController {
 
     if (!this.rogueStealthLockUntilRightRelease && rightHeld) {
       if (!this.rogueStealthActive && this.rogueStealthResource >= this.rogueStealthActivationThreshold) {
-        this.rogueStealthActive = true;
+        this.setRogueStealthActive(true);
       }
     }
 
     if (!rightHeld) {
-      this.rogueStealthActive = false;
+      this.setRogueStealthActive(false);
     }
 
     if (this.rogueStealthActive) {
       const efficiency = this.getStanceEfficiencyMultiplier();
       this.rogueStealthResource = Math.max(0, this.rogueStealthResource - (this.rogueStealthDrainPerSecond / efficiency) * deltaTime);
       if (this.rogueStealthResource <= 0) {
-        this.rogueStealthActive = false;
+        this.setRogueStealthActive(false);
         this.rogueStealthLockUntilRightRelease = true;
       }
     } else {
@@ -2469,6 +2482,7 @@ export class PlayerController {
       this.ultimateActiveDurationMax = duration;
       this.ultCharge = 0;
       this.ultCooldown = this.readPositiveNumber(ultConfig.cooldown, 14);
+      this.eventBus.emit(GameEvents.ABILITY_STATE_CHANGED, { ability: 'tank_ulti', state: 'start' });
       this.animationController.playAnimation(AnimationState.ULTIMATE);
       return;
     }
@@ -2504,6 +2518,7 @@ export class PlayerController {
     const duration = this.applyUltimateDurationModifier(this.readPositiveNumber(mageUltConfig.dotDuration, 8));
     this.ultimateActiveDuration = duration;
     this.ultimateActiveDurationMax = duration;
+    this.eventBus.emit(GameEvents.ABILITY_STATE_CHANGED, { ability: 'mage_ulti', state: 'start' });
 
     if (this.animationController) {
       this.animationController.rotateTowardDirection(this.attackDirection);
@@ -2834,8 +2849,16 @@ export class PlayerController {
 
     // Reset ultimate only on full run resets, not between rooms.
     if (!keepUltimateProgress) {
-      this.ultimateActiveDuration = 0;
-      this.ultimateActiveDurationMax = 0;
+      if (this.ultimateActiveDuration > 0) {
+        this.ultimateActiveDuration = 0;
+        this.ultimateActiveDurationMax = 0;
+        if (this.classId === 'mage') {
+          this.eventBus.emit(GameEvents.ABILITY_STATE_CHANGED, { ability: 'mage_ulti', state: 'end' });
+        }
+        if (this.classId === 'firewall') {
+          this.eventBus.emit(GameEvents.ABILITY_STATE_CHANGED, { ability: 'tank_ulti', state: 'end' });
+        }
+      }
       this.ultCharge = 0;
       this.ultCooldown = 0;
     }
@@ -3222,7 +3245,12 @@ export class PlayerController {
       this.tankUltimateActive = false;
       return;
     }
-    this.tankUltimateActive = active;
+    if (this.tankUltimateActive !== active) {
+      this.tankUltimateActive = active;
+      if (!active) {
+        this.eventBus.emit(GameEvents.ABILITY_STATE_CHANGED, { ability: 'tank_ulti', state: 'end' });
+      }
+    }
   }
 
   getRogueStealthRadius(): number {

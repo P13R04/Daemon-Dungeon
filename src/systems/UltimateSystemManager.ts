@@ -45,6 +45,7 @@ export interface UltimateSystemCallbacks {
   onTankZoneStarted(radius: number): void;
   onTankZoneUpdated(deltaTime: number): void;
   onTankZoneDisposed(): void;
+  onTankUltimateHit(position: Vector3): void;
   onRogueZoneStarted(radius: number): void;
   onRogueZoneUpdated(deltaTime: number): void;
   onRogueTeleport(from: Vector3, to: Vector3, target: Vector3): void;
@@ -118,6 +119,7 @@ export class UltimateSystemManager {
 
       enemy.takeDamage(this.tankUltimateState.damage);
       enemy.applyStun?.(this.tankUltimateState.stunDuration);
+      this.callbacks.onTankUltimateHit(enemyPos);
 
       const outward = toEnemy.lengthSquared() > 0.0001
         ? toEnemy.normalize()

@@ -241,9 +241,19 @@ export class GameManager {
       onTankZoneStarted: (radius) => this.combatActionManager?.ensureTankUltimateZoneVisual(radius),
       onTankZoneUpdated: (deltaTime) => this.combatActionManager?.updateTankUltimateZoneVisual(deltaTime),
       onTankZoneDisposed: () => this.combatActionManager?.disposeTankUltimateZoneVisual(),
+      onTankUltimateHit: (position) => {
+        if (this.audioManager) {
+          this.audioManager.playSoundAt('sfx_tank_ulti_hit', position, 0.8, { pitchVariance: 0.1, allowOverlap: true });
+        }
+      },
       onRogueZoneStarted: (radius) => this.combatActionManager?.startRogueUltimateVisual(radius),
       onRogueZoneUpdated: (deltaTime) => this.combatActionManager?.updateRogueUltimateVisual(deltaTime),
-      onRogueTeleport: (from, to, target) => this.combatActionManager?.notifyRogueUltimateTeleport(from, to, target),
+      onRogueTeleport: (from, to, target) => {
+        this.combatActionManager?.notifyRogueUltimateTeleport(from, to, target);
+        if (this.audioManager) {
+          this.audioManager.playSoundAt('sfx_glitch_ulti_tp', to, 0.9, { pitchVariance: 0.1, allowOverlap: true });
+        }
+      },
       onRogueZoneDisposed: () => this.combatActionManager?.disposeRogueUltimateVisual(),
     });
     this.roomTransitionManager = new RoomTransitionManager({
@@ -761,6 +771,7 @@ export class GameManager {
       if (!manager.hasTrack(trackName)) {
         await manager.loadTrack(trackName, trackPath);
       }
+      if (this.musicManager !== manager) return;
       manager.playTrack(trackName, {
         fadeInDuration: mode === 'menu' ? 8 : 1.2,
         startAt: mode === 'menu' ? 45 : 0,
@@ -795,9 +806,7 @@ export class GameManager {
     this.combatActionManager = null;
     this.playerVoidRecoveryManager?.dispose?.();
     this.playerVoidRecoveryManager = null;
-    this.economyFlowManager?.dispose?.();
     this.economyFlowManager = null;
-    this.roomStreamingManager?.dispose?.();
     this.roomStreamingManager = null;
     this.worldCollisionHazardManager?.dispose?.();
     this.worldCollisionHazardManager = null;
@@ -876,8 +885,9 @@ export class GameManager {
     this.hudManager = new HUDManager(this.scene);
     this.hudManager.setInputManager(this.inputManager);
     this.hudManager.setPauseTutorialMode(this.isTutorialRun, this.selectedClassId);
-    this.musicManager = new MusicManager(this.scene);
+    this.musicManager = this.ensureMusicManagerForScene(this.scene);
     this.frontendMusicMode = null;
+    if (this.audioManager) this.audioManager.dispose();
     this.audioManager = new AudioManager(this.scene);
     void this.musicManager.loadTrack('bgm', 'music/bgm.mp3').then(() => {
       if (this.isTutorialRun || this.gameState === 'playing' || this.gameState === 'bonus' || this.gameState === 'roomclear') {
@@ -1492,6 +1502,24 @@ export class GameManager {
       { id: 'sfx_sentry_ondeath', path: 'sfx/monsters/sentries/sentry_ondeath.mp3' },
       { id: 'sfx_player_cast1', path: 'sfx/attack/floraphonic-fireball-whoosh-1-179125.mp3' },
       { id: 'sfx_player_cast2', path: 'sfx/attack/freesound_community-8-bit-fireball-81148.mp3' },
+      // Glitch
+      { id: 'sfx_glitch_go_stealth', path: 'sfx/glitch/go_stealth.mp3' },
+      { id: 'sfx_glitch_stealth_aura', path: 'sfx/glitch/stealth_aura.mp3' },
+      { id: 'sfx_glitch_slice', path: 'sfx/glitch/Slice_hyperbg.mp3' },
+      { id: 'sfx_glitch_dash', path: 'sfx/glitch/dash_glitch.mp3' },
+      { id: 'sfx_glitch_ulti_tp', path: 'sfx/glitch/ulti_tp.mp3' },
+      // Mage
+      { id: 'sfx_mage_main_attack', path: 'sfx/mage/main_attack_mage.mp3' },
+      { id: 'sfx_mage_ult_start', path: 'sfx/mage/ult_start.mp3' },
+      { id: 'sfx_mage_ult_duration', path: 'sfx/mage/ult_duration_mage.mp3' },
+      { id: 'sfx_mage_zone_slow', path: 'sfx/mage/zone_slow.mp3' },
+      // Tank
+      { id: 'sfx_tank_attack', path: 'sfx/tank/attack.mp3' },
+      { id: 'sfx_tank_block', path: 'sfx/tank/block.mp3' },
+      { id: 'sfx_tank_launch_dash', path: 'sfx/tank/launch_dash.mp3' },
+      { id: 'sfx_tank_shield_bash', path: 'sfx/tank/Shield Bash1.mp3' },
+      { id: 'sfx_tank_ulti_hit', path: 'sfx/tank/Ulti_hit.mp3' },
+      { id: 'sfx_tank_ulti_sound', path: 'sfx/tank/ULTI_sound.mp3' },
     ];
     await Promise.all(
       monsterSounds.map((sound) =>
@@ -1719,6 +1747,38 @@ export class GameManager {
     this.eventBus.on(GameEvents.ENEMY_SENTRY_SHOOTER_ONHIT_PLAYER, (data: any) => {
       this.audioManager?.playSoundAt('sfx_sentry_onhit_sntry', data?.position ?? Vector3.Zero(), 0.8);
     });
+    this.eventBus.on(GameEvents.ABILITY_STATE_CHANGED, (data: any) => {
+      if (!this.audioManager) return;
+      const state = data?.state;
+      const ability = data?.ability;
+      if (ability === 'stealth') {
+        if (state === 'start') {
+          this.audioManager.playSound('sfx_glitch_go_stealth', 0.9);
+          this.audioManager.playSound('sfx_glitch_stealth_aura', 0.6);
+        } else {
+          this.audioManager.fadeOutAndStopSound('sfx_glitch_stealth_aura', 300);
+        }
+      } else if (ability === 'mage_zone') {
+        if (state === 'start') {
+          this.audioManager.playSound('sfx_mage_zone_slow', 0.7);
+        } else {
+          this.audioManager.fadeOutAndStopSound('sfx_mage_zone_slow', 300);
+        }
+      } else if (ability === 'mage_ulti') {
+        if (state === 'start') {
+          this.audioManager.playSound('sfx_mage_ult_start', 0.9);
+          this.audioManager.playSound('sfx_mage_ult_duration', 0.7);
+        } else {
+          this.audioManager.fadeOutAndStopSound('sfx_mage_ult_duration', 500);
+        }
+      } else if (ability === 'tank_ulti') {
+        if (state === 'start') {
+          this.audioManager.playSound('sfx_tank_ulti_sound', 0.8);
+        } else {
+          this.audioManager.fadeOutAndStopSound('sfx_tank_ulti_sound', 500);
+        }
+      }
+    });
     this.eventBus.on(GameEvents.ENEMY_NECROMANCER_SUMMON, (data: any) => {
       this.audioManager?.playSoundAt('sfx_necromancer_spawn', data?.position ?? Vector3.Zero(), 0.8);
     });
@@ -1763,14 +1823,21 @@ export class GameManager {
       const type = String(data?.type ?? '');
       const playerPos = this.playerController?.getPosition?.() || Vector3.Zero();
       if (type === 'projectile') {
-        const castSound = Math.random() < 0.5 ? 'sfx_player_cast1' : 'sfx_player_cast2';
-        this.audioManager.playSoundAt(castSound, playerPos, 0.72);
+        const castSound = this.selectedClassId === 'mage' ? 'sfx_mage_main_attack' : (Math.random() < 0.5 ? 'sfx_player_cast1' : 'sfx_player_cast2');
+        this.audioManager.playSoundAt(castSound, playerPos, 0.72, { pitchVariance: 0.1, allowOverlap: true });
       } else if (type === 'secondary_burst') {
-        this.audioManager.playSoundAt('sfx_player_cast1', playerPos, 0.8);
+        this.audioManager.playSoundAt('sfx_player_cast1', playerPos, 0.8, { pitchVariance: 0.1 });
       } else if (type === 'ultimate') {
-        this.audioManager.playSoundAt('sfx_player_cast2', playerPos, 0.95);
-      } else if (type === 'melee' || type === 'tank_sweep' || type === 'tank_shield_bash') {
-        this.audioManager.playSoundAt('sfx_player_cast1', playerPos, 0.65);
+        // Ultimate start is handled by PLAYER_ULTIMATE_USED or ABILITY_STATE_CHANGED
+      } else if (type === 'melee') {
+        const soundId = this.selectedClassId === 'rogue' || this.selectedClassId === 'cat' ? 'sfx_glitch_slice' : 'sfx_player_cast1';
+        this.audioManager.playSoundAt(soundId, playerPos, 0.8, { pitchVariance: 0.1, allowOverlap: true });
+      } else if (type === 'tank_sweep') {
+        this.audioManager.playSoundAt('sfx_tank_attack', playerPos, 0.8, { pitchVariance: 0.1, allowOverlap: true });
+      } else if (type === 'stance_dash') {
+        this.audioManager.playSoundAt('sfx_glitch_dash', playerPos, 0.9, { pitchVariance: 0.1 });
+      } else if (type === 'tank_shield_bash') {
+        this.audioManager.playSoundAt('sfx_tank_shield_bash', playerPos, 0.8, { pitchVariance: 0.1 });
       }
     }
 
@@ -1845,6 +1912,9 @@ export class GameManager {
 
     const blockRatio = this.playerController.getTankMeleeBlockRatio();
     const finalDamage = Math.max(0, rawDamage * (1 - blockRatio));
+    if (blockRatio > 0 && this.audioManager && this.playerController.getPosition) {
+      this.audioManager.playSoundAt('sfx_tank_block', this.playerController.getPosition(), 0.8, { pitchVariance: 0.1 });
+    }
     const riposteRatio = this.playerController.getTankRiposteMeleeRatio();
     if (riposteRatio > 0) {
       attackerEnemy.takeDamage(rawDamage * riposteRatio);

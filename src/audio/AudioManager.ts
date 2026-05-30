@@ -12,15 +12,17 @@ interface AudioEngineLike {
 export class AudioManager {
   private scene: Scene;
   private sounds: Map<string, Sound> = new Map();
-  private masterVolume: number = 1.0;
-  private sfxVolume: number = 1.0;
-  private activeBeepClones: Sound[] = [];
+  private masterVolume: number = 0.5;
+  private sfxVolume: number = 0.5;
   private isMuted: boolean = false;
-  private readonly MAX_CONCURRENT_BEEPS = 3;
+  private activeBeepClones: Sound[] = [];
+  private activeSFXClones: Sound[] = [];
   private fadeTimers: Map<string, number> = new Map();
   private lastSoundPlayAtMs: Map<string, number> = new Map();
-  private defaultSoundCooldownMs: number = 24;
+  private defaultSoundCooldownMs: number = 50;
   private soundCooldownOverridesMs: Map<string, number> = new Map();
+  private readonly MAX_CONCURRENT_BEEPS = 10;
+  private readonly MAX_CONCURRENT_CLONES = 30;
 
   constructor(scene: Scene) {
     this.scene = scene;
@@ -39,23 +41,61 @@ export class AudioManager {
     });
   }
 
-  playSound(name: string, volume?: number): void {
+  playSound(name: string, volume?: number, options?: { pitchVariance?: number; allowOverlap?: boolean }): void {
     if (!this.canPlayNow(name)) return;
     const sound = this.sounds.get(name);
-    if (sound) {
-      sound.setVolume((volume ?? 1.0) * this.sfxVolume * this.masterVolume);
+    if (!sound) return;
+    
+    const effectiveVolume = (volume ?? 1.0) * this.sfxVolume * this.masterVolume;
+    const playbackRate = 1.0 + (options?.pitchVariance ? (Math.random() * 2 - 1) * options.pitchVariance : 0);
+
+    if (options?.allowOverlap) {
+      this.playClone(sound, effectiveVolume, playbackRate);
+    } else {
+      sound.setVolume(effectiveVolume);
+      sound.setPlaybackRate(playbackRate);
       sound.play();
     }
   }
 
-  playSoundAt(name: string, position: Vector3, volume?: number): void {
+  playSoundAt(name: string, position: Vector3, volume?: number, options?: { pitchVariance?: number; allowOverlap?: boolean }): void {
     if (!this.canPlayNow(name)) return;
     const sound = this.sounds.get(name);
-    if (sound) {
-      sound.setVolume((volume ?? 1.0) * this.sfxVolume * this.masterVolume);
+    if (!sound) return;
+
+    const effectiveVolume = (volume ?? 1.0) * this.sfxVolume * this.masterVolume;
+    const playbackRate = 1.0 + (options?.pitchVariance ? (Math.random() * 2 - 1) * options.pitchVariance : 0);
+
+    if (options?.allowOverlap) {
+      this.playClone(sound, effectiveVolume, playbackRate, position);
+    } else {
+      sound.setVolume(effectiveVolume);
+      sound.setPlaybackRate(playbackRate);
       sound.setPosition(position);
       sound.play();
     }
+  }
+
+  private playClone(baseSound: Sound, volume: number, playbackRate: number, position?: Vector3): void {
+    if (!baseSound.isReady() || this.activeSFXClones.length >= this.MAX_CONCURRENT_CLONES) return;
+    try {
+      const cloned = baseSound.clone();
+      if (!cloned) return;
+      this.activeSFXClones.push(cloned);
+      const onEnd = () => {
+        const idx = this.activeSFXClones.indexOf(cloned);
+        if (idx > -1) this.activeSFXClones.splice(idx, 1);
+        try {
+          cloned.onEndedObservable.removeCallback(onEnd);
+          cloned.dispose();
+        } catch (e) {}
+      };
+      cloned.onEndedObservable.add(onEnd);
+      cloned.setPlaybackRate(playbackRate);
+      cloned.setVolume(Math.max(0, volume));
+      if (position) cloned.setPosition(position);
+      cloned.play();
+    } catch (e) {}
   }
 
   stopSound(name: string): void {
@@ -191,6 +231,10 @@ export class AudioManager {
     this.fadeTimers.clear();
     this.lastSoundPlayAtMs.clear();
     this.soundCooldownOverridesMs.clear();
+    this.activeSFXClones.forEach(c => c.dispose());
+    this.activeSFXClones = [];
+    this.activeBeepClones.forEach(c => c.dispose());
+    this.activeBeepClones = [];
     this.sounds.forEach(sound => sound.dispose());
     this.sounds.clear();
   }
