@@ -3301,11 +3301,18 @@ export class GameManager {
     const allRooms = this.configLoader.getRoomsConfig()?.map(r => r.id) || ['room_test_dummies'];
     const safePick = (arr: string[]) => arr.length > 0 ? arr[Math.floor(Math.random() * arr.length)] : allRooms[Math.floor(Math.random() * allRooms.length)];
 
-    let lastPicked = '';
+    const recentPicks: string[] = [];
 
     for (let i = 0; i < targetLength; i++) {
       if ((i + 1) % 9 === 0) {
-        order.push(safePick(bosses));
+        let candidates = bosses.filter(id => !recentPicks.includes(id));
+        if (candidates.length === 0) candidates = bosses;
+        const pick = safePick(candidates);
+        order.push(pick);
+        recentPicks.push(pick);
+        if (recentPicks.length > 8) {
+          recentPicks.shift();
+        }
         continue;
       }
 
@@ -3340,17 +3347,19 @@ export class GameManager {
 
       if (pickedPool.length === 0) pickedPool = facile.length > 0 ? facile : allRooms;
 
-      let pick = safePick(pickedPool);
-      if (pick === lastPicked && pickedPool.length > 1) {
-        let retries = 5;
-        while (pick === lastPicked && retries > 0) {
-          pick = safePick(pickedPool);
-          retries--;
-        }
+      let candidates = pickedPool.filter(id => !recentPicks.includes(id));
+      if (candidates.length === 0) {
+        const lastPicked = recentPicks[recentPicks.length - 1] ?? '';
+        candidates = pickedPool.filter(id => id !== lastPicked);
+        if (candidates.length === 0) candidates = pickedPool;
       }
 
+      const pick = safePick(candidates);
       order.push(pick);
-      lastPicked = pick;
+      recentPicks.push(pick);
+      if (recentPicks.length > 8) {
+        recentPicks.shift();
+      }
     }
 
     return order;
