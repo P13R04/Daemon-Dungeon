@@ -1,0 +1,100 @@
+{
+  "id": "room_boss_lasermania",
+  "name": "Laser_mania",
+  "layout": [
+    "###############",
+    "#.............#",
+    "#.^^^.....^^^.#",
+    "#.^PP..#..PP^.#",
+    "#.^PP..#..PP^.#",
+    "#.............#",
+    "#...##...##...#",
+    "#.............#",
+    "#.^PP..#..PP^.#",
+    "#.^PP..#..PP^.#",
+    "#.^^^.....^^^.#",
+    "#.............#",
+    "#.............#",
+    "#.............#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 7,
+      "y": 6.1,
+      "enemyType": "laser_pattern_boss"
+    },
+    {
+      "x": 8,
+      "y": 7.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 6,
+      "y": 7.1,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 5.9,
+      "y": 5,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 8,
+      "y": 5,
+      "enemyType": "zombie_basic"
+    },
+    {
+      "x": 7.9,
+      "y": 6.1,
+      "enemyType": "healer"
+    },
+    {
+      "x": 7,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 6,
+      "y": 6,
+      "enemyType": "healer"
+    },
+    {
+      "x": 7,
+      "y": 7,
+      "enemyType": "healer"
+    },
+    {
+      "x": 8.9,
+      "y": 3.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 4.9,
+      "y": 3,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 3,
+      "y": 5.1,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11,
+      "y": 5.2,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 11.1,
+      "y": 7,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 3,
+      "y": 7.1,
+      "enemyType": "zombie_fast"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

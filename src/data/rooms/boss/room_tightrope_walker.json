@@ -1,0 +1,60 @@
+{
+  "id": "room_tightrope_walker",
+  "name": "tightrope walker",
+  "layout": [
+    "###############",
+    "#VVVVV...VVVVV#",
+    "#VVV.......VVV#",
+    "#VV..VVVV...VV#",
+    "#V........#..V#",
+    "#V.V.#V...VV.V#",
+    "#V.V.V...VVV.V#",
+    "#V.V.VV..V#V.V#",
+    "#V.V.VVV...V.V#",
+    "#V.V.#V....V.V#",
+    "#V.V....VV.V.V#",
+    "#V...VVVV..V.V#",
+    "#VV..........V#",
+    "#VVVVV...VVVVV#",
+    "###############"
+  ],
+  "spawnPoints": [
+    {
+      "x": 7,
+      "y": 5.1,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 5.9,
+      "y": 6,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 7,
+      "y": 7.1,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 8.1,
+      "y": 6,
+      "enemyType": "bullet_hell"
+    },
+    {
+      "x": 7,
+      "y": 6,
+      "enemyType": "turret"
+    },
+    {
+      "x": 8.1,
+      "y": 5,
+      "enemyType": "healer"
+    },
+    {
+      "x": 7,
+      "y": 4,
+      "enemyType": "healer"
+    }
+  ],
+  "friendlySpawnPoints": [],
+  "obstacles": []
+}

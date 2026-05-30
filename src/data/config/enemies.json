@@ -691,7 +691,7 @@
       "spikeCastCooldown": 4,
       "spikeWarningDuration": 0.85,
       "spikeActiveDuration": 1.25,
-      "spikeDamage": 22,
+      "spikeDamage": 14,
       "spikeTickInterval": 0.45
     },
     "lootTable": [],

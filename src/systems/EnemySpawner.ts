@@ -556,6 +556,27 @@ export class EnemySpawner {
     const hpMultiplier   = scaling?.enabled ? computeRunnerMultiplier(scaling.hpPerRoom   ?? 1, level) : 1;
     const dmgMultiplier  = scaling?.enabled ? computeRunnerMultiplier(scaling.damagePerRoom ?? 1, level) : 1;
 
+    const scaledBehaviorConfig = enemyTypeConfig.behaviorConfig ? {
+      ...enemyTypeConfig.behaviorConfig,
+    } : undefined;
+
+    if (scaledBehaviorConfig) {
+      const dmgFields = [
+        'spikeDamage',
+        'laserDamage',
+        'shockwaveDamage',
+        'explosionDamage',
+        'impactDamage',
+        'dotDps'
+      ];
+      for (const field of dmgFields) {
+        const val = (scaledBehaviorConfig as any)[field];
+        if (typeof val === 'number') {
+          (scaledBehaviorConfig as any)[field] = Math.round(val * dmgMultiplier);
+        }
+      }
+    }
+
     const scaledConfig = {
       ...enemyTypeConfig,
       baseStats: {
@@ -563,6 +584,7 @@ export class EnemySpawner {
         hp:     Math.round((enemyTypeConfig.baseStats?.hp     ?? 40) * hpMultiplier),
         damage: Math.round((enemyTypeConfig.baseStats?.damage ??  8) * dmgMultiplier),
       },
+      behaviorConfig: scaledBehaviorConfig,
     };
 
     const resolvedConfig = scaledConfig as EnemyRuntimeConfig;
