@@ -258,8 +258,8 @@ export class CreditsScene {
     this.consoleViewport.addControl(fadeBottom);
 
     this.popupHost = new Rectangle('daemonPopupHost');
-    this.popupHost.width = '780px';
-    this.popupHost.height = '220px';
+    this.popupHost.width = '900px';
+    this.popupHost.height = '280px';
     this.popupHost.thickness = 0;
     this.popupHost.top = `${this.popupYHidden}px`;
     this.popupHost.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
@@ -277,8 +277,8 @@ export class CreditsScene {
     this.popupHost.addControl(this.popupBubble);
 
     const avatarBox = new Rectangle('daemonPopupAvatarBox');
-    avatarBox.width = '160px';
-    avatarBox.height = '160px';
+    avatarBox.width = '190px';
+    avatarBox.height = '190px';
     avatarBox.left = '24px';
     avatarBox.thickness = 1;
     avatarBox.color = '#FF7A8F';
@@ -288,24 +288,24 @@ export class CreditsScene {
     this.popupBubble.addControl(avatarBox);
 
     this.popupAvatar = new Image('daemonPopupAvatar', this.avatarFrameSrc('init_01.png'));
-    this.popupAvatar.width = '160px';
-    this.popupAvatar.height = '160px';
+    this.popupAvatar.width = '180px';
+    this.popupAvatar.height = '180px';
     this.popupAvatar.stretch = Image.STRETCH_UNIFORM;
     avatarBox.addControl(this.popupAvatar);
 
     this.popupText = new TextBlock('daemonPopupText', '');
     // Mirror HUD daemon popup layout exactly.
-    this.popupText.width = '530px';
-    this.popupText.left = 208;
+    this.popupText.width = '640px';
+    this.popupText.left = 236;
     this.popupText.top = 0;
     this.popupText.textWrapping = true;
     this.popupText.resizeToFit = false;
     this.popupText.color = '#FFD1DA';
     this.popupText.fontFamily = 'Arcade8Bit';
-    this.popupText.fontSize = Math.round(24 * BASE_TEXT_SCALE);
-    this.popupText.height = '180px';
+    this.popupText.fontSize = Math.round(31 * BASE_TEXT_SCALE);
+    this.popupText.height = '224px';
     this.popupText.textWrapping = true;
-    this.popupText.lineSpacing = '0px';
+    this.popupText.lineSpacing = '2px';
     this.popupText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.popupText.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.popupText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;

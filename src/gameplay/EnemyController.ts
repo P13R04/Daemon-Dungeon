@@ -1255,9 +1255,42 @@ export class EnemyController {
     if (forcePlayerHit || distance <= effectiveRadius) {
       this.attackPlayer();
     }
+    this.spawnMissileExplosionFx(explosionPosition, effectiveRadius);
     const expMesh = VisualPlaceholder.createAoEPlaceholder(this.scene, `missile_ex_${Date.now()}`, effectiveRadius);
-    expMesh.position = explosionPosition.clone();
+    expMesh.position = new Vector3(explosionPosition.x, 0.08, explosionPosition.z);
+    if (expMesh.material instanceof StandardMaterial) {
+      expMesh.material.diffuseColor = new Color3(0.95, 0.32, 0.08);
+      expMesh.material.emissiveColor = new Color3(1.0, 0.46, 0.14);
+      expMesh.material.alpha = 0.38;
+      expMesh.material.needDepthPrePass = true;
+    }
     setTimeout(() => expMesh.dispose(), 200);
+  }
+
+  private spawnMissileExplosionFx(position: Vector3, radius: number): void {
+    const burst = new ParticleSystem(`missile_impact_${this.id}_${Date.now()}`, 220, this.scene);
+    burst.particleTexture = EnemyController.getFlareTexture(this.scene);
+    burst.layerMask = SCENE_LAYER;
+    burst.emitter = new Vector3(position.x, 0.1, position.z);
+    burst.minSize = Math.max(0.1, radius * 0.09);
+    burst.maxSize = Math.max(0.24, radius * 0.22);
+    burst.minLifeTime = 0.1;
+    burst.maxLifeTime = 0.28;
+    burst.emitRate = 0;
+    burst.manualEmitCount = Math.round(76 + Math.min(220, radius * 140));
+    burst.blendMode = ParticleSystem.BLENDMODE_ADD;
+    burst.color1 = new Color4(1.0, 0.55, 0.16, 0.98);
+    burst.color2 = new Color4(1.0, 0.22, 0.1, 0.86);
+    burst.colorDead = new Color4(0.2, 0.04, 0.02, 0);
+    burst.minEmitPower = Math.max(1.4, radius * 1.3);
+    burst.maxEmitPower = Math.max(3.0, radius * 2.8);
+    burst.direction1 = new Vector3(-1, -0.1, -1);
+    burst.direction2 = new Vector3(1, 1.0, 1);
+    burst.gravity = new Vector3(0, -0.65, 0);
+    burst.updateSpeed = 0.016;
+    burst.disposeOnStop = true;
+    burst.start();
+    setTimeout(() => burst.stop(), 100);
   }
 
   private pathBlockedWithRadius(start: Vector3, end: Vector3, roomManager: RoomManager, radius: number): boolean {

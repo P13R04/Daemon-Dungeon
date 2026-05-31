@@ -498,10 +498,13 @@ export class HighscoresScene {
     btn.thickness = 1;
     btn.cornerRadius = 2;
     btn.background = UITheme.colors.bgPanel;
-    btn.fontFamily = this.terminalFont;
+    btn.fontFamily = 'Wonder8Bit';
     btn.fontSize = isMobileLayout ? 26 : 23;
     this.bindGlitchButton(btn, label, onClick);
-    if (btn.textBlock) btn.textBlock.fontFamily = 'Wonder8Bit';
+    if (btn.textBlock) {
+      btn.textBlock.fontFamily = 'Wonder8Bit';
+      btn.textBlock.fontSize = isMobileLayout ? 26 : 23;
+    }
     return btn;
   }
 

@@ -449,8 +449,8 @@ export class DaemonTakeoverIntroScene {
     this.skipHoldBarBg.addControl(this.skipHoldBarFill);
 
     this.popupHost = new Rectangle('takeover_popup');
-    this.popupHost.width = '780px';
-    this.popupHost.height = '220px';
+    this.popupHost.width = '900px';
+    this.popupHost.height = '280px';
     this.popupHost.thickness = 0;
     this.popupHost.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.popupHost.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -470,8 +470,8 @@ export class DaemonTakeoverIntroScene {
     this.popupHost.addControl(this.popupBubble);
 
     this.popupAvatarBox = new Rectangle('takeover_popup_avatar_box');
-    this.popupAvatarBox.width = '170px';
-    this.popupAvatarBox.height = '170px';
+    this.popupAvatarBox.width = '190px';
+    this.popupAvatarBox.height = '190px';
     this.popupAvatarBox.left = '22px';
     this.popupAvatarBox.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.popupAvatarBox.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
@@ -481,23 +481,23 @@ export class DaemonTakeoverIntroScene {
     this.popupBubble.addControl(this.popupAvatarBox);
 
     this.popupAvatar = new Image('takeover_popup_avatar', buildHudAssetUrl('avatar_frames_cutout2/rire_01.png'));
-    this.popupAvatar.width = '160px';
-    this.popupAvatar.height = '160px';
+    this.popupAvatar.width = '180px';
+    this.popupAvatar.height = '180px';
     this.popupAvatar.stretch = Image.STRETCH_UNIFORM;
     this.popupAvatarBox.addControl(this.popupAvatar);
 
     this.popupText = new TextBlock('takeover_popup_text');
     this.popupText.text = '';
-    this.popupText.width = '530px';
-    this.popupText.left = 208;
+    this.popupText.width = '640px';
+    this.popupText.left = 236;
     this.popupText.top = 0;
     this.popupText.textWrapping = true;
     this.popupText.resizeToFit = false;
     this.popupText.color = '#FFD1DA';
     this.popupText.fontFamily = 'Consolas';
-    this.popupText.fontSize = Math.round(24 * BASE_TEXT_SCALE);
-    this.popupText.height = '180px';
-    this.popupText.lineSpacing = '0px';
+    this.popupText.fontSize = Math.round(31 * BASE_TEXT_SCALE);
+    this.popupText.height = '224px';
+    this.popupText.lineSpacing = '2px';
     this.popupText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.popupText.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.popupText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -710,17 +710,18 @@ export class DaemonTakeoverIntroScene {
     const viewportWidth = Math.max(160, this.consoleViewport.widthInPixels || (idealW * 0.86));
     const maxWidth = Math.max(120, viewportWidth - 24);
     this.maxCharsPerConsoleLine = Math.max(8, Math.floor(maxWidth / charW));
-    this.popupHost.width = mobile ? '92%' : '780px';
-    this.popupHost.height = mobile ? '220px' : '220px';
-    this.popupAvatarBox.width = mobile ? '150px' : '170px';
-    this.popupAvatarBox.height = mobile ? '150px' : '170px';
-    this.popupAvatar.width = mobile ? '140px' : '160px';
-    this.popupAvatar.height = mobile ? '140px' : '160px';
+    this.popupHost.width = mobile ? '94%' : '900px';
+    this.popupHost.height = mobile ? '270px' : '280px';
+    this.popupAvatarBox.width = mobile ? '164px' : '190px';
+    this.popupAvatarBox.height = mobile ? '164px' : '190px';
+    this.popupAvatar.width = mobile ? '152px' : '180px';
+    this.popupAvatar.height = mobile ? '152px' : '180px';
     this.popupAvatarBox.left = mobile ? '14px' : '22px';
-    this.popupText.left = mobile ? 184 : 208;
-    this.popupText.width = mobile ? '63%' : '530px';
-    this.popupText.height = mobile ? '170px' : '180px';
-    this.popupText.fontSize = Math.round(24 * baseScale);
+    this.popupText.left = mobile ? 190 : 236;
+    this.popupText.width = mobile ? '71%' : '640px';
+    this.popupText.height = mobile ? '208px' : '224px';
+    this.popupText.fontSize = Math.round(31 * baseScale);
+    this.popupText.lineSpacing = '2px';
     if (this.prebootPanel) {
       const panelWidth = mobile
         ? Math.round(idealW * 0.92)
