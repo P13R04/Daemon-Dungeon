@@ -141,6 +141,7 @@ export class CodexScene {
   private postProcessManager: PostProcessManager;
   private postProcessConfig: PostProcessingConfig;
   private resizeObserver: any = null;
+  private guiScaleResizeObserver: any = null;
 
   constructor(
     private engine: Engine,
@@ -219,13 +220,20 @@ export class CodexScene {
     const layoutWidth = Math.round(idealWidth);
     const layoutHeight = Math.round(idealHeight);
     const sidePadding = Math.round(layoutWidth * 0.02);
-    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.32 : 0.3));
+    const minCenterLane = isMobileLayout ? 380 : 500;
+    const availableWidth = Math.max(560, layoutWidth - (sidePadding * 2));
+    const targetSidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.32 : 0.3));
+    const maxSidePanelWidth = Math.max(230, Math.floor((availableWidth - minCenterLane) * 0.5));
+    const sidePanelWidth = Math.max(230, Math.min(targetSidePanelWidth, maxSidePanelWidth));
     const sidePanelHeight = Math.round(layoutHeight * 0.76);
     const panelTop = Math.round((layoutHeight - sidePanelHeight) * 0.5);
     const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
-    const centerCardWidth = Math.round(Math.min(layoutWidth * 0.24, Math.max(layoutWidth * 0.2, 320)));
+    const centerLaneWidth = Math.max(minCenterLane, availableWidth - (sidePanelWidth * 2));
+    const centerCardWidth = Math.round(
+      Math.max(280, Math.min(Math.min(layoutWidth * 0.24, Math.max(layoutWidth * 0.2, 320)), centerLaneWidth - 34))
+    );
     const centerCardHeight = Math.round(layoutHeight * 0.53);
-    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 34);
+    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 56);
 
     const mainLayoutContainer = new Rectangle('mainLayout');
     mainLayoutContainer.width = 1;
@@ -242,7 +250,7 @@ export class CodexScene {
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
-    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
+    this.guiScaleResizeObserver = this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
     this.headerTitle = new TextBlock('codexHeaderTitle');
@@ -282,14 +290,11 @@ export class CodexScene {
     }
     mainLayoutContainer.addControl(devBtn);
 
-    const centerFreeWidth = Math.max(
-      320,
-      layoutWidth - ((sidePadding + sidePanelWidth) * 2) - 28
-    );
-    const preferredTabsWidth = Math.round(layoutWidth * (isMobileLayout ? 0.38 : 0.34));
-    const tabsRowWidth = Math.min(centerFreeWidth, preferredTabsWidth);
+    const centerFreeWidth = Math.max(320, centerLaneWidth - 20);
     this.topTabButtonHeight = Math.round(menuButtonHeight * 0.82);
-    this.topTabButtonWidth = Math.max(150, Math.floor((tabsRowWidth - 10) / 2));
+    // Keep only a slight horizontal margin around labels to avoid overlap at narrow ratios.
+    this.topTabButtonWidth = Math.max(132, Math.min(168, Math.floor((centerFreeWidth - 24) / 2)));
+    const tabsRowWidth = (this.topTabButtonWidth * 2) + 10;
 
     const tabsRow = new StackPanel('codexTabsRow');
     tabsRow.isVertical = false;
@@ -329,18 +334,23 @@ export class CodexScene {
     this.leftDescription = this.makeTerminalText('leftDescription', 18, '#9EE6DB');
     this.leftDescription.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.leftDescription.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.leftDescription.top = `${Math.round(sidePanelHeight * 0.17)}px`;
+    const leftDescTop = Math.round(sidePanelHeight * 0.17);
+    const leftDescHeight = Math.round(sidePanelHeight * 0.18);
+    this.leftDescription.top = `${leftDescTop}px`;
     this.leftDescription.width = `${sideInnerWidth}px`;
-    this.leftDescription.height = "120px";
+    this.leftDescription.height = `${leftDescHeight}px`;
     this.leftDescription.textWrapping = true;
     this.leftDescription.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.leftPanel.addControl(this.leftDescription);
 
     this.leftFilterRow = new StackPanel('leftFilterRow');
     this.leftFilterRow.isVertical = false;
+    this.leftFilterRow.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.leftFilterRow.width = `${sideInnerWidth}px`;
-    this.leftFilterRow.height = `${Math.round(menuButtonHeight * 0.8)}px`;
-    this.leftFilterRow.top = `-${Math.round(sidePanelHeight * 0.21)}px`;
+    const filterRowHeight = Math.round(menuButtonHeight * 0.8);
+    const filterTop = leftDescTop + leftDescHeight + Math.round(sidePanelHeight * 0.04);
+    this.leftFilterRow.height = `${filterRowHeight}px`;
+    this.leftFilterRow.top = `${filterTop}px`;
     this.leftPanel.addControl(this.leftFilterRow);
 
     this.leftFilterNormalBtn = this.makeFilterButton('NORMAL', true, () => {
@@ -354,8 +364,12 @@ export class CodexScene {
     this.leftFilterRow.addControl(this.leftFilterNormalBtn);
     this.leftFilterRow.addControl(this.leftFilterBossBtn);
 
-    const leftListFrame = UIFactory.createPanel('leftListFrame', sideInnerWidth, Math.round(sidePanelHeight * 0.53));
-    leftListFrame.top = `${Math.round(sidePanelHeight * 0.12)}px`;
+    const listTop = filterTop + filterRowHeight + Math.round(sidePanelHeight * 0.03);
+    const listBottomMargin = Math.round(sidePanelHeight * 0.05);
+    const leftListFrameHeight = Math.max(170, sidePanelHeight - listTop - listBottomMargin);
+    const leftListFrame = UIFactory.createPanel('leftListFrame', sideInnerWidth, leftListFrameHeight);
+    leftListFrame.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    leftListFrame.top = `${listTop}px`;
     this.leftPanel.addControl(leftListFrame);
 
     this.leftListScroll = UIFactory.createScrollViewer('leftListScroll');
@@ -515,6 +529,10 @@ export class CodexScene {
       this.engine.onResizeObservable.remove(this.resizeObserver);
       this.resizeObserver = null;
     }
+    if (this.guiScaleResizeObserver) {
+      this.engine.onResizeObservable.remove(this.guiScaleResizeObserver);
+      this.guiScaleResizeObserver = null;
+    }
     window.removeEventListener('keydown', this.keyHandler);
     if (this.audioUnlockHandler) {
       window.removeEventListener('pointerdown', this.audioUnlockHandler);
@@ -574,7 +592,10 @@ export class CodexScene {
       btn.textBlock.fontSize = isMobileLayout ? 25 : 23;
       btn.textBlock.fontFamily = 'Wonder8Bit';
     }
-    this.bindGlitchButton(btn, label, onClick);
+    this.bindGlitchButton(btn, label, () => {
+      if (!UIFactory.canTriggerScrollItemTap(this.leftListScroll)) return;
+      onClick();
+    });
     return btn;
   }
 
@@ -693,14 +714,24 @@ export class CodexScene {
     playUiSelectClick(0.8);
   }
 
-  private bindGlitchButton(button: Button, label: string, onAction: () => void, options?: { silent?: boolean }): void {
+  private bindGlitchButton(
+    button: Button,
+    label: string,
+    onAction: () => void,
+    options?: { silent?: boolean; triggerOnRelease?: boolean; shouldActivateOnRelease?: () => boolean }
+  ): void {
     button.isPointerBlocker = true;
     button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
     DaemonGlitchFx.injectWithOptions(button, label, () => {
       if (!options?.silent) this.playUiClickSound();
       onAction();
-    }, { clickDelayMs: 170, enableHoverGlitch: false });
+    }, {
+      clickDelayMs: 170,
+      enableHoverGlitch: false,
+      triggerOnPointerUp: !!options?.triggerOnRelease,
+      activationGuard: options?.shouldActivateOnRelease,
+    });
   }
 
   private buildEnemyEntries(): void {
@@ -811,6 +842,39 @@ export class CodexScene {
   private makeLeftListButton(id: string, label: string, active: boolean, onClick: () => void): Button {
     const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
     const btn = Button.CreateSimpleButton(id, label);
+    let pressStartedAt = 0;
+    let pressStartY = 0;
+    let lastY = 0;
+    let maxVerticalDelta = 0;
+    let isPressing = false;
+    let dragMode = false;
+    const DRAG_START_THRESHOLD_PX = 8;
+    const TAP_MAX_DURATION_MS = 320;
+    const DRAG_SCROLL_SPEED = 0.0032;
+
+    btn.onPointerDownObservable.add((coords: any) => {
+      pressStartedAt = Date.now();
+      pressStartY = typeof coords?.y === 'number' ? coords.y : 0;
+      lastY = pressStartY;
+      maxVerticalDelta = 0;
+      isPressing = true;
+      dragMode = false;
+    });
+
+    btn.onPointerMoveObservable.add((coords: any) => {
+      if (!isPressing) return;
+      const y = typeof coords?.y === 'number' ? coords.y : lastY;
+      const dy = y - lastY;
+      maxVerticalDelta = Math.max(maxVerticalDelta, Math.abs(y - pressStartY));
+      if (!dragMode && maxVerticalDelta >= DRAG_START_THRESHOLD_PX) {
+        dragMode = true;
+      }
+      if (dragMode && this.leftListScroll?.verticalBar) {
+        const bar = this.leftListScroll.verticalBar;
+        bar.value = Math.min(1, Math.max(0, bar.value - dy * DRAG_SCROLL_SPEED));
+      }
+      lastY = y;
+    });
     btn.width = `${this.leftListButtonWidth}px`;
     btn.height = `${isMobileLayout ? 64 : 56}px`;
     btn.thickness = 1;
@@ -819,7 +883,19 @@ export class CodexScene {
     btn.background = active ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
     btn.isPointerBlocker = true;
     btn.isHitTestVisible = true;
-    this.bindGlitchButton(btn, label, onClick);
+    btn.onPointerUpObservable.add(() => {
+      if (!isPressing) return;
+      isPressing = false;
+      if (dragMode) return;
+      const heldMs = Date.now() - pressStartedAt;
+      const isTap = heldMs <= TAP_MAX_DURATION_MS && maxVerticalDelta < DRAG_START_THRESHOLD_PX;
+      if (!isTap) return;
+      this.playUiClickSound();
+      onClick();
+    });
+    btn.onPointerOutObservable.add(() => {
+      isPressing = false;
+    });
     if (btn.textBlock) {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
@@ -1233,8 +1309,8 @@ export class CodexScene {
   private refreshBonusSelection(resetTyping: boolean): void {
     this.populateBonusList();
 
-    this.setTerminalText(this.leftTitle, '> BESTIARY // BONUSES', 0);
-    this.setTerminalText(this.leftDescription, '> Select a bonus to inspect effects,\n> category tags and synergy notes.', 0);
+    this.setTerminalText(this.leftTitle, '> BESTIARY // BONUSES', 5200, false);
+    this.setTerminalText(this.leftDescription, '> Select a bonus to inspect effects,\n> category tags and synergy notes.', 5200, false);
 
     const bonus = BONUS_CODEX_ENTRIES[this.selectedBonusIndex];
     if (!bonus) {

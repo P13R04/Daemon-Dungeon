@@ -77,6 +77,7 @@ export class HighscoresScene {
   private postProcessConfig: PostProcessingConfig;
   private runs: RunRecord[] = [];
   private resizeObserver: any = null;
+  private guiScaleResizeObserver: any = null;
 
   constructor(
     private engine: Engine,
@@ -174,6 +175,10 @@ export class HighscoresScene {
       this.engine.onResizeObservable.remove(this.resizeObserver);
       this.resizeObserver = null;
     }
+    if (this.guiScaleResizeObserver) {
+      this.engine.onResizeObservable.remove(this.guiScaleResizeObserver);
+      this.guiScaleResizeObserver = null;
+    }
     window.removeEventListener('keydown', this.keyHandler);
     if (this.audioUnlockHandler) {
       window.removeEventListener('pointerdown', this.audioUnlockHandler);
@@ -235,13 +240,20 @@ export class HighscoresScene {
     const layoutHeight = Math.round(idealHeight);
     const sidePadding = Math.round(layoutWidth * 0.02);
     const panelTop = Math.round(layoutHeight * 0.15);
-    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.31 : 0.29));
+    const minCenterLane = isMobileLayout ? 390 : 520;
+    const availableWidth = Math.max(560, layoutWidth - (sidePadding * 2));
+    const targetSidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.31 : 0.29));
+    const maxSidePanelWidth = Math.max(230, Math.floor((availableWidth - minCenterLane) * 0.5));
+    const sidePanelWidth = Math.max(210, Math.min(targetSidePanelWidth, maxSidePanelWidth) - (isMobileLayout ? 24 : 40));
     const bottomStripHeight = Math.round(layoutHeight * 0.19);
     const sidePanelHeight = Math.round(layoutHeight - panelTop - bottomStripHeight - Math.round(layoutHeight * 0.04));
     const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
-    const centerCardWidth = Math.round(layoutWidth * (isMobileLayout ? 0.34 : 0.32));
+    const centerLaneWidth = Math.max(minCenterLane, availableWidth - (sidePanelWidth * 2));
+    const centerCardWidth = Math.round(
+      Math.max(260, Math.min(layoutWidth * (isMobileLayout ? 0.34 : 0.32), centerLaneWidth - 26) - (isMobileLayout ? 16 : 32))
+    );
     const centerCardHeight = Math.round(sidePanelHeight * 0.56);
-    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 34);
+    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 56);
 
     const mainLayoutContainer = new Rectangle('mainLayout');
     mainLayoutContainer.width = 1;
@@ -258,7 +270,7 @@ export class HighscoresScene {
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
-    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
+    this.guiScaleResizeObserver = this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
     const topButtonWidth = `${isMobileLayout ? 290 : 260}px`;
@@ -331,15 +343,15 @@ export class HighscoresScene {
     this.leftDescription = this.makeTerminalText('leftDesc', 23, '#CFFCF3');
     this.leftDescription.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.leftDescription.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.leftDescription.top = `${Math.round(sidePanelHeight * 0.17)}px`;
+    this.leftDescription.top = `${Math.round(sidePanelHeight * 0.20)}px`;
     this.leftDescription.width = `${sideInnerWidth}px`;
     this.leftDescription.resizeToFit = true;
     this.leftPanel.addControl(this.leftDescription);
 
     const scrollViewer = UIFactory.createScrollViewer('leftListScroll');
     scrollViewer.width = `${sideInnerWidth}px`;
-    scrollViewer.height = `${Math.round(sidePanelHeight * 0.8)}px`;
-    scrollViewer.top = `${Math.round(sidePanelHeight * 0.20)}px`;
+    scrollViewer.height = `${Math.round(sidePanelHeight * 0.66)}px`;
+    scrollViewer.top = `${Math.round(sidePanelHeight * 0.30)}px`;
     scrollViewer.thickness = 0;
     scrollViewer.barColor = UITheme.colors.borderBright;
     scrollViewer.barBackground = 'rgba(0,0,0,0.5)';
@@ -500,7 +512,10 @@ export class HighscoresScene {
     btn.background = UITheme.colors.bgPanel;
     btn.fontFamily = 'Wonder8Bit';
     btn.fontSize = isMobileLayout ? 26 : 23;
-    this.bindGlitchButton(btn, label, onClick);
+    this.bindGlitchButton(btn, label, () => {
+      if (!UIFactory.canTriggerScrollItemTap(this.leftListScroll)) return;
+      onClick();
+    });
     if (btn.textBlock) {
       btn.textBlock.fontFamily = 'Wonder8Bit';
       btn.textBlock.fontSize = isMobileLayout ? 26 : 23;
@@ -556,6 +571,39 @@ export class HighscoresScene {
   private makeLeftListButton(id: string, label: string, active: boolean, onClick: () => void): Button {
     const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
     const btn = Button.CreateSimpleButton(id, label);
+    let pressStartedAt = 0;
+    let pressStartY = 0;
+    let lastY = 0;
+    let maxVerticalDelta = 0;
+    let isPressing = false;
+    let dragMode = false;
+    const DRAG_START_THRESHOLD_PX = 8;
+    const TAP_MAX_DURATION_MS = 320;
+    const DRAG_SCROLL_SPEED = 0.0032;
+
+    btn.onPointerDownObservable.add((coords: any) => {
+      pressStartedAt = Date.now();
+      pressStartY = typeof coords?.y === 'number' ? coords.y : 0;
+      lastY = pressStartY;
+      maxVerticalDelta = 0;
+      isPressing = true;
+      dragMode = false;
+    });
+
+    btn.onPointerMoveObservable.add((coords: any) => {
+      if (!isPressing) return;
+      const y = typeof coords?.y === 'number' ? coords.y : lastY;
+      const dy = y - lastY;
+      maxVerticalDelta = Math.max(maxVerticalDelta, Math.abs(y - pressStartY));
+      if (!dragMode && maxVerticalDelta >= DRAG_START_THRESHOLD_PX) {
+        dragMode = true;
+      }
+      if (dragMode && this.leftListScroll?.verticalBar) {
+        const bar = this.leftListScroll.verticalBar;
+        bar.value = Math.min(1, Math.max(0, bar.value - dy * DRAG_SCROLL_SPEED));
+      }
+      lastY = y;
+    });
     btn.width = `${this.leftListButtonWidth}px`;
     btn.height = `${isMobileLayout ? 64 : 56}px`;
     btn.thickness = 1;
@@ -564,7 +612,19 @@ export class HighscoresScene {
     btn.background = active ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
     btn.isPointerBlocker = true;
     btn.isHitTestVisible = true;
-    this.bindGlitchButton(btn, label, onClick);
+    btn.onPointerUpObservable.add(() => {
+      if (!isPressing) return;
+      isPressing = false;
+      if (dragMode) return;
+      const heldMs = Date.now() - pressStartedAt;
+      const isTap = heldMs <= TAP_MAX_DURATION_MS && maxVerticalDelta < DRAG_START_THRESHOLD_PX;
+      if (!isTap) return;
+      this.playUiClickSound();
+      onClick();
+    });
+    btn.onPointerOutObservable.add(() => {
+      isPressing = false;
+    });
     if (btn.textBlock) {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
@@ -582,7 +642,7 @@ export class HighscoresScene {
 
   private refreshRunSelection(resetTyping: boolean): void {
     this.setTerminalText(this.leftTitle, '> HIGHSCORES DIRECTORY', 220, false);
-    this.setTerminalText(this.leftDescription, '> Local sector run achievements\n> Sorted by score performance.', 220, false);
+    this.setTerminalText(this.leftDescription, '> Local sector run achievements\n\n> Sorted by score performance.', 220, false);
 
     // Clear bonus icons
     const bChildren = [...this.bonusIconsStack.children];
@@ -611,7 +671,8 @@ export class HighscoresScene {
 
     // Populate bonus list in center panel
     if (run.bonuses && run.bonuses.length > 0) {
-      const numRows = Math.ceil(run.bonuses.length / 8) || 1;
+      const bonusesPerRow = 7;
+      const numRows = Math.ceil(run.bonuses.length / bonusesPerRow) || 1;
       const bonusesHeight = 60 + numRows * 64;
       this.centerBonusesContainer.height = `${bonusesHeight}px`;
       this.centerCard.height = `${160 + bonusesHeight}px`;
@@ -629,8 +690,8 @@ export class HighscoresScene {
       let currentRowStack: StackPanel | null = null;
       for (let i = 0; i < run.bonuses.length; i++) {
         const bonus = run.bonuses[i];
-        if (i % 8 === 0) {
-          currentRowStack = new StackPanel(`hs_bonus_row_stack_${Math.floor(i / 8)}`);
+        if (i % bonusesPerRow === 0) {
+          currentRowStack = new StackPanel(`hs_bonus_row_stack_${Math.floor(i / bonusesPerRow)}`);
           currentRowStack.isVertical = false;
           currentRowStack.spacing = 12;
           currentRowStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
@@ -836,13 +897,23 @@ export class HighscoresScene {
     playUiSelectClick(0.8);
   }
 
-  private bindGlitchButton(button: Button, label: string, onAction: () => void): void {
+  private bindGlitchButton(
+    button: Button,
+    label: string,
+    onAction: () => void,
+    options?: { triggerOnRelease?: boolean; shouldActivateOnRelease?: () => boolean }
+  ): void {
     button.isPointerBlocker = true;
     button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
     DaemonGlitchFx.injectWithOptions(button, label, () => {
       this.playUiClickSound();
       onAction();
-    }, { clickDelayMs: 170, enableHoverGlitch: false });
+    }, {
+      clickDelayMs: 170,
+      enableHoverGlitch: false,
+      triggerOnPointerUp: !!options?.triggerOnRelease,
+      activationGuard: options?.shouldActivateOnRelease,
+    });
   }
 }

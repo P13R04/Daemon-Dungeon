@@ -71,6 +71,7 @@ export class AchievementsScene {
   private postProcessManager!: PostProcessManager;
   private postProcessConfig: PostProcessingConfig;
   private resizeObserver: any = null;
+  private guiScaleResizeObserver: any = null;
 
   constructor(
     private engine: Engine,
@@ -173,6 +174,10 @@ export class AchievementsScene {
       this.engine.onResizeObservable.remove(this.resizeObserver);
       this.resizeObserver = null;
     }
+    if (this.guiScaleResizeObserver) {
+      this.engine.onResizeObservable.remove(this.guiScaleResizeObserver);
+      this.guiScaleResizeObserver = null;
+    }
     this.postProcessManager.dispose();
     this.glitchFx.dispose();
     this.gui.dispose();
@@ -234,7 +239,7 @@ export class AchievementsScene {
     const sidePanelHeight = Math.round(layoutHeight * 0.78);
     const panelTop = Math.round((layoutHeight - sidePanelHeight) * 0.5);
     const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
-    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 34);
+    this.leftListButtonWidth = Math.max(0, sideInnerWidth - 56);
     const centerCardWidth = Math.round(layoutWidth * (isMobileLayout ? 0.28 : 0.26));
     const centerCardHeight = Math.round(sidePanelHeight * 0.78);
 
@@ -253,7 +258,7 @@ export class AchievementsScene {
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
-    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
+    this.guiScaleResizeObserver = this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
     const topButtonWidth = `${isMobileLayout ? 290 : 260}px`;
@@ -327,7 +332,7 @@ export class AchievementsScene {
     this.leftDescription = this.makeTerminalText('leftDesc', 18, '#CFFCF3');
     this.leftDescription.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.leftDescription.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.leftDescription.top = `${Math.round(sidePanelHeight * 0.17)}px`;
+    this.leftDescription.top = `${Math.round(sidePanelHeight * 0.20)}px`;
     this.leftDescription.width = `${sideInnerWidth}px`;
     this.leftDescription.resizeToFit = true;
     this.leftDescription.isHitTestVisible = false;
@@ -336,8 +341,8 @@ export class AchievementsScene {
 
     const scrollViewer = UIFactory.createScrollViewer('leftListScroll');
     scrollViewer.width = `${sideInnerWidth}px`;
-    scrollViewer.height = `${Math.round(sidePanelHeight * 0.8)}px`;
-    scrollViewer.top = `${Math.round(sidePanelHeight * 0.12)}px`;
+    scrollViewer.height = `${Math.round(sidePanelHeight * 0.64)}px`;
+    scrollViewer.top = `${Math.round(sidePanelHeight * 0.30)}px`;
     scrollViewer.thickness = 0;
     scrollViewer.barColor = UITheme.colors.borderBright;
     scrollViewer.barBackground = 'rgba(0,0,0,0.5)';
@@ -479,7 +484,10 @@ export class AchievementsScene {
     btn.background = UITheme.colors.bgPanel;
     btn.fontFamily = 'Wonder8Bit';
     btn.fontSize = isMobileLayout ? 26 : 23;
-    this.bindGlitchButton(btn, label, onClick);
+    this.bindGlitchButton(btn, label, () => {
+      if (!UIFactory.canTriggerScrollItemTap(this.leftListScroll)) return;
+      onClick();
+    });
     if (btn.textBlock) {
       btn.textBlock.fontFamily = 'Wonder8Bit';
       btn.textBlock.fontSize = isMobileLayout ? 26 : 23;
@@ -514,6 +522,39 @@ export class AchievementsScene {
   private makeLeftListButton(id: string, label: string, active: boolean, onClick: () => void): Button {
     const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
     const btn = Button.CreateSimpleButton(id, label);
+    let pressStartedAt = 0;
+    let pressStartY = 0;
+    let lastY = 0;
+    let maxVerticalDelta = 0;
+    let isPressing = false;
+    let dragMode = false;
+    const DRAG_START_THRESHOLD_PX = 8;
+    const TAP_MAX_DURATION_MS = 320;
+    const DRAG_SCROLL_SPEED = 0.0032;
+
+    btn.onPointerDownObservable.add((coords: any) => {
+      pressStartedAt = Date.now();
+      pressStartY = typeof coords?.y === 'number' ? coords.y : 0;
+      lastY = pressStartY;
+      maxVerticalDelta = 0;
+      isPressing = true;
+      dragMode = false;
+    });
+
+    btn.onPointerMoveObservable.add((coords: any) => {
+      if (!isPressing) return;
+      const y = typeof coords?.y === 'number' ? coords.y : lastY;
+      const dy = y - lastY;
+      maxVerticalDelta = Math.max(maxVerticalDelta, Math.abs(y - pressStartY));
+      if (!dragMode && maxVerticalDelta >= DRAG_START_THRESHOLD_PX) {
+        dragMode = true;
+      }
+      if (dragMode && this.leftListScroll?.verticalBar) {
+        const bar = this.leftListScroll.verticalBar;
+        bar.value = Math.min(1, Math.max(0, bar.value - dy * DRAG_SCROLL_SPEED));
+      }
+      lastY = y;
+    });
     btn.width = `${this.leftListButtonWidth}px`;
     btn.height = `${isMobileLayout ? 64 : 56}px`;
     btn.thickness = 1;
@@ -522,7 +563,19 @@ export class AchievementsScene {
     btn.background = active ? UITheme.colors.hoverBg : UITheme.colors.bgPanel;
     btn.isPointerBlocker = true;
     btn.isHitTestVisible = true;
-    this.bindGlitchButton(btn, label, onClick);
+    btn.onPointerUpObservable.add(() => {
+      if (!isPressing) return;
+      isPressing = false;
+      if (dragMode) return;
+      const heldMs = Date.now() - pressStartedAt;
+      const isTap = heldMs <= TAP_MAX_DURATION_MS && maxVerticalDelta < DRAG_START_THRESHOLD_PX;
+      if (!isTap) return;
+      this.playUiClickSound();
+      onClick();
+    });
+    btn.onPointerOutObservable.add(() => {
+      isPressing = false;
+    });
     if (btn.textBlock) {
       btn.textBlock.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       btn.textBlock.paddingLeft = '10px';
@@ -743,13 +796,23 @@ export class AchievementsScene {
     playUiSelectClick(0.8);
   }
 
-  private bindGlitchButton(button: Button, label: string, onAction: () => void, options?: { silent?: boolean }): void {
+  private bindGlitchButton(
+    button: Button,
+    label: string,
+    onAction: () => void,
+    options?: { silent?: boolean; triggerOnRelease?: boolean; shouldActivateOnRelease?: () => boolean }
+  ): void {
     button.isPointerBlocker = true;
     button.isHitTestVisible = true;
     button.hoverCursor = 'pointer';
     DaemonGlitchFx.injectWithOptions(button, label, () => {
       if (!options?.silent) this.playUiClickSound();
       onAction();
-    }, { clickDelayMs: 170, enableHoverGlitch: false });
+    }, {
+      clickDelayMs: 170,
+      enableHoverGlitch: false,
+      triggerOnPointerUp: !!options?.triggerOnRelease,
+      activationGuard: options?.shouldActivateOnRelease,
+    });
   }
 }

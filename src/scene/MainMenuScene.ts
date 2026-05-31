@@ -51,6 +51,7 @@ export class MainMenuScene {
   private settingsOverlay: Rectangle | null = null;
   private mainLayoutContainer!: Rectangle;
   private resizeObserver: any = null;
+  private guiScaleResizeObserver: any = null;
   private layoutWidth = 1280;
   private layoutHeight = 720;
   private isMobileLayout = false;
@@ -183,7 +184,7 @@ export class MainMenuScene {
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
-    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
+    this.guiScaleResizeObserver = this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine));
     updateScale();
 
     this.createMainButtons();
@@ -252,6 +253,10 @@ export class MainMenuScene {
     if (this.resizeObserver) {
       this.engine.onResizeObservable.remove(this.resizeObserver);
       this.resizeObserver = null;
+    }
+    if (this.guiScaleResizeObserver) {
+      this.engine.onResizeObservable.remove(this.guiScaleResizeObserver);
+      this.guiScaleResizeObserver = null;
     }
     if (this.menuBeatObserver) {
       this.scene.onBeforeRenderObservable.remove(this.menuBeatObserver);

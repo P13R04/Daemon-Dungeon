@@ -1679,9 +1679,6 @@ export class GameManager {
       const sound = cue === 'bounce' ? 'sfx_pong_wall_bounce1' : cue === 'flyby' ? 'sfx_pong_flying_close1' : '';
       if (sound) this.audioManager?.playSoundAt(sound, position, 0.8, { pitchVariance: 0.2, allowOverlap: true });
     });
-    this.eventBus.on(GameEvents.ENEMY_PONG_CORNER_HIT, () => {
-      // Achievement retired: keep telemetry event only.
-    });
     this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_SPLIT_IMPACT, (data: any) => {
       this.audioManager?.playSoundAt('sfx_artificier_shot_split1', data?.position ?? Vector3.Zero(), 0.85, { pitchVariance: 0.24, allowOverlap: true });
     });

@@ -32,11 +32,19 @@ export class DaemonGlitchFx {
     btn: Button,
     label: string,
     onClick: () => void,
-    options?: { clickDelayMs?: number; enableHoverGlitch?: boolean; hoverBackground?: string }
+    options?: {
+      clickDelayMs?: number;
+      enableHoverGlitch?: boolean;
+      hoverBackground?: string;
+      triggerOnPointerUp?: boolean;
+      activationGuard?: () => boolean;
+    }
   ): void {
     const clickDelay = Math.max(0, options?.clickDelayMs ?? 220);
     const enableHoverGlitch = options?.enableHoverGlitch !== false;
     const hoverBackground = options?.hoverBackground ?? UITheme.colors.hoverBg;
+    const triggerOnPointerUp = options?.triggerOnPointerUp === true;
+    const activationGuard = options?.activationGuard;
     const baseBackground = (btn as Button & { __daemonBaseBackground?: string }).__daemonBaseBackground
       ?? btn.background;
     const baseColor = (btn as Button & { __daemonBaseColor?: string }).__daemonBaseColor
@@ -90,6 +98,7 @@ export class DaemonGlitchFx {
     // ── State ─────────────────────────────────────────────────────────────────
     let tearHandle: ReturnType<typeof setTimeout> | null = null;
     let clicking = false;
+    let armedForRelease = false;
 
     const resetSlab = () => {
       slab.isVisible = false;
@@ -152,9 +161,9 @@ export class DaemonGlitchFx {
       // Don't cancel the tear — let it finish naturally for 400ms effect
     });
 
-    // ── Click ─────────────────────────────────────────────────────────────────
-    btn.onPointerDownObservable.add(() => {
+    const runClickSequence = () => {
       if (clicking) return;
+      if (activationGuard && !activationGuard()) return;
       clicking = true;
       if (tearHandle) { clearTimeout(tearHandle); tearHandle = null; }
       resetSlab();
@@ -202,6 +211,25 @@ export class DaemonGlitchFx {
       };
 
       flicker();
+    };
+
+    // ── Click ─────────────────────────────────────────────────────────────────
+    btn.onPointerDownObservable.add(() => {
+      if (triggerOnPointerUp) {
+        armedForRelease = true;
+        return;
+      }
+      runClickSequence();
+    });
+
+    btn.onPointerUpObservable.add(() => {
+      if (!triggerOnPointerUp || !armedForRelease) return;
+      armedForRelease = false;
+      runClickSequence();
+    });
+
+    btn.onPointerOutObservable.add(() => {
+      armedForRelease = false;
     });
   }
 }
