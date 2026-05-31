@@ -2,7 +2,7 @@ import { Vector3, Scene, MeshBuilder, StandardMaterial, Color3, TransformNode, M
 import { EventBus, GameEvents } from './EventBus';
 import { GameStartRequestedPayload } from './GameEventBindings';
 import { HUDManager } from '../systems/HUDManager';
-import { GameSettingsStore, KeybindingAction } from '../settings/GameSettings';
+import { GameSettingsStore, KeybindingAction, formatInputKeyLabel } from '../settings/GameSettings';
 import { AdvancedDynamicTexture, Rectangle, TextBlock, Button, StackPanel, Control } from '@babylonjs/gui';
 import { UI_LAYER } from '../ui/uiLayers';
 import { PlayerController } from '../gameplay/PlayerController';
@@ -86,6 +86,7 @@ export class GameTutorialManager {
   private room2HazardTauntsPlayed: Set<string> = new Set();
   private pendingEnemyClearCheckTimer: number | null = null;
   private pendingDoorExitCheckTimer: number | null = null;
+  private objectiveDisplayTimer: number | null = null;
   private isReplayTutorial = false;
 
   private buildRepeatedEmotionFrames(baseEmotion: string, loops: number): string[] {
@@ -247,6 +248,11 @@ export class GameTutorialManager {
       clearTimeout(this.pendingDoorExitCheckTimer);
       this.pendingDoorExitCheckTimer = null;
     }
+    if (this.objectiveDisplayTimer !== null) {
+      clearTimeout(this.objectiveDisplayTimer);
+      this.objectiveDisplayTimer = null;
+    }
+    this.dependencies?.hudManager?.clearTutorialObjective?.();
 
     if (this.promptGui) {
       this.disposePromptGui();
@@ -277,6 +283,11 @@ export class GameTutorialManager {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    if (this.objectiveDisplayTimer !== null) {
+      clearTimeout(this.objectiveDisplayTimer);
+      this.objectiveDisplayTimer = null;
+    }
+    this.queueObjectiveForPhase(phase);
 
     switch (phase) {
       case 'mage_replay_intro':
@@ -659,6 +670,94 @@ export class GameTutorialManager {
         }, 120);
         break;
     }
+  }
+
+  private queueObjectiveForPhase(phase: TutorialPhase): void {
+    const objectiveLines = this.getObjectiveLinesForPhase(phase);
+    if (!objectiveLines || objectiveLines.length === 0) {
+      this.dependencies?.hudManager?.clearTutorialObjective?.();
+      return;
+    }
+
+    const showWhenDaemonDone = () => {
+      if (!this.isActive || this.currentPhase !== phase) return;
+      const daemonActive = this.dependencies?.hudManager?.isDaemonMessageActive?.() ?? false;
+      if (daemonActive) {
+        this.objectiveDisplayTimer = window.setTimeout(showWhenDaemonDone, 80);
+        return;
+      }
+      this.dependencies?.hudManager?.showTutorialObjective?.(objectiveLines, 'Objective');
+    };
+
+    this.objectiveDisplayTimer = window.setTimeout(showWhenDaemonDone, 20);
+  }
+
+  private getObjectiveLinesForPhase(phase: TutorialPhase): string[] | null {
+    const attackKey = this.getKeyLabel('shoot');
+    const stanceKey = this.getKeyLabel('posture');
+    const ultKey = this.getKeyLabel('ultimate');
+    const isMobile = this.isMobileTutorialMode();
+    const classKey = this.classId === 'cat' ? 'rogue' : this.classId;
+
+    switch (phase) {
+      case 'movement_door':
+        return ['Reach the exit door to continue.'];
+      case 'combat_dummy':
+      case 'class_primary_wave':
+        return isMobile
+          ? [
+            'Kill the dummy using your primary attack.',
+            'Use the ATTACK button.',
+          ]
+          : [
+            'Kill the dummy using your primary attack.',
+            `Use Left Click or [${attackKey}].`,
+          ];
+      case 'combat_stance':
+        return isMobile
+          ? [
+            'Kill the dummy using your secondary attack.',
+            'Hold STANCE, keep enough stance resource, then press ATTACK.',
+          ]
+          : [
+            'Kill the dummy using your secondary attack.',
+            `Hold Right Click or [${stanceKey}], keep enough stance resource, then Left Click or [${attackKey}].`,
+          ];
+      case 'combat_ultimate':
+      case 'class_ultimate_wave':
+        return isMobile
+          ? ['Use your ultimate to clear the pack.', 'Press ULT.']
+          : [`Use your ultimate to clear the pack.`, `Press [${ultKey}].`];
+      case 'combat_door':
+      case 'class_exit_door':
+        return ['Reach the exit door to continue.'];
+      case 'playground_mobs':
+        return ['Clear the room to finish this tutorial section.'];
+      case 'class_stance_wave':
+        if (classKey === 'firewall') {
+          return isMobile
+            ? ['Use stance to block and reflect the turret shot.', 'Hold STANCE toward the turret and keep stance resource.']
+            : [`Use stance to block and reflect the turret shot.`, `Hold Right Click or [${stanceKey}] toward the turret and keep stance resource.`];
+        }
+        return isMobile
+          ? ['Use stance to become invisible, then survive the patrol.', 'Hold STANCE while you have stance resource, keep distance.']
+          : [`Use stance to become invisible, then survive the patrol.`, `Hold Right Click or [${stanceKey}] while you have stance resource, keep distance.`];
+      case 'class_dash_wave':
+        if (classKey === 'firewall') {
+          return isMobile
+            ? ['Use shield bash (secondary) to control the target.', 'Hold STANCE with enough resource, then ATTACK.']
+            : [`Use shield bash (secondary) to control the target.`, `Hold Right Click or [${stanceKey}] with enough resource, then Left Click or [${attackKey}].`];
+        }
+        return isMobile
+          ? ['Break stealth with a dash attack (secondary).', 'Hold STANCE with enough resource, then ATTACK.']
+          : [`Break stealth with a dash attack (secondary).`, `Hold Right Click or [${stanceKey}] with enough resource, then Left Click or [${attackKey}].`];
+      default:
+        return null;
+    }
+  }
+
+  private getKeyLabel(action: KeybindingAction): string {
+    return formatInputKeyLabel(GameSettingsStore.get().controls.keybindings[action]);
   }
 
   private pointTo(localOffset: Vector3): void {

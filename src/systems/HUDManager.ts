@@ -209,6 +209,11 @@ export class HUDManager {
   private pauseSkipButton: Button | null = null;
   private pauseTutorialMode: boolean = false;
   private pauseTutorialClassId: 'mage' | 'firewall' | 'rogue' | 'cat' | null = null;
+  private tutorialObjectivePanel: Rectangle | null = null;
+  private tutorialObjectiveTitle: TextBlock | null = null;
+  private tutorialObjectiveBody: TextBlock | null = null;
+  private tutorialObjectivePulseTimer: number = 0;
+  private tutorialObjectivePulseDuration: number = 0;
   private settingsMenuBuilder: SettingsMenuBuilder | null = null;
   private gameOverScreen: Rectangle | null = null;
   private roomClearScreen: Rectangle | null = null;
@@ -1004,6 +1009,52 @@ export class HUDManager {
     this.guiClean.addControl(pauseBtn);
     this.pauseButton = pauseBtn;
 
+    const objectivePanel = new Rectangle('tutorial_objective_panel');
+    objectivePanel.width = isCompactHud ? '560px' : '520px';
+    objectivePanel.height = isCompactHud ? '150px' : '136px';
+    objectivePanel.thickness = 1;
+    objectivePanel.color = '#3B685C';
+    objectivePanel.background = 'rgba(7, 14, 18, 0.84)';
+    objectivePanel.cornerRadius = 4;
+    objectivePanel.left = isCompactHud ? 28 : 24;
+    objectivePanel.top = isCompactHud ? 132 : 126; // under pause button + extra margin
+    objectivePanel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    objectivePanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    objectivePanel.zIndex = 1690;
+    objectivePanel.isVisible = false;
+    this.guiClean.addControl(objectivePanel);
+    this.tutorialObjectivePanel = objectivePanel;
+
+    const objectiveTitle = new TextBlock('tutorial_objective_title');
+    objectiveTitle.text = 'OBJECTIVE';
+    objectiveTitle.fontFamily = 'Wonder8Bit';
+    objectiveTitle.fontSize = isCompactHud ? 25 : 23;
+    objectiveTitle.color = '#7CFFEA';
+    objectiveTitle.height = '28px';
+    objectiveTitle.left = 12;
+    objectiveTitle.top = 8;
+    objectiveTitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    objectiveTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    objectiveTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    objectivePanel.addControl(objectiveTitle);
+    this.tutorialObjectiveTitle = objectiveTitle;
+
+    const objectiveBody = new TextBlock('tutorial_objective_body');
+    objectiveBody.text = '';
+    objectiveBody.fontFamily = 'Arcade8Bit';
+    objectiveBody.fontSize = isCompactHud ? 23 : 21;
+    objectiveBody.color = '#D8FFF6';
+    objectiveBody.textWrapping = true;
+    objectiveBody.left = 12;
+    objectiveBody.top = 34;
+    objectiveBody.width = isCompactHud ? '530px' : '490px';
+    objectiveBody.height = isCompactHud ? '102px' : '88px';
+    objectiveBody.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    objectiveBody.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    objectiveBody.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    objectivePanel.addControl(objectiveBody);
+    this.tutorialObjectiveBody = objectiveBody;
+
     this.runBonusContainer = new Rectangle('run_bonus_container');
     this.runBonusContainer.width = '1400px';
     this.runBonusContainer.height = '280px';
@@ -1733,6 +1784,52 @@ export class HUDManager {
     }
   }
 
+  public showTutorialObjective(lines: string[], title: string = 'OBJECTIVE'): void {
+    if (!this.tutorialObjectivePanel || !this.tutorialObjectiveTitle || !this.tutorialObjectiveBody) return;
+    const filtered = (lines || []).map((line) => line?.trim() || '').filter((line) => line.length > 0);
+    if (filtered.length === 0) {
+      this.clearTutorialObjective();
+      return;
+    }
+    this.tutorialObjectiveTitle.text = title.trim().length > 0 ? title.trim().toUpperCase() : 'OBJECTIVE';
+    this.tutorialObjectiveBody.text = filtered.join('\n');
+    this.tutorialObjectivePulseDuration = 0.78;
+    this.tutorialObjectivePulseTimer = this.tutorialObjectivePulseDuration;
+    this.tutorialObjectivePanel.alpha = 0;
+    this.tutorialObjectivePanel.scaleX = 1.04;
+    this.tutorialObjectivePanel.scaleY = 1.04;
+    this.tutorialObjectivePanel.isVisible = true;
+  }
+
+  public clearTutorialObjective(): void {
+    if (!this.tutorialObjectivePanel || !this.tutorialObjectiveBody) return;
+    this.tutorialObjectiveBody.text = '';
+    this.tutorialObjectivePulseDuration = 0;
+    this.tutorialObjectivePulseTimer = 0;
+    this.tutorialObjectivePanel.alpha = 1;
+    this.tutorialObjectivePanel.scaleX = 1;
+    this.tutorialObjectivePanel.scaleY = 1;
+    this.tutorialObjectivePanel.isVisible = false;
+  }
+
+  private updateTutorialObjectivePulse(deltaTime: number): void {
+    if (!this.tutorialObjectivePanel || !this.tutorialObjectivePanel.isVisible) return;
+    if (this.tutorialObjectivePulseTimer <= 0 || this.tutorialObjectivePulseDuration <= 0) {
+      this.tutorialObjectivePanel.alpha = 1;
+      this.tutorialObjectivePanel.scaleX = 1;
+      this.tutorialObjectivePanel.scaleY = 1;
+      return;
+    }
+    this.tutorialObjectivePulseTimer = Math.max(0, this.tutorialObjectivePulseTimer - deltaTime);
+    const t = 1 - (this.tutorialObjectivePulseTimer / this.tutorialObjectivePulseDuration);
+    const easeOut = 1 - Math.pow(1 - t, 3);
+    const flash = Math.max(0, Math.sin(t * Math.PI * 4)) * (1 - t);
+    this.tutorialObjectivePanel.alpha = Math.min(1, 0.55 + (easeOut * 0.45) + (flash * 0.18));
+    const popScale = 1 + ((1 - easeOut) * 0.04) + (flash * 0.012);
+    this.tutorialObjectivePanel.scaleX = popScale;
+    this.tutorialObjectivePanel.scaleY = popScale;
+  }
+
   /** Show or hide the auto-aim badge in the HUD status panel. */
   public setAutoAimIndicator(active: boolean): void {
     if (this.autoAimLabel) {
@@ -2374,6 +2471,7 @@ export class HUDManager {
     this.updateBonusHoverPopupPosition();
     this.updateRunBonusLayout();
     this.updateBonusCardJuice(deltaTime);
+    this.updateTutorialObjectivePulse(deltaTime);
     this.pruneOrphanEnemyHealthBars();
 
     // Process scheduled logs in the queue
