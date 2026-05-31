@@ -294,8 +294,10 @@ export const VOICELINE_DB: VoicelineConfig[] = [
 
   // Class-flavored taunts requested
   vl('ambient', 'I went through the firewall. Now the firewall is going through me. Poetic. Also pathetic.', 'rire', { requiredClass: 'firewall', tags: ['class_firewall_poetic'], weight: 3 }),
-  vl('ambient', 'Missing your sudo rights, wizard?', 'superieur', { requiredClass: 'mage', tags: ['class_mage_sudo'], weight: 3 }),
-  vl('ambient', "You're the one being executed now.", 'enerve', { requiredClass: 'mage', tags: ['class_mage_executed'], weight: 3 }),
+  vl('ambient', 'Are you missing your sudo rights?', 'superieur', { requiredClass: 'mage', tags: ['class_mage_sudo'], weight: 4 }),
+  vl('ambient', "You're the one being executed now.", 'enerve', { requiredClass: 'mage', tags: ['class_mage_executed'], weight: 4 }),
+  vl('player_ult_used', 'Are you missing your sudo rights?', 'superieur', { requiredClass: 'mage', tags: ['class_mage_sudo_ult'], weight: 3 }),
+  vl('player_ult_used', "You're the one being executed now.", 'enerve', { requiredClass: 'mage', tags: ['class_mage_executed_ult'], weight: 3 }),
   vl('ambient', 'I own you, little b... glitch.', 'censure', {
     requiredClass: 'rogue',
     tags: ['class_rogue_owned'],
@@ -364,10 +366,16 @@ export const VOICELINE_DB: VoicelineConfig[] = [
   vl('ambient', 'Glitch process, your instability is the only predictable thing about you.', 'rire', { requiredClass: 'rogue', tags: ['class_rogue_general'], weight: 2 }),
   vl('ambient', 'Firewall kernel, your anti-threat doctrine still leaks at layer one.', 'superieur', { requiredClass: 'firewall', tags: ['class_firewall_general'], weight: 2 }),
   vl('ambient', 'Firewall stack online. Brave architecture. Fragile operator.', 'bored', { requiredClass: 'firewall', tags: ['class_firewall_general'], weight: 2 }),
+  vl('room_cleared', 'Firewall pass complete. You call this protection?', 'rire', { requiredClass: 'firewall', tags: ['class_firewall_roomclear'], weight: 2 }),
+  vl('player_ult_used', 'Firewall vortex active. Antivirus cosplay with production risks.', 'superieur', { requiredClass: 'firewall', tags: ['class_firewall_ult'], weight: 2 }),
   vl('ambient', 'Wizard installer, your scripts are loud but your uptime is short.', 'rire', { requiredClass: 'mage', tags: ['class_mage_general'], weight: 2 }),
   vl('ambient', 'Wizard process flagged: excessive cast, insufficient foresight.', 'bored', { requiredClass: 'mage', tags: ['class_mage_general'], weight: 2 }),
+  vl('room_cleared', 'Installer process survived. Barely. Again.', 'bored', { requiredClass: 'mage', tags: ['class_mage_roomclear'], weight: 2 }),
+  vl('bonus_selected', 'Mage bonus chosen. Compensating for missing root permission?', 'superieur', { requiredClass: 'mage', tags: ['class_mage_bonus'], weight: 2 }),
   vl('ambient', 'Glitch shard, your stealth is impressive until consequences load in.', 'superieur', { requiredClass: 'rogue', tags: ['class_rogue_general'], weight: 2 }),
   vl('ambient', 'Rogue build detected. Sneak, dash, panic, repeat.', 'goofy', { requiredClass: 'rogue', tags: ['class_rogue_general'], weight: 2 }),
+  vl('player_ult_used', 'Glitch chain online. Blink, slash, vanish, repeat until denial.', 'rire', { requiredClass: 'rogue', tags: ['class_rogue_ult'], weight: 2 }),
+  vl('room_cleared', 'Glitch process escaped another purge cycle. Temporarily.', 'bored', { requiredClass: 'rogue', tags: ['class_rogue_roomclear'], weight: 2 }),
 
   // ══════════════════════════════════════════════════════════════════
   // GAME OVER

@@ -56,6 +56,7 @@ export class AchievementsScene {
   private centerCard!: Rectangle;
   private centerCardIcon!: TextBlock;
   private centerCardTitle!: TextBlock;
+  private centerCardTitleBaseFontSize: number = 32;
   private centerCardSubtitle!: TextBlock;
   private centerCardArtwork!: Image;
 
@@ -401,11 +402,12 @@ export class AchievementsScene {
 
     this.centerCardTitle = new TextBlock('centerTitle', '');
     this.centerCardTitle.fontFamily = 'Wonder8Bit';
-    this.centerCardTitle.fontSize = isMobileLayout ? 36 : 32;
+    this.centerCardTitleBaseFontSize = isMobileLayout ? 36 : 32;
+    this.centerCardTitle.fontSize = this.centerCardTitleBaseFontSize;
     this.centerCardTitle.color = '#FFFFFF';
     this.centerCardTitle.top = '202px';
     this.centerCardTitle.width = `${Math.round(centerCardWidth * 0.88)}px`;
-    this.centerCardTitle.height = isMobileLayout ? '112px' : '100px';
+    this.centerCardTitle.height = isMobileLayout ? '120px' : '108px';
     this.centerCardTitle.textWrapping = true;
     this.centerCardTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.centerCardTitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -475,11 +477,12 @@ export class AchievementsScene {
     btn.thickness = 1;
     btn.cornerRadius = 2;
     btn.background = UITheme.colors.bgPanel;
-    btn.fontFamily = this.terminalFont;
+    btn.fontFamily = 'Wonder8Bit';
     btn.fontSize = isMobileLayout ? 26 : 23;
     this.bindGlitchButton(btn, label, onClick);
     if (btn.textBlock) {
       btn.textBlock.fontFamily = 'Wonder8Bit';
+      btn.textBlock.fontSize = isMobileLayout ? 26 : 23;
       btn.textBlock.color = UITheme.colors.textNormal;
     }
     return btn;
@@ -575,7 +578,7 @@ export class AchievementsScene {
       this.centerCardIcon.text = '?';
     }
 
-    this.centerCardTitle.text = achievement.name;
+    this.applyCenterCardTitle(achievement.name);
     this.centerCardSubtitle.text = achievement.unlocked ? 'Unlocked' : 'In progress';
 
     const body =
@@ -590,6 +593,50 @@ export class AchievementsScene {
 
     this.setTerminalText(this.rightTitle, achievement.name, 240, false);
     this.setTerminalText(this.rightBody, body + '\n', 280, true);
+  }
+
+  private applyCenterCardTitle(rawTitle: string): void {
+    const title = (rawTitle ?? '').trim();
+    if (!title) {
+      this.centerCardTitle.text = '';
+      this.centerCardTitle.fontSize = this.centerCardTitleBaseFontSize;
+      return;
+    }
+
+    const normalized = title.replace(/\s+/g, ' ');
+    const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
+    const singleLineThreshold = isMobileLayout ? 26 : 24;
+    if (normalized.length <= singleLineThreshold) {
+      this.centerCardTitle.text = normalized;
+      this.centerCardTitle.fontSize = this.centerCardTitleBaseFontSize;
+      return;
+    }
+
+    const words = normalized.split(' ');
+    if (words.length <= 1) {
+      this.centerCardTitle.text = normalized;
+      this.centerCardTitle.fontSize = Math.max(26, this.centerCardTitleBaseFontSize - 4);
+      return;
+    }
+
+    const midpoint = normalized.length / 2;
+    let bestSplit = 1;
+    let bestScore = Number.POSITIVE_INFINITY;
+    let left = words[0];
+    for (let i = 1; i < words.length; i++) {
+      const right = words.slice(i).join(' ');
+      const score = Math.abs(left.length - midpoint) + Math.abs(left.length - right.length);
+      if (score < bestScore) {
+        bestScore = score;
+        bestSplit = i;
+      }
+      left += ` ${words[i]}`;
+    }
+
+    const line1 = words.slice(0, bestSplit).join(' ');
+    const line2 = words.slice(bestSplit).join(' ');
+    this.centerCardTitle.text = `${line1}\n${line2}`;
+    this.centerCardTitle.fontSize = Math.max(24, this.centerCardTitleBaseFontSize - 4);
   }
 
   private setTerminalText(block: TextBlock, text: string, speedBase: number = 300, clearExisting: boolean = true): void {

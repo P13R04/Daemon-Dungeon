@@ -151,6 +151,7 @@ export class DaemonVoicelineManager {
 
   private seenEnemiesThisRun = new Set<string>();
   private seenRoomSpecialThisRun = new Set<string>();
+  private pendingFirstSeenAfterRoomEntry = new Set<string>();
 
   private roomEntryDelayTimer = 0;
   private isRoomEntryPending = false;
@@ -229,7 +230,11 @@ export class DaemonVoicelineManager {
       if (!enemyType) return;
       if (!this.seenEnemiesThisRun.has(enemyType)) {
         this.seenEnemiesThisRun.add(enemyType);
-        this.request({ trigger: 'enemy_first_seen', context: enemyType, priority: 88, expiresIn: 16 });
+        if (this.isRoomEntryPending) {
+          this.pendingFirstSeenAfterRoomEntry.add(enemyType);
+        } else {
+          this.request({ trigger: 'enemy_first_seen', context: enemyType, priority: 78, expiresIn: 16 });
+        }
       }
     });
 
@@ -382,15 +387,27 @@ export class DaemonVoicelineManager {
   private processRoomEntryTrigger(): void {
     if (this.pendingRoomType === 'boss') {
       this.request({ trigger: 'boss_entered', priority: 98, expiresIn: 10 });
+      this.flushPendingFirstSeen();
       return;
     }
 
     if (this.currentRoom > 0 && this.currentRoom % 5 === 0) {
       this.request({ trigger: 'room_milestone', priority: 86, expiresIn: 12 });
+      this.flushPendingFirstSeen();
       return;
     }
 
     this.request({ trigger: 'room_entered', priority: this.currentRoom === 0 ? 95 : 62, expiresIn: 12 });
+    this.flushPendingFirstSeen();
+  }
+
+  private flushPendingFirstSeen(): void {
+    if (this.pendingFirstSeenAfterRoomEntry.size === 0) return;
+    const first = Array.from(this.pendingFirstSeenAfterRoomEntry).slice(0, 2);
+    this.pendingFirstSeenAfterRoomEntry.clear();
+    for (const enemyType of first) {
+      this.request({ trigger: 'enemy_first_seen', context: enemyType, priority: 72, expiresIn: 16 });
+    }
   }
 
   private tickDirectorGauges(deltaTime: number, playerIsMoving: boolean): void {
@@ -608,6 +625,7 @@ export class DaemonVoicelineManager {
 
     this.seenEnemiesThisRun.clear();
     this.seenRoomSpecialThisRun.clear();
+    this.pendingFirstSeenAfterRoomEntry.clear();
     this.hoarderTimer = 0;
     this.lastKnownCurrency = 0;
 

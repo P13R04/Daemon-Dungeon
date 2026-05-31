@@ -176,8 +176,9 @@ export class HUDManager {
   private daemonFlashTimer: number = 0;
   private daemonFlashDuration: number = 0;
   private daemonFlashPeakAlpha: number = 0;
-  private daemonBaseTop: number = 80;
+  private daemonBaseTop: number = 44;
   private daemonBaseLeft: number = 0;
+  private readonly daemonPopupFontScale: number = 1.48;
   private daemonAvatarController: DaemonAvatarController = new DaemonAvatarController();
   private activeVoicelineAudios: Set<Sound | AudioBufferSourceNode> = new Set();
   private voicelineGainNode: GainNode | null = null;
@@ -274,6 +275,7 @@ export class HUDManager {
   private runEquippedBonuses: Array<{ id: string; stacks: number }> = [];
   private runBonusLayoutWidth: number = 0;
   private bossAlertContainer: Rectangle | null = null;
+  private bossAlertTitle: TextBlock | null = null;
   private bossAlertSubtitle: TextBlock | null = null;
   private bossAlertPulseOverlay: Rectangle | null = null;
   private bossAlertActive: boolean = false;
@@ -382,6 +384,41 @@ export class HUDManager {
         applyResponsiveGuiScaling(this.guiClean, this.scene.getEngine());
       });
     }
+    this.applyDaemonPopupLayout();
+  }
+
+  private applyDaemonPopupLayout(): void {
+    if (!this.daemonContainer || !this.daemonGlitchOverlay || !this.daemonMessageText || !this.daemonAvatarFrameHost || !this.daemonAvatarImage) {
+      return;
+    }
+
+    const idealWidth = this.guiClean.idealWidth || 1920;
+    const compact = idealWidth <= 960;
+    const containerWidth = compact ? 930 : 900;
+    const containerHeight = compact ? 282 : 264;
+    const avatarSize = compact ? 156 : 172;
+    const textLeft = compact ? 204 : 222;
+    const textWidth = compact ? 662 : 640;
+    const textHeight = compact ? 228 : 208;
+    const textFont = Math.round((compact ? 22 : 24) * this.daemonPopupFontScale);
+
+    this.daemonContainer.width = `${containerWidth}px`;
+    this.daemonContainer.height = `${containerHeight}px`;
+    this.daemonGlitchOverlay.width = `${containerWidth}px`;
+    this.daemonGlitchOverlay.height = `${containerHeight}px`;
+
+    this.daemonAvatarFrameHost.width = `${avatarSize}px`;
+    this.daemonAvatarFrameHost.height = `${avatarSize}px`;
+    this.daemonAvatarFrameHost.left = compact ? 18 : 24;
+    this.daemonAvatarImage.width = `${avatarSize}px`;
+    this.daemonAvatarImage.height = `${avatarSize}px`;
+
+    this.daemonMessageText.left = textLeft;
+    this.daemonMessageText.width = `${textWidth}px`;
+    this.daemonMessageText.height = `${textHeight}px`;
+    this.daemonMessageText.fontSize = textFont;
+    this.daemonMessageText.textWrapping = true;
+    this.daemonMessageText.lineSpacing = '2px';
   }
 
   private setupEventListeners(): void {
@@ -582,10 +619,8 @@ export class HUDManager {
     this.scheduledLogTimer = 0;
 
     const roomType = typeof data?.roomType === 'string' ? data.roomType.toLowerCase() : 'normal';
-    if (roomType === 'boss') {
-      const roomName = typeof data?.roomName === 'string' ? data.roomName : 'Unknown Chamber';
-      this.triggerBossRoomAlert(roomName);
-    }
+    const roomName = typeof data?.roomName === 'string' ? data.roomName : 'Unknown Chamber';
+    this.triggerBossRoomAlert(roomName, roomType);
   }
 
   private triggerRandomConsoleGlitchSequence(): void {
@@ -628,10 +663,8 @@ export class HUDManager {
 
   private async handleWaveUpdate(data: any): Promise<void> {
     const roomType = typeof data?.roomType === 'string' ? data.roomType.toLowerCase() : 'normal';
-    if (roomType === 'boss') {
-      const roomName = typeof data?.roomName === 'string' ? data.roomName : 'Unknown Chamber';
-      this.triggerBossRoomAlert(roomName);
-    }
+    const roomName = typeof data?.roomName === 'string' ? data.roomName : 'Unknown Chamber';
+    this.triggerBossRoomAlert(roomName, roomType);
   }
 
   private handlePlayerUltimateReadyEvent(data: PlayerUltReadyPayload): void {
@@ -859,7 +892,7 @@ export class HUDManager {
     pauseBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     pauseBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     pauseBtn.zIndex = 1700;
-    pauseBtn.fontFamily = 'Courier New';
+    pauseBtn.fontFamily = 'Wonder8Bit';
     if (pauseBtn.textBlock) {
       pauseBtn.textBlock.isVisible = false;
       pauseBtn.textBlock.text = '';
@@ -1433,9 +1466,10 @@ export class HUDManager {
     this.guiFx.addControl(this.daemonPopupFlashOverlay);
 
     this.bossAlertContainer = new Rectangle('boss_alert_container');
-    this.bossAlertContainer.width = '540px';
-    this.bossAlertContainer.height = '140px';
+    this.bossAlertContainer.width = '580px';
+    this.bossAlertContainer.height = '148px';
     this.bossAlertContainer.thickness = 2;
+    this.bossAlertContainer.cornerRadius = 8;
     this.bossAlertContainer.color = '#FF5366';
     this.bossAlertContainer.background = 'rgba(25, 0, 0, 0.7)';
     this.bossAlertContainer.top = 120;
@@ -1446,20 +1480,21 @@ export class HUDManager {
     this.guiFx.addControl(this.bossAlertContainer);
 
     const bossTitle = new TextBlock('boss_alert_title');
-    bossTitle.text = 'BOSS ROOM';
+    bossTitle.text = 'NEW ROOM';
     bossTitle.fontSize = 44;
     bossTitle.fontFamily = fontFamily;
-    bossTitle.color = '#FFBBC2';
-    bossTitle.top = -26;
+    bossTitle.color = '#D7FFF3';
+    bossTitle.top = -24;
     bossTitle.height = '60px';
     this.bossAlertContainer.addControl(bossTitle);
+    this.bossAlertTitle = bossTitle;
 
     this.bossAlertSubtitle = new TextBlock('boss_alert_subtitle');
     this.bossAlertSubtitle.text = '';
-    this.bossAlertSubtitle.fontSize = 23;
+    this.bossAlertSubtitle.fontSize = 24;
     this.bossAlertSubtitle.fontFamily = fontFamily;
     this.bossAlertSubtitle.color = '#FFDDE1';
-    this.bossAlertSubtitle.top = 22;
+    this.bossAlertSubtitle.top = 24;
     this.bossAlertSubtitle.height = '50px';
     this.bossAlertContainer.addControl(this.bossAlertSubtitle);
   }
@@ -3767,21 +3802,43 @@ export class HUDManager {
   public isDaemonMessageActive(): boolean {
     return this.daemonVisible;
   }
-  private triggerBossRoomAlert(roomName: string): void {
-    this.addLogMessage('WARNING: BOSS CHAMBER DETECTED.');
+  private triggerBossRoomAlert(roomName: string, roomType: string = 'normal'): void {
+    if (this.pauseTutorialMode) return;
+
+    const normalizedType = (roomType || 'normal').toLowerCase();
+    const dramatic = normalizedType === 'boss' || normalizedType === 'difficile' || normalizedType === 'extreme';
+    const difficultyLabel = normalizedType === 'boss'
+      ? 'BOSS'
+      : normalizedType === 'difficile'
+        ? 'DIFFICULT'
+        : normalizedType === 'extreme'
+          ? 'EXTREME'
+          : 'NORMAL';
+
+    this.addLogMessage(dramatic ? 'WARNING: HIGH-RISK CHAMBER DETECTED.' : 'CHAMBER LINKED. THREAT LEVEL NOMINAL.');
     this.bossAlertActive = true;
     this.bossAlertElapsed = 0;
+    this.bossAlertDuration = dramatic ? 3.35 : 2.15;
+    this.bossAlertPulseCount = dramatic ? 4 : 1;
 
+    if (this.bossAlertTitle) {
+      this.bossAlertTitle.text = dramatic ? 'BOSS ROOM' : 'NEW ROOM';
+      this.bossAlertTitle.color = dramatic ? '#FFBBC2' : '#D7FFF3';
+    }
     if (this.bossAlertSubtitle) {
-      this.bossAlertSubtitle.text = roomName.toUpperCase();
+      this.bossAlertSubtitle.text = `${roomName.toUpperCase()}  //  ${difficultyLabel}`;
+      this.bossAlertSubtitle.color = dramatic ? '#FFDDE1' : '#B8FFE6';
     }
     if (this.bossAlertContainer) {
+      this.bossAlertContainer.color = dramatic ? '#FF5366' : '#4DFFE0';
+      this.bossAlertContainer.background = dramatic ? 'rgba(34, 3, 8, 0.8)' : 'rgba(6, 20, 26, 0.86)';
       this.bossAlertContainer.alpha = 1;
       this.bossAlertContainer.isVisible = true;
     }
     if (this.bossAlertPulseOverlay) {
       this.bossAlertPulseOverlay.alpha = 0;
       this.bossAlertPulseOverlay.isVisible = true;
+      this.bossAlertPulseOverlay.background = dramatic ? '#FF1C32' : '#38C7FF';
     }
   }
 
@@ -3794,7 +3851,8 @@ export class HUDManager {
     const decay = 1 - t * 0.6;
 
     if (this.bossAlertPulseOverlay) {
-      this.bossAlertPulseOverlay.alpha = 0.16 * pulse * decay;
+      const dramatic = this.bossAlertPulseCount > 1;
+      this.bossAlertPulseOverlay.alpha = (dramatic ? 0.22 : 0.08) * pulse * decay;
     }
 
     if (this.bossAlertContainer) {
@@ -5443,24 +5501,14 @@ export class HUDManager {
       const engine = this.scene.getEngine();
       const canvas = engine.getRenderingCanvas();
       if (!canvas) return;
-      
-      const rect = canvas.getBoundingClientRect();
-      const sx = canvas.width  / (rect.width  || 1);
-      const sy = canvas.height / (rect.height || 1);
-      
-      const renderX = (clientX - rect.left) * sx;
-      const renderY = (clientY - rect.top)  * sy;
 
+      const rect = canvas.getBoundingClientRect();
       const idealW = this.guiClean.idealWidth || 1920;
       const idealH = this.guiClean.idealHeight || 1080;
-      const scaleX = canvas.width / idealW;
-      const scaleY = canvas.height / idealH;
-      const guiScale = Math.min(scaleX, scaleY);
-      const offsetX = (canvas.width - idealW * guiScale) / 2;
-      const offsetY = (canvas.height - idealH * guiScale) / 2;
-
-      result.x = (renderX - offsetX) / guiScale;
-      result.y = (renderY - offsetY) / guiScale;
+      const w = Math.max(1, rect.width);
+      const h = Math.max(1, rect.height);
+      result.x = ((clientX - rect.left) / w) * idealW;
+      result.y = ((clientY - rect.top) / h) * idealH;
     };
 
     const toJoystickLocal = (clientX: number, clientY: number, result: Vector2): void => {
@@ -5484,11 +5532,13 @@ export class HUDManager {
         const ndx = dx / maxRadius;
         const ndy = -dy / maxRadius; // Invert Y: screen-down = 3D-backward
         const rawVec = new Vector3(ndx, 0, ndy);
-        if (rawVec.length() > 0.15) {
-          const angle        = Math.atan2(rawVec.x, rawVec.z);
-          const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
-          const quantized    = new Vector3(Math.sin(snappedAngle), 0, Math.cos(snappedAngle)).normalize();
-          if (this.inputManager) this.inputManager.setJoystickMoveVector(quantized);
+        const rawLen = rawVec.length();
+        const deadZone = 0.08;
+        if (rawLen > deadZone) {
+          const normalized = rawVec.scale(1 / Math.max(0.0001, rawLen));
+          const t = Math.min(1, (rawLen - deadZone) / (1 - deadZone));
+          const eased = t * t * (3 - 2 * t);
+          if (this.inputManager) this.inputManager.setJoystickMoveVector(normalized.scale(eased));
         } else {
           if (this.inputManager) this.inputManager.setJoystickMoveVector(Vector3.Zero());
         }
@@ -5507,12 +5557,15 @@ export class HUDManager {
     this.resetMobileJoystick = resetLeftJoystick;
 
     const joystickHalfSize = joystickSize / 2;
+    const joystickActivationRadius = joystickHalfSize * 1.45;
     const isInsideJoystick = (clientX: number, clientY: number): boolean => {
       const coords = new Vector2();
       getIdealPointerCoords(clientX, clientY, coords);
       const dx = coords.x - joystickCenterX;
       const dy = coords.y - joystickCenterY;
-      return Math.abs(dx) <= joystickHalfSize && Math.abs(dy) <= joystickHalfSize;
+      const withinExpandedCircle = ((dx * dx) + (dy * dy)) <= (joystickActivationRadius * joystickActivationRadius);
+      const withinLeftLowerZone = coords.x <= (idealWidth * 0.52) && coords.y >= (idealHeight * 0.34);
+      return withinExpandedCircle || withinLeftLowerZone;
     };
 
     // Global scene observer — supports multi-touch, works outside container bounds

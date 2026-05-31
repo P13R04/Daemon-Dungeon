@@ -126,9 +126,13 @@ export class GameRuntimeOrchestrator {
     const playerPosForSecondary = context.playerController.getPosition();
     const isMageSecondary = context.playerController.getClassId() === 'mage' && secondaryActive;
     const rogueStealthRange =
-      (context.playerController.getClassId() === 'rogue' || context.playerController.getClassId() === 'cat') &&
-      context.playerController.isSecondaryActive()
-        ? context.playerController.getRogueStealthRadius()
+      (context.playerController.getClassId() === 'rogue' || context.playerController.getClassId() === 'cat')
+        ? (context.playerController.isRogueDashStealthActive()
+            // During rogue dash, player must be fully undetectable by enemies.
+            ? 0
+            : (context.playerController.isSecondaryActive()
+              ? context.playerController.getRogueStealthRadius()
+              : undefined))
         : undefined;
 
     context.projectileManager.setHostileProjectileSlowZone(

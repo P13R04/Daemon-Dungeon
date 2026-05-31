@@ -1274,6 +1274,11 @@ export class PlayerController {
     this.hasEnemiesInRoom = present;
   }
 
+  public isRogueDashStealthActive(): boolean {
+    if (!this.isRogueLikeClass()) return false;
+    return this.rogueDashRemaining > 0 || this.rogueDashImpactPending;
+  }
+
   private updateFocusFire(deltaTime: number): void {
     // Stack only while firing and stationary
     if (this.classId !== 'mage') {

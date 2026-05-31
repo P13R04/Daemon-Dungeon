@@ -168,7 +168,7 @@ export class GameManager {
   private fogCurtainVerticalOffset: number = -1.35;
   private fogCurtainHeight: number = 24.8;
   private fogCurtainDepthDistance: number = 5.8;
-  private fogCurtainWidthPadding: number = 24;
+  private fogCurtainWidthPadding: number = 52;
   private fogCurtainLayerWidthStep: number = 2.1;
   private fogCurtainLayerHeightStep: number = 0.18;
   private fogCurtainTransitionFollowStrength: number = 0.68;
@@ -1605,7 +1605,7 @@ export class GameManager {
         bullet_hell: 'sfx_sentry_damage_taken',
       };
       const sound = soundMap[enemyType];
-      if (sound) this.audioManager.playSoundAt(sound, data?.position ?? Vector3.Zero(), 0.7);
+      if (sound) this.audioManager.playSoundAt(sound, data?.position ?? Vector3.Zero(), 0.7, { pitchVariance: 0.2, allowOverlap: true });
     });
 
     this.eventBus.on(GameEvents.ENEMY_SPAWNED, (data: any) => {
@@ -1657,7 +1657,7 @@ export class GameManager {
       };
       const deathSound = soundMap[enemyType ?? ''];
       if (deathSound) {
-        this.audioManager?.playSoundAt(deathSound, data?.position ?? Vector3.Zero(), 0.8);
+        this.audioManager?.playSoundAt(deathSound, data?.position ?? Vector3.Zero(), 0.8, { pitchVariance: 0.22, allowOverlap: true });
       }
     });
 
@@ -1665,33 +1665,33 @@ export class GameManager {
       const cue = data?.cue as string | undefined;
       const position = data?.position || Vector3.Zero();
       const sound = cue === 'aim' ? 'sfx_bull_charge1' : cue === 'dash' ? 'sfx_bull_dash1' : cue === 'collision' ? 'sfx_bull_collision1' : '';
-      if (sound) this.audioManager?.playSoundAt(sound, position, 0.8);
+      if (sound) this.audioManager?.playSoundAt(sound, position, 0.8, { pitchVariance: 0.2, allowOverlap: true });
     });
     this.eventBus.on(GameEvents.ENEMY_JUMPER_AUDIO_CUE, (data: any) => {
       const cue = data?.cue as string | undefined;
       const position = data?.position || Vector3.Zero();
       const sound = cue === 'jump' ? 'sfx_jumper_jump1' : cue === 'land' ? 'sfx_jumper_land1' : '';
-      if (sound) this.audioManager?.playSoundAt(sound, position, 0.8);
+      if (sound) this.audioManager?.playSoundAt(sound, position, 0.8, { pitchVariance: 0.2, allowOverlap: true });
     });
     this.eventBus.on(GameEvents.ENEMY_PONG_AUDIO_CUE, (data: any) => {
       const cue = data?.cue as string | undefined;
       const position = data?.position || Vector3.Zero();
       const sound = cue === 'bounce' ? 'sfx_pong_wall_bounce1' : cue === 'flyby' ? 'sfx_pong_flying_close1' : '';
-      if (sound) this.audioManager?.playSoundAt(sound, position, 0.8);
+      if (sound) this.audioManager?.playSoundAt(sound, position, 0.8, { pitchVariance: 0.2, allowOverlap: true });
     });
     this.eventBus.on(GameEvents.ENEMY_PONG_CORNER_HIT, () => {
-      this.codexService.completeAchievement('pong_corner_hit');
+      // Achievement retired: keep telemetry event only.
     });
     this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_SPLIT_IMPACT, (data: any) => {
-      this.audioManager?.playSoundAt('sfx_artificier_shot_split1', data?.position ?? Vector3.Zero(), 0.85);
+      this.audioManager?.playSoundAt('sfx_artificier_shot_split1', data?.position ?? Vector3.Zero(), 0.85, { pitchVariance: 0.24, allowOverlap: true });
     });
     this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_SHOT_FIRED, (data: any) => {
-      this.audioManager?.playSoundAt('sfx_sentry_shots_fired1', data?.position ?? Vector3.Zero(), 0.85);
+      this.audioManager?.playSoundAt('sfx_sentry_shots_fired1', data?.position ?? Vector3.Zero(), 0.85, { pitchVariance: 0.22, allowOverlap: true });
     });
     this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_PROJECTILE_FLIGHT_STARTED, (data: any) => {
       this.activeArtificierProjectilesInFlight += 1;
       if (this.activeArtificierProjectilesInFlight === 1) {
-        this.audioManager?.playSoundAt('sfx_sentry_projectile_flying1', data?.position ?? Vector3.Zero(), 0.5);
+        this.audioManager?.playSoundAt('sfx_sentry_projectile_flying1', data?.position ?? Vector3.Zero(), 0.5, { pitchVariance: 0.18, allowOverlap: true });
       }
     });
     this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_PROJECTILE_FLIGHT_ENDED, () => {
@@ -1704,7 +1704,7 @@ export class GameManager {
       const zoneId = data?.zoneId as number | undefined;
       if (typeof zoneId === 'number') this.activeArtificierZoneIds.add(zoneId);
       if (this.activeArtificierZoneIds.size === 1) {
-        this.audioManager?.playSoundAt('sfx_artificier_splash_zone_hum1', data?.position ?? Vector3.Zero(), 0.55);
+        this.audioManager?.playSoundAt('sfx_artificier_splash_zone_hum1', data?.position ?? Vector3.Zero(), 0.55, { pitchVariance: 0.14, allowOverlap: true });
       }
     });
     this.eventBus.on(GameEvents.ENEMY_ARTIFICIER_DOT_ZONE_ENDED, (data: any) => {
@@ -1717,25 +1717,25 @@ export class GameManager {
       const now = Date.now();
       if (now - this.lastArtificierZoneDamageSfxAtMs < 180) return;
       this.lastArtificierZoneDamageSfxAtMs = now;
-      this.audioManager?.playSoundAt('sfx_artificier_zone_dmg', data?.position ?? Vector3.Zero(), 0.65);
+      this.audioManager?.playSoundAt('sfx_artificier_zone_dmg', data?.position ?? Vector3.Zero(), 0.65, { pitchVariance: 0.2, allowOverlap: true });
     });
     this.eventBus.on(GameEvents.ENEMY_HEALER_HEAL_CAST, (data: any) => {
       const position = data?.targetPosition || data?.casterPosition || Vector3.Zero();
-      this.audioManager?.playSoundAt('sfx_healer_heal_beam1', position, 0.8);
+      this.audioManager?.playSoundAt('sfx_healer_heal_beam1', position, 0.8, { pitchVariance: 0.16, allowOverlap: true });
     });
     this.eventBus.on(GameEvents.ENEMY_ROCKET_SENTRY_FIRED, (data: any) => {
-      this.audioManager?.playSoundAt('sfx_rocket_sentry_launched1', data?.position ?? Vector3.Zero(), 0.85);
+      this.audioManager?.playSoundAt('sfx_rocket_sentry_launched1', data?.position ?? Vector3.Zero(), 0.85, { pitchVariance: 0.22, allowOverlap: true });
     });
     this.eventBus.on(GameEvents.ENEMY_ROCKET_SENTRY_IMPACT, (data: any) => {
-      this.audioManager?.playSoundAt('sfx_rocket_sentry_explode', data?.position ?? Vector3.Zero(), 0.9);
+      this.audioManager?.playSoundAt('sfx_rocket_sentry_explode', data?.position ?? Vector3.Zero(), 0.9, { pitchVariance: 0.24, allowOverlap: true });
     });
     this.eventBus.on(GameEvents.ENEMY_SENTRY_SHOOTER_FIRED, (data: any) => {
-      this.audioManager?.playSoundAt('sfx_sentry_shots_fired1', data?.position ?? Vector3.Zero(), 0.8);
+      this.audioManager?.playSoundAt('sfx_sentry_shots_fired1', data?.position ?? Vector3.Zero(), 0.8, { pitchVariance: 0.22, allowOverlap: true });
     });
     this.eventBus.on(GameEvents.ENEMY_SENTRY_SHOOTER_PROJECTILE_FLIGHT_STARTED, (data: any) => {
       this.activeSentryShooterProjectilesInFlight += 1;
       if (this.activeSentryShooterProjectilesInFlight === 1) {
-        this.audioManager?.playSoundAt('sfx_sentry_projectile_flying1', data?.position ?? Vector3.Zero(), 0.45);
+        this.audioManager?.playSoundAt('sfx_sentry_projectile_flying1', data?.position ?? Vector3.Zero(), 0.45, { pitchVariance: 0.18, allowOverlap: true });
       }
     });
     this.eventBus.on(GameEvents.ENEMY_SENTRY_SHOOTER_PROJECTILE_FLIGHT_ENDED, () => {
@@ -1745,7 +1745,7 @@ export class GameManager {
       }
     });
     this.eventBus.on(GameEvents.ENEMY_SENTRY_SHOOTER_ONHIT_PLAYER, (data: any) => {
-      this.audioManager?.playSoundAt('sfx_sentry_onhit_sntry', data?.position ?? Vector3.Zero(), 0.8);
+      this.audioManager?.playSoundAt('sfx_sentry_onhit_sntry', data?.position ?? Vector3.Zero(), 0.8, { pitchVariance: 0.2, allowOverlap: true });
     });
     this.eventBus.on(GameEvents.ABILITY_STATE_CHANGED, (data: any) => {
       if (!this.audioManager) return;
@@ -1780,7 +1780,7 @@ export class GameManager {
       }
     });
     this.eventBus.on(GameEvents.ENEMY_NECROMANCER_SUMMON, (data: any) => {
-      this.audioManager?.playSoundAt('sfx_necromancer_spawn', data?.position ?? Vector3.Zero(), 0.8);
+      this.audioManager?.playSoundAt('sfx_necromancer_spawn', data?.position ?? Vector3.Zero(), 0.8, { pitchVariance: 0.2, allowOverlap: true });
     });
     this.eventBus.on(GameEvents.PROJECTILE_HIT, (data: any) => {
       if (!this.audioManager) return;
@@ -1824,20 +1824,20 @@ export class GameManager {
       const playerPos = this.playerController?.getPosition?.() || Vector3.Zero();
       if (type === 'projectile') {
         const castSound = this.selectedClassId === 'mage' ? 'sfx_mage_main_attack' : (Math.random() < 0.5 ? 'sfx_player_cast1' : 'sfx_player_cast2');
-        this.audioManager.playSoundAt(castSound, playerPos, 0.72, { pitchVariance: 0.1, allowOverlap: true });
+        this.audioManager.playSoundAt(castSound, playerPos, 0.72, { pitchVariance: 0.26, allowOverlap: true });
       } else if (type === 'secondary_burst') {
-        this.audioManager.playSoundAt('sfx_player_cast1', playerPos, 0.8, { pitchVariance: 0.1 });
+        this.audioManager.playSoundAt('sfx_player_cast1', playerPos, 0.8, { pitchVariance: 0.22, allowOverlap: true });
       } else if (type === 'ultimate') {
         // Ultimate start is handled by PLAYER_ULTIMATE_USED or ABILITY_STATE_CHANGED
       } else if (type === 'melee') {
         const soundId = this.selectedClassId === 'rogue' || this.selectedClassId === 'cat' ? 'sfx_glitch_slice' : 'sfx_player_cast1';
-        this.audioManager.playSoundAt(soundId, playerPos, 0.8, { pitchVariance: 0.1, allowOverlap: true });
+        this.audioManager.playSoundAt(soundId, playerPos, 0.8, { pitchVariance: 0.28, allowOverlap: true });
       } else if (type === 'tank_sweep') {
-        this.audioManager.playSoundAt('sfx_tank_attack', playerPos, 0.8, { pitchVariance: 0.1, allowOverlap: true });
+        this.audioManager.playSoundAt('sfx_tank_attack', playerPos, 0.8, { pitchVariance: 0.24, allowOverlap: true });
       } else if (type === 'stance_dash') {
-        this.audioManager.playSoundAt('sfx_glitch_dash', playerPos, 0.9, { pitchVariance: 0.1 });
+        this.audioManager.playSoundAt('sfx_glitch_dash', playerPos, 0.9, { pitchVariance: 0.24, allowOverlap: true });
       } else if (type === 'tank_shield_bash') {
-        this.audioManager.playSoundAt('sfx_tank_shield_bash', playerPos, 0.8, { pitchVariance: 0.1 });
+        this.audioManager.playSoundAt('sfx_tank_shield_bash', playerPos, 0.8, { pitchVariance: 0.24, allowOverlap: true });
       }
     }
 
@@ -1870,7 +1870,7 @@ export class GameManager {
     const lastAt = this.playerDamageSfxLastAtMs.get(channel) ?? 0;
     if (now - lastAt < cooldownMs) return;
     this.playerDamageSfxLastAtMs.set(channel, now);
-    this.audioManager.playSoundAt(soundId, position, volume);
+    this.audioManager.playSoundAt(soundId, position, volume, { pitchVariance: 0.2, allowOverlap: true });
   }
 
   private resolveIncomingMeleeDamage(rawDamage: number, attackerId: string): number {
@@ -1913,7 +1913,7 @@ export class GameManager {
     const blockRatio = this.playerController.getTankMeleeBlockRatio();
     const finalDamage = Math.max(0, rawDamage * (1 - blockRatio));
     if (blockRatio > 0 && this.audioManager && this.playerController.getPosition) {
-      this.audioManager.playSoundAt('sfx_tank_block', this.playerController.getPosition(), 0.8, { pitchVariance: 0.1 });
+      this.audioManager.playSoundAt('sfx_tank_block', this.playerController.getPosition(), 0.8, { pitchVariance: 0.2, allowOverlap: true });
     }
     const riposteRatio = this.playerController.getTankRiposteMeleeRatio();
     if (riposteRatio > 0) {
@@ -1960,7 +1960,7 @@ export class GameManager {
       );
     if (sounds.length <= 0) return;
     const randomSound = sounds[Math.floor(Math.random() * sounds.length)];
-    this.audioManager.playSoundAt(randomSound, this.playerController?.getPosition?.() || Vector3.Zero(), 0.8);
+    this.audioManager.playSoundAt(randomSound, this.playerController?.getPosition?.() || Vector3.Zero(), 0.8, { pitchVariance: 0.2, allowOverlap: true });
   }
 
   private registerStates(): void {
@@ -4074,7 +4074,7 @@ export class GameManager {
       downloadProgress = 0.08 + (idleScan * 0.14);
     }
 
-    const cameraCoverageWidth = Math.max(22, camera.radius * 2.2);
+    const cameraCoverageWidth = Math.max(24, camera.radius * 2.8);
     const curtainWidth = Math.max(currentRoomWidth, nextRoomWidth, cameraCoverageWidth + this.fogCurtainWidthPadding);
     const layerCount = Math.max(1, this.fogCurtainLayerCount);
     const topMaskBaseLength = Math.max(6.4, depthDistance + (nextHalfDepth * this.fogCurtainTopMaskDepthScale));

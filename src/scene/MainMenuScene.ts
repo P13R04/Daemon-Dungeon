@@ -29,7 +29,7 @@ import { UIFactory } from '../ui/UIFactory';
 import { BASE_TEXT_SCALE, UITheme } from '../ui/UITheme';
 import { DaemonGlitchFx } from '../ui/DaemonGlitchFx';
 import { createMenuMatrixBackground } from './MenuMatrixBackground';
-import { applyResponsiveGuiScaling, computeLayoutScale, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
+import { applyResponsiveGuiScaling, DESIGN_HEIGHT, DESIGN_WIDTH } from '../ui/GuiScaling';
 import { AudioManager } from '../audio/AudioManager';
 import { playUiSelectClick } from '../audio/UiSelectClick';
 import { DAEMON_FOUR_FRAME_PRESET_NAMES, getDaemonAnimationPreset } from '../data/voicelines/DaemonAnimationPresets';
@@ -175,6 +175,11 @@ export class MainMenuScene {
     const updateScale = () => {
       this.mainLayoutContainer.scaleX = 1;
       this.mainLayoutContainer.scaleY = 1;
+      const idealWidthNow = this.gui.idealWidth || DESIGN_WIDTH;
+      const idealHeightNow = this.gui.idealHeight || DESIGN_HEIGHT;
+      this.layoutWidth = Math.round(idealWidthNow);
+      this.layoutHeight = Math.round(idealHeightNow);
+      this.layoutsCalculated = false;
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
@@ -740,39 +745,46 @@ export class MainMenuScene {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.font = "72px Wonder8Bit";
+    ctx.font = `${this.overlayFontSize}px Wonder8Bit`;
 
-    // DAEMON (Right-aligned in 500px container)
+    const layoutScale = Math.min(
+      this.layoutWidth / Math.max(1, DESIGN_WIDTH),
+      this.layoutHeight / Math.max(1, DESIGN_HEIGHT)
+    );
+    const shiftTune = Math.round((1 - layoutScale) * 2);
+    this.daemonPixelShift = 11 + shiftTune;
+    this.dungeonPixelShift = shiftTune;
+
+    const containerWidth = 500;
+
     const daemonWord = 'DAEMON';
-    const totalW1 = ctx.measureText(daemonWord).width;
-    const startX1 = 500 - totalW1;
-
+    const daemonTotal = ctx.measureText(daemonWord).width;
+    const daemonStart = containerWidth - daemonTotal;
     for (let i = 0; i < daemonWord.length; i++) {
       const letter = this.titlePart1OverlayLetters[i];
-      if (letter) {
-        const wBefore = ctx.measureText(daemonWord.substring(0, i)).width;
-        const wWithChar = ctx.measureText(daemonWord.substring(0, i + 1)).width;
-        const charW = wWithChar - wBefore;
-
-        letter.width = `${charW}px`;
-        letter.left = `${startX1 + wBefore + this.daemonPixelShift}px`;
-      }
+      if (!letter) continue;
+      const wBefore = ctx.measureText(daemonWord.substring(0, i)).width;
+      const wWith = ctx.measureText(daemonWord.substring(0, i + 1)).width;
+      const charW = Math.max(1, Math.round(wWith - wBefore));
+      letter.text = daemonWord[i];
+      letter.width = `${charW}px`;
+      letter.left = `${Math.round(daemonStart + wBefore + this.daemonPixelShift)}px`;
+      letter.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      letter.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     }
 
-    // DUNGEON (Left-aligned in 500px container)
     const dungeonWord = 'DUNGEON';
-    const startX2 = 0;
-
     for (let i = 0; i < dungeonWord.length; i++) {
       const letter = this.titlePart2OverlayLetters[i];
-      if (letter) {
-        const wBefore = ctx.measureText(dungeonWord.substring(0, i)).width;
-        const wWithChar = ctx.measureText(dungeonWord.substring(0, i + 1)).width;
-        const charW = wWithChar - wBefore;
-
-        letter.width = `${charW}px`;
-        letter.left = `${startX2 + wBefore + this.dungeonPixelShift}px`;
-      }
+      if (!letter) continue;
+      const wBefore = ctx.measureText(dungeonWord.substring(0, i)).width;
+      const wWith = ctx.measureText(dungeonWord.substring(0, i + 1)).width;
+      const charW = Math.max(1, Math.round(wWith - wBefore));
+      letter.text = dungeonWord[i];
+      letter.width = `${charW}px`;
+      letter.left = `${Math.round(wBefore + this.dungeonPixelShift)}px`;
+      letter.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+      letter.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     }
   }
 
