@@ -2226,7 +2226,8 @@ export class GameManager {
     const moveSpeed = this.playerController?.getMoveSpeed?.() ?? 0;
     const fireRate = this.playerController?.getCurrentFireRate?.() ?? 0;
     const attackSpeed = fireRate > 0 ? 1 / fireRate : 0;
-    this.codexService.recordCombatSnapshot(moveSpeed, attackSpeed);
+    const activeBonuses = this.bonusSystemManager?.getActiveBonuses() || [];
+    this.codexService.recordCombatSnapshot(moveSpeed, attackSpeed, activeBonuses);
     this.lastBenchmarkFrameProfile = profiler ? profiler.finish() : null;
 
     // Wall occlusion transparency — update after player update to get fresh position.

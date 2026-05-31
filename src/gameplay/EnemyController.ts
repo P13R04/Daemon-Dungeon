@@ -1673,13 +1673,15 @@ export class EnemyController {
       this.attackCooldown -= deltaTime;
     }
 
-    if (distance <= this.rangedMaxRange && this.attackCooldown <= 0) {
+    const hasLineOfSight = !roomManager || this.isStraightLineOfSightClear(this.position, playerPosition, roomManager);
+
+    if (distance <= this.rangedMaxRange && this.attackCooldown <= 0 && hasLineOfSight) {
       if (this.rangedWindup > 0) {
         this.attackCooldown = this.rangedWindup;
       } else {
         this.fireProjectile(playerPosition, playerVelocity);
       }
-    } else if (this.attackCooldown > 0 && this.attackCooldown <= 0.001 && this.rangedWindup > 0) {
+    } else if (this.attackCooldown > 0 && this.attackCooldown <= 0.001 && this.rangedWindup > 0 && hasLineOfSight) {
       this.fireProjectile(playerPosition, playerVelocity);
     }
   }
@@ -2402,6 +2404,14 @@ export class EnemyController {
     }
 
     if (this.behavior === 'jumper' && this.jumperState === 'jump') {
+      this.attackPlayer();
+      if (this.knockbackStrength > 0) {
+        const knock = playerPosition.subtract(this.position);
+        knock.y = 0;
+        if (knock.lengthSquared() > 0.0001) {
+          return knock.normalize().scale(this.knockbackStrength);
+        }
+      }
       return null;
     }
 
@@ -2817,6 +2827,24 @@ export class EnemyController {
       const sampleDist = Math.min(distance, i * step);
       const samplePoint = start.add(direction.scale(sampleDist));
       if (!roomManager.isWalkableFor(samplePoint.x, samplePoint.z, this.getNavigationCapabilities())) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private isStraightLineOfSightClear(start: Vector3, end: Vector3, roomManager: RoomManager): boolean {
+    const distance = Vector3.Distance(start, end);
+    if (distance <= 0.05) return true;
+
+    const step = 0.3; // Sample every 30cm
+    const stepsCount = Math.ceil(distance / step);
+    const direction = end.subtract(start).normalize();
+
+    for (let i = 1; i <= stepsCount; i++) {
+      const sampleDist = Math.min(distance, i * step);
+      const samplePoint = start.add(direction.scale(sampleDist));
+      if (this.isVisionBlockedAt(samplePoint, roomManager)) {
         return false;
       }
     }

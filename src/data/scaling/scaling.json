@@ -7,12 +7,12 @@
     },
     "damage": {
       "baseValue": 1.0,
-      "perRoomMultiplier": 1.10,
+      "perRoomMultiplier": 1.07,
       "perRoomAdditive": 2
     },
     "speed": {
       "baseValue": 1.0,
-      "perRoomMultiplier": 1.05,
+      "perRoomMultiplier": 1.02,
       "perRoomAdditive": 0
     }
   }

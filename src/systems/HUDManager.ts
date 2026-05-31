@@ -3809,11 +3809,13 @@ export class HUDManager {
     const dramatic = normalizedType === 'boss' || normalizedType === 'difficile' || normalizedType === 'extreme';
     const difficultyLabel = normalizedType === 'boss'
       ? 'BOSS'
-      : normalizedType === 'difficile'
-        ? 'DIFFICULT'
-        : normalizedType === 'extreme'
-          ? 'EXTREME'
-          : 'NORMAL';
+      : normalizedType === 'extreme'
+        ? 'EXTRÊME'
+        : normalizedType === 'difficile'
+          ? 'DIFFICILE'
+          : normalizedType === 'intermediaire'
+            ? 'INTERMÉDIAIRE'
+            : 'FACILE';
 
     this.addLogMessage(dramatic ? 'WARNING: HIGH-RISK CHAMBER DETECTED.' : 'CHAMBER LINKED. THREAT LEVEL NOMINAL.');
     this.bossAlertActive = true;

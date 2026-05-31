@@ -505,11 +505,14 @@ export class CodexService {
     this.saveLocalSnapshot();
   }
 
-  recordCombatSnapshot(moveSpeed: number, attackSpeed: number): void {
-    if (Number.isFinite(moveSpeed) && moveSpeed >= 1.5) {
+  recordCombatSnapshot(moveSpeed: number, attackSpeed: number, activeBonuses: { id: string; stacks: number }[] = []): void {
+    const msStacks = activeBonuses.find(b => b.id === 'bonus_ms')?.stacks || 0;
+    const asStacks = activeBonuses.find(b => b.id === 'bonus_fire_rate')?.stacks || 0;
+
+    if (Number.isFinite(moveSpeed) && moveSpeed >= 1.5 && msStacks >= 3) {
       this.completeAchievement('move_speed_1_5');
     }
-    if (Number.isFinite(attackSpeed) && attackSpeed >= 1.5) {
+    if (Number.isFinite(attackSpeed) && attackSpeed >= 1.5 && asStacks >= 3) {
       this.completeAchievement('overclocked');
     }
   }

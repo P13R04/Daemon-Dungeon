@@ -67,14 +67,14 @@ export class ConfigLoader {
         { default?: RoomConfig } | RoomConfig
       >;
 
-      const loadedFacileRooms = this.normalizeRoomModules(facileRoomModules);
-      const loadedIntermediaireRooms = this.normalizeRoomModules(intermediaireRoomModules);
-      const loadedDifficileRooms = this.normalizeRoomModules(difficileRoomModules);
-      const loadedExtremeRooms = this.normalizeRoomModules(extremeRoomModules);
-      const loadedBossRooms = this.normalizeRoomModules(bossRoomModules);
-      const loadedAiRooms = this.normalizeRoomModules(aiRoomModules);
-      const loadedLegacyRootRooms = this.normalizeRoomModules(legacyRootRoomModules);
-      const loadedLegacyOldTestRooms = this.normalizeRoomModules(legacyOldTestRoomModules);
+      const loadedFacileRooms = this.normalizeRoomModules(facileRoomModules, 'facile');
+      const loadedIntermediaireRooms = this.normalizeRoomModules(intermediaireRoomModules, 'intermediaire');
+      const loadedDifficileRooms = this.normalizeRoomModules(difficileRoomModules, 'difficile');
+      const loadedExtremeRooms = this.normalizeRoomModules(extremeRoomModules, 'extreme');
+      const loadedBossRooms = this.normalizeRoomModules(bossRoomModules, 'boss');
+      const loadedAiRooms = this.normalizeRoomModules(aiRoomModules, 'normal');
+      const loadedLegacyRootRooms = this.normalizeRoomModules(legacyRootRoomModules, 'normal');
+      const loadedLegacyOldTestRooms = this.normalizeRoomModules(legacyOldTestRoomModules, 'normal');
 
       this.facileRoomsConfig = loadedFacileRooms;
       this.intermediaireRoomsConfig = loadedIntermediaireRooms;
@@ -128,10 +128,16 @@ export class ConfigLoader {
     throw lastError instanceof Error ? lastError : new Error(`Failed to load ${path}`);
   }
 
-  private normalizeRoomModules(modules: Record<string, { default?: RoomConfig } | RoomConfig>): RoomsConfig {
+  private normalizeRoomModules(modules: Record<string, { default?: RoomConfig } | RoomConfig>, defaultRoomType?: string): RoomsConfig {
     return Object.values(modules)
       .map((module) => (module as { default?: RoomConfig }).default ?? (module as RoomConfig))
       .filter((room): room is RoomConfig => Boolean(room && typeof room.id === 'string'))
+      .map((room) => {
+        if (!room.roomType && defaultRoomType) {
+          room.roomType = defaultRoomType;
+        }
+        return room;
+      })
       .sort((a, b) => a.id.localeCompare(b.id));
   }
 

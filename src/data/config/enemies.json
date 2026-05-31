@@ -391,10 +391,10 @@
     "behavior": "turret",
     "behaviorConfig": {
       "rangedMinRange": 0,
-      "rangedMaxRange": 8,
+      "rangedMaxRange": 999,
       "rangedCooldown": 1.1,
       "projectileSpeed": 7,
-      "projectileRange": 14,
+      "projectileRange": 999,
       "leadTime": 0.1
     },
     "lootTable": [],
@@ -813,10 +813,10 @@
     "behavior": "turret",
     "behaviorConfig": {
       "rangedMinRange": 0,
-      "rangedMaxRange": 15,
+      "rangedMaxRange": 999,
       "rangedCooldown": 2,
       "projectileSpeed": 4.5,
-      "projectileRange": 14,
+      "projectileRange": 999,
       "leadTime": 0
     },
     "lootTable": [],
