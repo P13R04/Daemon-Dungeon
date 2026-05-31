@@ -280,26 +280,28 @@ export class AchievementsScene {
     }
     mainLayoutContainer.addControl(backBtn);
 
-    const devBtn = this.makeTabButton(this.getDevLabel(), () => {
-      this.codexService.setDevUnlockCodexEntries(!this.codexService.getDevUnlockCodexEntries());
-      devBtn.textBlock!.text = this.getDevLabel();
-      this.clearLeftList();
-      this.populateAchievementList();
-      this.refreshAchievementSelection(true);
-    });
-    devBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-    devBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    devBtn.width = topButtonWidth;
-    devBtn.height = topButtonHeight;
-    devBtn.left = '-32px';
-    devBtn.top = '20px';
-    if (devBtn.textBlock) {
-      devBtn.textBlock.fontSize = isMobileLayout ? 25 : 23;
-      devBtn.textBlock.fontFamily = 'Wonder8Bit';
-      devBtn.textBlock.color = '#FFFFFF';
-      (devBtn.textBlock as any).__daemonBaseColor = '#FFFFFF';
+    if (!import.meta.env.PROD) {
+      const devBtn = this.makeTabButton(this.getDevLabel(), () => {
+        this.codexService.setDevUnlockCodexEntries(!this.codexService.getDevUnlockCodexEntries());
+        devBtn.textBlock!.text = this.getDevLabel();
+        this.clearLeftList();
+        this.populateAchievementList();
+        this.refreshAchievementSelection(true);
+      });
+      devBtn.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+      devBtn.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+      devBtn.width = topButtonWidth;
+      devBtn.height = topButtonHeight;
+      devBtn.left = '-32px';
+      devBtn.top = '20px';
+      if (devBtn.textBlock) {
+        devBtn.textBlock.fontSize = isMobileLayout ? 25 : 23;
+        devBtn.textBlock.fontFamily = 'Wonder8Bit';
+        devBtn.textBlock.color = '#FFFFFF';
+        (devBtn.textBlock as any).__daemonBaseColor = '#FFFFFF';
+      }
+      mainLayoutContainer.addControl(devBtn);
     }
-    mainLayoutContainer.addControl(devBtn);
 
     const mainTitle = UIFactory.createText('achTitle', 'ACHIEVEMENTS', 60, UITheme.colors.textHighlight);
     mainTitle.fontFamily = 'Wonder8Bit';

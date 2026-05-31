@@ -62,6 +62,7 @@ interface AudioEngineLike {
 }
 
 const STORAGE_KEY = 'daemonDungeon.settings.v1';
+const DEV_FEATURES_ENABLED = !import.meta.env.PROD;
 
 const DEFAULT_SETTINGS: GameSettings = {
   controls: {
@@ -79,7 +80,7 @@ const DEFAULT_SETTINGS: GameSettings = {
   },
   audio: {
     master: 1,
-    music: 0.8,
+    music: 0.25,
     sfx: 0.9,
     ui: 0.9,
     voice: 1,
@@ -160,10 +161,15 @@ export class GameSettingsStore {
   }
 
   static updateAccessibility(patch: Partial<AccessibilitySettings>): void {
-    GameSettingsStore.settings.accessibility = {
+    const nextAccessibility: AccessibilitySettings = {
       ...GameSettingsStore.settings.accessibility,
       ...patch,
     };
+    if (!DEV_FEATURES_ENABLED) {
+      nextAccessibility.catGodModeEnabled = false;
+      nextAccessibility.devModeEnabled = false;
+    }
+    GameSettingsStore.settings.accessibility = nextAccessibility;
     GameSettingsStore.persist(GameSettingsStore.settings);
     GameSettingsStore.notify();
   }
@@ -257,8 +263,8 @@ export class GameSettingsStore {
       },
       accessibility: {
         colorFilter: sanitizeFilter(parsed.accessibility?.colorFilter),
-        catGodModeEnabled: !!parsed.accessibility?.catGodModeEnabled,
-        devModeEnabled: !!parsed.accessibility?.devModeEnabled,
+        catGodModeEnabled: DEV_FEATURES_ENABLED ? !!parsed.accessibility?.catGodModeEnabled : false,
+        devModeEnabled: DEV_FEATURES_ENABLED ? !!parsed.accessibility?.devModeEnabled : false,
         tutorialCompleted: !!parsed.accessibility?.tutorialCompleted,
       },
       graphics: {

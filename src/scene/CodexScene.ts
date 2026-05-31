@@ -278,17 +278,19 @@ export class CodexScene {
     backBtn.left = '24px';
     mainLayoutContainer.addControl(backBtn);
 
-    const devBtn = this.makeTopButton('codexDev', this.getDevLabel(), Control.HORIZONTAL_ALIGNMENT_RIGHT, () => {
-      this.codexService.setDevUnlockCodexEntries(!this.codexService.getDevUnlockCodexEntries());
-      devBtn.textBlock!.text = this.getDevLabel();
-      this.refreshSection(true);
-    });
-    devBtn.left = '-24px';
-    if (devBtn.textBlock) {
-      devBtn.textBlock.color = '#FFFFFF';
-      (devBtn.textBlock as any).__daemonBaseColor = '#FFFFFF';
+    if (!import.meta.env.PROD) {
+      const devBtn = this.makeTopButton('codexDev', this.getDevLabel(), Control.HORIZONTAL_ALIGNMENT_RIGHT, () => {
+        this.codexService.setDevUnlockCodexEntries(!this.codexService.getDevUnlockCodexEntries());
+        devBtn.textBlock!.text = this.getDevLabel();
+        this.refreshSection(true);
+      });
+      devBtn.left = '-24px';
+      if (devBtn.textBlock) {
+        devBtn.textBlock.color = '#FFFFFF';
+        (devBtn.textBlock as any).__daemonBaseColor = '#FFFFFF';
+      }
+      mainLayoutContainer.addControl(devBtn);
     }
-    mainLayoutContainer.addControl(devBtn);
 
     const centerFreeWidth = Math.max(320, centerLaneWidth - 20);
     this.topTabButtonHeight = Math.round(menuButtonHeight * 0.82);

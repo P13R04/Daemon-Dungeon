@@ -115,6 +115,9 @@ export class CodexService {
     runEnemyTypes: [],
   };
   private devUnlockCodexEntries: boolean = false;
+  private isDevUnlockActive(): boolean {
+    return !import.meta.env.PROD && this.devUnlockCodexEntries && GameSettingsStore.get().accessibility.devModeEnabled;
+  }
   private syncAdapter?: CodexSyncAdapter;
   private snapshotSaveTimer: number | null = null;
   private snapshotDirty: boolean = false;
@@ -167,27 +170,27 @@ export class CodexService {
   }
 
   isUnlocked(entryId: string): boolean {
-    if (this.devUnlockCodexEntries && GameSettingsStore.get().accessibility.devModeEnabled) {
+    if (this.isDevUnlockActive()) {
       return true;
     }
     return this.unlockedEntries.has(entryId);
   }
 
   isEnemyUnlocked(enemyTypeId: string): boolean {
-    return (this.devUnlockCodexEntries && GameSettingsStore.get().accessibility.devModeEnabled) || this.encounteredEnemies.has(enemyTypeId);
+    return this.isDevUnlockActive() || this.encounteredEnemies.has(enemyTypeId);
   }
 
   isBonusUnlocked(bonusId: string): boolean {
-    return (this.devUnlockCodexEntries && GameSettingsStore.get().accessibility.devModeEnabled) || this.discoveredBonuses.has(bonusId);
+    return this.isDevUnlockActive() || this.discoveredBonuses.has(bonusId);
   }
 
   setDevUnlockCodexEntries(enabled: boolean): void {
-    this.devUnlockCodexEntries = enabled;
+    this.devUnlockCodexEntries = !import.meta.env.PROD && enabled;
     this.saveLocalSnapshot();
   }
 
   getDevUnlockCodexEntries(): boolean {
-    return this.devUnlockCodexEntries;
+    return !import.meta.env.PROD && this.devUnlockCodexEntries;
   }
 
   async markEnemyEncountered(enemyTypeId: string): Promise<void> {
@@ -280,7 +283,7 @@ export class CodexService {
   }
 
   getAchievementsProgress(): AchievementProgress[] {
-    const devUnlocked = this.devUnlockCodexEntries && GameSettingsStore.get().accessibility.devModeEnabled;
+    const devUnlocked = this.isDevUnlockActive();
     return Array.from(this.achievementDefinitions.values()).map((definition) => {
       const state = this.achievementState.get(definition.id) ?? { progress: 0, unlocked: false };
       return {

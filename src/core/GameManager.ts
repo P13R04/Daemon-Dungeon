@@ -416,7 +416,8 @@ export class GameManager {
     await this.configLoader.loadAllConfigs();
 
     const gameplayDebug = this.configLoader.getGameplayConfig()?.debug;
-    this.codexService.setDevUnlockCodexEntries(!!gameplayDebug?.enabled);
+    const allowDevUnlock = !import.meta.env.PROD && !!GameSettingsStore.get().accessibility.devModeEnabled && !!gameplayDebug?.enabled;
+    this.codexService.setDevUnlockCodexEntries(allowDevUnlock);
 
     const rooms = this.configLoader.getRoomsConfig() ?? [];
     const runEnemyTypes = new Set<string>();
@@ -1238,7 +1239,10 @@ export class GameManager {
           this.tutorialManager.dispose();
         }
         this.tutorialManager = new GameTutorialManager();
-        this.tutorialManager.startTutorial(this.selectedClassId as any || 'mage', { replay: this.tutorialReplayRun });
+        this.tutorialManager.startTutorial(this.selectedClassId as any || 'mage', {
+          replay: this.tutorialReplayRun,
+          source: tutorialSource,
+        });
         this.tutorialManager.initialize({
           getRoomCenter: () => this.roomManager.getCurrentRoomCenter(),
           getRoomIndex: () => this.currentRoomIndex,
@@ -1500,6 +1504,7 @@ export class GameManager {
       { id: 'sfx_sentry_onhit_sntry', path: 'sfx/monsters/sentries/onhit_sntry.mp3' },
       { id: 'sfx_sentry_damage_taken', path: 'sfx/monsters/sentries/sentry_damage_taken.mp3' },
       { id: 'sfx_sentry_ondeath', path: 'sfx/monsters/sentries/sentry_ondeath.mp3' },
+      { id: 'sfx_dummy_hit', path: 'sfx/monsters/dummy/dummy_hit.mp3' },
       { id: 'sfx_player_cast1', path: 'sfx/attack/floraphonic-fireball-whoosh-1-179125.mp3' },
       { id: 'sfx_player_cast2', path: 'sfx/attack/freesound_community-8-bit-fireball-81148.mp3' },
       // Glitch
@@ -1555,6 +1560,7 @@ export class GameManager {
     this.audioManager.setSoundCooldownMs('sfx_jumper_dmg_taken1', 55);
     this.audioManager.setSoundCooldownMs('sfx_bull_dmgtaken', 55);
     this.audioManager.setSoundCooldownMs('sfx_pong_onhit', 45);
+    this.audioManager.setSoundCooldownMs('sfx_dummy_hit', 45);
     this.audioManager.setSoundCooldownMs('sfx_artificier_zone_dmg', 120);
     this.audioManager.setSoundCooldownMs('sfx_player_cast1', 45);
     this.audioManager.setSoundCooldownMs('sfx_player_cast2', 45);
@@ -1603,6 +1609,11 @@ export class GameManager {
         laser_pattern_boss: 'sfx_sentry_damage_taken',
         mage_missile: 'sfx_sentry_damage_taken',
         bullet_hell: 'sfx_sentry_damage_taken',
+        dummy: 'sfx_dummy_hit',
+        scripted_rail: 'sfx_dummy_hit',
+        tutorial_dummy_basic: 'sfx_dummy_hit',
+        tutorial_dummy_mobile: 'sfx_dummy_hit',
+        tutorial_dummy_mobile_bash: 'sfx_dummy_hit',
       };
       const sound = soundMap[enemyType];
       if (sound) this.audioManager.playSoundAt(sound, data?.position ?? Vector3.Zero(), 0.7, { pitchVariance: 0.2, allowOverlap: true });

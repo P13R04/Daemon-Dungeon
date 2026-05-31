@@ -324,17 +324,19 @@ export class SettingsMenuBuilder {
 
     parent.addControl(row);
 
-    parent.addControl(this.makeToggleRow(
-      'Enable CAT Easter Egg (God Mode)',
-      '',
-      (checkbox) => {
-        this.catGodModeCheckbox = checkbox;
-        checkbox.onIsCheckedChangedObservable.add((isChecked) => {
-          if (this.isRefreshingUi) return;
-          GameSettingsStore.updateAccessibility({ catGodModeEnabled: !!isChecked });
-        });
-      }
-    ));
+    if (!import.meta.env.PROD) {
+      parent.addControl(this.makeToggleRow(
+        'Enable CAT Easter Egg (God Mode)',
+        '',
+        (checkbox) => {
+          this.catGodModeCheckbox = checkbox;
+          checkbox.onIsCheckedChangedObservable.add((isChecked) => {
+            if (this.isRefreshingUi) return;
+            GameSettingsStore.updateAccessibility({ catGodModeEnabled: !!isChecked });
+          });
+        }
+      ));
+    }
 
     if (!import.meta.env.PROD) {
       parent.addControl(this.makeToggleRow(

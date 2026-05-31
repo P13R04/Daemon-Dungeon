@@ -201,6 +201,18 @@ class Projectile implements IPoolable {
 export class ProjectileManager {
   private static readonly CASTER_PROJECTILE_MIN_Y = 0.14;
   private static readonly CASTER_PROJECTILE_FLATTEN_Y = 0.18;
+  private static readonly HOSTILE_STYLE_PROJECTILE_TYPES = new Set<string>([
+    'healer',
+    'healer_bolt',
+    'bullet_hell',
+    'turret',
+    'sentinel',
+    'prefire_sentinel',
+    'necromancer',
+    'swarm_coordinator',
+    'artificer_main',
+    'rocket_sentry',
+  ]);
   private projectilePool: Pool<Projectile>;
   private activeProjectiles: Projectile[] = [];
   private eventBus: EventBus;
@@ -376,7 +388,7 @@ export class ProjectileManager {
       particles.start();
       this.projectileParticleEffects.set(projectile, particles);
       return;
-    } else if (!projectile.data.friendly) {
+    } else if (!projectile.data.friendly || this.shouldUseHostileProjectileStyle(projectile.data.projectileType)) {
       const isHealer = projectile.data.projectileType === 'healer' || projectile.data.projectileType === 'healer_bolt';
       const projectileType = projectile.data.projectileType ?? 'enemy';
       const colorMap: Record<string, { core: Color3; p: Color4 }> = {
@@ -462,6 +474,10 @@ export class ProjectileManager {
 
     material.diffuseColor = new Color3(1.0, 1.0, 0.0);
     material.emissiveColor = new Color3(1.0, 1.0, 0.0);
+  }
+
+  private shouldUseHostileProjectileStyle(projectileType?: string): boolean {
+    return !!projectileType && ProjectileManager.HOSTILE_STYLE_PROJECTILE_TYPES.has(projectileType);
   }
 
   private ensureProjectileMaterial(mesh: Mesh): StandardMaterial {
@@ -921,7 +937,14 @@ export class ProjectileManager {
                 reflection.damage,
                 projectile.data.speed * reflection.speedMultiplier,
                 projectile.data.range,
-                true
+                true,
+                projectile.data.projectileType,
+                projectile.data.splitConfig,
+                projectile.data.maxBounces,
+                projectile.data.bounceDamping,
+                projectile.data.pierceCount,
+                projectile.data.homingRadius,
+                projectile.data.homingTurnRate
               );
               this.handleProjectileImpact(projectile, hitPoint.clone(), roomManager);
               this.releaseProjectileAt(i);

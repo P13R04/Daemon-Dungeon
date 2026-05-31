@@ -88,6 +88,7 @@ export class GameTutorialManager {
   private pendingDoorExitCheckTimer: number | null = null;
   private objectiveDisplayTimer: number | null = null;
   private isReplayTutorial = false;
+  private tutorialSource: 'main_run' | 'tutorial_menu' = 'main_run';
 
   private buildRepeatedEmotionFrames(baseEmotion: string, loops: number): string[] {
     const safeLoops = Math.max(1, Math.floor(loops));
@@ -102,7 +103,9 @@ export class GameTutorialManager {
   constructor() {
     this.eventBus = EventBus.getInstance();
     this.unsubscribers.push(this.eventBus.on(GameEvents.TUTORIAL_START_REQUESTED, (payload: GameStartRequestedPayload) => {
-      this.startTutorial(payload.classId || 'mage');
+      this.startTutorial(payload.classId || 'mage', {
+        source: payload.source ?? 'main_run',
+      });
     }));
 
     this.unsubscribers.push(this.eventBus.on(GameEvents.ROOM_ENTERED, () => this.handleRoomEntered()));
@@ -204,11 +207,15 @@ export class GameTutorialManager {
     this.unsubscribers = [];
   }
 
-  public startTutorial(classId: 'mage' | 'firewall' | 'rogue' | 'cat', options?: { replay?: boolean }): void {
+  public startTutorial(
+    classId: 'mage' | 'firewall' | 'rogue' | 'cat',
+    options?: { replay?: boolean; source?: 'main_run' | 'tutorial_menu' }
+  ): void {
     if (this.isActive) return;
     this.isActive = true;
     this.classId = classId;
     this.isReplayTutorial = !!options?.replay;
+    this.tutorialSource = options?.source ?? 'main_run';
     this.currentPhase = 'init';
     this.enemiesAlive = 0;
     this.phaseState = {};
@@ -652,6 +659,8 @@ export class GameTutorialManager {
         this.dependencies?.playerController?.setInputSuppressed(true);
         if (this.isReplayTutorial) {
           this.daemonSay("Refresher complete. Try doing that against real threats.", "happy", 3.6);
+        } else if (this.tutorialSource === 'tutorial_menu') {
+          this.daemonSay("Cute warm-up. Next time, try surviving that in a real run.", "superieur", 4.2);
         } else {
           this.daemonSay("Tutorial complete. Uploading you into a real run. Try not to embarrass yourself.", "happy", 4.4);
         }

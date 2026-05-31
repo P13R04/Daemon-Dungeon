@@ -666,7 +666,7 @@ export class ClassSelectScene {
     const rogueRoot = new TransformNode('classRogueRoot', this.scene);
     this.items.push({ id: 'rogue', label: 'GLITCH', playable: true, root: rogueRoot });
 
-    const catEasterEggEnabled = GameSettingsStore.get().accessibility.catGodModeEnabled;
+    const catEasterEggEnabled = !import.meta.env.PROD && GameSettingsStore.get().accessibility.catGodModeEnabled;
     if (catEasterEggEnabled) {
       const catRoot = new TransformNode('classCatRoot', this.scene);
       this.items.push({ id: 'cat', label: 'CAT', playable: true, root: catRoot });
