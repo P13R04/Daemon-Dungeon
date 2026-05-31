@@ -77,6 +77,7 @@ export class HighscoresScene {
   private postProcessConfig: PostProcessingConfig;
   private runs: RunRecord[] = [];
   private resizeObserver: any = null;
+  private guiScaleResizeObserver: any = null;
 
   constructor(
     private engine: Engine,
@@ -174,6 +175,10 @@ export class HighscoresScene {
       this.engine.onResizeObservable.remove(this.resizeObserver);
       this.resizeObserver = null;
     }
+    if (this.guiScaleResizeObserver) {
+      this.engine.onResizeObservable.remove(this.guiScaleResizeObserver);
+      this.guiScaleResizeObserver = null;
+    }
     window.removeEventListener('keydown', this.keyHandler);
     if (this.audioUnlockHandler) {
       window.removeEventListener('pointerdown', this.audioUnlockHandler);
@@ -265,7 +270,7 @@ export class HighscoresScene {
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
-    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
+    this.guiScaleResizeObserver = this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
     const topButtonWidth = `${isMobileLayout ? 290 : 260}px`;

@@ -71,6 +71,7 @@ export class AchievementsScene {
   private postProcessManager!: PostProcessManager;
   private postProcessConfig: PostProcessingConfig;
   private resizeObserver: any = null;
+  private guiScaleResizeObserver: any = null;
 
   constructor(
     private engine: Engine,
@@ -173,6 +174,10 @@ export class AchievementsScene {
       this.engine.onResizeObservable.remove(this.resizeObserver);
       this.resizeObserver = null;
     }
+    if (this.guiScaleResizeObserver) {
+      this.engine.onResizeObservable.remove(this.guiScaleResizeObserver);
+      this.guiScaleResizeObserver = null;
+    }
     this.postProcessManager.dispose();
     this.glitchFx.dispose();
     this.gui.dispose();
@@ -253,7 +258,7 @@ export class AchievementsScene {
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
-    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
+    this.guiScaleResizeObserver = this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
     const topButtonWidth = `${isMobileLayout ? 290 : 260}px`;

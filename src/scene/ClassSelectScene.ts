@@ -125,6 +125,7 @@ export class ClassSelectScene {
   private isNavigatingBack: boolean = false;
   private unsubscribeSettings: (() => void) | null = null;
   private resizeObserver: any = null;
+  private guiScaleResizeObserver: any = null;
   private isDisposed: boolean = false;
   private deferredModelLoadTimeoutId: number | null = null;
   private initialVisualReadyPromise: Promise<void> = Promise.resolve();
@@ -286,6 +287,10 @@ export class ClassSelectScene {
       this.engine.onResizeObservable.remove(this.resizeObserver);
       this.resizeObserver = null;
     }
+    if (this.guiScaleResizeObserver) {
+      this.engine.onResizeObservable.remove(this.guiScaleResizeObserver);
+      this.guiScaleResizeObserver = null;
+    }
     window.removeEventListener('keydown', this.keyHandler);
     this.roguePreviewPlayToken++;
     this.stopAllPlayableRogueAnimations();
@@ -411,7 +416,7 @@ export class ClassSelectScene {
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
-    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
+    this.guiScaleResizeObserver = this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
     const menuButtonH = 70;

@@ -141,6 +141,7 @@ export class CodexScene {
   private postProcessManager: PostProcessManager;
   private postProcessConfig: PostProcessingConfig;
   private resizeObserver: any = null;
+  private guiScaleResizeObserver: any = null;
 
   constructor(
     private engine: Engine,
@@ -249,7 +250,7 @@ export class CodexScene {
     };
     this.resizeObserver = this.engine.onResizeObservable.add(updateScale);
     // Re-apply GUI scale settings on orientation/size change
-    this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
+    this.guiScaleResizeObserver = this.engine.onResizeObservable.add(() => applyResponsiveGuiScaling(this.gui, this.engine, { desktopFirst: true }));
     updateScale();
 
     this.headerTitle = new TextBlock('codexHeaderTitle');
@@ -527,6 +528,10 @@ export class CodexScene {
     if (this.resizeObserver) {
       this.engine.onResizeObservable.remove(this.resizeObserver);
       this.resizeObserver = null;
+    }
+    if (this.guiScaleResizeObserver) {
+      this.engine.onResizeObservable.remove(this.guiScaleResizeObserver);
+      this.guiScaleResizeObserver = null;
     }
     window.removeEventListener('keydown', this.keyHandler);
     if (this.audioUnlockHandler) {

@@ -89,7 +89,6 @@ export const GameEvents = {
   ENEMY_BULL_AUDIO_CUE: 'enemy:bullAudioCue',
   ENEMY_JUMPER_AUDIO_CUE: 'enemy:jumperAudioCue',
   ENEMY_PONG_AUDIO_CUE: 'enemy:pongAudioCue',
-  ENEMY_PONG_CORNER_HIT: 'enemy:pongCornerHit',
   ENEMY_ARTIFICIER_SPLIT_IMPACT: 'enemy:artificierSplitImpact',
   ENEMY_ARTIFICIER_DOT_ZONE_STARTED: 'enemy:artificierDotZoneStarted',
   ENEMY_ARTIFICIER_DOT_ZONE_ENDED: 'enemy:artificierDotZoneEnded',

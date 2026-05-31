@@ -2178,12 +2178,6 @@ export class EnemyController {
 
     if (bouncedX || bouncedZ) {
       this.emitPongAudioCue('bounce');
-      if (bouncedX && bouncedZ) {
-        this.eventBus.emit(GameEvents.ENEMY_PONG_CORNER_HIT, {
-          enemyType: this.typeId,
-          position: this.position.clone(),
-        });
-      }
     }
 
     this.position.copyFrom(resolved);

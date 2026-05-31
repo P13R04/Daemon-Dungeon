@@ -32,6 +32,8 @@ export class GameCombatActionManager {
   private rogueUltimateZoneTime = 0;
   private rogueUltimateGlitchParticles: ParticleSystem | null = null;
   private rogueUltimateZoneRadius = 0;
+  private managedTimeouts: Set<number> = new Set();
+  private managedIntervals: Set<number> = new Set();
 
   constructor(
     private readonly scene: Scene,
@@ -46,6 +48,7 @@ export class GameCombatActionManager {
   }
 
   dispose(): void {
+    this.clearManagedTimers();
     this.disposeTankUltimateZoneVisual();
     this.disposeRogueUltimateVisual();
     this.disposeTankFxParticleTexture();
@@ -56,6 +59,39 @@ export class GameCombatActionManager {
       effect.dispose(false);
     }
     this.activeTankParticleEffects.clear();
+  }
+
+  private setManagedTimeout(callback: () => void, ms: number): number {
+    const id = window.setTimeout(() => {
+      this.managedTimeouts.delete(id);
+      callback();
+    }, ms);
+    this.managedTimeouts.add(id);
+    return id;
+  }
+
+  private setManagedInterval(callback: () => void, ms: number): number {
+    const id = window.setInterval(callback, ms);
+    this.managedIntervals.add(id);
+    return id;
+  }
+
+  private clearManagedInterval(id: number): void {
+    if (this.managedIntervals.has(id)) {
+      this.managedIntervals.delete(id);
+    }
+    window.clearInterval(id);
+  }
+
+  private clearManagedTimers(): void {
+    for (const id of this.managedTimeouts) {
+      window.clearTimeout(id);
+    }
+    this.managedTimeouts.clear();
+    for (const id of this.managedIntervals) {
+      window.clearInterval(id);
+    }
+    this.managedIntervals.clear();
   }
 
   resolveSecondaryBurst(
@@ -558,9 +594,9 @@ export class GameCombatActionManager {
 
     const startTime = performance.now();
     const ttlMs = 165;
-    const tick = window.setInterval(() => {
+    const tick = this.setManagedInterval(() => {
       if (sweep.isDisposed()) {
-        window.clearInterval(tick);
+        this.clearManagedInterval(tick);
         return;
       }
 
@@ -572,7 +608,7 @@ export class GameCombatActionManager {
       mat.alpha = Math.max(0, 0.5 * (1 - t));
 
       if (t >= 1) {
-        window.clearInterval(tick);
+        this.clearManagedInterval(tick);
         sweep.dispose();
         mat.dispose();
       }
@@ -622,9 +658,9 @@ export class GameCombatActionManager {
 
     const waveStart = performance.now();
     const waveTtl = 200;
-    const waveTick = window.setInterval(() => {
+    const waveTick = this.setManagedInterval(() => {
       if (shockwave.isDisposed()) {
-        window.clearInterval(waveTick);
+        this.clearManagedInterval(waveTick);
         return;
       }
       const t = Math.min(1, (performance.now() - waveStart) / waveTtl);
@@ -634,7 +670,7 @@ export class GameCombatActionManager {
       shockwave.scaling.z = 1;
       waveMat.alpha = Math.max(0, 0.45 * (1 - t));
       if (t >= 1) {
-        window.clearInterval(waveTick);
+        this.clearManagedInterval(waveTick);
         shockwave.dispose();
         waveMat.dispose();
       }
@@ -675,9 +711,9 @@ export class GameCombatActionManager {
 
     particles.start();
     this.activeTankParticleEffects.add(particles);
-    window.setTimeout(() => {
+    this.setManagedTimeout(() => {
       particles.stop();
-      window.setTimeout(() => particles.dispose(false), 520);
+      this.setManagedTimeout(() => particles.dispose(false), 520);
       this.activeTankParticleEffects.delete(particles);
     }, 120);
   }
@@ -717,9 +753,9 @@ export class GameCombatActionManager {
 
     particles.start();
     this.activeTankParticleEffects.add(particles);
-    window.setTimeout(() => {
+    this.setManagedTimeout(() => {
       particles.stop();
-      window.setTimeout(() => particles.dispose(false), 400);
+      this.setManagedTimeout(() => particles.dispose(false), 400);
       this.activeTankParticleEffects.delete(particles);
     }, 90);
   }
@@ -810,9 +846,9 @@ export class GameCombatActionManager {
 
     const start = performance.now();
     const ttlMs = 120;
-    const tick = window.setInterval(() => {
+    const tick = this.setManagedInterval(() => {
       if (lane.isDisposed() || tip.isDisposed()) {
-        window.clearInterval(tick);
+        this.clearManagedInterval(tick);
         return;
       }
 
@@ -824,7 +860,7 @@ export class GameCombatActionManager {
       tipMat.alpha = Math.max(0, 0.28 * (1 - t));
 
       if (t >= 1) {
-        window.clearInterval(tick);
+        this.clearManagedInterval(tick);
         lane.dispose();
         laneMat.dispose();
         tip.dispose();
@@ -832,9 +868,9 @@ export class GameCombatActionManager {
       }
     }, 16);
 
-    window.setTimeout(() => {
+    this.setManagedTimeout(() => {
       fx.stop();
-      window.setTimeout(() => fx.dispose(false), 340);
+      this.setManagedTimeout(() => fx.dispose(false), 340);
       this.activeTankParticleEffects.delete(fx);
     }, 95);
   }
@@ -909,23 +945,23 @@ export class GameCombatActionManager {
 
     const ttlMs = Math.max(95, Math.min(180, segmentLength * 24));
     const start = performance.now();
-    const tick = window.setInterval(() => {
+    const tick = this.setManagedInterval(() => {
       if (trail.isDisposed()) {
-        window.clearInterval(tick);
+        this.clearManagedInterval(tick);
         return;
       }
       const t = Math.min(1, (performance.now() - start) / ttlMs);
       mat.alpha = Math.max(0, 0.58 * (1 - t));
       if (t >= 1) {
-        window.clearInterval(tick);
+        this.clearManagedInterval(tick);
         trail.dispose();
         mat.dispose();
       }
     }, 16);
 
-    window.setTimeout(() => {
+    this.setManagedTimeout(() => {
       particles.stop();
-      window.setTimeout(() => particles.dispose(false), 340);
+      this.setManagedTimeout(() => particles.dispose(false), 340);
       this.activeTankParticleEffects.delete(particles);
     }, 115);
   }
@@ -1009,24 +1045,24 @@ export class GameCombatActionManager {
 
     const start = performance.now();
     const ttlMs = 150;
-    const tick = window.setInterval(() => {
+    const tick = this.setManagedInterval(() => {
       if (ribbon.isDisposed()) {
-        window.clearInterval(tick);
+        this.clearManagedInterval(tick);
         return;
       }
       const t = Math.min(1, (performance.now() - start) / ttlMs);
       ribbonMat.alpha = Math.max(0, 0.52 * (1 - t));
       if (t >= 1) {
-        window.clearInterval(tick);
+        this.clearManagedInterval(tick);
         ribbon.dispose();
         ribbonMat.dispose();
       }
     }, 16);
 
-    window.setTimeout(() => {
+    this.setManagedTimeout(() => {
       chainParticles.stop();
       impactParticles.stop();
-      window.setTimeout(() => {
+      this.setManagedTimeout(() => {
         chainParticles.dispose(false);
         impactParticles.dispose(false);
       }, 420);
@@ -1243,9 +1279,9 @@ export class GameCombatActionManager {
 
     particles.start();
     this.activeTankParticleEffects.add(particles);
-    window.setTimeout(() => {
+    this.setManagedTimeout(() => {
       particles.stop();
-      window.setTimeout(() => particles.dispose(false), 520);
+      this.setManagedTimeout(() => particles.dispose(false), 520);
       this.activeTankParticleEffects.delete(particles);
     }, 150);
   }
@@ -1312,10 +1348,10 @@ export class GameCombatActionManager {
     frontParticles.start();
     this.activeTankParticleEffects.add(trailParticles);
     this.activeTankParticleEffects.add(frontParticles);
-    window.setTimeout(() => {
+    this.setManagedTimeout(() => {
       trailParticles.stop();
       frontParticles.stop();
-      window.setTimeout(() => {
+      this.setManagedTimeout(() => {
         trailParticles.dispose(false);
         frontParticles.dispose(false);
       }, 520);
@@ -1361,9 +1397,9 @@ export class GameCombatActionManager {
 
     const start = performance.now();
     const ttlMs = 72;
-    const tick = window.setInterval(() => {
+    const tick = this.setManagedInterval(() => {
       if (lane.isDisposed()) {
-        window.clearInterval(tick);
+        this.clearManagedInterval(tick);
         return;
       }
 
@@ -1373,7 +1409,7 @@ export class GameCombatActionManager {
       mat.alpha = Math.max(0, 0.32 * (1 - t));
 
       if (t >= 1) {
-        window.clearInterval(tick);
+        this.clearManagedInterval(tick);
         lane.dispose();
         mat.dispose();
       }
