@@ -70,7 +70,7 @@ export class PlayerController {
   private externalVerticalOffset: number = 0;
   private renderVisibility: number = 1;
   private stealthVisibilityMultiplier: number = 1;
-  private knockback: Knockback = new Knockback(10);
+  private knockback: Knockback = new Knockback(2.2);
   private speed: number = 5.5;
   private movementDustCooldown: number = 0;
   private movementDustParticleTexture: DynamicTexture | null = null;

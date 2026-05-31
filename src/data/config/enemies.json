@@ -111,7 +111,7 @@
     "description": "Locks target vectors, then brute-charges like a kernel panic.",
     "baseStats": {
       "hp": 90,
-      "damage": 14,
+      "damage": 20,
       "speed": 2.2,
       "attackRange": 1,
       "attackCooldown": 1
@@ -120,12 +120,12 @@
     "knockbackStrength": 8,
     "behaviorConfig": {
       "triggerRange": 6.5,
-      "aimDuration": 0.55,
+      "aimDuration": 0.2,
       "chargeDuration": 0.85,
-      "chargeSpeedMultiplier": 2.8,
+      "chargeSpeedMultiplier": 4.5,
       "hitRange": 1,
-      "chargeCooldown": 1.2,
-      "knockbackStrength": 4
+      "chargeCooldown": 0.25,
+      "knockbackStrength": 48
     },
     "lootTable": [],
     "appearance": {
@@ -572,7 +572,7 @@
     "description": "Boss Bull: heavier chassis, harsher impact.",
     "baseStats": {
       "hp": 340,
-      "damage": 28,
+      "damage": 38,
       "speed": 2.4,
       "attackRange": 1.1,
       "attackCooldown": 0.9
@@ -581,12 +581,12 @@
     "knockbackStrength": 14,
     "behaviorConfig": {
       "triggerRange": 7.2,
-      "aimDuration": 0.45,
+      "aimDuration": 0.15,
       "chargeDuration": 1,
-      "chargeSpeedMultiplier": 3,
+      "chargeSpeedMultiplier": 4.8,
       "hitRange": 1.25,
-      "chargeCooldown": 1,
-      "knockbackStrength": 6,
+      "chargeCooldown": 0.2,
+      "knockbackStrength": 72,
       "modelScale": 0.16
     },
     "lootTable": [],

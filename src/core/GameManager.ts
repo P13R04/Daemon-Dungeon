@@ -3305,8 +3305,28 @@ export class GameManager {
 
     for (let i = 0; i < targetLength; i++) {
       if ((i + 1) % 9 === 0) {
-        let candidates = bosses.filter(id => !recentPicks.includes(id));
-        if (candidates.length === 0) candidates = bosses;
+        let candidates: string[] = [];
+        
+        if (i === 8) {
+          // First boss room: must be either necromancer or corrida
+          candidates = ['room_necromancer_graveyard', 'room_corrida_boss'].filter(id => bosses.includes(id));
+        } else if (i === 17) {
+          // Second boss room: must be the other one of the two
+          candidates = ['room_necromancer_graveyard', 'room_corrida_boss'].filter(id => bosses.includes(id) && !recentPicks.includes(id));
+          if (candidates.length === 0) {
+            candidates = ['room_necromancer_graveyard', 'room_corrida_boss'].filter(id => bosses.includes(id));
+          }
+        } else if (i === 26) {
+          // Third boss room: must be jumper boss
+          candidates = ['room_boss_jumper'].filter(id => bosses.includes(id));
+        }
+
+        // Fallback to standard boss picking if we are on floor 4+ or if forced bosses are not configured/available
+        if (candidates.length === 0) {
+          candidates = bosses.filter(id => !recentPicks.includes(id));
+          if (candidates.length === 0) candidates = bosses;
+        }
+
         const pick = safePick(candidates);
         order.push(pick);
         recentPicks.push(pick);

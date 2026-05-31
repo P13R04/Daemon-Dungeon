@@ -1823,9 +1823,6 @@ export class EnemyController {
     switch (this.bullState) {
       case 'chase': {
         if (distance <= this.bullTriggerRange) {
-          this.bullState = 'aim';
-          this.bullTimer = this.bullAimDuration;
-
           let chargeTarget = playerPosition;
           let isDirect = true;
           if (roomManager) {
@@ -1846,26 +1843,79 @@ export class EnemyController {
             }
           }
 
-          this.bullChargeTarget = chargeTarget.clone();
-          this.bullChargeIsDirect = isDirect;
-
-          const dir = this.bullChargeTarget.subtract(this.position);
-          dir.y = 0;
-          if (dir.lengthSquared() > 0.0001) {
-            this.bullLockedDirection = dir.normalize();
+          // Aim 0.5 cells behind the player to guarantee a collision overlap and elegant overrun
+          const toTarget = chargeTarget.subtract(this.position);
+          toTarget.y = 0;
+          if (toTarget.lengthSquared() > 0.0001) {
+            chargeTarget = chargeTarget.add(toTarget.normalize().scale(0.5));
           }
-          this.velocity = Vector3.Zero();
+
+          const dir = chargeTarget.subtract(this.position);
+          dir.y = 0;
+          let targetDir = Vector3.Forward();
+          if (dir.lengthSquared() > 0.0001) {
+            targetDir = dir.normalize();
+          }
+
+          // Check if we are facing the target direction
+          let isFacing = false;
+          if (this.mesh) {
+            const targetYaw = Math.atan2(targetDir.x, targetDir.z);
+            const currentYaw = this.mesh.rotation.y;
+            const delta = Math.atan2(Math.sin(targetYaw - currentYaw), Math.cos(targetYaw - currentYaw));
+            isFacing = Math.abs(delta) < 0.15; // aligned within ~8.6 degrees
+          } else {
+            isFacing = true; // Fallback if no mesh
+          }
+
+          if (isFacing) {
+            this.bullState = 'aim';
+            // Calculate the exact duration of the charge_start animation (played at 1.5x speed)
+            const resolved = this.resolveBullAnimGroup('charge_start');
+            let animDuration = this.bullAimDuration; // fallback
+            if (resolved) {
+              const startAnim = resolved.group;
+              const fps = startAnim.targetedAnimations[0]?.animation.framePerSecond || 30;
+              animDuration = (startAnim.to - startAnim.from) / (fps * 1.5);
+            }
+            this.bullTimer = Math.max(0.1, animDuration);
+            this.bullChargeTarget = chargeTarget.clone();
+            this.bullChargeIsDirect = isDirect;
+            this.bullLockedDirection = targetDir;
+            this.velocity = Vector3.Zero();
+          } else {
+            // Stop moving, pivot towards player/target, and run in place to prepare for charge
+            this.velocity = Vector3.Zero();
+            this.rotateToward(targetDir, deltaTime, 12);
+            const chaseAnim = this.resolveBullAnimGroup('move_to_player') ? 'move_to_player' : 'charge_run';
+            this.playBullAnim(chaseAnim, true, 1.2);
+          }
         } else {
           this.updateMovement(deltaTime, playerPosition, allEnemies, roomManager);
           if (this.velocity.lengthSquared() > 0.0001) {
             this.rotateToward(this.velocity, deltaTime, 10);
+            const chaseAnim = this.resolveBullAnimGroup('move_to_player') ? 'move_to_player' : 'charge_run';
+            this.playBullAnim(chaseAnim, true, 1.2);
+          } else {
+            this.stopBullAnims();
           }
         }
         break;
       }
       case 'aim': {
         this.velocity = Vector3.Zero();
-        const targetPos = this.bullChargeIsDirect ? playerPosition : this.bullChargeTarget;
+        const baseTarget = this.bullChargeIsDirect ? playerPosition : this.bullChargeTarget;
+        let targetPos = baseTarget;
+        
+        // If direct, keep track of 0.5 cells behind player dynamically as they move during the windup
+        if (this.bullChargeIsDirect) {
+          const dirToPlayer = playerPosition.subtract(this.position);
+          dirToPlayer.y = 0;
+          if (dirToPlayer.lengthSquared() > 0.0001) {
+            targetPos = playerPosition.add(dirToPlayer.normalize().scale(0.5));
+          }
+        }
+
         const dir = targetPos.subtract(this.position);
         dir.y = 0;
         if (dir.lengthSquared() > 0.0001) {
@@ -1875,14 +1925,23 @@ export class EnemyController {
         this.bullTimer -= deltaTime;
         if (this.bullTimer <= 0) {
           this.bullState = 'charge';
-          if (!this.bullChargeIsDirect) {
-            const chargeSpeed = this.speed * this.bullChargeSpeedMultiplier;
-            const dist = Vector3.Distance(this.position, this.bullChargeTarget);
-            const timeNeeded = dist / Math.max(0.1, chargeSpeed);
-            this.bullTimer = Math.min(this.bullChargeDuration, timeNeeded);
-          } else {
-            this.bullTimer = this.bullChargeDuration;
+          const chargeSpeed = this.speed * this.bullChargeSpeedMultiplier;
+          
+          // Re-evaluate current target position including 0.5 overrun behind target
+          const baseTarget = this.bullChargeIsDirect ? playerPosition : this.bullChargeTarget;
+          let finalTarget = baseTarget.clone();
+          const toTarget = finalTarget.subtract(this.position);
+          toTarget.y = 0;
+          if (toTarget.lengthSquared() > 0.0001) {
+            finalTarget = finalTarget.add(toTarget.normalize().scale(0.5));
           }
+          
+          const dist = Vector3.Distance(this.position, finalTarget);
+          const timeNeeded = dist / Math.max(0.1, chargeSpeed);
+          
+          // Set charge duration dynamically to timeNeeded + 0.25 seconds buffer, capped at a reasonable maximum
+          const maxAllowedDuration = Math.max(1.2, this.bullChargeDuration * 1.5);
+          this.bullTimer = Math.min(maxAllowedDuration, timeNeeded + 0.25);
         }
         break;
       }
@@ -1900,7 +1959,9 @@ export class EnemyController {
       case 'cooldown': {
         this.velocity = Vector3.Zero();
         this.bullTimer -= deltaTime;
-        if (this.bullTimer <= 0) {
+        // Wait until both the cooldown duration has elapsed and the charge_end animation has finished playing
+        const endAnimDone = this.bullAnimState !== 'end';
+        if (this.bullTimer <= 0 && endAnimDone) {
           this.bullState = 'chase';
         }
         break;
@@ -2281,7 +2342,9 @@ export class EnemyController {
   }
 
   handleContactHit(playerPosition: Vector3): Vector3 | null {
-    if (this.attackCooldown > 0) return null;
+    // Bull charge signature attack has its own state-based cooldowns; do not throttle it with attackCooldown.
+    const isBullCharge = this.behavior === 'bull' && this.bullState === 'charge';
+    if (!isBullCharge && this.attackCooldown > 0) return null;
 
     if (this.behavior === 'bull') {
       if (this.bullState !== 'charge') return null;
@@ -2290,6 +2353,7 @@ export class EnemyController {
       this.bullState = 'cooldown';
       this.bullTimer = this.bullCooldownDuration;
       this.velocity = Vector3.Zero();
+      this.handleBullStateChange('charge', 'cooldown');
 
       if (this.selfKnockbackStrength > 0) {
         const recoil = this.bullLockedDirection.scale(-this.selfKnockbackStrength);
@@ -2353,6 +2417,7 @@ export class EnemyController {
       this.bullState = 'cooldown';
       this.bullTimer = this.bullCooldownDuration;
       this.velocity = Vector3.Zero();
+      this.handleBullStateChange('charge', 'cooldown');
     }
     if (this.behavior === 'jumper' && this.jumperState === 'jump') {
       this.jumperState = 'cooldown';
@@ -3623,53 +3688,56 @@ export class EnemyController {
   private handleBullStateChange(previous: typeof this.bullState, next: typeof this.bullState): void {
     if (next === 'aim') {
       this.emitBullAudioCue('aim');
+      this.playBullAnim('charge_start', false, 1.5);
     }
     if (next === 'charge') {
       this.emitBullAudioCue('dash');
-      this.playBullAnimStartThenRun();
+      const chargeAnimSpeed = Math.max(1.0, this.bullChargeSpeedMultiplier * 0.45);
+      this.playBullAnim('charge_run', true, chargeAnimSpeed);
       return;
     }
-    if (previous === 'charge' && next === 'cooldown') {
+    if (next === 'cooldown') {
       this.playBullAnimEnd();
       return;
     }
     if (next === 'chase') {
-      this.stopBullAnims();
+      // Handled dynamically in updateBull based on movement
     }
   }
 
-  private playBullAnimStartThenRun(): void {
-    const start = this.bullAnimGroups.get('charge_start.002');
-    const run = this.bullAnimGroups.get('charge_run.001');
-    if (!run) return;
-    if (!start) {
-      this.stopBullAnims();
-      this.bullAnimState = 'run';
-      run.start(true, 1.0, run.from, run.to, false);
-      return;
+  private resolveBullAnimGroup(name: string): { group: AnimationGroup; actualName: string } | null {
+    const candidates = [
+      name,
+      name + '.001',
+      name + '.002',
+      name + '.003',
+      name + '.004',
+    ];
+    for (const candidate of candidates) {
+      const g = this.bullAnimGroups.get(candidate);
+      if (g) return { group: g, actualName: candidate };
     }
-    this.stopBullAnims();
-    this.bullAnimState = 'start';
-    start.start(false, 1.0, start.from, start.to, false);
-    start.onAnimationEndObservable.addOnce(() => {
-      if (this.bullState !== 'charge') {
-        return;
+    
+    // Case-insensitive substring fallback
+    for (const [key, group] of this.bullAnimGroups.entries()) {
+      if (key.toLowerCase().includes(name.toLowerCase())) {
+        return { group, actualName: key };
       }
-      this.stopBullAnims();
-      this.bullAnimState = 'run';
-      run.start(true, 1.0, run.from, run.to, false);
-    });
+    }
+    return null;
   }
 
   private playBullAnimEnd(): void {
-    const end = this.bullAnimGroups.get('charge_end.004');
-    if (!end) return;
+    const resolved = this.resolveBullAnimGroup('charge_end');
+    if (!resolved) return;
+
+    const { group, actualName } = resolved;
     this.stopBullAnims();
     this.bullAnimState = 'end';
-    end.start(false, 1.0, end.from, end.to, false);
-    end.onAnimationEndObservable.addOnce(() => {
+    group.start(false, 1.0, group.from, group.to, false);
+    group.onAnimationEndObservable.addOnce(() => {
       this.bullAnimState = 'none';
-      end.stop();
+      group.stop();
     });
   }
 
@@ -3678,6 +3746,18 @@ export class EnemyController {
       group.stop();
     }
     this.bullAnimState = 'none';
+  }
+
+  private playBullAnim(name: string, loop: boolean = true, speed: number = 1.0): void {
+    const resolved = this.resolveBullAnimGroup(name);
+    if (!resolved) return;
+
+    const { group, actualName } = resolved;
+    if (this.bullAnimState === actualName && group.isPlaying) return;
+
+    this.stopBullAnims();
+    this.bullAnimState = actualName as any;
+    group.start(loop, speed, group.from, group.to, false);
   }
 
   private emitBullAudioCue(cue: 'aim' | 'dash' | 'collision'): void {
@@ -4175,6 +4255,13 @@ export class EnemyController {
       EnemyController.dedupeBullVisualRootsForOwner(this.scene, this.id);
       for (const group of result.animationGroups) {
         this.bullAnimGroups.set(group.name, group);
+      }
+
+      // Start default animation immediately upon loading to evaluate skeletons and prevent T-pose freezing
+      const defaultAnim = this.bullAnimGroups.get('ArmatureAction') || result.animationGroups[0];
+      if (defaultAnim) {
+        defaultAnim.start(true, 1.0, defaultAnim.from, defaultAnim.to, false);
+        this.bullAnimState = defaultAnim.name as any;
       }
     } catch (error) {
       console.warn('Bull model failed to load, using placeholder.', error);

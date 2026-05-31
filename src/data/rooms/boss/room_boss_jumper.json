@@ -48,6 +48,41 @@
       "x": 6.9,
       "y": 4,
       "enemyType": "jumper_boss"
+    },
+    {
+      "x": 11,
+      "y": 4.9,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 3,
+      "y": 5,
+      "enemyType": "zombie_fast"
+    },
+    {
+      "x": 5,
+      "y": 6,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 7,
+      "y": 6,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 9,
+      "y": 6,
+      "enemyType": "jumper"
+    },
+    {
+      "x": 9.9,
+      "y": 4.1,
+      "enemyType": "sentinel"
+    },
+    {
+      "x": 4,
+      "y": 4,
+      "enemyType": "sentinel"
     }
   ],
   "friendlySpawnPoints": [],
