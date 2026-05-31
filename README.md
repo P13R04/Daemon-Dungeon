@@ -1,83 +1,94 @@
-# 🕹️ Daemon Dungeon
+# Daemon Dungeon
 
-> **"Welcome to the simulation. Don't mind the glitches... they're intentional. Mostly."**
+> Welcome to the simulation.
 
-**Daemon Dungeon** is a high-octane 3D isometric Roguelike built for the **Games on Web 2026 (IA Edition)** competition. Face off against the **Daemon**, a malevolent AI that has corrupted the very system you inhabit.
+**Daemon Dungeon** est un rogue-like 3D isométrique (Babylon.js + TypeScript) réalisé pour **Games on Web 2026 – IA Edition**.
+Le joueur affronte un système corrompu dirigé par le **Daemon**, narrateur antagoniste qui commente la run en direct.
 
----
+## Jouer
+Le jeu est disponible en ligne sur itch: [rolling2k.itch.io/daemon-dungeon](https://rolling2k.itch.io/daemon-dungeon).  
+Le code source est disponible sur:
+- Repo personnel: [P13R04/Daemon-Dungeon](https://github.com/P13R04/Daemon-Dungeon)
+- Repo officiel concours: [gamesonweb/ia-edition-daemon-dungeon](https://github.com/gamesonweb/ia-edition-daemon-dungeon)
 
-## 🎮 Play Now
-🚀 **Play on Itch.io:** [rolling2k.itch.io/daemon-dungeon](https://rolling2k.itch.io/daemon-dungeon)
+Note importante:
+- La version web (itch) peut avoir des difficultés de chargement, et il arrive que la page plante selon le contexte de charge.
+- Nous n’avons pas encore isolé une cause unique (taille du build, contraintes navigateur, charge simultanée, etc.) malgré plusieurs passes d’optimisation.
+- La meilleure expérience reste le lancement en local.
+- En local, quelques crashs rares subsistent encore (cause non totalement identifiée, possiblement liée à des scénarios d’accumulation mémoire). L’optimisation/stabilisation reste un axe d’amélioration.
+- Hors ces crashs rares, le jeu est globalement fluide sur des PC moyens.
+- Sur mobile, c’est plus juste mais jouable.
+- Choix assumé pour l’expérience utilisateur: privilégier la constance du feeling gameplay (avec possibles chutes de FPS ponctuelles) plutôt qu’un ralentissement global du jeu.
 
----
+## Expérience de jeu
+Une run commence par le choix d’une classe (`Wizard Installer`, `Firewall`, `Glitch`), puis enchaîne des salles dont la difficulté monte progressivement. Entre deux combats, le joueur ajuste sa construction via les bonus, les rerolls, les soins, et les achats rares.
 
-## 🌟 Gameplay Experience
+Le système de combat repose sur une base commune facile à lire: attaque principale, stance maintenue, attaque secondaire déclenchée depuis la stance, et ultimate en pic de puissance. Cette structure permet de garder une bonne lisibilité tout en offrant un vrai espace de maîtrise.
 
-Experience a nervous **Arcade Roguelike** where every run is a battle for survival against the system.
+Nous avons volontairement évité une méta-progression lourde. Le choix est assumé: un jeu **arcade/runner** où l’on lance une run immédiatement, sans phase de grind obligatoire. Le plaisir vient de la rejouabilité, de la variété des runs, de la chasse au score, de la progression codex et des achievements.
 
-- **Three Unique Classes:**
-    - **Wizard Installer:** Long-range projectile specialist.
-    - **Firewall:** Heavy-duty tank with defensive capabilities.
-    - **Glitch:** High-mobility melee assassin.
-- **Deep Combat Mechanics:** Each class features a **Primary Attack**, a tactical **Stance (Posture)**, a powerful **Secondary Attack** (exclusive to Stance mode), and a devastating **Ultimate Ability**.
-- **Build Synergy:** Stack dozens of **Passive Bonuses** to customize your gameplay and survive the simulation.
-- **Rich Content:** 
-    - **Diverse Bestiary:** Varied enemies with unique AI behaviors (A* & Crowd Steering).
-    - **Progression:** Fill your **Codex** by discovering new mobs, bonuses, and achievements.
-    - **Accessibility:** Built-in **Tutorial**, dynamic **Auto-aim**, and colorblind filters.
+## Pourquoi le thème IA est respecté
+Le thème n’est pas seulement visuel. Le **Daemon** agit comme une vraie entité de jeu grâce au Director AI: il intervient selon le contexte, le rythme de la run et la progression du joueur. L’intro Takeover pose clairement ce rapport de domination, puis tout l’univers (lexique, interfaces, codex, feedbacks) prolonge cette logique de simulation hors de contrôle.
 
----
+## Jouabilité et supports
+La version recommandée est **clavier + souris**.  
+Le jeu reste praticable en clavier seul via l’auto-aim, et jouable sur téléphone grâce au joystick virtuel, mais avec un confort moindre sur les longues sessions.
 
-## 🛠️ Technical Excellence
+Le jeu supporte les usages **AZERTY** et **QWERTY** via remapping des touches dans les paramètres, afin de rester testable pour un jury international.
 
-Built with professional engineering standards, Daemon Dungeon leverages modern web technologies:
+Sur le plan technique, le projet s’appuie sur Babylon.js + TypeScript, Havok en WASM, une architecture événementielle modulaire, et des comportements ennemis basés notamment sur A* et des stratégies de steering/prédiction.
 
-- **Engine:** [Babylon.js](https://www.babylonjs.com/) 6+ with TypeScript.
-- **Physics:** [Havok Physics](https://www.babylonjs.com/havok/) for high-performance collisions.
-- **Architecture:** 
-  - **Data-Driven:** All stats and layouts are loaded via JSON for rapid balancing.
-  - **Event-Driven:** Decoupled systems using a global Event Bus for total modularity.
-- **Custom Tooling:** We developed our own ASCII-to-3D editors, God Consoles, and a "Voice Lab" for real-time speech synthesis.
+## Documentation
+Pour le jury, toute la documentation finale est centralisée dans [DOSSIER_RENDU_FINAL](DOSSIER_RENDU_FINAL): document de conception (référence du 15/05/2026), guide de gameplay et making-of final.
 
----
+## Vidéos gameplay
+- Premier lancement (intro + tutoriel): [youtu.be/4dlZoZ2nbrA](https://youtu.be/4dlZoZ2nbrA)
+- Gameplay run mage (Wizard Installer): [youtu.be/fB6Nkec43bk](https://youtu.be/fB6Nkec43bk)
+- Gameplay run tank (Firewall): [youtu.be/aRicpye42Mg](https://youtu.be/aRicpye42Mg)
+- Gameplay run rogue (Glitch): [youtu.be/aD8-6f1Jxew](https://youtu.be/aD8-6f1Jxew)
+- Exploration des menus: [youtu.be/xiQRTB9KSlw](https://youtu.be/xiQRTB9KSlw)
+- Interactions cachées / easter eggs: documentées dans le README et le making-of (pas de vidéo dédiée).
 
-## 📚 Documentation
+## Interactions cachées et clins d'œil
+- Cliquer sur l’avatar du Daemon dans l’écran titre change ses émotions.
+- Références intégrées dans l’intro: `Buffa` et `All your base are belong to us`.
+- Classe cachée en local/debug: un chat “god mode”.
+- Interactions tutoriel:
+  - tomber plusieurs fois dans le vide de la première salle,
+  - mourir sur les pièges (pics, poison),
+  - pour déclencher des réactions spéciales du Daemon.
 
-For a deep dive into our technical justifications, engineering challenges, and project roadmap, check out our Design Document:
-- 🇺🇸 **[English Version (DOC_CONCEPTION.md)](DOC_CONCEPTION.md)**
-- 🇫🇷 **[Version Française (DOC_CONCEPTION_FR.md)](DOC_CONCEPTION_FR.md)**
+## Équipe
+- **Pierre Constantin** — Master Informatique (Université Côte d’Azur, Nice/Valrose), futur parcours IHM. Programmeur principal, vision artistique globale, gestion de projet, répartition des tâches, Director AI et architecture gameplay.
+- **Baptiste Giacchero** — Master Informatique (Université Côte d’Azur, Nice/Valrose), futur parcours IHM. A appris Blender depuis zéro et a modélisé tous les modèles 3D + animations à la main, testeur principal, lead équilibrage (joueur/mobs/scaling), level designer (rooms).
+- **Vlad Vasiliev** — ancien double licence maths-info à Valrose, puis école d’ingénieur à Mulhouse. Responsable CI/CD, hébergement initial, design de la page itch.io, designer sonore (recherche et branchement des SFX), support transversal.
 
----
+Contexte commun:
+- Rencontre initiale en double licence maths-info à Valrose (Nice).
 
-## 👥 The Team
+## Lancer en local
+Prérequis:
+- Node.js 18+
 
-- **Pierre Constantin:** Lead Developer & Gameplay Architect.
-- **Baptiste Giacchero:** 3D Artist, Animator & Voxel Wizard.
-- **Vlad Vasiliev:** Support Developer, Deployment & SFX Researcher.
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-- [Node.js](https://nodejs.org/) 18+
-
-### Installation
+Installation:
 ```bash
 npm install
 ```
 
-### Development
+Développement:
 ```bash
 npm run dev
 ```
+Puis ouvrir l’URL de développement du projet:
+- `http://localhost:3000`
 
-### Production Build
+Build local (proche prod):
 ```bash
 npm run build
 npm run preview
 ```
 
----
-
-*Part of the **Games on Web 2026** competition - IA Edition.*
+Utilitaires de test local:
+- Une **dev console** est activable depuis les paramètres en environnement local/dev.
+- Elle permet notamment d’accélérer les tests gameplay et de valider rapidement des parcours.
+- Le mode “cat / god mode” est un outil de debug local, non destiné à l’expérience joueur finale.
