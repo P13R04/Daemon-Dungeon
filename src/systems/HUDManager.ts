@@ -19,6 +19,7 @@ import { buildHudAssetUrl, getHudAssetBaseUrl, preloadHudAsset, getCachedHudAsse
 import { DaemonAvatarController, type DaemonAnimationPhaseState } from './hud/DaemonAvatarController';
 import { getSpecialMarkerAtDisplayIndex, stripAllSpecialMarkers } from './hud/DaemonTextUtils';
 import { BONUS_CODEX_ENTRIES } from '../data/codex/bonuses';
+import { BONUS_CATALOG } from '../data/bonuses/bonusCatalog';
 import { getMergedAchievementDefinitions } from '../data/achievements/loadAchievementDefinitions';
 import type { BonusSelectionUiState } from './BonusSystemManager';
 import { applyResponsiveGuiScaling } from '../ui/GuiScaling';
@@ -676,21 +677,21 @@ export class HUDManager {
     this.playerUltBarFill.width = `${percentage}%`;
 
     if (this.lastUltActive) {
-      this.playerUltDisplay.text = `ULTI: ${percentage}% [ACTIVE]`;
+      this.playerUltDisplay.text = `${percentage}% [ACTIVE]`;
       this.playerUltDisplay.color = '#E040FF'; // Neon purple for active duration
       this.playerUltBarFill.background = '#E040FF';
       if (this.ultBarContainer) {
         this.ultBarContainer.color = '#E040FF';
       }
     } else if (data.charge >= 1.0) {
-      this.playerUltDisplay.text = `ULTI: 100% [READY]`;
+      this.playerUltDisplay.text = '100% [READY]';
       this.playerUltDisplay.color = '#00FF99'; // Bright matrix green
       this.playerUltBarFill.background = '#00FF99';
       if (this.ultBarContainer) {
         this.ultBarContainer.color = '#00FF99';
       }
     } else {
-      this.playerUltDisplay.text = `ULTI: ${percentage}%`;
+      this.playerUltDisplay.text = `${percentage}%`;
       this.playerUltDisplay.color = '#FFFF00'; // Cyber yellow charging
       this.playerUltBarFill.background = '#FFFF00';
       if (this.ultBarContainer) {
@@ -722,14 +723,16 @@ export class HUDManager {
 
   private createPlayerHUD(): void {
     const fontFamily = 'Arcade8Bit';
+    const specialFont = 'Wonder8Bit';
     const idealWidth = this.guiClean.idealWidth || 1920;
     const isCompactHud = idealWidth <= 960;
     const baseMenuButtonHeight = isCompactHud ? 84 : 76;
     const baseMenuFontSize = isCompactHud ? 26 : 23;
-    const statsPanelWidth = isCompactHud ? 374 : 348;
-    const statsPanelHeight = isCompactHud ? 156 : 146;
-    const statsLabelFont = isCompactHud ? 24 : 21;
-    const statsCreditsFont = isCompactHud ? 22 : 19;
+    const statsPanelWidth = isCompactHud ? 432 : 420;
+    const statsPanelHeight = isCompactHud ? 188 : 176;
+    const integrityHeaderFont = isCompactHud ? 24 : 22;
+    const statsLabelFont = integrityHeaderFont;
+    const statsCreditsFont = isCompactHud ? 23 : 21;
 
     // Top bar (transparent container for layout)
     this.topBar = new Rectangle('hud_top_bar');
@@ -759,13 +762,27 @@ export class HUDManager {
     this.statsPanel = statsContainer;
 
     this.scoreText = new TextBlock('score_text');
-    this.scoreText.text = 'SCORE: 00000000';
-    this.scoreText.fontSize = statsLabelFont;
+    const scoreLabel = new TextBlock('score_label');
+    scoreLabel.text = 'SCORE:';
+    scoreLabel.fontSize = statsLabelFont;
+    scoreLabel.fontFamily = specialFont;
+    scoreLabel.color = '#7CFFEA';
+    scoreLabel.left = 16;
+    scoreLabel.top = isCompactHud ? 14 : 12;
+    scoreLabel.width = `${Math.round(statsPanelWidth * 0.35)}px`;
+    scoreLabel.height = '34px';
+    scoreLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    scoreLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    scoreLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    statsContainer.addControl(scoreLabel);
+
+    this.scoreText.text = '00000000';
+    this.scoreText.fontSize = isCompactHud ? 26 : 24;
     this.scoreText.fontFamily = fontFamily;
     this.scoreText.color = '#7CFFEA';
-    this.scoreText.left = 16;
+    this.scoreText.left = isCompactHud ? 152 : 144;
     this.scoreText.top = isCompactHud ? 14 : 12;
-    this.scoreText.width = `${statsPanelWidth - 32}px`;
+    this.scoreText.width = `${Math.round(statsPanelWidth * 0.58)}px`;
     this.scoreText.height = '34px';
     this.scoreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.scoreText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -773,13 +790,27 @@ export class HUDManager {
     statsContainer.addControl(this.scoreText);
 
     this.waveText = new TextBlock('wave_text');
-    this.waveText.text = 'WAVE: 00';
-    this.waveText.fontSize = statsLabelFont;
+    const waveLabel = new TextBlock('wave_label');
+    waveLabel.text = 'WAVE:';
+    waveLabel.fontSize = statsLabelFont;
+    waveLabel.fontFamily = specialFont;
+    waveLabel.color = '#7CFFEA';
+    waveLabel.left = 16;
+    waveLabel.top = isCompactHud ? 58 : 54;
+    waveLabel.width = `${Math.round(statsPanelWidth * 0.35)}px`;
+    waveLabel.height = '34px';
+    waveLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    waveLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    waveLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    statsContainer.addControl(waveLabel);
+
+    this.waveText.text = '00';
+    this.waveText.fontSize = isCompactHud ? 26 : 24;
     this.waveText.fontFamily = fontFamily;
     this.waveText.color = '#7CFFEA';
-    this.waveText.left = 16;
+    this.waveText.left = isCompactHud ? 152 : 144;
     this.waveText.top = isCompactHud ? 58 : 54;
-    this.waveText.width = `${statsPanelWidth - 32}px`;
+    this.waveText.width = `${Math.round(statsPanelWidth * 0.58)}px`;
     this.waveText.height = '34px';
     this.waveText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.waveText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -787,13 +818,27 @@ export class HUDManager {
     statsContainer.addControl(this.waveText);
 
     this.currencyText = new TextBlock('currency_text');
-    this.currencyText.text = 'CREDITS: 000';
-    this.currencyText.fontSize = statsCreditsFont;
+    const creditsLabel = new TextBlock('credits_label');
+    creditsLabel.text = 'CREDITS:';
+    creditsLabel.fontSize = statsCreditsFont;
+    creditsLabel.fontFamily = specialFont;
+    creditsLabel.color = '#FFD782';
+    creditsLabel.left = 16;
+    creditsLabel.top = isCompactHud ? 103 : 98;
+    creditsLabel.width = `${Math.round(statsPanelWidth * 0.42)}px`;
+    creditsLabel.height = '34px';
+    creditsLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    creditsLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    creditsLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    statsContainer.addControl(creditsLabel);
+
+    this.currencyText.text = '000';
+    this.currencyText.fontSize = isCompactHud ? 27 : 25;
     this.currencyText.fontFamily = fontFamily;
     this.currencyText.color = '#FFD782';
-    this.currencyText.left = 16;
+    this.currencyText.left = isCompactHud ? 190 : 182;
     this.currencyText.top = isCompactHud ? 103 : 98;
-    this.currencyText.width = `${statsPanelWidth - 32}px`;
+    this.currencyText.width = `${Math.round(statsPanelWidth * 0.48)}px`;
     this.currencyText.height = '34px';
     this.currencyText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.currencyText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -802,10 +847,10 @@ export class HUDManager {
 
     // Combo Container (integrated in score panel, bottom-right)
     this.comboContainer = new Rectangle('combo_container');
-    this.comboContainer.width = isCompactHud ? '156px' : '146px';
-    this.comboContainer.height = isCompactHud ? '60px' : '56px';
-    this.comboContainer.left = isCompactHud ? 208 : 192;
-    this.comboContainer.top = isCompactHud ? 92 : 84;
+    this.comboContainer.width = isCompactHud ? '190px' : '176px';
+    this.comboContainer.height = isCompactHud ? '78px' : '70px';
+    this.comboContainer.left = isCompactHud ? 226 : 210;
+    this.comboContainer.top = isCompactHud ? 98 : 90;
     this.comboContainer.thickness = 0;
     this.comboContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.comboContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -813,27 +858,27 @@ export class HUDManager {
     statsContainer.addControl(this.comboContainer);
 
     this.comboText = new TextBlock('combo_text');
-    this.comboText.text = 'COMBO X0';
-    this.comboText.fontSize = isCompactHud ? 18 : 17;
-    this.comboText.fontFamily = fontFamily;
+    this.comboText.text = 'COMBO';
+    this.comboText.fontSize = isCompactHud ? 21 : 19;
+    this.comboText.fontFamily = specialFont;
     this.comboText.color = '#FFD782';
-    this.comboText.top = '-8px';
+    this.comboText.top = '-2px';
     this.comboText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.comboContainer.addControl(this.comboText);
 
     this.comboMultiplierText = new TextBlock('combo_multiplier_text');
-    this.comboMultiplierText.text = '1.0X';
-    this.comboMultiplierText.fontSize = isCompactHud ? 28 : 25;
+    this.comboMultiplierText.text = 'X0 • 1.0X';
+    this.comboMultiplierText.fontSize = isCompactHud ? 38 : 34;
     this.comboMultiplierText.fontFamily = fontFamily;
     this.comboMultiplierText.color = '#FFFFFF';
-    this.comboMultiplierText.top = '11px';
+    this.comboMultiplierText.top = '22px';
     this.comboMultiplierText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     this.comboContainer.addControl(this.comboMultiplierText);
 
     // Bottom-left command feed
     this.logPanel = new Rectangle('log_panel');
-    this.logPanel.width = '420px';
-    this.logPanel.height = '180px';
+    this.logPanel.width = isCompactHud ? '520px' : '560px';
+    this.logPanel.height = isCompactHud ? '214px' : '228px';
     this.logPanel.thickness = 1;
     this.logPanel.color = '#2EF9C3';
     this.logPanel.background = 'rgba(4, 10, 8, 0.88)';
@@ -846,7 +891,7 @@ export class HUDManager {
 
     const logHeader = new TextBlock('log_header');
     logHeader.text = ' SYSTEM MONITOR // DIAGNOSTIC FEED';
-    logHeader.fontSize = isCompactHud ? 13 : 12;
+    logHeader.fontSize = isCompactHud ? 16 : 15;
     logHeader.fontFamily = fontFamily;
     logHeader.color = '#2EF9C3';
     logHeader.height = '16px';
@@ -866,11 +911,11 @@ export class HUDManager {
     for (let i = 0; i < 6; i++) {
       const line = new TextBlock(`log_line_${i}`);
       line.text = '';
-      line.fontSize = isCompactHud ? 14 : 13;
+      line.fontSize = isCompactHud ? 17 : 16;
       line.fontFamily = fontFamily;
       line.color = '#B8FFE6';
-      line.height = '20px';
-      line.top = `${28 + i * 21}px`;
+      line.height = '28px';
+      line.top = `${34 + i * 30}px`;
       line.left = 10;
       line.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
       line.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -935,12 +980,12 @@ export class HUDManager {
     this.pauseButton = pauseBtn;
 
     this.runBonusContainer = new Rectangle('run_bonus_container');
-    this.runBonusContainer.width = '520px';
-    this.runBonusContainer.height = '220px';
+    this.runBonusContainer.width = '1400px';
+    this.runBonusContainer.height = '280px';
     this.runBonusContainer.thickness = 0;
     this.runBonusContainer.background = 'rgba(0,0,0,0)';
-    this.runBonusContainer.left = 98;
-    this.runBonusContainer.top = 20;
+    this.runBonusContainer.left = isCompactHud ? 130 : 140;
+    this.runBonusContainer.top = isCompactHud ? 26 : 22;
     this.runBonusContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.runBonusContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.runBonusContainer.isPointerBlocker = false;
@@ -950,7 +995,7 @@ export class HUDManager {
 
     this.runBonusIconsStack = new StackPanel('run_bonus_icons_stack');
     this.runBonusIconsStack.isVertical = true;
-    this.runBonusIconsStack.height = '54px';
+    this.runBonusIconsStack.height = '72px';
     this.runBonusIconsStack.spacing = 8;
     this.runBonusIconsStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.runBonusIconsStack.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
@@ -959,9 +1004,9 @@ export class HUDManager {
     this.runBonusContainer.addControl(this.runBonusIconsStack);
 
     this.runBonusTooltip = new Rectangle('run_bonus_tooltip');
-    this.runBonusTooltip.width = '300px';
-    this.runBonusTooltip.height = '86px';
-    this.runBonusTooltip.top = '60px';
+    this.runBonusTooltip.width = '620px';
+    this.runBonusTooltip.height = '170px';
+    this.runBonusTooltip.top = '78px';
     this.runBonusTooltip.thickness = 1;
     this.runBonusTooltip.color = '#3B685C';
     this.runBonusTooltip.background = 'rgba(10, 18, 22, 0.96)';
@@ -973,8 +1018,8 @@ export class HUDManager {
     this.runBonusContainer.addControl(this.runBonusTooltip);
 
     this.runBonusTooltipImg = new Image('run_bonus_tooltip_img', '');
-    this.runBonusTooltipImg.width = '42px';
-    this.runBonusTooltipImg.height = '42px';
+    this.runBonusTooltipImg.width = '0px';
+    this.runBonusTooltipImg.height = '0px';
     this.runBonusTooltipImg.left = '10px';
     this.runBonusTooltipImg.top = '-16px';
     this.runBonusTooltipImg.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -984,9 +1029,9 @@ export class HUDManager {
 
     const tooltipTextStack = new StackPanel('run_bonus_tooltip_text');
     tooltipTextStack.isVertical = true;
-    tooltipTextStack.left = '60px';
-    tooltipTextStack.width = '230px';
-    tooltipTextStack.height = '76px';
+    tooltipTextStack.left = '16px';
+    tooltipTextStack.width = '584px';
+    tooltipTextStack.height = '146px';
     tooltipTextStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     tooltipTextStack.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     tooltipTextStack.spacing = 3;
@@ -995,20 +1040,21 @@ export class HUDManager {
     this.runBonusTooltipTextStack = tooltipTextStack;
 
     this.runBonusTooltipTitle = new TextBlock('run_bonus_tooltip_title', '');
-    this.runBonusTooltipTitle.fontFamily = fontFamily;
-    this.runBonusTooltipTitle.fontSize = 13;
+    this.runBonusTooltipTitle.fontFamily = specialFont;
+    this.runBonusTooltipTitle.fontSize = 22;
     this.runBonusTooltipTitle.color = '#7CFFEA';
+    this.runBonusTooltipTitle.textWrapping = false;
     this.runBonusTooltipTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.runBonusTooltipTitle.height = '20px';
+    this.runBonusTooltipTitle.height = '46px';
     tooltipTextStack.addControl(this.runBonusTooltipTitle);
 
     this.runBonusTooltipDesc = new TextBlock('run_bonus_tooltip_desc', '');
     this.runBonusTooltipDesc.fontFamily = fontFamily;
-    this.runBonusTooltipDesc.fontSize = 11;
+    this.runBonusTooltipDesc.fontSize = 18;
     this.runBonusTooltipDesc.color = '#CFFCF3';
     this.runBonusTooltipDesc.textWrapping = true;
     this.runBonusTooltipDesc.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.runBonusTooltipDesc.height = '52px';
+    this.runBonusTooltipDesc.height = '94px';
     tooltipTextStack.addControl(this.runBonusTooltipDesc);
 
     this.refreshRunBonusIcons();
@@ -1029,7 +1075,7 @@ export class HUDManager {
 
     const integrityLabel = new TextBlock('integrity_label');
     integrityLabel.text = 'INTEGRITY';
-    integrityLabel.fontSize = isCompactHud ? 24 : 22;
+    integrityLabel.fontSize = integrityHeaderFont;
     integrityLabel.fontFamily = 'Wonder8Bit';
     integrityLabel.color = '#7CFFEA';
     integrityLabel.width = '300px';
@@ -1042,8 +1088,8 @@ export class HUDManager {
     this.integrityLabel = integrityLabel;
 
     const healthBarContainer = new Rectangle('health_bar_container');
-    healthBarContainer.width = '420px';
-    healthBarContainer.height = '30px';
+    healthBarContainer.width = '440px';
+    healthBarContainer.height = '34px';
     healthBarContainer.thickness = 1;
     healthBarContainer.color = '#7CFFEA';
     healthBarContainer.background = 'rgba(10, 30, 35, 0.7)';
@@ -1064,7 +1110,7 @@ export class HUDManager {
 
     this.healthValueText = new TextBlock('health_value');
     this.healthValueText.text = '100/100';
-    this.healthValueText.fontSize = isCompactHud ? 22 : 19;
+    this.healthValueText.fontSize = isCompactHud ? 28 : 25;
     this.healthValueText.fontFamily = fontFamily;
     this.healthValueText.color = '#CFFCF3';
     this.healthValueText.width = '200px';
@@ -1079,8 +1125,8 @@ export class HUDManager {
 
     // Bottom-right status panel (stacked resource bars)
     this.statusPanel = new Rectangle('status_panel');
-    this.statusPanel.width = '420px';
-    this.statusPanel.height = '180px';
+    this.statusPanel.width = isCompactHud ? '486px' : '470px';
+    this.statusPanel.height = isCompactHud ? '214px' : '204px';
     this.statusPanel.thickness = 1;
     this.statusPanel.color = '#2EF9C3';
     this.statusPanel.background = 'rgba(0, 0, 0, 0.55)';
@@ -1092,22 +1138,36 @@ export class HUDManager {
     this.guiClean.addControl(this.statusPanel);
 
     this.playerUltDisplay = new TextBlock('ultimate_status');
-    this.playerUltDisplay.text = 'ULTI: 0%';
-    this.playerUltDisplay.fontSize = isCompactHud ? 19 : 17;
+    const ultiLabel = new TextBlock('ulti_label');
+    ultiLabel.text = 'ULTI:';
+    ultiLabel.fontSize = integrityHeaderFont;
+    ultiLabel.fontFamily = specialFont;
+    ultiLabel.color = '#FFFF00';
+    ultiLabel.left = 16;
+    ultiLabel.top = 16;
+    ultiLabel.width = `${isCompactHud ? 116 : 108}px`;
+    ultiLabel.height = '30px';
+    ultiLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    ultiLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    ultiLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.statusPanel.addControl(ultiLabel);
+
+    this.playerUltDisplay.text = '0%';
+    this.playerUltDisplay.fontSize = isCompactHud ? 26 : 24;
     this.playerUltDisplay.fontFamily = fontFamily;
     this.playerUltDisplay.color = '#FFFF00';
-    this.playerUltDisplay.left = 16;
+    this.playerUltDisplay.left = isCompactHud ? 130 : 122;
     this.playerUltDisplay.top = 16;
-    this.playerUltDisplay.width = '380px';
-    this.playerUltDisplay.height = '24px';
+    this.playerUltDisplay.width = isCompactHud ? '320px' : '304px';
+    this.playerUltDisplay.height = '30px';
     this.playerUltDisplay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.playerUltDisplay.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.playerUltDisplay.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.statusPanel.addControl(this.playerUltDisplay);
 
     const ultBarContainer = new Rectangle('ultimate_bar_container');
-    ultBarContainer.width = '388px';
-    ultBarContainer.height = '24px';
+    ultBarContainer.width = isCompactHud ? '442px' : '426px';
+    ultBarContainer.height = '30px';
     ultBarContainer.thickness = 1;
     ultBarContainer.color = '#FFFF00';
     ultBarContainer.background = 'rgba(30, 30, 10, 0.7)';
@@ -1127,22 +1187,36 @@ export class HUDManager {
     ultBarContainer.addControl(this.playerUltBarFill);
 
     this.secondaryStatusText = new TextBlock('secondary_status');
-    this.secondaryStatusText.text = 'STANCE: 100% [READY]';
-    this.secondaryStatusText.fontSize = isCompactHud ? 19 : 17;
+    const stanceLabel = new TextBlock('stance_label');
+    stanceLabel.text = 'STANCE:';
+    stanceLabel.fontSize = integrityHeaderFont;
+    stanceLabel.fontFamily = specialFont;
+    stanceLabel.color = '#B8FFE6';
+    stanceLabel.left = 16;
+    stanceLabel.top = 88;
+    stanceLabel.width = `${isCompactHud ? 148 : 138}px`;
+    stanceLabel.height = '30px';
+    stanceLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    stanceLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    stanceLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.statusPanel.addControl(stanceLabel);
+
+    this.secondaryStatusText.text = '100% [READY]';
+    this.secondaryStatusText.fontSize = isCompactHud ? 26 : 24;
     this.secondaryStatusText.fontFamily = fontFamily;
     this.secondaryStatusText.color = '#B8FFE6';
-    this.secondaryStatusText.left = 16;
+    this.secondaryStatusText.left = isCompactHud ? 186 : 174;
     this.secondaryStatusText.top = 88;
-    this.secondaryStatusText.width = '380px';
-    this.secondaryStatusText.height = '24px';
+    this.secondaryStatusText.width = isCompactHud ? '320px' : '304px';
+    this.secondaryStatusText.height = '30px';
     this.secondaryStatusText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.secondaryStatusText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.secondaryStatusText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.statusPanel.addControl(this.secondaryStatusText);
 
     const secondaryBarContainer = new Rectangle('secondary_resource_container');
-    secondaryBarContainer.width = '388px';
-    secondaryBarContainer.height = '24px';
+    secondaryBarContainer.width = isCompactHud ? '442px' : '426px';
+    secondaryBarContainer.height = '30px';
     secondaryBarContainer.thickness = 1;
     secondaryBarContainer.color = '#7CFFEA';
     secondaryBarContainer.background = 'rgba(10, 30, 35, 0.7)';
@@ -1773,9 +1847,10 @@ export class HUDManager {
     const title = new TextBlock(`${titleText}_title`);
     title.text = titleText;
     title.color = '#FFFFFF';
-    title.fontSize = 38;
-    title.fontFamily = 'Arcade8Bit';
-    title.top = '-60px';
+    const isBonusOverlay = titleText === 'CHOOSE BONUS';
+    title.fontSize = isBonusOverlay ? 56 : 38;
+    title.fontFamily = isBonusOverlay ? 'Wonder8Bit' : 'Arcade8Bit';
+    title.top = isBonusOverlay ? '-330px' : '-60px';
     container.addControl(title);
 
     if (buttonText) {
@@ -1819,6 +1894,7 @@ export class HUDManager {
     if (this.topBar) this.topBar.isVisible = false;
     if (this.logPanel) this.logPanel.isVisible = false;
     if (this.statusPanel) this.statusPanel.isVisible = false;
+    if (this.runBonusContainer) this.runBonusContainer.isVisible = false;
     if (this.enemyGui) this.enemyGui.rootContainer.isVisible = false;
 
     this.gameOverScreen.isVisible = true;
@@ -1826,15 +1902,16 @@ export class HUDManager {
     
     const container = this.gameOverScreen;
     const fontFamily = 'Arcade8Bit';
+    const specialFont = 'Wonder8Bit';
 
     // Title
     const title = new TextBlock('go_title');
     title.text = 'SYSTEM FAILURE';
     title.color = '#FF3B5C';
-    title.fontSize = 52;
-    title.fontFamily = fontFamily;
-    title.top = '-280px';
-    title.shadowBlur = 10;
+    title.fontSize = 62;
+    title.fontFamily = specialFont;
+    title.top = '-356px';
+    title.shadowBlur = 18;
     title.shadowColor = '#FF0000';
     container.addControl(title);
 
@@ -1842,34 +1919,34 @@ export class HUDManager {
     const scoreLabel = new TextBlock('go_score_label');
     scoreLabel.text = 'FINAL SCORE';
     scoreLabel.color = '#9FEFE1';
-    scoreLabel.fontSize = 18;
-    scoreLabel.fontFamily = fontFamily;
-    scoreLabel.top = '-200px';
+    scoreLabel.fontSize = 26;
+    scoreLabel.fontFamily = specialFont;
+    scoreLabel.top = '-258px';
     container.addControl(scoreLabel);
 
     const scoreValue = new TextBlock('go_score_value');
-    scoreValue.text = stats.score.toLocaleString('en-US').padStart(8, '0');
+    scoreValue.text = `${Math.max(0, Math.floor(stats.score)).toLocaleString('en-US').padStart(8, '0')}`;
     scoreValue.color = '#FFFFFF';
-    scoreValue.fontSize = 48;
+    scoreValue.fontSize = 56;
     scoreValue.fontFamily = fontFamily;
-    scoreValue.top = '-150px';
+    scoreValue.top = '-212px';
     container.addControl(scoreValue);
 
     if (stats.isNewHighScore) {
       const newRecord = new TextBlock('go_new_record');
       newRecord.text = '!!! NEW HIGH SCORE !!!';
       newRecord.color = '#FFD782';
-      newRecord.fontSize = 20;
-      newRecord.fontFamily = fontFamily;
-      newRecord.top = '-100px';
+      newRecord.fontSize = 26;
+      newRecord.fontFamily = specialFont;
+      newRecord.top = '-156px';
       container.addControl(newRecord);
     } else {
       const best = new TextBlock('go_best');
-      best.text = `BEST: ${stats.highScore.toLocaleString('en-US').padStart(8, '0')}`;
+      best.text = `BEST: ${Math.max(0, Math.floor(stats.highScore)).toLocaleString('en-US').padStart(8, '0')}`;
       best.color = '#647D7D';
-      best.fontSize = 16;
+      best.fontSize = 22;
       best.fontFamily = fontFamily;
-      best.top = '-100px';
+      best.top = '-156px';
       container.addControl(best);
     }
 
@@ -1877,52 +1954,48 @@ export class HUDManager {
     const roomInfo = new TextBlock('go_room');
     roomInfo.text = `REACHED SECTOR: ${stats.roomReached}`;
     roomInfo.color = '#7CFFEA';
-    roomInfo.fontSize = 22;
-    roomInfo.fontFamily = fontFamily;
-    roomInfo.top = '-40px';
+    roomInfo.fontSize = 36;
+    roomInfo.fontFamily = specialFont;
+    roomInfo.top = '-96px';
     container.addControl(roomInfo);
 
-    // Upgrades container
-    const numRows = Math.ceil((stats.bonuses ? stats.bonuses.length : 0) / 7) || 1;
-    const maxDisplayedRows = Math.min(3, numRows);
-    const bonusContainerHeight = 80 + maxDisplayedRows * 82;
+    // Equipped modules panel (game over only)
+    const goBonusesPanel = new Rectangle('go_bonuses_panel');
+    goBonusesPanel.width = '1080px';
+    goBonusesPanel.height = '240px';
+    goBonusesPanel.top = '96px';
+    goBonusesPanel.thickness = 1;
+    goBonusesPanel.color = '#3B685C';
+    goBonusesPanel.background = 'rgba(20, 30, 35, 0.42)';
+    goBonusesPanel.cornerRadius = 6;
+    container.addControl(goBonusesPanel);
 
-    const bonusContainer = new Rectangle('go_bonuses');
-    bonusContainer.width = '820px';
-    bonusContainer.height = `${bonusContainerHeight}px`;
-    bonusContainer.top = `${40 + bonusContainerHeight / 2}px`;
-    bonusContainer.thickness = 1;
-    bonusContainer.color = '#3B685C';
-    bonusContainer.background = 'rgba(20, 30, 35, 0.4)';
-    container.addControl(bonusContainer);
+    const goBonusesTitle = new TextBlock('go_bonuses_title', 'EQUIPPED MODULES');
+    goBonusesTitle.fontFamily = specialFont;
+    goBonusesTitle.fontSize = 28;
+    goBonusesTitle.color = '#7CFFEA';
+    goBonusesTitle.top = '-96px';
+    goBonusesPanel.addControl(goBonusesTitle);
 
-    const bonusLabel = new TextBlock('go_bonus_label', 'EQUIPPED MODULES');
-    bonusLabel.fontFamily = fontFamily;
-    bonusLabel.fontSize = 20;
-    bonusLabel.color = '#7CFFEA';
-    bonusLabel.top = `${-(bonusContainerHeight / 2) + 25}px`;
-    bonusContainer.addControl(bonusLabel);
+    const goBonusesScroll = new ScrollViewer('go_bonuses_scroll');
+    goBonusesScroll.width = '100%';
+    goBonusesScroll.height = '180px';
+    goBonusesScroll.top = '24px';
+    goBonusesScroll.thickness = 0;
+    goBonusesScroll.barColor = '#7CFFEA';
+    goBonusesScroll.barSize = 24;
+    goBonusesPanel.addControl(goBonusesScroll);
 
-    const scrollViewer = new ScrollViewer('go_bonus_scroll');
-    scrollViewer.width = 1;
-    scrollViewer.height = `${bonusContainerHeight - 40}px`;
-    scrollViewer.thickness = 0;
-    scrollViewer.top = '25px';
-    scrollViewer.barColor = '#7CFFEA';
-    scrollViewer.barSize = 10;
-    bonusContainer.addControl(scrollViewer);
+    const goBonusesRows = new StackPanel('go_bonuses_rows');
+    goBonusesRows.isVertical = true;
+    goBonusesRows.spacing = 10;
+    goBonusesRows.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    goBonusesScroll.addControl(goBonusesRows);
 
-    const bonusStackRows = new StackPanel('go_bonus_stack_rows');
-    bonusStackRows.isVertical = true;
-    bonusStackRows.spacing = 14;
-    bonusStackRows.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-    scrollViewer.addControl(bonusStackRows);
-
-    // Detached Details Panel for Tooltips at the bottom center of the screen
     const goDetailsPanel = new Rectangle('go_details_panel');
-    goDetailsPanel.width = '900px';
-    goDetailsPanel.height = '130px';
-    goDetailsPanel.top = `${135 + bonusContainerHeight}px`;
+    goDetailsPanel.width = '1080px';
+    goDetailsPanel.height = '160px';
+    goDetailsPanel.top = '272px';
     goDetailsPanel.thickness = 2;
     goDetailsPanel.color = '#3B685C';
     goDetailsPanel.background = 'rgba(10, 18, 22, 0.95)';
@@ -1931,140 +2004,138 @@ export class HUDManager {
     goDetailsPanel.isPointerBlocker = false;
     container.addControl(goDetailsPanel);
 
-    const goDetailsImg = new Image('go_details_img', '');
-    goDetailsImg.width = '90px';
-    goDetailsImg.height = '90px';
-    goDetailsImg.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    goDetailsImg.left = '20px';
-    goDetailsImg.isVisible = false;
-    goDetailsImg.isHitTestVisible = false;
-    goDetailsPanel.addControl(goDetailsImg);
-
-    const goTextStack = new StackPanel('go_details_text_stack');
-    goTextStack.isVertical = true;
-    goTextStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    goTextStack.left = '130px';
-    goTextStack.width = '640px';
-    goTextStack.spacing = 6;
-    goTextStack.isHitTestVisible = false;
-    goDetailsPanel.addControl(goTextStack);
+    const goDetailsIcon = new Image('go_details_icon', '');
+    goDetailsIcon.width = '128px';
+    goDetailsIcon.height = '128px';
+    goDetailsIcon.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    goDetailsIcon.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    goDetailsIcon.left = '18px';
+    goDetailsIcon.isVisible = false;
+    goDetailsIcon.isHitTestVisible = false;
+    goDetailsPanel.addControl(goDetailsIcon);
 
     const goDetailsTitle = new TextBlock('go_details_title', '> MODULE METRICS');
-    goDetailsTitle.fontFamily = fontFamily;
-    goDetailsTitle.fontSize = 16;
+    goDetailsTitle.fontFamily = specialFont;
+    goDetailsTitle.fontSize = 28;
     goDetailsTitle.color = '#7CFFEA';
     goDetailsTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    goDetailsTitle.height = '24px';
+    goDetailsTitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    goDetailsTitle.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    goDetailsTitle.left = '166px';
+    goDetailsTitle.top = '14px';
+    goDetailsTitle.height = '40px';
     goDetailsTitle.isHitTestVisible = false;
-    goTextStack.addControl(goDetailsTitle);
+    goDetailsPanel.addControl(goDetailsTitle);
 
     const goDetailsDesc = new TextBlock('go_details_desc', 'Hover an equipped module to read system diagnostics.');
     goDetailsDesc.fontFamily = fontFamily;
-    goDetailsDesc.fontSize = 13;
-    goDetailsDesc.color = '#647D7D';
+    goDetailsDesc.fontSize = 24;
+    goDetailsDesc.color = '#8FB1AD';
     goDetailsDesc.textWrapping = true;
     goDetailsDesc.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    goDetailsDesc.height = '70px';
+    goDetailsDesc.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    goDetailsDesc.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    goDetailsDesc.left = '166px';
+    goDetailsDesc.top = '62px';
+    goDetailsDesc.width = '890px';
+    goDetailsDesc.height = '82px';
     goDetailsDesc.isHitTestVisible = false;
-    goTextStack.addControl(goDetailsDesc);
+    goDetailsPanel.addControl(goDetailsDesc);
+
+    const goPerRow = 10;
+    const goRows = Math.max(1, Math.ceil((stats.bonuses?.length || 0) / goPerRow));
+    const goIconSize = goRows >= 3 ? 58 : goRows === 2 ? 66 : 76;
+    const goGap = goRows >= 3 ? 8 : 10;
 
     if (stats.bonuses && stats.bonuses.length > 0) {
-      let currentRowStack: StackPanel | null = null;
-      for (let i = 0; i < stats.bonuses.length; i++) {
-        const bonus = stats.bonuses[i];
-        if (i % 7 === 0) {
-          currentRowStack = new StackPanel(`go_bonus_row_stack_${Math.floor(i / 7)}`);
-          currentRowStack.isVertical = false;
-          currentRowStack.spacing = 14;
-          currentRowStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
-          currentRowStack.height = '66px';
-          bonusStackRows.addControl(currentRowStack);
-        }
+      for (let row = 0; row < goRows; row++) {
+        const rowStack = new StackPanel(`go_bonuses_row_${row}`);
+        rowStack.isVertical = false;
+        rowStack.spacing = goGap;
+        rowStack.height = `${goIconSize}px`;
+        rowStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+        goBonusesRows.addControl(rowStack);
 
-        const box = new Rectangle(`go_bonus_box_${bonus.id}`);
-        box.width = '64px';
-        box.height = '64px';
-        box.thickness = 1;
-        box.color = '#3B685C';
-        box.background = 'rgba(10, 18, 22, 0.85)';
-        box.isPointerBlocker = true;
-        box.isHitTestVisible = true;
-        box.hoverCursor = 'pointer';
-        
-        const img = new Image(`go_bonus_img_${bonus.id}`, buildHudAssetUrl(`bonuses/${bonus.id}.png`));
-        img.width = '48px';
-        img.height = '48px';
-        img.isHitTestVisible = false;
-        box.addControl(img);
+        const start = row * goPerRow;
+        const end = Math.min(stats.bonuses.length, start + goPerRow);
+        for (let i = start; i < end; i++) {
+          const bonus = stats.bonuses[i];
+          const box = new Rectangle(`go_bonus_box_${bonus.id}_${i}`);
+          box.width = `${goIconSize}px`;
+          box.height = `${goIconSize}px`;
+          box.thickness = 1;
+          box.color = '#3B685C';
+          box.background = 'rgba(10, 18, 22, 0.9)';
+          box.cornerRadius = 4;
 
-        if (bonus.stacks > 1) {
-          const badge = new Rectangle(`go_bonus_badge_${bonus.id}`);
-          badge.width = '20px';
-          badge.height = '16px';
-          badge.thickness = 0;
-          badge.background = '#FF3B5C';
-          badge.cornerRadius = 2;
-          badge.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
-          badge.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-          badge.left = '4px';
-          badge.top = '4px';
-          badge.isHitTestVisible = false;
+          const img = new Image(`go_bonus_img_${bonus.id}_${i}`, buildHudAssetUrl(`bonuses/${bonus.id}.png`));
+          img.width = '100%';
+          img.height = '100%';
+          img.isHitTestVisible = false;
+          box.addControl(img);
 
-          const badgeText = new TextBlock(`go_bonus_badge_text_${bonus.id}`, `x${bonus.stacks}`);
-          badgeText.fontFamily = fontFamily;
-          badgeText.fontSize = 10;
-          badgeText.color = '#FFFFFF';
-          badgeText.isHitTestVisible = false;
-          badge.addControl(badgeText);
-          box.addControl(badge);
-        }
+          if (bonus.stacks > 1) {
+            const badge = new Rectangle(`go_bonus_badge_${bonus.id}_${i}`);
+            badge.width = goRows >= 3 ? '24px' : '28px';
+            badge.height = goRows >= 3 ? '18px' : '22px';
+            badge.thickness = 0;
+            badge.background = '#FF3B5C';
+            badge.cornerRadius = 2;
+            badge.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+            badge.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
+            badge.left = '3px';
+            badge.top = '3px';
+            badge.isHitTestVisible = false;
 
-        const def = BONUS_CODEX_ENTRIES.find(d => d.id === bonus.id) || {
-          name: bonus.id.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-          description: 'Custom system upgrade module loaded during execution.',
-          effect: 'Standard performance parameters apply.'
-        };
-        box.onPointerEnterObservable.add(() => {
-          goDetailsImg.source = buildHudAssetUrl(`bonuses/${bonus.id}.png`);
-          goDetailsImg.isVisible = true;
-          goDetailsTitle.text = `${def.name.toUpperCase()} (x${bonus.stacks})`;
-          goDetailsDesc.text = `${def.description}\nEffect: ${def.effect}`;
-        });
-        box.onPointerOutObservable.add(() => {
-          goDetailsImg.isVisible = false;
-          goDetailsTitle.text = '> MODULE METRICS';
-          goDetailsDesc.text = 'Hover an equipped module to read system diagnostics.';
-        });
-
-        if (currentRowStack) {
-          currentRowStack.addControl(box);
+            const badgeText = new TextBlock(`go_bonus_badge_text_${bonus.id}_${i}`, `x${bonus.stacks}`);
+            badgeText.fontFamily = 'Arcade8Bit';
+            badgeText.fontSize = goRows >= 3 ? 11 : 13;
+            badgeText.color = '#FFFFFF';
+            badgeText.isHitTestVisible = false;
+            badge.addControl(badgeText);
+            box.addControl(badge);
+          }
+          const def = this.getRuntimeBonusMeta(bonus.id);
+          box.onPointerEnterObservable.add(() => {
+            goDetailsIcon.source = buildHudAssetUrl(`bonuses/${bonus.id}.png`);
+            goDetailsIcon.isVisible = true;
+            goDetailsTitle.text = `${def.name.toUpperCase()}${bonus.stacks > 1 ? ` (x${bonus.stacks})` : ''}`;
+            goDetailsDesc.text = `${def.description}${def.effect ? `\nEffect: ${def.effect}` : ''}`;
+          });
+          box.onPointerOutObservable.add(() => {
+            goDetailsIcon.isVisible = false;
+            goDetailsTitle.text = '> MODULE METRICS';
+            goDetailsDesc.text = 'Hover an equipped module to read system diagnostics.';
+          });
+          rowStack.addControl(box);
         }
       }
     } else {
       const noBonusText = new TextBlock('go_no_bonus', 'NO UPGRADES EQUIPPED');
       noBonusText.fontFamily = fontFamily;
-      noBonusText.fontSize = 15;
+      noBonusText.fontSize = 22;
       noBonusText.color = '#647D7D';
+      noBonusText.height = '40px';
       noBonusText.isHitTestVisible = false;
-      bonusStackRows.addControl(noBonusText);
+      goBonusesRows.addControl(noBonusText);
     }
 
     // Buttons
     const buttonPanel = new StackPanel('go_buttons');
-    buttonPanel.width = '340px';
-    buttonPanel.top = `${240 + bonusContainerHeight}px`;
+    buttonPanel.width = '420px';
+    buttonPanel.top = '436px';
     container.addControl(buttonPanel);
 
     const createButton = (text: string, color: string, onClick: () => void) => {
       const btn = Button.CreateSimpleButton(`go_btn_${text}`, text);
-      btn.height = '60px';
-      btn.width = '340px';
+      btn.height = '68px';
+      btn.width = '420px';
       btn.color = color;
       btn.background = 'rgba(20, 30, 35, 0.8)';
       btn.thickness = 1;
-      btn.cornerRadius = 4;
-      btn.fontSize = 22;
-      btn.fontFamily = fontFamily;
+      btn.cornerRadius = 6;
+      btn.fontSize = 26;
+      btn.fontFamily = 'Wonder8Bit';
       btn.paddingTop = '10px';
       btn.onPointerUpObservable.add(() => {
         this.emitUiClickSound();
@@ -2082,7 +2153,7 @@ export class HUDManager {
 
   private updateScore(data: any): void {
     if (this.scoreText) {
-      this.scoreText.text = `SCORE: ${Math.round(data.score).toString().padStart(8, '0')}`;
+      this.scoreText.text = `${Math.max(0, Math.floor(data.score)).toString().padStart(8, '0')}`;
     }
   }
 
@@ -2091,8 +2162,8 @@ export class HUDManager {
     
     if (data.combo > 1) {
       this.comboContainer.isVisible = true;
-      this.comboText.text = `COMBO X${data.combo}`;
-      this.comboMultiplierText.text = `${data.multiplier.toFixed(1)}X`;
+      this.comboText.text = 'COMBO';
+      this.comboMultiplierText.text = `X${data.combo} • ${data.multiplier.toFixed(1)}X`;
       
       // Pulse effect
       this.comboMultiplierText.scaleX = 1.3;
@@ -2610,32 +2681,32 @@ export class HUDManager {
     }
 
     if (active) {
-      this.secondaryStatusText.text = `STANCE: ${percentage}% [ACTIVE | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
+      this.secondaryStatusText.text = `${percentage}% [ACTIVE | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
       this.secondaryStatusText.color = '#66CCFF'; // Active stance blue
       this.secondaryResourceBarFill.background = '#66CCFF';
       if (this.secondaryBarContainer) {
         this.secondaryBarContainer.color = '#66CCFF';
       }
     } else if (ratio >= 1.0) {
-      this.secondaryStatusText.text = `STANCE: 100% [READY]`;
+      this.secondaryStatusText.text = '100% [READY]';
       this.secondaryStatusText.color = '#00FFD1'; // Solid matrix cyan
       this.secondaryResourceBarFill.background = '#00FFD1';
       if (this.secondaryBarContainer) {
         this.secondaryBarContainer.color = '#00FFD1';
       }
     } else if (ratio >= thresholdRatio) {
-      this.secondaryStatusText.text = `STANCE: ${percentage}% [READY | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
+      this.secondaryStatusText.text = `${percentage}% [READY | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
       this.secondaryStatusText.color = '#7CFFEA'; // Ready bright cyan
       this.secondaryResourceBarFill.background = '#7CFFEA';
       if (this.secondaryBarContainer) {
         this.secondaryBarContainer.color = '#7CFFEA';
       }
     } else if (ratio <= 0.0) {
-      this.secondaryStatusText.text = `STANCE: 0% [RECHARGE | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
+      this.secondaryStatusText.text = `0% [RECHARGE | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
       this.secondaryStatusText.color = '#FFCC66'; // Warning orange
       this.secondaryResourceBarFill.background = '#FFCC66';
     } else {
-      this.secondaryStatusText.text = `STANCE: ${percentage}% [RECHARGE | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
+      this.secondaryStatusText.text = `${percentage}% [RECHARGE | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
       this.secondaryStatusText.color = '#FFCC66';
       this.secondaryResourceBarFill.background = '#FFCC66';
       if (this.secondaryBarContainer) {
@@ -2675,7 +2746,7 @@ export class HUDManager {
   updateCurrency(value: number): void {
     if (!this.currencyText) return;
     const safeValue = Math.max(0, Math.floor(value));
-    this.currencyText.text = `CREDITS: ${safeValue.toString().padStart(3, '0')}`;
+    this.currencyText.text = `${safeValue.toString().padStart(3, '0')}`;
   }
 
   updateItemStatus(text: string): void {
@@ -2685,7 +2756,7 @@ export class HUDManager {
 
   private updateWaveText(waveNumber: number): void {
     if (this.waveText) {
-      this.waveText.text = `WAVE: ${waveNumber.toString().padStart(2, '0')}`;
+      this.waveText.text = `${waveNumber.toString().padStart(2, '0')}`;
     }
   }
 
@@ -3191,6 +3262,30 @@ export class HUDManager {
       return `${current?.[1] ?? '0'}/∞`;
     }
     return 'UNIQUE';
+  }
+
+  private getRuntimeBonusMeta(bonusId: string): { name: string; description: string; effect?: string } {
+    const runtimeDef = BONUS_CATALOG.find((d) => d.id === bonusId);
+    if (runtimeDef) {
+      return {
+        name: runtimeDef.name,
+        description: runtimeDef.description,
+        effect: runtimeDef.description,
+      };
+    }
+    const codexDef = BONUS_CODEX_ENTRIES.find((d) => d.id === bonusId);
+    if (codexDef) {
+      return {
+        name: codexDef.name,
+        description: codexDef.description,
+        effect: codexDef.effect,
+      };
+    }
+    return {
+      name: bonusId.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+      description: 'Custom system upgrade module loaded during execution.',
+      effect: 'Standard performance parameters apply.',
+    };
   }
 
   /**
@@ -4196,7 +4291,7 @@ export class HUDManager {
     if (this.playerHealthDisplay) this.playerHealthDisplay.isVisible = true;
     if (this.topBar) this.topBar.isVisible = false;
     if (this.statusPanel) this.statusPanel.isVisible = false;
-    if (this.runBonusContainer) this.runBonusContainer.isVisible = false;
+    if (this.runBonusContainer) this.runBonusContainer.isVisible = true;
     if (this.comboContainer) this.comboContainer.isVisible = false;
     if (this.logPanel) this.logPanel.isVisible = false;
     this.ensureBonusUiPool();
@@ -4223,14 +4318,16 @@ export class HUDManager {
       if (child.name === 'CHOOSE BONUS_title') {
         child.isVisible = true;
         if (child instanceof TextBlock) {
-          child.top = '-350px';
+          child.top = '-338px';
+          child.fontFamily = 'Wonder8Bit';
+          child.fontSize = 56;
         }
       }
     }
 
     const dynamicRoot = this.bonusDynamicRoot!;
     if (this.bonusCreditsText) {
-      this.bonusCreditsText.text = `CREDITS: ${String(Math.max(0, Math.floor(currency))).padStart(3, '0')}`;
+      this.bonusCreditsText.text = `${String(Math.max(0, Math.floor(currency))).padStart(3, '0')}`;
     }
     if (wasBonusHidden) {
       this.bonusCreditsPulseTimer = this.bonusCreditsPulseDuration;
@@ -4303,10 +4400,10 @@ export class HUDManager {
     const totalWidth = (totalCards * cardWidth) + ((totalCards - 1) * gap);
     const startLeft = -Math.floor(totalWidth / 2) + Math.floor(cardWidth / 2);
     const cardTop = totalCards >= 5 ? -26 : -10;
-    const titleFontSize = Math.max(18, Math.floor(24 * cardScale));
-    const labelFontSize = Math.max(13, Math.floor(16 * cardScale));
-    const descriptionFontSize = Math.max(12, Math.floor(15 * cardScale));
-    const stackFontSize = Math.max(14, Math.floor(17 * cardScale));
+    const titleFontSize = Math.max(24, Math.floor(31 * cardScale));
+    const labelFontSize = Math.max(14, Math.floor(18 * cardScale));
+    const descriptionFontSize = Math.max(18, Math.floor(23 * cardScale));
+    const stackFontSize = Math.max(20, Math.floor(24 * cardScale));
     const artworkGlowSize = Math.floor(180 * cardScale);
     const artworkFrameSize = Math.floor(170 * cardScale);
 
@@ -4349,6 +4446,7 @@ export class HUDManager {
       uiCard.title.text = card.title;
       uiCard.title.color = rarityTitleStyle.border;
       uiCard.title.fontSize = titleFontSize;
+      uiCard.title.fontFamily = 'Arcade8Bit';
       uiCard.title.top = `${Math.round(-154 * cardScale)}px`;
       uiCard.modeText.text = '';
       uiCard.modeText.isVisible = false;
@@ -4391,9 +4489,9 @@ export class HUDManager {
       uiCard.artworkImg.height = `${artworkFrameSize}px`;
       uiCard.description.text = card.description;
       uiCard.description.fontSize = descriptionFontSize;
-      uiCard.description.width = `${Math.max(170, cardWidth - 48)}px`;
-      uiCard.description.height = `${Math.max(72, Math.floor(84 * cardScale))}px`;
-      uiCard.description.top = `${Math.round(114 * cardScale)}px`;
+      uiCard.description.width = `${Math.max(192, cardWidth - 40)}px`;
+      uiCard.description.height = `${Math.max(110, Math.floor(132 * cardScale))}px`;
+      uiCard.description.top = `${Math.round(118 * cardScale)}px`;
       const compactStack = this.formatCompactStackLabel(card.stackLabel);
       const bottomMeta = `${card.footerLabel}  •  ${compactStack}`;
       uiCard.stackText.text = bottomMeta;
@@ -4401,7 +4499,7 @@ export class HUDManager {
         ? ((card.isAffordable ?? true) ? '#FFD782' : '#FF9A9A')
         : '#BDEED8';
       uiCard.stackText.fontSize = stackFontSize;
-      uiCard.stackText.top = `${Math.round(186 * cardScale)}px`;
+      uiCard.stackText.top = `${Math.round(182 * cardScale)}px`;
       uiCard.selectedTag.isVisible = card.isSelected;
       uiCard.selectedTag.fontSize = Math.max(12, Math.floor(14 * cardScale));
       uiCard.selectedTag.top = `${Math.round(190 * cardScale)}px`;
@@ -4462,7 +4560,7 @@ export class HUDManager {
 
     const actionButtonsStacked = viewportWidth < 1300;
     const actionTop = Math.round((cardHeight / 2) + 52);
-    const actionButtonWidth = actionButtonsStacked ? 380 : 300;
+    const actionButtonWidth = actionButtonsStacked ? 420 : 340;
     const actionSecondRowTop = actionTop + 60;
 
     const rerollButton = this.bonusRerollButton!;
@@ -4471,7 +4569,7 @@ export class HUDManager {
       rerollButton.textBlock.text = `REROLL  -  ${rerollCost} CREDITS`;
     }
     rerollButton.width = `${actionButtonWidth}px`;
-    rerollButton.height = '52px';
+    rerollButton.height = '60px';
     rerollButton.top = `${actionTop}px`;
     rerollButton.left = actionButtonsStacked ? '0px' : '-178px';
     const rerollButtonEnabled = rerollEnabled;
@@ -4515,7 +4613,7 @@ export class HUDManager {
       fullHealButton.textBlock.text = fullHealLabel;
     }
     fullHealButton.width = `${actionButtonWidth}px`;
-    fullHealButton.height = '52px';
+    fullHealButton.height = '60px';
     fullHealButton.top = `${actionButtonsStacked ? actionSecondRowTop : actionTop}px`;
     fullHealButton.left = actionButtonsStacked ? '0px' : '178px';
     fullHealButton.background = fullHealEnabled ? (fullHealAffordable ? '#2E4A3A' : '#3B2020') : '#2A2A2A';
@@ -4567,15 +4665,15 @@ export class HUDManager {
 
     this.bonusSubtitle = new TextBlock('bonus_shop_subtitle');
     this.bonusSubtitle.color = '#FFD782';
-    this.bonusSubtitle.fontSize = 20;
-    this.bonusSubtitle.fontFamily = 'Arcade8Bit';
-    this.bonusSubtitle.top = '-292px';
-    this.bonusSubtitle.height = '30px';
+    this.bonusSubtitle.fontSize = 32;
+    this.bonusSubtitle.fontFamily = 'Wonder8Bit';
+    this.bonusSubtitle.top = '-272px';
+    this.bonusSubtitle.height = '42px';
     dynamicRoot.addControl(this.bonusSubtitle);
 
     this.bonusCreditsPanel = new Rectangle('bonus_credits_panel');
-    this.bonusCreditsPanel.width = '300px';
-    this.bonusCreditsPanel.height = '84px';
+    this.bonusCreditsPanel.width = '320px';
+    this.bonusCreditsPanel.height = '88px';
     this.bonusCreditsPanel.thickness = 1;
     this.bonusCreditsPanel.cornerRadius = 5;
     this.bonusCreditsPanel.color = '#2EF9C3';
@@ -4586,11 +4684,24 @@ export class HUDManager {
     this.bonusCreditsPanel.top = '28px';
     dynamicRoot.addControl(this.bonusCreditsPanel);
 
+    const bonusCreditsLabel = new TextBlock('bonus_credits_label');
+    bonusCreditsLabel.text = 'CREDITS:';
+    bonusCreditsLabel.fontSize = 24;
+    bonusCreditsLabel.fontFamily = 'Wonder8Bit';
+    bonusCreditsLabel.color = '#FFD782';
+    bonusCreditsLabel.height = '34px';
+    bonusCreditsLabel.top = '-18px';
+    bonusCreditsLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
+    bonusCreditsLabel.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
+    this.bonusCreditsPanel.addControl(bonusCreditsLabel);
+
     this.bonusCreditsText = new TextBlock('bonus_credits_text');
-    this.bonusCreditsText.text = 'CREDITS: 000';
-    this.bonusCreditsText.fontSize = 34;
+    this.bonusCreditsText.text = '000';
+    this.bonusCreditsText.fontSize = 30;
     this.bonusCreditsText.fontFamily = 'Arcade8Bit';
     this.bonusCreditsText.color = '#FFD782';
+    this.bonusCreditsText.height = '40px';
+    this.bonusCreditsText.top = '18px';
     this.bonusCreditsText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.bonusCreditsText.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.bonusCreditsPanel.addControl(this.bonusCreditsText);
@@ -4599,7 +4710,7 @@ export class HUDManager {
 
     this.bonusHoverPopup = new Rectangle('bonus_hover_popup');
     this.bonusHoverPopup.width = '640px';
-    this.bonusHoverPopup.height = '56px';
+    this.bonusHoverPopup.height = '72px';
     this.bonusHoverPopup.thickness = 1;
     this.bonusHoverPopup.cornerRadius = 4;
     this.bonusHoverPopup.color = '#2EF9C3';
@@ -4612,10 +4723,10 @@ export class HUDManager {
     dynamicRoot.addControl(this.bonusHoverPopup);
 
     this.bonusHoverPopupText = new TextBlock('bonus_hover_popup_text');
-    this.bonusHoverPopupText.fontSize = 18;
+    this.bonusHoverPopupText.fontSize = 22;
     this.bonusHoverPopupText.fontFamily = 'Arcade8Bit';
     this.bonusHoverPopupText.color = '#AEEFE2';
-    this.bonusHoverPopupText.textWrapping = false;
+    this.bonusHoverPopupText.textWrapping = true;
     this.bonusHoverPopupText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.bonusHoverPopupText.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     this.bonusHoverPopup.addControl(this.bonusHoverPopupText);
@@ -4638,7 +4749,8 @@ export class HUDManager {
       rerollButton.cornerRadius = 8;
       rerollButton.thickness = 2;
       rerollButton.color = '#FFFFFF';
-      rerollButton.fontFamily = 'Arcade8Bit';
+      rerollButton.fontFamily = 'Wonder8Bit';
+      rerollButton.fontSize = 30;
       rerollButton.onPointerUpObservable.add(() => {
         this.emitUiClickSound();
         this.eventBus.emit(GameEvents.BONUS_REROLL_REQUESTED, { cost: this.bonusCurrentRerollCost });
@@ -4655,7 +4767,8 @@ export class HUDManager {
       fullHealButton.cornerRadius = 8;
       fullHealButton.thickness = 2;
       fullHealButton.color = '#FFFFFF';
-      fullHealButton.fontFamily = 'Arcade8Bit';
+      fullHealButton.fontFamily = 'Wonder8Bit';
+      fullHealButton.fontSize = 30;
       fullHealButton.onPointerUpObservable.add(() => {
         this.emitUiClickSound();
         this.eventBus.emit(GameEvents.SHOP_PURCHASE_REQUESTED, {
@@ -4721,8 +4834,8 @@ export class HUDManager {
     const fontSize = Number(this.bonusHoverPopupText.fontSize) || 18;
     const approxCharWidth = fontSize * 0.62;
     const horizontalPadding = Math.max(28, Math.round(fontSize * 1.5));
-    const minWidth = 360;
-    const maxWidth = 980;
+    const minWidth = 320;
+    const maxWidth = 760;
     const dynamicWidth = Math.round((text.length * approxCharWidth) + (horizontalPadding * 2));
     const clampedWidth = Math.max(minWidth, Math.min(maxWidth, dynamicWidth));
     this.bonusHoverPopup.width = `${clampedWidth}px`;
@@ -4754,10 +4867,12 @@ export class HUDManager {
     const popupWidth = this.bonusHoverPopup.widthInPixels || 640;
     const popupHeight = this.bonusHoverPopup.heightInPixels || 56;
     const topMargin = popupHeight;
-    const left = guiX - (popupWidth / 3);
-    const top = guiY - popupHeight - topMargin;
-    this.bonusHoverPopup.left = `${left}px`;
-    this.bonusHoverPopup.top = `${top}px`;
+    const desiredLeft = guiX - (popupWidth / 2);
+    const desiredTop = guiY - popupHeight - topMargin;
+    const clampedLeft = Math.max(10, Math.min(guiWidth - popupWidth - 10, desiredLeft));
+    const clampedTop = Math.max(10, Math.min(guiHeight - popupHeight - 10, desiredTop));
+    this.bonusHoverPopup.left = `${clampedLeft}px`;
+    this.bonusHoverPopup.top = `${clampedTop}px`;
   }
 
   private getOrCreateBonusCard(poolKey: string): {
@@ -4801,8 +4916,8 @@ export class HUDManager {
 
     const title = new TextBlock(`bonus_title_${poolKey}`);
     title.color = '#F7FBFF';
-    title.fontFamily = 'Arcade8Bit';
-    title.height = '30px';
+    title.fontFamily = 'Wonder8Bit';
+    title.height = '40px';
     btn.addControl(title);
 
     const modeText = new TextBlock(`bonus_mode_${poolKey}`);
@@ -4941,13 +5056,13 @@ export class HUDManager {
 
     const width = this.scene.getEngine().getRenderWidth(true);
     const compact = width < 1200;
-    const iconSize = compact ? 48 : 56;
-    const tooltipWidth = compact ? 420 : 520;
-    const tooltipHeight = compact ? 144 : 168;
+    const iconSize = compact ? 56 : 64;
     const maxPerRow = 10;
-    const rowGap = compact ? 6 : 8;
-    const colGap = compact ? 6 : 8;
-    const containerWidth = compact ? 560 : 660;
+    const rowGap = compact ? 8 : 10;
+    const colGap = compact ? 8 : 10;
+    const containerLeft = compact ? 130 : 140;
+    const rightSafeMargin = compact ? 20 : 24;
+    const containerWidth = Math.max(560, Math.min(compact ? 980 : 1320, width - containerLeft - rightSafeMargin));
 
     this.runBonusContainer.width = `${containerWidth}px`;
     this.runBonusIconsStack.height = '0px';
@@ -4955,15 +5070,16 @@ export class HUDManager {
     this.runBonusIconsStack.spacing = rowGap;
     this.runBonusIconsStack.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.runBonusIconsStack.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.runBonusTooltip.width = `${tooltipWidth}px`;
-    this.runBonusTooltip.height = `${tooltipHeight}px`;
-    this.runBonusTooltipImg.width = `${compact ? 44 : 50}px`;
-    this.runBonusTooltipImg.height = `${compact ? 44 : 50}px`;
-    this.runBonusTooltipTextStack.width = `${Math.max(230, tooltipWidth - (compact ? 84 : 92))}px`;
-    this.runBonusTooltipTextStack.height = `${tooltipHeight - 22}px`;
-    this.runBonusTooltipTitle.fontSize = compact ? 13 : 15;
-    this.runBonusTooltipDesc.fontSize = compact ? 12 : 13;
-    this.runBonusTooltipDesc.height = `${compact ? 106 : 126}px`;
+    this.runBonusTooltip.width = `${compact ? 620 : 700}px`;
+    this.runBonusTooltip.height = `${compact ? 132 : 148}px`;
+    this.runBonusTooltipImg.width = '0px';
+    this.runBonusTooltipImg.height = '0px';
+    this.runBonusTooltipTextStack.left = '14px';
+    this.runBonusTooltipTextStack.width = `${Math.max(260, this.runBonusTooltip.widthInPixels - 28)}px`;
+    this.runBonusTooltipTextStack.height = `${this.runBonusTooltip.heightInPixels - 14}px`;
+    this.runBonusTooltipTitle.fontSize = compact ? 29 : 31;
+    this.runBonusTooltipDesc.fontSize = compact ? 23 : 25;
+    this.runBonusTooltipDesc.height = `${compact ? 74 : 82}px`;
 
     const oldIconControls = [...this.runBonusIconsStack.children];
     this.runBonusIconsStack.clearControls();
@@ -4975,9 +5091,9 @@ export class HUDManager {
     const visibleBonuses = this.runEquippedBonuses;
     const rowCount = Math.max(1, Math.ceil(visibleBonuses.length / maxPerRow));
     const rowsHeight = (rowCount * iconSize) + ((rowCount - 1) * rowGap) + 4;
-    const tooltipTop = rowsHeight + 12;
+    const tooltipTop = rowsHeight + 10;
     this.runBonusTooltip.top = `${tooltipTop}px`;
-    this.runBonusContainer.height = `${tooltipTop + tooltipHeight + 16}px`;
+    this.runBonusContainer.height = `${tooltipTop + this.runBonusTooltip.heightInPixels + 12}px`;
     this.runBonusIconsStack.height = `${rowsHeight}px`;
 
     const rowStacks: StackPanel[] = [];
@@ -5006,8 +5122,8 @@ export class HUDManager {
       box.hoverCursor = 'pointer';
 
       const img = new Image(`run_bonus_img_${bonus.id}_${index}`, buildHudAssetUrl(`bonuses/${bonus.id}.png`));
-      img.width = `${Math.floor(iconSize * 0.72)}px`;
-      img.height = `${Math.floor(iconSize * 0.72)}px`;
+      img.width = '100%';
+      img.height = '100%';
       img.isHitTestVisible = false;
       box.addControl(img);
 
@@ -5033,22 +5149,61 @@ export class HUDManager {
         box.addControl(badge);
       }
 
-      const def = BONUS_CODEX_ENTRIES.find((d) => d.id === bonus.id) || {
-        name: bonus.id.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-        description: 'Custom system upgrade module loaded during execution.',
-        effect: 'Standard performance parameters apply.',
-      };
+      const def = this.getRuntimeBonusMeta(bonus.id);
 
       box.onPointerEnterObservable.add(() => {
         if (!this.runBonusTooltip || !this.runBonusTooltipImg || !this.runBonusTooltipTitle || !this.runBonusTooltipDesc) return;
-        this.runBonusTooltipImg.source = buildHudAssetUrl(`bonuses/${bonus.id}.png`);
         this.runBonusTooltipTitle.text = `${def.name.toUpperCase()}${bonus.stacks > 1 ? ` (x${bonus.stacks})` : ''}`;
-        this.runBonusTooltipDesc.text = `${def.description}\nEffect: ${def.effect}`;
+        this.runBonusTooltipDesc.text = `${def.description}${def.effect ? `\nEffect: ${def.effect}` : ''}`;
+        // Compact dynamic sizing: match box to text content, with safe margins and larger fonts.
+        const titleCharsPerLine = compact ? 30 : 34;
+        const descCharsPerLine = compact ? 44 : 54;
+        const titleSegments = this.runBonusTooltipTitle.text.split('\n');
+        const descSegments = this.runBonusTooltipDesc.text.split('\n');
+        const titleLongest = Math.max(1, ...titleSegments.map((s) => s.length));
+        const descLongest = Math.max(1, ...descSegments.map((s) => s.length));
+        const titleLines = titleSegments.reduce((acc, s) => acc + Math.max(1, Math.ceil(s.length / titleCharsPerLine)), 0);
+        const descLines = descSegments.reduce((acc, s) => acc + Math.max(1, Math.ceil(s.length / descCharsPerLine)), 0);
+        const descLinesWithFloor = Math.max(3, descLines);
+        const titleLineHeight = compact ? 32 : 34;
+        const descLineHeight = compact ? 26 : 28;
+        const dynamicHeight = Math.max(
+          compact ? 120 : 136,
+          14 + (titleLines * titleLineHeight) + 8 + (descLinesWithFloor * descLineHeight) + 20
+        );
+        const textPaddingX = compact ? 18 : 20;
+        const maxLineChars = Math.max(
+          ...this.runBonusTooltipTitle.text.split('\n').map((l) => l.length),
+          ...this.runBonusTooltipDesc.text.split('\n').map((l) => l.length)
+        );
+        const charWidth = compact ? 8.7 : 9.2;
+        const titleMinWidth = Math.round((titleLongest * (compact ? 9.4 : 9.8)) + (textPaddingX * 2) + 14);
+        const dynamicWidth = Math.max(
+          compact ? 420 : 500,
+          Math.min(
+            compact ? 790 : 940,
+            Math.max(
+              titleMinWidth,
+              Math.round((maxLineChars * charWidth) + (textPaddingX * 2) + 16),
+              Math.round((descLongest * (compact ? 8.6 : 9.0)) + (textPaddingX * 2) + 12)
+            )
+          )
+        );
+        this.runBonusTooltip.width = `${dynamicWidth}px`;
+        this.runBonusTooltip.height = `${dynamicHeight}px`;
+        this.runBonusTooltipTextStack.left = `${textPaddingX}px`;
+        this.runBonusTooltipTextStack.width = `${Math.max(240, dynamicWidth - (textPaddingX * 2))}px`;
+        this.runBonusTooltipTextStack.height = `${dynamicHeight - 16}px`;
+        this.runBonusTooltipDesc.height = `${Math.max(
+          compact ? 68 : 76,
+          (descLinesWithFloor * descLineHeight) + 10
+        )}px`;
         const col = index % maxPerRow;
         const slotLeft = col * (iconSize + colGap);
-        const maxLeft = Math.max(0, (this.runBonusContainer!.widthInPixels || containerWidth) - tooltipWidth);
+        const maxLeft = Math.max(0, (this.runBonusContainer!.widthInPixels || containerWidth) - dynamicWidth - 8);
         const clampedLeft = Math.max(0, Math.min(slotLeft, maxLeft));
         this.runBonusTooltip.left = `${clampedLeft}px`;
+        this.runBonusTooltipImg.isVisible = false;
         this.runBonusTooltip.isVisible = true;
       });
       box.onPointerOutObservable.add(() => {

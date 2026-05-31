@@ -388,9 +388,13 @@ export class ClassSelectScene {
     const layoutWidth = Math.round(idealWidth);
     const layoutHeight = Math.round(idealHeight);
     const sidePadding = Math.round(layoutWidth * 0.02);
-    const sidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.32 : 0.3));
-    const sidePanelHeight = Math.round(layoutHeight * 0.68);
-    const panelTop = Math.round((layoutHeight - sidePanelHeight) * 0.5);
+    const minCenterLane = isMobileLayout ? 360 : 430;
+    const availableWidth = Math.max(480, layoutWidth - (sidePadding * 2));
+    const targetSidePanelWidth = Math.round(layoutWidth * (isMobileLayout ? 0.32 : 0.3));
+    const maxSidePanelWidth = Math.max(220, Math.floor((availableWidth - minCenterLane) * 0.5));
+    const sidePanelWidth = Math.max(220, Math.min(targetSidePanelWidth, maxSidePanelWidth));
+    const desiredSidePanelHeight = Math.round(layoutHeight * 0.68);
+    const panelTop = Math.round((layoutHeight - desiredSidePanelHeight) * 0.5);
 
     const mainLayoutContainer = new Rectangle('mainLayout');
     mainLayoutContainer.width = 1;
@@ -437,19 +441,30 @@ export class ClassSelectScene {
 
 
     // ── Central nav panel (navigation + START only) ──────────────────────────
-    const navPanel = UIFactory.createPanel('classSelectNavPanel', Math.round(layoutWidth * 0.30), Math.round(layoutHeight * 0.12));
+    const navButtonsTotalWidth = 108 + 220 + 108 + (8 * 2);
+    const navPanelWidth = navButtonsTotalWidth + 24;
+    const navPanelHeight = Math.round(layoutHeight * 0.12);
+    const navPanelBottomOffset = Math.round(layoutHeight * 0.04);
+    const navPanel = UIFactory.createPanel('classSelectNavPanel', navPanelWidth, navPanelHeight);
     navPanel.verticalAlignment = Control.VERTICAL_ALIGNMENT_BOTTOM;
-    navPanel.top = `-${Math.round(layoutHeight * 0.04)}px`;
+    navPanel.top = `-${navPanelBottomOffset}px`;
     mainLayoutContainer.addControl(navPanel);
 
     const navRow = new StackPanel('classSelectNavRow');
     navRow.isVertical = false;
     navRow.height = `${menuButtonH}px`;
-    navRow.width = `${Math.round(layoutWidth * (isMobileLayout ? 0.285 : 0.255))}px`;
+    navRow.width = `${navButtonsTotalWidth}px`;
     navRow.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     navRow.verticalAlignment = Control.VERTICAL_ALIGNMENT_CENTER;
     navRow.spacing = 8;
     navPanel.addControl(navRow);
+
+    const navPanelTopPx = layoutHeight - navPanelBottomOffset - navPanelHeight;
+    const sidePanelBottomMargin = Math.round(layoutHeight * 0.016);
+    const sidePanelHeight = Math.max(
+      300,
+      Math.min(desiredSidePanelHeight, navPanelTopPx - panelTop - sidePanelBottomMargin)
+    );
 
     const leftBtn = UIFactory.createTerminalButton('classSelectLeft', '<', `${108}px`, `${menuButtonH}px`);
     this.bindGlitchButton(leftBtn, '<', () => this.rotateCarousel(1), { silent: true });

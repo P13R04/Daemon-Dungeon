@@ -2,6 +2,38 @@ import { Button, Control, Rectangle, ScrollViewer, TextBlock, Slider } from '@ba
 import { UITheme } from './UITheme';
 
 export class UIFactory {
+  private static readonly SCROLL_DRAG_STATE_KEY = '__daemonScrollDragState';
+
+  private static getScrollDragState(scroll: ScrollViewer): {
+    downAt: number;
+    downY: number;
+    lastY: number;
+    totalDragPx: number;
+    lastDragAt: number;
+    active: boolean;
+  } {
+    const host = scroll as any;
+    if (!host[UIFactory.SCROLL_DRAG_STATE_KEY]) {
+      host[UIFactory.SCROLL_DRAG_STATE_KEY] = {
+        downAt: 0,
+        downY: 0,
+        lastY: 0,
+        totalDragPx: 0,
+        lastDragAt: 0,
+        active: false,
+      };
+    }
+    return host[UIFactory.SCROLL_DRAG_STATE_KEY];
+  }
+
+  static canTriggerScrollItemTap(scroll: ScrollViewer, maxHoldMs: number = 280, dragThresholdPx: number = 10): boolean {
+    const state = UIFactory.getScrollDragState(scroll);
+    const now = Date.now();
+    if (state.lastDragAt > 0 && now - state.lastDragAt < 180) return false;
+    if (state.downAt > 0 && now - state.downAt > maxHoldMs) return false;
+    if (state.totalDragPx >= dragThresholdPx) return false;
+    return true;
+  }
   /**
    * Creates a terminal-styled button with basic hover/down color states.
    * To add glitch effects, call DaemonGlitchFx.inject(btn, label, onClick) after creation.
@@ -75,55 +107,43 @@ export class UIFactory {
     
     // Fix: Tiny unclickable scroll bar
     scroll.barColor = UITheme.colors.scrollBar;
-    scroll.barSize = 14; 
+    scroll.barSize = 30;
     
     // Block pointers so you can actually click the background to scroll
     scroll.isPointerBlocker = true;
 
-    // Mobile ergonomics: allow hold + swipe on the whole list area (not only scrollbar).
-    // Keeps tap interactions on list items when there is no drag.
-    const isTouchPreferred = (() => {
-      try {
-        const touchPoints = (globalThis.navigator && (navigator.maxTouchPoints || 0)) || 0;
-        return touchPoints > 0;
-      } catch {
-        return false;
-      }
-    })();
-    if (isTouchPreferred) {
-      let dragging = false;
-      let dragStarted = false;
-      let lastY = 0;
-      const DRAG_THRESHOLD_PX = 8;
-      const DRAG_SPEED = 0.0038;
+    // Drag-to-scroll on full list area (mobile + desktop), while allowing quick-tap selection.
+    const state = UIFactory.getScrollDragState(scroll);
+    const DRAG_SPEED = 0.0038;
+    scroll.onPointerDownObservable.add((coords: any) => {
+      const y = typeof coords?.y === 'number' ? coords.y : 0;
+      state.active = true;
+      state.downAt = Date.now();
+      state.downY = y;
+      state.lastY = y;
+      state.totalDragPx = 0;
+    });
 
-      scroll.onPointerDownObservable.add((coords: any) => {
-        dragging = true;
-        dragStarted = false;
-        lastY = typeof coords?.y === 'number' ? coords.y : 0;
-      });
-
-      scroll.onPointerMoveObservable.add((coords: any) => {
-        if (!dragging) return;
-        const y = typeof coords?.y === 'number' ? coords.y : lastY;
-        const dy = y - lastY;
-        if (!dragStarted && Math.abs(dy) >= DRAG_THRESHOLD_PX) {
-          dragStarted = true;
-        }
-        if (dragStarted && scroll.verticalBar) {
-          const next = Math.min(1, Math.max(0, scroll.verticalBar.value - dy * DRAG_SPEED));
+    scroll.onPointerMoveObservable.add((coords: any) => {
+      if (!state.active) return;
+      const y = typeof coords?.y === 'number' ? coords.y : state.lastY;
+      const dy = y - state.lastY;
+      state.totalDragPx += Math.abs(dy);
+      if (Math.abs(dy) > 0.5 && scroll.verticalBar) {
+        const next = Math.min(1, Math.max(0, scroll.verticalBar.value - dy * DRAG_SPEED));
+        if (next !== scroll.verticalBar.value) {
           scroll.verticalBar.value = next;
+          state.lastDragAt = Date.now();
         }
-        lastY = y;
-      });
+      }
+      state.lastY = y;
+    });
 
-      const endDrag = () => {
-        dragging = false;
-        dragStarted = false;
-      };
-      scroll.onPointerUpObservable.add(endDrag);
-      scroll.onPointerOutObservable.add(endDrag);
-    }
+    const endDrag = () => {
+      state.active = false;
+    };
+    scroll.onPointerUpObservable.add(endDrag);
+    scroll.onPointerOutObservable.add(endDrag);
     
     return scroll;
   }
