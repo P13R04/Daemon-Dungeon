@@ -2202,8 +2202,8 @@ export class HUDManager {
     }
 
     const container = new Rectangle(`healthbar_container_${enemyId}`);
-    container.width = '80px';
-    container.height = '12px';
+    container.width = '104px';
+    container.height = '16px';
     container.background = 'rgba(0, 0, 0, 0.8)';
     container.thickness = 2;
     container.zIndex = 12;
@@ -2222,7 +2222,7 @@ export class HUDManager {
     label.color = '#FFFFFF';
     label.width = '320px';
     label.height = '60px';
-    label.fontFamily = 'Arcade8Bit';
+    label.fontFamily = 'Wonder8Bit';
     label.zIndex = 13;
 
     // Keep enemy HP UI in clean HUD layer (above postprocess), but beneath gameplay popups/HUD overlays.
@@ -2242,9 +2242,10 @@ export class HUDManager {
         }
       });
       container.linkWithMesh(anchor as any);
-      container.linkOffsetY = healthBarOffset ?? -60;
+      const effectiveHealthBarOffset = healthBarOffset ?? -78;
+      container.linkOffsetY = effectiveHealthBarOffset;
       label.linkWithMesh(anchor as any);
-      label.linkOffsetY = (healthBarOffset ?? -60) - 18;
+      label.linkOffsetY = effectiveHealthBarOffset - 24;
     }
 
     this.enemyHealthBars.set(enemyId, { container, bar, label, mesh: mesh ?? null, anchor, anchorObserver });
