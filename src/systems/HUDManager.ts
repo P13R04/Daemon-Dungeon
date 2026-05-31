@@ -304,6 +304,7 @@ export class HUDManager {
   private runUiBootstrapElapsed: number = 0;
   private runUiBootstrapStyleCache: Map<Control, { color?: string; background?: string }> = new Map();
   private unsubscribers: Array<() => void> = [];
+  private tooltipMeasureCtx: CanvasRenderingContext2D | null = null;
 
   constructor(private scene: Scene) {
     this.eventBus = EventBus.getInstance();
@@ -364,6 +365,20 @@ export class HUDManager {
     // Check if we have pending achievements from a previous scene
     if (HUDManager.achievementToastQueue.length > 0 && !HUDManager.achievementToastActive) {
       this.showNextAchievementToast();
+    }
+  }
+
+  private measureTextWidthPx(text: string, fontSize: number, fontFamily: string): number {
+    try {
+      if (!this.tooltipMeasureCtx) {
+        const canvas = document.createElement('canvas');
+        this.tooltipMeasureCtx = canvas.getContext('2d');
+      }
+      if (!this.tooltipMeasureCtx) return text.length * (fontSize * 0.62);
+      this.tooltipMeasureCtx.font = `${Math.max(8, Math.round(fontSize))}px ${fontFamily}`;
+      return this.tooltipMeasureCtx.measureText(text).width;
+    } catch {
+      return text.length * (fontSize * 0.62);
     }
   }
 
@@ -483,7 +498,7 @@ export class HUDManager {
       const reason = data?.reason === 'secondary' ? 'secondary' : 'stance';
       this.secondaryBlockedFeedbackReason = reason;
       this.secondaryBlockedFeedbackMessage = reason === 'secondary'
-        ? `SECONDARY FAILED: ${current}% / ${required}% REQUIRED`
+        ? `SKILL FAILED: ${current}% / ${required}% REQUIRED`
         : `STANCE LOW: ${current}% / ${required}% REQUIRED`;
       this.secondaryBlockedFeedbackTimer = 0.9;
     }));
@@ -729,7 +744,7 @@ export class HUDManager {
     const baseMenuButtonHeight = isCompactHud ? 84 : 76;
     const baseMenuFontSize = isCompactHud ? 26 : 23;
     const statsPanelWidth = isCompactHud ? 432 : 420;
-    const statsPanelHeight = isCompactHud ? 188 : 176;
+    const statsPanelHeight = isCompactHud ? 232 : 216;
     const integrityHeaderFont = isCompactHud ? 24 : 22;
     const statsLabelFont = integrityHeaderFont;
     const statsCreditsFont = isCompactHud ? 23 : 21;
@@ -738,7 +753,7 @@ export class HUDManager {
     this.topBar = new Rectangle('hud_top_bar');
     this.topBar.width = 1;
     // Keep a generous top HUD lane to prevent clipping of child panels on different DPIs/scales.
-    this.topBar.height = '210px';
+    this.topBar.height = '250px';
     this.topBar.thickness = 0;
     this.topBar.background = 'transparent';
     this.topBar.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
@@ -756,38 +771,10 @@ export class HUDManager {
     statsContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
     statsContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     statsContainer.left = -24;
-    statsContainer.top = 24;
+    statsContainer.top = 20;
     statsContainer.cornerRadius = 4;
     this.topBar.addControl(statsContainer);
     this.statsPanel = statsContainer;
-
-    this.scoreText = new TextBlock('score_text');
-    const scoreLabel = new TextBlock('score_label');
-    scoreLabel.text = 'SCORE:';
-    scoreLabel.fontSize = statsLabelFont;
-    scoreLabel.fontFamily = specialFont;
-    scoreLabel.color = '#7CFFEA';
-    scoreLabel.left = 16;
-    scoreLabel.top = isCompactHud ? 14 : 12;
-    scoreLabel.width = `${Math.round(statsPanelWidth * 0.35)}px`;
-    scoreLabel.height = '34px';
-    scoreLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    scoreLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    scoreLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    statsContainer.addControl(scoreLabel);
-
-    this.scoreText.text = '00000000';
-    this.scoreText.fontSize = isCompactHud ? 26 : 24;
-    this.scoreText.fontFamily = fontFamily;
-    this.scoreText.color = '#7CFFEA';
-    this.scoreText.left = isCompactHud ? 152 : 144;
-    this.scoreText.top = isCompactHud ? 14 : 12;
-    this.scoreText.width = `${Math.round(statsPanelWidth * 0.58)}px`;
-    this.scoreText.height = '34px';
-    this.scoreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    this.scoreText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.scoreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
-    statsContainer.addControl(this.scoreText);
 
     this.waveText = new TextBlock('wave_text');
     const waveLabel = new TextBlock('wave_label');
@@ -796,7 +783,7 @@ export class HUDManager {
     waveLabel.fontFamily = specialFont;
     waveLabel.color = '#7CFFEA';
     waveLabel.left = 16;
-    waveLabel.top = isCompactHud ? 58 : 54;
+    waveLabel.top = isCompactHud ? 14 : 12;
     waveLabel.width = `${Math.round(statsPanelWidth * 0.35)}px`;
     waveLabel.height = '34px';
     waveLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -809,7 +796,7 @@ export class HUDManager {
     this.waveText.fontFamily = fontFamily;
     this.waveText.color = '#7CFFEA';
     this.waveText.left = isCompactHud ? 152 : 144;
-    this.waveText.top = isCompactHud ? 58 : 54;
+    this.waveText.top = isCompactHud ? 14 : 12;
     this.waveText.width = `${Math.round(statsPanelWidth * 0.58)}px`;
     this.waveText.height = '34px';
     this.waveText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -822,9 +809,9 @@ export class HUDManager {
     creditsLabel.text = 'CREDITS:';
     creditsLabel.fontSize = statsCreditsFont;
     creditsLabel.fontFamily = specialFont;
-    creditsLabel.color = '#FFD782';
+    creditsLabel.color = '#7CFFEA';
     creditsLabel.left = 16;
-    creditsLabel.top = isCompactHud ? 103 : 98;
+    creditsLabel.top = isCompactHud ? 58 : 54;
     creditsLabel.width = `${Math.round(statsPanelWidth * 0.42)}px`;
     creditsLabel.height = '34px';
     creditsLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -835,9 +822,9 @@ export class HUDManager {
     this.currencyText.text = '000';
     this.currencyText.fontSize = isCompactHud ? 27 : 25;
     this.currencyText.fontFamily = fontFamily;
-    this.currencyText.color = '#FFD782';
+    this.currencyText.color = '#7CFFEA';
     this.currencyText.left = isCompactHud ? 190 : 182;
-    this.currencyText.top = isCompactHud ? 103 : 98;
+    this.currencyText.top = isCompactHud ? 58 : 54;
     this.currencyText.width = `${Math.round(statsPanelWidth * 0.48)}px`;
     this.currencyText.height = '34px';
     this.currencyText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -845,34 +832,72 @@ export class HUDManager {
     this.currencyText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     statsContainer.addControl(this.currencyText);
 
-    // Combo Container (integrated in score panel, bottom-right)
+    this.scoreText = new TextBlock('score_text');
+    const scoreLabel = new TextBlock('score_label');
+    scoreLabel.text = 'SCORE:';
+    scoreLabel.fontSize = statsLabelFont;
+    scoreLabel.fontFamily = specialFont;
+    scoreLabel.color = '#7CFFEA';
+    scoreLabel.left = 16;
+    scoreLabel.top = isCompactHud ? 103 : 98;
+    scoreLabel.width = `${Math.round(statsPanelWidth * 0.35)}px`;
+    scoreLabel.height = '34px';
+    scoreLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    scoreLabel.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    scoreLabel.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    statsContainer.addControl(scoreLabel);
+
+    this.scoreText.text = '00000000';
+    this.scoreText.fontSize = isCompactHud ? 26 : 24;
+    this.scoreText.fontFamily = fontFamily;
+    this.scoreText.color = '#7CFFEA';
+    this.scoreText.left = isCompactHud ? 152 : 144;
+    this.scoreText.top = isCompactHud ? 103 : 98;
+    this.scoreText.width = `${Math.round(statsPanelWidth * 0.58)}px`;
+    this.scoreText.height = '34px';
+    this.scoreText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.scoreText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.scoreText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    statsContainer.addControl(this.scoreText);
+
+    // Combo as 4th stats line (always visible)
     this.comboContainer = new Rectangle('combo_container');
-    this.comboContainer.width = isCompactHud ? '190px' : '176px';
-    this.comboContainer.height = isCompactHud ? '78px' : '70px';
-    this.comboContainer.left = isCompactHud ? 226 : 210;
-    this.comboContainer.top = isCompactHud ? 98 : 90;
+    this.comboContainer.width = `${Math.round(statsPanelWidth - 32)}px`;
+    this.comboContainer.height = isCompactHud ? '44px' : '42px';
+    this.comboContainer.left = 16;
+    this.comboContainer.top = isCompactHud ? 150 : 142;
     this.comboContainer.thickness = 0;
     this.comboContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.comboContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.comboContainer.isVisible = false;
+    this.comboContainer.isVisible = true;
     statsContainer.addControl(this.comboContainer);
 
     this.comboText = new TextBlock('combo_text');
-    this.comboText.text = 'COMBO';
+    this.comboText.text = 'COMBO:';
     this.comboText.fontSize = isCompactHud ? 21 : 19;
     this.comboText.fontFamily = specialFont;
-    this.comboText.color = '#FFD782';
-    this.comboText.top = '-2px';
-    this.comboText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.comboText.color = '#7CFFEA';
+    this.comboText.width = `${Math.round(statsPanelWidth * 0.35)}px`;
+    this.comboText.height = '34px';
+    this.comboText.left = 0;
+    this.comboText.top = isCompactHud ? 3 : 2;
+    this.comboText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.comboText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.comboText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.comboContainer.addControl(this.comboText);
 
     this.comboMultiplierText = new TextBlock('combo_multiplier_text');
-    this.comboMultiplierText.text = 'X0 • 1.0X';
-    this.comboMultiplierText.fontSize = isCompactHud ? 38 : 34;
+    this.comboMultiplierText.text = 'x1';
+    this.comboMultiplierText.fontSize = isCompactHud ? 28 : 26;
     this.comboMultiplierText.fontFamily = fontFamily;
-    this.comboMultiplierText.color = '#FFFFFF';
-    this.comboMultiplierText.top = '22px';
-    this.comboMultiplierText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    this.comboMultiplierText.color = '#7CFFEA';
+    this.comboMultiplierText.width = `${Math.round(statsPanelWidth * 0.58)}px`;
+    this.comboMultiplierText.height = '34px';
+    this.comboMultiplierText.left = isCompactHud ? 152 : 144;
+    this.comboMultiplierText.top = isCompactHud ? 3 : 2;
+    this.comboMultiplierText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.comboMultiplierText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.comboMultiplierText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.comboContainer.addControl(this.comboMultiplierText);
 
     // Bottom-left command feed
@@ -1144,7 +1169,7 @@ export class HUDManager {
     ultiLabel.fontFamily = specialFont;
     ultiLabel.color = '#FFFF00';
     ultiLabel.left = 16;
-    ultiLabel.top = 16;
+    ultiLabel.top = 12;
     ultiLabel.width = `${isCompactHud ? 116 : 108}px`;
     ultiLabel.height = '30px';
     ultiLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1157,7 +1182,7 @@ export class HUDManager {
     this.playerUltDisplay.fontFamily = fontFamily;
     this.playerUltDisplay.color = '#FFFF00';
     this.playerUltDisplay.left = isCompactHud ? 130 : 122;
-    this.playerUltDisplay.top = 16;
+    this.playerUltDisplay.top = 12;
     this.playerUltDisplay.width = isCompactHud ? '320px' : '304px';
     this.playerUltDisplay.height = '30px';
     this.playerUltDisplay.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1172,7 +1197,7 @@ export class HUDManager {
     ultBarContainer.color = '#FFFF00';
     ultBarContainer.background = 'rgba(30, 30, 10, 0.7)';
     ultBarContainer.left = 16;
-    ultBarContainer.top = 42;
+    ultBarContainer.top = 44;
     ultBarContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     ultBarContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.statusPanel.addControl(ultBarContainer);
@@ -1193,7 +1218,7 @@ export class HUDManager {
     stanceLabel.fontFamily = specialFont;
     stanceLabel.color = '#B8FFE6';
     stanceLabel.left = 16;
-    stanceLabel.top = 88;
+    stanceLabel.top = 78;
     stanceLabel.width = `${isCompactHud ? 148 : 138}px`;
     stanceLabel.height = '30px';
     stanceLabel.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
@@ -1205,13 +1230,13 @@ export class HUDManager {
     this.secondaryStatusText.fontSize = isCompactHud ? 26 : 24;
     this.secondaryStatusText.fontFamily = fontFamily;
     this.secondaryStatusText.color = '#B8FFE6';
-    this.secondaryStatusText.left = isCompactHud ? 186 : 174;
-    this.secondaryStatusText.top = 88;
-    this.secondaryStatusText.width = isCompactHud ? '320px' : '304px';
+    this.secondaryStatusText.left = 0;
+    this.secondaryStatusText.top = 148;
+    this.secondaryStatusText.width = isCompactHud ? '486px' : '470px';
     this.secondaryStatusText.height = '30px';
-    this.secondaryStatusText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.secondaryStatusText.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.secondaryStatusText.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.secondaryStatusText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
+    this.secondaryStatusText.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.statusPanel.addControl(this.secondaryStatusText);
 
     const secondaryBarContainer = new Rectangle('secondary_resource_container');
@@ -1221,7 +1246,7 @@ export class HUDManager {
     secondaryBarContainer.color = '#7CFFEA';
     secondaryBarContainer.background = 'rgba(10, 30, 35, 0.7)';
     secondaryBarContainer.left = 16;
-    secondaryBarContainer.top = 114;
+    secondaryBarContainer.top = 110;
     secondaryBarContainer.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     secondaryBarContainer.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.statusPanel.addControl(secondaryBarContainer);
@@ -2159,22 +2184,12 @@ export class HUDManager {
 
   private updateCombo(data: any): void {
     if (!this.comboContainer) return;
-    
-    if (data.combo > 1) {
-      this.comboContainer.isVisible = true;
-      this.comboText.text = 'COMBO';
-      this.comboMultiplierText.text = `X${data.combo} • ${data.multiplier.toFixed(1)}X`;
-      
-      // Pulse effect
-      this.comboMultiplierText.scaleX = 1.3;
-      this.comboMultiplierText.scaleY = 1.3;
-      setTimeout(() => {
-        this.comboMultiplierText.scaleX = 1.0;
-        this.comboMultiplierText.scaleY = 1.0;
-      }, 100);
-    } else {
-      this.comboContainer.isVisible = false;
-    }
+    const comboValue = Math.max(1, Math.floor(Number(data?.combo) || 1));
+    this.comboContainer.isVisible = true;
+    this.comboText.text = 'COMBO:';
+    this.comboMultiplierText.text = `x${comboValue}`;
+    this.comboMultiplierText.scaleX = 1.0;
+    this.comboMultiplierText.scaleY = 1.0;
   }
 
   private handleHighScoreBeaten(): void {
@@ -2682,7 +2697,7 @@ export class HUDManager {
     }
 
     if (active) {
-      this.secondaryStatusText.text = `${percentage}% [ACTIVE | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
+      this.secondaryStatusText.text = `${percentage}% [ACTIVE]`;
       this.secondaryStatusText.color = '#66CCFF'; // Active stance blue
       this.secondaryResourceBarFill.background = '#66CCFF';
       if (this.secondaryBarContainer) {
@@ -2696,18 +2711,18 @@ export class HUDManager {
         this.secondaryBarContainer.color = '#00FFD1';
       }
     } else if (ratio >= thresholdRatio) {
-      this.secondaryStatusText.text = `${percentage}% [READY | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
+      this.secondaryStatusText.text = `${percentage}% [READY]`;
       this.secondaryStatusText.color = '#7CFFEA'; // Ready bright cyan
       this.secondaryResourceBarFill.background = '#7CFFEA';
       if (this.secondaryBarContainer) {
         this.secondaryBarContainer.color = '#7CFFEA';
       }
     } else if (ratio <= 0.0) {
-      this.secondaryStatusText.text = `0% [RECHARGE | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
+      this.secondaryStatusText.text = '0% [RECHARGE]';
       this.secondaryStatusText.color = '#FFCC66'; // Warning orange
       this.secondaryResourceBarFill.background = '#FFCC66';
     } else {
-      this.secondaryStatusText.text = `${percentage}% [RECHARGE | STANCE ${Math.round(thresholdRatio * 100)}% | SKILL ${Math.round(secondaryActionRatio * 100)}%]`;
+      this.secondaryStatusText.text = `${percentage}% [RECHARGE]`;
       this.secondaryStatusText.color = '#FFCC66';
       this.secondaryResourceBarFill.background = '#FFCC66';
       if (this.secondaryBarContainer) {
@@ -5163,6 +5178,9 @@ export class HUDManager {
         const descSegments = this.runBonusTooltipDesc.text.split('\n');
         const titleLongest = Math.max(1, ...titleSegments.map((s) => s.length));
         const descLongest = Math.max(1, ...descSegments.map((s) => s.length));
+        const measuredTitleWidth = Math.max(
+          ...titleSegments.map((s) => this.measureTextWidthPx(s, compact ? 29 : 31, 'Wonder8Bit'))
+        );
         const titleLines = titleSegments.reduce((acc, s) => acc + Math.max(1, Math.ceil(s.length / titleCharsPerLine)), 0);
         const descLines = descSegments.reduce((acc, s) => acc + Math.max(1, Math.ceil(s.length / descCharsPerLine)), 0);
         const descLinesWithFloor = Math.max(3, descLines);
@@ -5178,7 +5196,8 @@ export class HUDManager {
           ...this.runBonusTooltipDesc.text.split('\n').map((l) => l.length)
         );
         const charWidth = compact ? 8.7 : 9.2;
-        const titleMinWidth = Math.round((titleLongest * (compact ? 9.4 : 9.8)) + (textPaddingX * 2) + 14);
+        // Hard floor from real measured title width using the actual font/size + safe padding.
+        const titleMinWidth = Math.round(measuredTitleWidth + (textPaddingX * 2) + 30);
         const dynamicWidth = Math.max(
           compact ? 420 : 500,
           Math.min(
