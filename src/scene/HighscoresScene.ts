@@ -384,9 +384,9 @@ export class HighscoresScene {
     this.rightBody = this.makeTerminalText('rightBody', 26, '#CFFCF3');
     this.rightBody.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.rightBody.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.rightBody.top = `${Math.round(sidePanelHeight * 0.55)}px`;
+    this.rightBody.top = `${Math.round(sidePanelHeight * 0.2)}px`;
     this.rightBody.width = `${sideInnerWidth}px`;
-    this.rightBody.height = `${Math.round(sidePanelHeight * 0.8)}px`;
+    this.rightBody.height = `${Math.round(sidePanelHeight * 0.72)}px`;
     this.rightPanel.addControl(this.rightBody);
 
     this.centerCard = this.makeTerminalPanel('centerCard', centerCardWidth, centerCardHeight);
@@ -791,8 +791,8 @@ export class HighscoresScene {
       `Discovered modules: ${run.bonuses ? run.bonuses.length : 0}\n\n` +
       `> Status: SAVED RECORD`;
 
-    this.setTerminalText(this.rightTitle, `RUN RECORD #${this.selectedRunIndex + 1}`, 240, false);
-    this.setTerminalText(this.rightBody, body + '\n', 280, true);
+    this.setTerminalText(this.rightTitle, `RUN RECORD #${this.selectedRunIndex + 1}`, 420, false);
+    this.setTerminalText(this.rightBody, body + '\n', 460, true);
   }
 
   private setTerminalText(block: TextBlock, text: string, speedBase: number = 300, clearExisting: boolean = true): void {

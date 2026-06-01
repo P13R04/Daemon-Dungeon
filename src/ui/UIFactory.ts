@@ -30,7 +30,7 @@ export class UIFactory {
     const state = UIFactory.getScrollDragState(scroll);
     const now = Date.now();
     if (state.lastDragAt > 0 && now - state.lastDragAt < 180) return false;
-    if (state.downAt > 0 && now - state.downAt > maxHoldMs) return false;
+    if (state.active && state.downAt > 0 && now - state.downAt > maxHoldMs) return false;
     if (state.totalDragPx >= dragThresholdPx) return false;
     return true;
   }
@@ -141,6 +141,10 @@ export class UIFactory {
 
     const endDrag = () => {
       state.active = false;
+      state.downAt = 0;
+      state.downY = 0;
+      state.lastY = 0;
+      state.totalDragPx = 0;
     };
     scroll.onPointerUpObservable.add(endDrag);
     scroll.onPointerOutObservable.add(endDrag);

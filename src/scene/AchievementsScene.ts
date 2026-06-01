@@ -374,8 +374,8 @@ export class AchievementsScene {
     this.rightBody = this.makeTerminalText('rightBody', 20, '#CFFCF3');
     this.rightBody.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.rightBody.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.rightBody.top = `${Math.round(sidePanelHeight * 0.55)}px`;
-    this.rightBody.height = `${Math.round(sidePanelHeight * 0.8)}px`;
+    this.rightBody.top = `${Math.round(sidePanelHeight * 0.2)}px`;
+    this.rightBody.height = `${Math.round(sidePanelHeight * 0.72)}px`;
     this.rightPanel.addControl(this.rightBody);
 
     this.centerCard = this.makeTerminalPanel('centerCard', centerCardWidth, centerCardHeight);
@@ -412,7 +412,7 @@ export class AchievementsScene {
     this.centerCardTitleBaseFontSize = isMobileLayout ? 36 : 32;
     this.centerCardTitle.fontSize = this.centerCardTitleBaseFontSize;
     this.centerCardTitle.color = '#FFFFFF';
-    this.centerCardTitle.top = '202px';
+    this.centerCardTitle.top = '212px';
     this.centerCardTitle.width = `${Math.round(centerCardWidth * 0.88)}px`;
     this.centerCardTitle.height = isMobileLayout ? '120px' : '108px';
     this.centerCardTitle.textWrapping = true;
@@ -425,7 +425,7 @@ export class AchievementsScene {
     this.centerCardSubtitle.fontFamily = this.terminalFont;
     this.centerCardSubtitle.fontSize = Math.round((isMobileLayout ? 30 : 26) * BASE_TEXT_SCALE);
     this.centerCardSubtitle.color = '#7DFFE8';
-    this.centerCardSubtitle.top = '256px';
+    this.centerCardSubtitle.top = '274px';
     this.centerCard.addControl(this.centerCardSubtitle);
 
     const navButtonWidth = isMobileLayout ? 168 : 156;
@@ -612,7 +612,7 @@ export class AchievementsScene {
     const achievement = achievements[this.selectedAchievementIndex];
     if (!achievement) {
       if (resetTyping) {
-        this.setTerminalText(this.rightTitle, 'NO ACHIEVEMENT', 220, false);
+        this.setTerminalText(this.rightTitle, 'NO ACHIEVEMENT', 220, true);
         this.setTerminalText(this.rightBody, '> No achievement loaded.\n');
       }
       return;
@@ -646,8 +646,8 @@ export class AchievementsScene {
       `Status: ${achievement.unlocked ? 'Unlocked' : 'Locked'}\n\n` +
       `> ID\n${achievement.id}`;
 
-    this.setTerminalText(this.rightTitle, achievement.name, 240, false);
-    this.setTerminalText(this.rightBody, body + '\n', 280, true);
+    this.setTerminalText(this.rightTitle, achievement.name, 1200, true);
+    this.setTerminalText(this.rightBody, body + '\n', 1400, true);
   }
 
   private applyCenterCardTitle(rawTitle: string): void {
@@ -745,21 +745,20 @@ export class AchievementsScene {
       line.timer += dt;
       const msPerChar = 1000 / line.speed;
 
-      if (line.timer >= msPerChar) {
-        line.timer = 0;
-        let charsToType = 1;
+      let didTypeVisible = false;
+      let steps = 0;
+      while (line.pauseMs <= 0 && line.timer >= msPerChar && line.index < line.fullText.length && steps < 24) {
+        line.timer -= msPerChar;
+        steps++;
 
+        let charsToType = 1;
         if (line.burstCount < line.burstTarget) {
           charsToType = Math.min(3, line.fullText.length - line.index);
           line.burstCount += charsToType;
-        } else {
-          if (Math.random() < 0.1) {
-            line.burstTarget = Math.floor(Math.random() * 5) + 2;
-            line.burstCount = 0;
-          }
+        } else if (Math.random() < 0.1) {
+          line.burstTarget = Math.floor(Math.random() * 5) + 2;
+          line.burstCount = 0;
         }
-
-        let didTypeVisible = false;
 
         for (let c = 0; c < charsToType; c++) {
           if (line.index >= line.fullText.length) break;
@@ -772,21 +771,21 @@ export class AchievementsScene {
           }
 
           if (char === '.' || char === '!' || char === '?') {
-            line.pauseMs = 150 + Math.random() * 200;
+            line.pauseMs = line.speed >= 800 ? 10 : 70 + Math.random() * 120;
             break;
           }
           if (char === '\n') {
-            line.pauseMs = 50;
+            line.pauseMs = line.speed >= 800 ? 6 : 28;
             break;
           }
         }
-
-        if (didTypeVisible && Math.random() < 0.3) {
-          this.synthBeep.triggerForTypedChar();
-        }
-
-        line.block.text = line.typed + (this.cursorVisible ? ' _' : '  ');
       }
+
+      if (didTypeVisible && Math.random() < 0.3) {
+        this.synthBeep.triggerForTypedChar();
+      }
+
+      line.block.text = line.typed + (this.cursorVisible ? ' _' : '  ');
     }
   }
 

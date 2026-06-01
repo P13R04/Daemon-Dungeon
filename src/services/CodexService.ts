@@ -3,7 +3,6 @@
  */
 
 import { EventBus, GameEvents } from '../core/EventBus';
-import { GameSettingsStore } from '../settings/GameSettings';
 
 export interface CodexEntry {
   id: string;
@@ -116,7 +115,7 @@ export class CodexService {
   };
   private devUnlockCodexEntries: boolean = false;
   private isDevUnlockActive(): boolean {
-    return !import.meta.env.PROD && this.devUnlockCodexEntries && GameSettingsStore.get().accessibility.devModeEnabled;
+    return !import.meta.env.PROD && this.devUnlockCodexEntries;
   }
   private syncAdapter?: CodexSyncAdapter;
   private snapshotSaveTimer: number | null = null;

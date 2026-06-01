@@ -230,7 +230,7 @@ export class CodexScene {
     const sideInnerWidth = Math.max(0, sidePanelWidth - 40);
     const centerLaneWidth = Math.max(minCenterLane, availableWidth - (sidePanelWidth * 2));
     const centerCardWidth = Math.round(
-      Math.max(280, Math.min(Math.min(layoutWidth * 0.24, Math.max(layoutWidth * 0.2, 320)), centerLaneWidth - 34))
+      Math.max(296, Math.min(Math.min(layoutWidth * 0.255, Math.max(layoutWidth * 0.21, 340)), centerLaneWidth - 24))
     );
     const centerCardHeight = Math.round(layoutHeight * 0.53);
     this.leftListButtonWidth = Math.max(0, sideInnerWidth - 56);
@@ -400,16 +400,17 @@ export class CodexScene {
     this.rightTitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.rightTitle.top = `${Math.round(sidePanelHeight * 0.08)}px`;
     this.rightTitle.width = `${sideInnerWidth}px`;
-    this.rightTitle.height = "100px";
+    this.rightTitle.height = `${Math.round(sidePanelHeight * 0.2)}px`;
+    this.rightTitle.textWrapping = true;
     this.rightTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.rightPanel.addControl(this.rightTitle);
 
     this.rightBody = this.makeTerminalText('rightBody', 20, '#A7EFE2');
     this.rightBody.verticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.rightBody.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
-    this.rightBody.top = `${Math.round(sidePanelHeight * 0.2)}px`;
+    this.rightBody.top = `${Math.round(sidePanelHeight * 0.24)}px`;
     this.rightBody.width = `${sideInnerWidth}px`;
-    this.rightBody.height = `${Math.round(sidePanelHeight * 0.71)}px`;
+    this.rightBody.height = `${Math.round(sidePanelHeight * 0.66)}px`;
     this.rightBody.textWrapping = true;
     this.rightBody.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_LEFT;
     this.rightPanel.addControl(this.rightBody);
@@ -437,14 +438,23 @@ export class CodexScene {
 
     this.centerCardTitle = this.makeTerminalText('centerCardTitle', 30, '#C8FFF8');
     this.centerCardTitle.fontFamily = 'Wonder8Bit';
-    this.centerCardTitle.top = `${Math.round(centerCardHeight * 0.17)}px`;
+    this.centerCardTitle.top = `${Math.round(centerCardHeight * 0.2)}px`;
+    this.centerCardTitle.width = `${Math.round(centerCardWidth * 0.92)}px`;
+    this.centerCardTitle.height = `${Math.round(centerCardHeight * 0.27)}px`;
+    this.centerCardTitle.textWrapping = false;
+    this.centerCardTitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
+    this.centerCardTitle.lineSpacing = '2px';
     this.centerCardTitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.centerCardTitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.centerCardTitle.left = '0px';
     this.centerCard.addControl(this.centerCardTitle);
 
     this.centerCardSubtitle = this.makeTerminalText('centerCardSubtitle', 18, '#8FDACF');
-    this.centerCardSubtitle.top = `${Math.round(centerCardHeight * 0.29)}px`;
+    this.centerCardSubtitle.top = `${Math.round(centerCardHeight * 0.44)}px`;
+    this.centerCardSubtitle.width = `${Math.round(centerCardWidth * 0.9)}px`;
+    this.centerCardSubtitle.height = `${Math.round(centerCardHeight * 0.24)}px`;
+    this.centerCardSubtitle.textWrapping = true;
+    this.centerCardSubtitle.textVerticalAlignment = Control.VERTICAL_ALIGNMENT_TOP;
     this.centerCardSubtitle.textHorizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.centerCardSubtitle.horizontalAlignment = Control.HORIZONTAL_ALIGNMENT_CENTER;
     this.centerCardSubtitle.left = '0px';
@@ -954,11 +964,12 @@ export class CodexScene {
 
     if (entry.behavior === 'bull') {
       urlPath = 'models/bull/'; fileName = 'bull.glb';
+      scale = entry.isBoss ? 0.36 : 0.13; // bull boss x2
       mainAnimName = 'charge_run.001';
       rotation = new Vector3(0, Math.PI, 0); // faces left relative to PI/2 baseline
     } else if (entry.behavior === 'jumper') {
       urlPath = 'models/jumper/'; fileName = 'sauteur.glb';
-      scale = entry.isBoss ? 0.36 : 0.26; // x2
+      scale = entry.isBoss ? 1.08 : 0.78; // skyscraper jumper x3
     } else if (['turret', 'bullet_hell', 'mage_missile'].includes(entry.behavior)) {
       if (entry.behavior === 'bullet_hell') {
         urlPath = 'models/bullet_hell/';
@@ -970,6 +981,11 @@ export class CodexScene {
         urlPath = 'models/caster/';
         fileName = 'caster_socle.glb';
       }
+      mainAnimName = 'idle';
+    } else if (entry.behavior === 'laser_patterns') {
+      // Pattern Core boss: caster-socle style with bullet-hell variant, like in-game.
+      urlPath = 'models/bullet_hell/';
+      fileName = 'tde_socle_bullet_hell(crying obsidian).glb';
       mainAnimName = 'idle';
     } else if (['sentinel', 'prefire_sentinel', 'healer', 'artificer', 'necromancer', 'swarm_coordinator'].includes(entry.behavior)) {
       if (entry.behavior === 'healer') {
@@ -992,6 +1008,9 @@ export class CodexScene {
     } else if (['chase', 'flee', 'strategist', 'spike_strategist', 'fuyard'].includes(entry.behavior)) {
       urlPath = 'models/zombie/'; fileName = 'zombie.glb';
       scale = entry.isBoss ? 2.25 : 0.75; // x3
+      if (entry.behavior === 'spike_strategist') {
+        scale *= 0.7; // tri-spike strategist x0.7
+      }
       rotation = Vector3.Zero();
       mainAnimName = ['flee', 'strategist', 'spike_strategist', 'fuyard'].includes(entry.behavior) ? 'Zombie_idle' : 'Zombie_attack_1';
       useColor = true;
@@ -1196,7 +1215,7 @@ export class CodexScene {
 
     for (let i = 0; i < count; i++) {
       const item = this.bestiaryItems[i];
-      const angle = this.carouselRotation + Math.PI + (i * (Math.PI * 2)) / count;
+      const angle = this.carouselRotation + Math.PI - (i * (Math.PI * 2)) / count;
       const x = Math.sin(angle) * this.carouselRadius;
       const z = Math.cos(angle) * this.carouselRadius;
 
@@ -1226,7 +1245,7 @@ export class CodexScene {
 
   private navigateBy(step: number): void {
     if (this.section === 'bestiary') {
-      this.selectBestiaryIndex(this.selectedBestiaryIndex - step);
+      this.selectBestiaryIndex(this.selectedBestiaryIndex + step);
       return;
     }
 
@@ -1254,13 +1273,11 @@ export class CodexScene {
 
     const oldIndex = this.selectedBestiaryIndex;
     this.selectedBestiaryIndex = ((index % count) + count) % count;
-
+    const stepAngle = (Math.PI * 2) / count;
     let diff = this.selectedBestiaryIndex - oldIndex;
     if (diff > count / 2) diff -= count;
     else if (diff < -count / 2) diff += count;
-
-    const stepAngle = (Math.PI * 2) / count;
-    this.carouselTargetRotation -= diff * stepAngle;
+    this.carouselTargetRotation += diff * stepAngle;
 
     this.clearLeftList();
     this.populateBestiaryList();
@@ -1269,6 +1286,7 @@ export class CodexScene {
   }
 
   private refreshBestiarySelection(resetTyping: boolean): void {
+    this.applyRightPanelTypography('bestiary');
     const selected = this.bestiaryItems[this.selectedBestiaryIndex];
     if (!selected) {
       if (resetTyping) {
@@ -1309,6 +1327,7 @@ export class CodexScene {
   }
 
   private refreshBonusSelection(resetTyping: boolean): void {
+    this.applyRightPanelTypography('bonuses');
     this.populateBonusList();
 
     this.setTerminalText(this.leftTitle, '> BESTIARY // BONUSES', 5200, false);
@@ -1328,8 +1347,7 @@ export class CodexScene {
       this.centerCardIcon.isVisible = true;
       this.centerCardArtwork.isVisible = false;
       this.centerCardIcon.text = '?';
-      this.centerCardTitle.text = 'LOCKED';
-      this.centerCardSubtitle.text = 'Undiscovered bonus';
+      this.applyCenterBonusTexts('LOCKED', 'Undiscovered bonus');
       this.setTerminalText(this.rightTitle, '[LOCKED BONUS]', 220, false);
       this.setTerminalText(this.rightBody, '> Unlock this bonus by obtaining it in a run.');
       return;
@@ -1346,8 +1364,7 @@ export class CodexScene {
       this.centerCardArtwork.source = buildHudAssetUrl(`bonuses/${bonus.id}.png`);
     }
 
-    this.centerCardTitle.text = bonus.name;
-    this.centerCardSubtitle.text = bonus.categories.join(' / ');
+    this.applyCenterBonusTexts(bonus.name, bonus.categories.join(' / '));
 
     const body =
       `> Description\n${bonus.description}\n\n` +
@@ -1358,6 +1375,83 @@ export class CodexScene {
 
     this.setTerminalText(this.rightTitle, bonus.name, 240);
     this.setTerminalText(this.rightBody, body, 280, true);
+  }
+
+  private applyCenterBonusTexts(rawTitle: string, rawSubtitle: string): void {
+    const title = (rawTitle ?? '').trim().replace(/\s+/g, ' ');
+    const subtitle = (rawSubtitle ?? '').trim().replace(/\s+/g, ' ');
+    const isMobileLayout = (this.gui.idealWidth || DESIGN_WIDTH) <= 960;
+
+    const maxCharsPerLine = isMobileLayout ? 10 : 12;
+    const words = title
+      .split(' ')
+      .filter(Boolean)
+      .flatMap((word) => {
+        if (word.length <= maxCharsPerLine) return [word];
+        const chunks: string[] = [];
+        for (let i = 0; i < word.length; i += maxCharsPerLine) {
+          chunks.push(word.slice(i, i + maxCharsPerLine));
+        }
+        return chunks;
+      });
+    const lines: string[] = [];
+    let current = '';
+    for (const word of words) {
+      const candidate = current.length > 0 ? `${current} ${word}` : word;
+      if (candidate.length <= maxCharsPerLine || current.length === 0) {
+        current = candidate;
+      } else {
+        lines.push(current);
+        current = word;
+      }
+    }
+    if (current.length > 0) lines.push(current);
+    const clampedLines = lines.slice(0, 3);
+    if (clampedLines.length === 0) clampedLines.push(title);
+
+    const baseTitleSize = isMobileLayout ? 34 : 31;
+    const lineCount = clampedLines.length;
+    const cardHeight = this.centerCard.heightInPixels > 0
+      ? this.centerCard.heightInPixels
+      : Math.round((this.gui.idealHeight || DESIGN_HEIGHT) * 0.53);
+    this.centerCardTitle.text = clampedLines.join('\n');
+    const titleFontSize = lineCount >= 3 ? baseTitleSize - 4 : lineCount === 2 ? baseTitleSize - 2 : baseTitleSize;
+    this.centerCardTitle.fontSize = titleFontSize;
+    const titleTop = Math.round(cardHeight * 0.19);
+    this.centerCardTitle.top = `${titleTop}px`;
+
+    const subtitleSize = subtitle.length > 52 ? (isMobileLayout ? 22 : 20) : (isMobileLayout ? 23 : 21);
+    this.centerCardSubtitle.text = subtitle;
+    this.centerCardSubtitle.fontSize = subtitleSize;
+    const approxLineHeightPx = Math.round(titleFontSize * 1.12);
+    const titleBottom = titleTop + (approxLineHeightPx * Math.max(1, lineCount));
+    const marginBelowTitle = Math.round(cardHeight * 0.008);
+    this.centerCardSubtitle.top = `${titleBottom + marginBelowTitle}px`;
+  }
+
+  private applyRightPanelTypography(mode: 'bestiary' | 'bonuses'): void {
+    const panelHeight = this.rightPanel.heightInPixels > 0
+      ? this.rightPanel.heightInPixels
+      : Math.round((this.gui.idealHeight || DESIGN_HEIGHT) * 0.76);
+
+    if (mode === 'bonuses') {
+      this.rightTitle.fontSize = Math.round(34 * BASE_TEXT_SCALE);
+      this.rightTitle.top = `${Math.round(panelHeight * 0.07)}px`;
+      this.rightTitle.height = `${Math.round(panelHeight * 0.16)}px`;
+
+      this.rightBody.fontSize = Math.round(18 * BASE_TEXT_SCALE);
+      this.rightBody.top = `${Math.round(panelHeight * 0.205)}px`;
+      this.rightBody.height = `${Math.round(panelHeight * 0.74)}px`;
+      return;
+    }
+
+    this.rightTitle.fontSize = Math.round(42 * BASE_TEXT_SCALE);
+    this.rightTitle.top = `${Math.round(panelHeight * 0.08)}px`;
+    this.rightTitle.height = `${Math.round(panelHeight * 0.2)}px`;
+
+    this.rightBody.fontSize = Math.round(20 * BASE_TEXT_SCALE);
+    this.rightBody.top = `${Math.round(panelHeight * 0.23)}px`;
+    this.rightBody.height = `${Math.round(panelHeight * 0.68)}px`;
   }
 
 
