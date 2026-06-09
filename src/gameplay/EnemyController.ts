@@ -5004,16 +5004,20 @@ export class EnemyController {
   }
 
   private disposeZombieModel(): void {
+    this.zombieMeshes.forEach(m => { 
+      if (!m.isDisposed()) {
+        const mat = m.material;
+        m.dispose(false, false);
+        if (mat) {
+          mat.dispose(false, false);
+        }
+      }
+    });
+    this.zombieMeshes = [];
     if (this.zombieModelRoot) {
       this.zombieModelRoot.dispose(false, false);
       this.zombieModelRoot = null;
     }
-    this.zombieMeshes.forEach(m => { 
-      if (!m.isDisposed()) {
-        m.dispose(false, false);
-      }
-    });
-    this.zombieMeshes = [];
     this.zombieAnimGroups.forEach(g => g.dispose());
     this.zombieAnimGroups.clear();
   }

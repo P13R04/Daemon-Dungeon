@@ -143,6 +143,7 @@ export class UltimateManager {
   private eventBus: EventBus;
   private mageDotParticleTexture: DynamicTexture | null = null;
   private zoneParticleEffects: Map<UltimateZone, ParticleSystem> = new Map();
+  public isDisposed: boolean = false;
   private unsubscriber: (() => void) | null = null;
 
   constructor(private scene: Scene, poolSize: number = 5) {
@@ -345,10 +346,10 @@ export class UltimateManager {
 
     burst.start();
     window.setTimeout(() => {
-      if (this.scene.isDisposed) return;
+      if (this.isDisposed || this.scene.isDisposed) return;
       burst.stop();
       window.setTimeout(() => {
-        if (this.scene.isDisposed) return;
+        if (this.isDisposed || this.scene.isDisposed) return;
         burst.dispose(false);
       }, 420);
     }, 120);
@@ -388,10 +389,10 @@ export class UltimateManager {
 
     pulse.start();
     window.setTimeout(() => {
-      if (this.scene.isDisposed) return;
+      if (this.isDisposed || this.scene.isDisposed) return;
       pulse.stop();
       window.setTimeout(() => {
-        if (this.scene.isDisposed) return;
+        if (this.isDisposed || this.scene.isDisposed) return;
         pulse.dispose(false);
       }, 260);
     }, 90);
@@ -427,7 +428,10 @@ export class UltimateManager {
   }
 
   dispose(): void {
+    if (this.isDisposed) return;
+    this.isDisposed = true;
     this.resetForRoomTransition();
+    this.zonePool.dispose(z => z.dispose());
     if (this.unsubscriber) {
       this.unsubscriber();
       this.unsubscriber = null;

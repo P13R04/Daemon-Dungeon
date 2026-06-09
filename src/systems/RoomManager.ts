@@ -185,7 +185,7 @@ export class RoomManager {
     // Dispose of themed materials for this specific room instance
     this.themedMaterials = this.themedMaterials.filter((material) => {
       if (material.name.startsWith(`${instanceKey}_`)) {
-        material.dispose();
+        material.dispose(false, true);
         return false;
       }
       return true;
@@ -1171,7 +1171,7 @@ export class RoomManager {
       hazards.forEach((hazard) => hazard.mesh.dispose());
     }
     this.mobileHazardsByRoom.clear();
-    this.themedMaterials.forEach((material) => material.dispose());
+    this.themedMaterials.forEach((material) => material.dispose(false, true));
     this.themedMaterials = [];
   }
 

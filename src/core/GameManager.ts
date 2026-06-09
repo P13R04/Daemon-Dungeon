@@ -379,6 +379,22 @@ export class GameManager {
 
   async initialize(canvas: HTMLCanvasElement): Promise<void> {
     this.canvas = canvas;
+
+    if (sessionStorage.getItem('restoreFullscreen') === 'true') {
+      const restoreFs = () => {
+        sessionStorage.removeItem('restoreFullscreen');
+        const docEl = document.documentElement;
+        if (docEl.requestFullscreen) {
+          docEl.requestFullscreen().catch((err) => {
+            console.warn('[GameManager] Fullscreen restoration failed:', err);
+          });
+        }
+        window.removeEventListener('click', restoreFs);
+        window.removeEventListener('pointerdown', restoreFs);
+      };
+      window.addEventListener('click', restoreFs);
+      window.addEventListener('pointerdown', restoreFs);
+    }
     GameSettingsStore.applyRuntimeEffects(this.canvas);
     this.applyGraphicsSettings(GameSettingsStore.get());
     this.applyAudioSettings(GameSettingsStore.get());
@@ -436,20 +452,26 @@ export class GameManager {
     // Setup event listeners
     this.setupEventListeners();
 
-    const introMode = this.configLoader.getGameplayConfig()?.intro?.mode ?? 'takeover';
-    const mageTutorialCompleted = this.codexService.hasCompletedTutorialForClass('mage');
-    if (introMode === 'off') {
+    const skipToMainMenu = sessionStorage.getItem('skipToMainMenu') === 'true';
+    if (skipToMainMenu) {
+      sessionStorage.removeItem('skipToMainMenu');
       await this.openMainMenuScene();
-    } else if (introMode === 'legacy') {
-      if (BootSequenceScene.shouldPlay()) {
-        await this.openBootSequenceScene();
+    } else {
+      const introMode = this.configLoader.getGameplayConfig()?.intro?.mode ?? 'takeover';
+      const mageTutorialCompleted = this.codexService.hasCompletedTutorialForClass('mage');
+      if (introMode === 'off') {
+        await this.openMainMenuScene();
+      } else if (introMode === 'legacy') {
+        if (BootSequenceScene.shouldPlay()) {
+          await this.openBootSequenceScene();
+        } else {
+          await this.openMainMenuScene();
+        }
+      } else if (!mageTutorialCompleted) {
+        await this.openTakeoverIntroScene();
       } else {
         await this.openMainMenuScene();
       }
-    } else if (!mageTutorialCompleted) {
-      await this.openTakeoverIntroScene();
-    } else {
-      await this.openMainMenuScene();
     }
 
     // Start in menu scene
@@ -597,6 +619,19 @@ export class GameManager {
       this.creditsScene.dispose();
       this.creditsScene = undefined;
     }
+  }
+
+  private reloadAndGoToMainMenu(): void {
+    try {
+      sessionStorage.setItem('skipToMainMenu', 'true');
+      sessionStorage.setItem('daemonBootShown', 'true');
+      if (document.fullscreenElement) {
+        sessionStorage.setItem('restoreFullscreen', 'true');
+      }
+    } catch (e) {
+      console.warn('[GameManager] Failed to set sessionStorage flags:', e);
+    }
+    window.location.reload();
   }
 
   private async openMainMenuScene(): Promise<void> {
@@ -1294,7 +1329,7 @@ export class GameManager {
         }
         void (async () => {
           await this.playTutorialExitFx();
-          await this.openMainMenuScene();
+          this.reloadAndGoToMainMenu();
         })();
       },
       onTutorialSkipRequested: () => {
@@ -1306,9 +1341,7 @@ export class GameManager {
         const classKey = this.selectedClassId === 'cat' ? 'rogue' : this.selectedClassId;
         if (classKey === 'firewall' || classKey === 'rogue') {
           const shouldStartRunAfterSkip = this.pendingPostTutorialClass === this.selectedClassId;
-          if (shouldStartRunAfterSkip) {
-            this.codexService.recordTutorialCompleted(this.selectedClassId);
-          }
+          this.codexService.recordTutorialCompleted(this.selectedClassId);
           this.codexService.endRunTracking();
           this.isTutorialRun = false;
           this.tutorialReplayRun = false;
@@ -1319,7 +1352,7 @@ export class GameManager {
             this.codexService.startRunTracking(this.selectedClassId);
             void this.startNewGame();
           } else {
-            void this.openMainMenuScene();
+            this.reloadAndGoToMainMenu();
           }
           return;
         }
@@ -1332,7 +1365,7 @@ export class GameManager {
         this.tutorialReplayRun = false;
         this.daemonVoicelineManager?.setTutorialMode(false);
         this.hudManager?.setPauseTutorialMode(false);
-        void this.openMainMenuScene();
+        this.reloadAndGoToMainMenu();
       },
       onPlayerUltimateRefillRequested: () => {
         this.playerController?.refillUltimate();
@@ -1352,7 +1385,7 @@ export class GameManager {
         this.tutorialReplayRun = false;
         this.codexService.endRunTracking();
         this.hudManager?.setPauseTutorialMode(false);
-        void this.openMainMenuScene();
+        this.reloadAndGoToMainMenu();
       },
       onClassSelectRequested: () => {
         this.pendingPostTutorialClass = null;
@@ -3767,7 +3800,6 @@ export class GameManager {
     this.enemySpawner.stageAllActiveEnemiesAsSuppressed();
     this.roomIntroSequencePendingIndex = nextIndex;
     void this.runRoomIntroSequence(nextIndex);
-    this.deferPostTransitionRoomMaintenance(nextIndex);
     this.eventBus.emit(GameEvents.ROOM_TRANSITION_END);
   }
 
@@ -3836,6 +3868,7 @@ export class GameManager {
       this.playerController.setInputSuppressed(false);
       this.hudManager.pushSystemLog('ROOM ONLINE. ENEMY AI UNLOCKED. COMBAT LOOP RESUMED.');
       this.roomIntroSequencePendingIndex = null;
+      this.deferPostTransitionRoomMaintenance(roomIndex);
     } finally {
       this.roomIntroSequenceRunning = false;
     }

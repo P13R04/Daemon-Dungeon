@@ -4015,16 +4015,19 @@ export class HUDManager {
     if (this.pauseTutorialMode) return;
 
     const normalizedType = (roomType || 'normal').toLowerCase();
-    const dramatic = normalizedType === 'boss' || normalizedType === 'difficile' || normalizedType === 'extreme';
+    const isHard = normalizedType === 'difficile' || normalizedType === 'hard';
+    const isMedium = normalizedType === 'intermediaire' || normalizedType === 'medium';
+    const isExtreme = normalizedType === 'extreme';
+    const dramatic = normalizedType === 'boss' || isHard || isExtreme;
     const difficultyLabel = normalizedType === 'boss'
       ? 'BOSS'
-      : normalizedType === 'extreme'
-        ? 'EXTRÊME'
-        : normalizedType === 'difficile'
-          ? 'DIFFICILE'
-          : normalizedType === 'intermediaire'
-            ? 'INTERMÉDIAIRE'
-            : 'FACILE';
+      : isExtreme
+        ? 'EXTREME'
+        : isHard
+          ? 'HARD'
+          : isMedium
+            ? 'MEDIUM'
+            : 'EASY';
 
     this.addLogMessage(dramatic ? 'WARNING: HIGH-RISK CHAMBER DETECTED.' : 'CHAMBER LINKED. THREAT LEVEL NOMINAL.');
     this.bossAlertActive = true;

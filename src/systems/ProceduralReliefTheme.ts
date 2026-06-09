@@ -563,15 +563,15 @@ export class ProceduralReliefTheme {
   public static disposeAllCaches(): void {
     for (const cache of this.sceneCaches.values()) {
       for (const mat of cache.floorMats.values()) {
-        mat.dispose();
+        mat.dispose(false, true);
       }
       for (const mat of cache.wallFaceMats.values()) {
-        mat.dispose();
+        mat.dispose(false, true);
       }
       for (const mat of cache.poisonMats.values()) {
-        mat.dispose();
+        mat.dispose(false, true);
       }
-      cache.wallCoreMat.dispose();
+      cache.wallCoreMat.dispose(false, true);
     }
     this.sceneCaches.clear();
   }

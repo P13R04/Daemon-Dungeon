@@ -59,4 +59,18 @@ export class Pool<T extends IPoolable> {
   getTotalCount(): number {
     return this.pool.length;
   }
+
+  dispose(disposeItem?: (item: T) => void): void {
+    if (disposeItem) {
+      this.pool.forEach(disposeItem);
+    } else {
+      this.pool.forEach(obj => {
+        if (typeof (obj as any).dispose === 'function') {
+          (obj as any).dispose();
+        }
+      });
+    }
+    this.pool = [];
+  }
 }
+

@@ -232,6 +232,7 @@ export class ProjectileManager {
   private readonly maxAoeVisualCells: number = 140;
   private nextAoeZoneId: number = 1;
   private unsubscriber: (() => void) | null = null;
+  public isDisposed: boolean = false;
 
   constructor(private scene: Scene, poolSize: number = 20) {
     this.eventBus = EventBus.getInstance();
@@ -708,7 +709,7 @@ export class ProjectileManager {
         }
         if (split.trail) {
           split.trail.stop();
-          setTimeout(() => split.trail?.dispose(false), 220);
+          setTimeout(() => { if (!this.isDisposed) split.trail?.dispose(false); }, 220);
           split.trail = undefined;
         }
         if (this.isPointAffectedByExplosion(split.position, player.getPosition(), split.explosionRadius, roomManager)) {
@@ -745,7 +746,7 @@ export class ProjectileManager {
           }
           if (split.trail) {
             split.trail.stop();
-            setTimeout(() => split.trail?.dispose(false), 220);
+            setTimeout(() => { if (!this.isDisposed) split.trail?.dispose(false); }, 220);
             split.trail = undefined;
           }
 
@@ -1217,7 +1218,7 @@ export class ProjectileManager {
 
     const blast = VisualPlaceholder.createAoEPlaceholder(this.scene, `mage_impact_aoe_${Date.now()}`, config.radius);
     blast.position = this.toGroundPosition(impactPos);
-    setTimeout(() => blast.dispose(), 140);
+    setTimeout(() => { if (!this.isDisposed) blast.dispose(); }, 140);
   }
 
   private resolveImpactPosition(position: Vector3, direction: Vector3, roomManager: RoomManager): Vector3 {
@@ -1278,6 +1279,7 @@ export class ProjectileManager {
         }
       }
       setTimeout(() => {
+        if (this.isDisposed) return;
         if (!mesh.isDisposed()) {
           this.deferredMeshDisposalQueue.push(mesh);
         }
@@ -1323,6 +1325,7 @@ export class ProjectileManager {
     }
 
     setTimeout(() => {
+      if (this.isDisposed) return;
       for (const mesh of visuals) {
         if (!mesh.isDisposed()) {
           this.deferredMeshDisposalQueue.push(mesh);
@@ -1582,7 +1585,7 @@ export class ProjectileManager {
     burst.gravity = new Vector3(0, -0.4, 0);
     burst.disposeOnStop = true;
     burst.start();
-    setTimeout(() => burst.stop(), 90);
+    setTimeout(() => { if (!this.isDisposed) burst.stop(); }, 90);
 
     if (this.isHostileCasterProjectileType(type) || type === 'rocket_sentry' || type === 'mage_missile') {
       this.spawnCasterGlitchImpactFx(position, radius, c);
@@ -1617,7 +1620,7 @@ export class ProjectileManager {
     glitch.maxAngularSpeed = Math.PI * 1.7;
     glitch.disposeOnStop = true;
     glitch.start();
-    setTimeout(() => glitch.stop(), 80);
+    setTimeout(() => { if (!this.isDisposed) glitch.stop(); }, 80);
   }
 
   private spawnMissileDetonationImpactFx(position: Vector3, radius: number): void {
@@ -1644,7 +1647,7 @@ export class ProjectileManager {
     fireball.updateSpeed = 0.016;
     fireball.disposeOnStop = true;
     fireball.start();
-    setTimeout(() => fireball.stop(), 110);
+    setTimeout(() => { if (!this.isDisposed) fireball.stop(); }, 110);
 
     const shock = new ParticleSystem(`rocket_shock_${Date.now()}`, 120, this.scene);
     shock.particleTexture = this.getHostileImpactGlitchTexture();
@@ -1668,7 +1671,7 @@ export class ProjectileManager {
     shock.updateSpeed = 0.016;
     shock.disposeOnStop = true;
     shock.start();
-    setTimeout(() => shock.stop(), 100);
+    setTimeout(() => { if (!this.isDisposed) shock.stop(); }, 100);
   }
 
   private styleArtificerZoneMesh(mesh: Mesh): void {
@@ -1753,8 +1756,9 @@ export class ProjectileManager {
     particles.updateSpeed = 0.016;
     particles.start();
     setTimeout(() => {
+      if (this.isDisposed) return;
       particles.stop();
-      setTimeout(() => particles.dispose(false), 420);
+      setTimeout(() => { if (!this.isDisposed) particles.dispose(false); }, 420);
     }, 140);
 
     const rainbow = new ParticleSystem(`artificer_firework_fx_${Date.now()}`, 360, this.scene);
@@ -1781,8 +1785,9 @@ export class ProjectileManager {
     rainbow.updateSpeed = 0.016;
     rainbow.start();
     setTimeout(() => {
+      if (this.isDisposed) return;
       rainbow.stop();
-      setTimeout(() => rainbow.dispose(false), 620);
+      setTimeout(() => { if (!this.isDisposed) rainbow.dispose(false); }, 620);
     }, 240);
   }
 
@@ -1830,7 +1835,7 @@ export class ProjectileManager {
       }
       if (split.trail) {
         split.trail.stop();
-        setTimeout(() => split.trail?.dispose(false), 220);
+        setTimeout(() => { if (!this.isDisposed) split.trail?.dispose(false); }, 220);
         split.trail = undefined;
       }
     }
@@ -1875,11 +1880,14 @@ export class ProjectileManager {
   }
 
   dispose(): void {
+    if (this.isDisposed) return;
+    this.isDisposed = true;
     if (this.unsubscriber) {
       this.unsubscriber();
       this.unsubscriber = null;
     }
     this.resetForRoomTransition();
+    this.projectilePool.dispose((p) => p.dispose());
     for (const mesh of this.deferredMeshDisposalQueue) {
       if (!mesh.isDisposed()) {
         mesh.dispose();
